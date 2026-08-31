@@ -116,7 +116,11 @@ describe('ProfileActivateDialog', () => {
     expect(await screen.findByText('target file is dirty')).toBeInTheDocument();
     expect(activate).toHaveBeenCalledWith('/mock/repo', 'hotfix', 'lean');
     expect(props.onClose).not.toHaveBeenCalled(); // stays open
-    expect(preview).toHaveBeenCalledTimes(2); // nonce-driven re-preview
+    // The re-preview is fired by the nonce-driven passive effect, which flushes
+    // independently of the error banner that `findByText` awaits — assert the
+    // eventual call count via waitFor, never synchronously (else it flakes under
+    // parallel load when the banner's MutationObserver wins the scheduling race).
+    await vi.waitFor(() => expect(preview).toHaveBeenCalledTimes(2)); // nonce-driven re-preview
   });
 
   it('Esc closes unless busy', () => {

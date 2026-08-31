@@ -1,0 +1,180 @@
+/* Bonsai — Theme tokens, light-theme overrides and document base styles.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* Bonsai theme tokens — canonical values from docs/contracts/ui-reference.md.
+   Dark is the default; light theme via [data-theme="light"]. */
+
+:root {
+  color-scheme: dark;
+
+  --bg-0: #16181d;
+  --bg-1: #1d2026;
+  --bg-2: #262a31;
+  --bg-3: #2f343d;
+  --text-1: #e8eaed;
+  --text-2: #a8adb8;
+  --text-3: #6b7280;
+  --border: #2c313a;
+  --accent: #4f8cff;
+  --accent-text: #ffffff;
+  --selection: #2a3b57;
+  --danger: #e5534b;
+  --success: #57ab5a;
+  /* P61a: word-level intraline emphasis — more saturated than the row tint so
+     the changed sub-range reads clearly over .diff-line-add/-del AND selection. */
+  --intra-add: #2ea043;
+  --intra-del: #f85149;
+  --warning: #d4a72c;
+  /* P50b: commit-search match ring on graph dots (distinct from head/selection). */
+  --match-ring: #ff4dd2;
+  /* P58c: signature-badge palette (OQ7). Concrete hex (not var() indirection)
+     so getComputedStyle in graph/colors.ts reads a resolved color. Mirror the
+     semantic --success / --danger / --text-3 of this theme. */
+  --badge-good: #57ab5a;
+  --badge-warn: #e5534b;
+  --badge-unknown: #6b7280;
+
+  /* These two stacks MUST stay token-for-token identical to FONT_UI / FONT_MONO
+     in src/graph/metrics.ts — the canvas graph and the DOM render the same
+     summaries and SHAs, so any divergence shows up as two different typefaces
+     side by side (macOS previously fell back to Courier for the DOM SHAs). */
+  --font-ui: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', Menlo, 'Cascadia Code', 'Cascadia Mono', Consolas, 'JetBrains Mono',
+    monospace;
+
+  /* Lane color palette (ui-reference §5) — identical in both themes;
+     resolved once per mount by src/graph/colors.ts, assigned by lane % 10. */
+  --lane-0: #4f8cff;
+  --lane-1: #f2994a;
+  --lane-2: #9b6dff;
+  --lane-3: #43b97f;
+  --lane-4: #e5534b;
+  --lane-5: #3ec6c0;
+  --lane-6: #e8c341;
+  --lane-7: #f26d9c;
+  --lane-8: #7a86ff;
+  --lane-9: #8fbf4d;
+
+  /* Identity profile colors (P82, ui-reference §12.8) — dark. Swatch/ring fills
+     only; deliberately separate from the semantic and --lane-* sets. All ≥3:1
+     vs --bg-1. The light values live in the [data-theme='light'] block. */
+  --profile-neutral: #6b7280;
+  --profile-slate: #7d8aa3;
+  --profile-blue: #4f8cff;
+  --profile-teal: #3ec6c0;
+  --profile-green: #57ab5a;
+  --profile-amber: #e8c341;
+  --profile-orange: #f2994a;
+  --profile-purple: #9b6dff;
+  --profile-pink: #f26d9c;
+
+  /* Language-accent palette (P4e chip) — theme-shared, following the --lane-*
+     precedent: these brand hues read acceptably on the neutral chip background
+     in both dark and light, so they are defined once here and NOT duplicated in
+     the [data-theme='light'] block. */
+  --lang-ts: #3178c6;  --lang-js: #f1b542;  --lang-json: #a0a0a0;
+  --lang-html: #e34c26; --lang-css: #563d7c; --lang-md: #4f8cff;
+  --lang-rust: #dea584; --lang-py: #3572a5; --lang-cs: #68217a;
+  --lang-go: #00add8;  --lang-shell: #89e051; --lang-default: #6b7280;
+
+  /* Syntax-token palette (P4e Step 2) — dark. Mapped to highlight.js
+     .hljs-* classes, scoped under .diff-content. No stock hljs theme CSS is
+     imported; all token colors come from these variables. */
+  --syn-keyword: #ff7b72;  --syn-string: #7ee787;  --syn-comment: #8b949e;
+  --syn-number: #79c0ff;   --syn-function: #d2a8ff; --syn-title: #d2a8ff;
+  --syn-type: #ffa657;     --syn-attr: #79c0ff;     --syn-tag: #7ee787;
+  --syn-operator: #a8adb8; --syn-punctuation: #a8adb8; --syn-meta: #6b7280;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --bg-0: #ffffff;
+  --bg-1: #f6f7f9;
+  --bg-2: #eceef2;
+  --bg-3: #e2e5ea;
+  --text-1: #1c1f24;
+  --text-2: #4b515c;
+  --text-3: #8a919e;
+  --border: #dcdfe5;
+  --accent: #2f6fe4;
+  --accent-text: #ffffff;
+  --selection: #dbe7ff;
+  /* --accent-text is intentionally identical to the dark palette's value
+     (ui-reference §2: both themes use white text on the blue accent). */
+  --danger: #d13438;
+  --success: #1a7f37;
+  --intra-add: #1a7f37;
+  --intra-del: #cf222e;
+  --warning: #9a6700;
+  --match-ring: #c026a3;
+  /* P58c: signature-badge palette — light (mirror --success/--danger/--text-3). */
+  --badge-good: #1a7f37;
+  --badge-warn: #d13438;
+  --badge-unknown: #8a919e;
+
+  /* Identity profile colors (P82, ui-reference §12.8) — light. All ≥3:1 vs
+     #ffffff / --bg-1. */
+  --profile-neutral: #8a919e;
+  --profile-slate: #5d6b85;
+  --profile-blue: #2f6fe4;
+  --profile-teal: #0f8f89;
+  --profile-green: #1a7f37;
+  --profile-amber: #9a6700;
+  --profile-orange: #c2410c;
+  --profile-purple: #7c3aed;
+  --profile-pink: #c2266f;
+
+  /* Syntax-token palette (P4e Step 2) — light. */
+  --syn-keyword: #cf222e;  --syn-string: #0a7d33;  --syn-comment: #6e7781;
+  --syn-number: #0550ae;   --syn-function: #8250df; --syn-title: #8250df;
+  --syn-type: #953800;     --syn-attr: #0550ae;     --syn-tag: #0a7d33;
+  --syn-operator: #4b515c; --syn-punctuation: #4b515c; --syn-meta: #8a919e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  background: var(--bg-0);
+  color: var(--text-1);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* Visually-hidden but screen-reader-announced. The canonical utility for the
+   recipe several components previously inlined (ai-dock-log, settings-shell).
+   IdentityColorPicker relies on this to hide its per-swatch color-name labels. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+

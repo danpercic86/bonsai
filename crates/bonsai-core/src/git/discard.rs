@@ -11,7 +11,7 @@
 use std::path::Path;
 
 use crate::error::AppError;
-use crate::git::stage::{open_workdir_repo, validate_rel_path};
+use crate::git::stage::{ensure_within_workdir, open_workdir_repo, validate_rel_path};
 
 /// Blocking. Restores each tracked path's WORKTREE content to the INDEX version
 /// (`git checkout -- <paths>`), discarding unstaged edits and recreating
@@ -98,6 +98,20 @@ pub fn discard_paths_force(workdir: &Path, paths: &[String]) -> Result<(), AppEr
     //    entry (that IS the desired end state); every other IO error rejects the
     //    whole batch before the first deletion, preserving all-or-nothing.
     for p in &untracked {
+        // Symlink-escape guard (defense in depth on top of the lexical
+        // `validate_rel_path` above): refuse an untracked path that would resolve
+        // OUTSIDE the repository through a symlinked ANCESTOR directory before any
+        // metadata read or `remove_file` touches it. It runs inside this up-front
+        // validation loop — before loop 4a deletes anything — so one escaping
+        // entry aborts the whole batch with nothing deleted (all-or-nothing). A
+        // genuine IO failure is surfaced as-is; the escape is the discard-flavored
+        // `Git` error, matching the sibling "not a regular file" message.
+        ensure_within_workdir(workdir, p.as_str()).map_err(|e| match e {
+            io @ AppError::Io(_) => io,
+            _ => AppError::Git(format!(
+                "cannot discard '{p}': path resolves outside the repository"
+            )),
+        })?;
         match std::fs::symlink_metadata(workdir.join(p)) {
             Ok(md) if !md.is_file() => {
                 return Err(AppError::Git(format!(

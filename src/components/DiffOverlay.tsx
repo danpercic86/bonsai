@@ -5,6 +5,7 @@ import type { DiffSlot } from './DiffView';
 import { DiffImageView } from './DiffImageView';
 import type { ImageMode } from './DiffImageView';
 import { ErrorBoundary } from './ErrorBoundary';
+import { SummarizeIcon } from './menuIcons';
 import { detectLanguage } from '../utils/language';
 import { isImagePath } from '../utils/imagePaths';
 
@@ -293,7 +294,8 @@ export function DiffOverlay({
             title="Explain this change with AI"
             onClick={onExplain}
           >
-            {'✨ Explain'}
+            <SummarizeIcon />
+            <span>Explain</span>
           </button>
         )}
         {/* File/Diff/Split does nothing for the conflict/proposal CodeMirror

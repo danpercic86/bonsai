@@ -30,8 +30,6 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
   return {
     ...base(),
     refreshAll: asyncFn(),
-    refetchBranches: asyncFn(),
-    refetchGraph: asyncFn(),
     branches: BRANCHES,
     setBranchesError: vi.fn(),
     setPendingCreateBranch: vi.fn(),
@@ -41,14 +39,16 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
 }
 
 describe('handleCreateBranch', () => {
-  it('creates, refetches branches + graph, clears the error banner first', async () => {
+  it('creates, refreshes via the echo-armed round, clears the error banner first', async () => {
     const create = vi.spyOn(mockIpc, 'createBranch').mockResolvedValue(undefined);
     const deps = makeDeps();
     await useBranchActions(deps).handleCreateBranch('new-branch');
     expect(create).toHaveBeenCalledWith(REPO, 'new-branch');
     expect(deps.setBranchesError).toHaveBeenCalledWith(null);
-    expect(deps.refetchBranches).toHaveBeenCalledTimes(1);
-    expect(deps.refetchGraph).toHaveBeenCalledTimes(1);
+    // P85 A1: one echo-armed refreshAll, not raw refetchBranches/refetchGraph.
+    // P86a: a create at an existing commit is a refsOnly round.
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly');
     expectMutatingCycle(deps.setMutating);
   });
 
@@ -59,7 +59,7 @@ describe('handleCreateBranch', () => {
       kind: 'branchExists',
     });
     expect(deps.setMutating).toHaveBeenLastCalledWith(false);
-    expect(deps.refetchBranches).not.toHaveBeenCalled();
+    expect(deps.refreshAll).not.toHaveBeenCalled();
   });
 });
 
@@ -131,13 +131,15 @@ describe('handleCreateBranchHere', () => {
 });
 
 describe('handleDeleteBranch / handleDeleteRemoteTracking', () => {
-  it('delete refetches branches + graph; errors land in the branches banner, no toast', async () => {
+  it('delete refreshes via refreshAll; errors land in the branches banner, no toast', async () => {
     const del = vi.spyOn(mockIpc, 'deleteBranch').mockResolvedValue(undefined);
     const deps = makeDeps();
     await useBranchActions(deps).handleDeleteBranch('feat');
     expect(del).toHaveBeenCalledWith(REPO, 'feat');
-    expect(deps.refetchBranches).toHaveBeenCalledTimes(1);
-    expect(deps.refetchGraph).toHaveBeenCalledTimes(1);
+    // P85 A1: one echo-armed refreshAll (a delete can drop reachable commits).
+    // P88a row 13: scoped to refsOnly (no HEAD move / worktree change; graph re-walks).
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly');
 
     del.mockRejectedValue(appErr('unmergedBranch', 'not merged'));
     await useBranchActions(deps).handleDeleteBranch('feat');
@@ -145,7 +147,7 @@ describe('handleDeleteBranch / handleDeleteRemoteTracking', () => {
     expect(deps.pushToast).not.toHaveBeenCalled();
   });
 
-  it('delete remote-tracking mirrors the same refetch + banner-error contract', async () => {
+  it('delete remote-tracking mirrors the same refreshAll + banner-error contract', async () => {
     const del = vi.spyOn(mockIpc, 'deleteRemoteBranch').mockRejectedValue(appErr('git', 'nope'));
     const deps = makeDeps();
     await useBranchActions(deps).handleDeleteRemoteTracking('origin/feat');
@@ -171,8 +173,9 @@ describe('handleRenameBranch', () => {
     });
     const deps = makeDeps();
     await useBranchActions(deps).handleRenameBranch('main', 'trunk');
+    // P86a: renaming HEAD moves the current-branch label → full round.
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
-    expect(deps.refetchBranches).not.toHaveBeenCalled();
+    expect(deps.refreshAll).toHaveBeenCalledWith('full');
     expect(deps.pushToast).toHaveBeenCalledWith(
       'success',
       'Renamed main → trunk (tracking origin/main preserved)',
@@ -180,16 +183,17 @@ describe('handleRenameBranch', () => {
     expect(deps.setPendingRenameBranch).toHaveBeenCalledWith(null);
   });
 
-  it('renaming a non-HEAD branch → refetch branches + graph only; errors toast + close dialog', async () => {
+  it('renaming a non-HEAD branch → refreshAll (A1); errors toast + close dialog', async () => {
     const rename = vi
       .spyOn(mockIpc, 'renameBranch')
       .mockResolvedValue({ wasHead: false, upstream: null });
     const deps = makeDeps();
     await useBranchActions(deps).handleRenameBranch('feat', 'feature');
     expect(rename).toHaveBeenCalledWith(REPO, 'feat', 'feature');
-    expect(deps.refreshAll).not.toHaveBeenCalled();
-    expect(deps.refetchBranches).toHaveBeenCalledTimes(1);
-    expect(deps.refetchGraph).toHaveBeenCalledTimes(1);
+    // P85 A1: non-HEAD rename now also routes through the echo-armed refreshAll.
+    // P86a: a non-HEAD rename only reshuffles ref pills → refsOnly.
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly');
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Renamed feat → feature');
 
     rename.mockRejectedValue(appErr('branchExists', 'exists'));

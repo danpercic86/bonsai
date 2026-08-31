@@ -1,0 +1,467 @@
+/* Bonsai — Settings shell (P69g): rail, pane and the Git-config scope block.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- Settings shell (P69g — UI §2, ui-reference §12.1) ---------- */
+
+/* P18a: the settings card carries both .dialog-card and .settings-card; the
+   later-appearing .dialog-card { width: 360px } wins at equal specificity, so
+   raise specificity here (max-width cap inherited).
+   P69g: the card is a GRID — 48px header spanning both columns, a 200px rail and
+   the pane — and it never scrolls as a whole. The rail and the pane scroll
+   independently, so a long category cannot push the header off screen. */
+.dialog-card.settings-card {
+  width: 880px;
+  max-width: calc(100vw - 48px);
+  height: min(660px, calc(100vh - 64px));
+  padding: 0;
+  display: grid;
+  /* P69k: three rows — header / search bar / pane — with the rail spanning the
+     last two. Every cell is placed EXPLICITLY, which is what lets the search bar
+     precede the rail in the DOM (tab order ✕ → search → rail → pane, UI §7.2)
+     while still sitting beside it on screen. */
+  grid-template-columns: 200px 1fr;
+  grid-template-rows: 48px 56px 1fr;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--bg-1);
+}
+
+.settings-header {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  height: 48px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Specificity: the element carries .dialog-title too, and that rule (with its own
+   margin) appears later in this file. */
+.settings-header .settings-title {
+  margin: 0 auto 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.settings-close {
+  flex: none;
+  margin-left: 0;
+}
+
+/* ---- Rail (UI §1.1, §6.1) ---- */
+
+.settings-rail {
+  grid-column: 1;
+  grid-row: 2 / span 2;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg-1);
+}
+
+.settings-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-rail-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.settings-rail-item:hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.settings-rail-item:active {
+  background: var(--bg-3);
+}
+
+/* The inset accent bar is the SHAPE carrier: --selection vs --bg-1 is only ~1.3:1,
+   so selection may not rest on the fill alone (UI §6.1). Meaning also rides on
+   aria-selected and the 600 weight. */
+.settings-rail-item.is-selected,
+.settings-rail-item.is-selected:hover {
+  background: var(--selection);
+  color: var(--text-1);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.settings-rail-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.settings-rail-divider {
+  flex: none;
+  height: 1px;
+  margin: 8px;
+  background: var(--border);
+}
+
+/* Hueless scope pill (§11 recipe): --text-2 over its own 12% tint. */
+.settings-rail-pill {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-2) 12%, transparent);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+}
+
+/* While searching the emphasis is INVERTED rather than dimmed: a category WITH
+   matches is lifted, a zero-count one just keeps the default --text-2 and shows
+   `0`. Dimming was the earlier treatment and it put a clickable item under
+   4.5:1 (2.36:1 in light) — and it is deliberately NOT disabled, since clicking
+   it is how the user leaves the search (UI §3.2), so the WCAG inactive-component
+   exemption does not apply. Two carriers — the colour lift and the digit itself
+   (`0` vs `N`) — and every state is AA in both themes. */
+.settings-rail-item.is-hit {
+  color: var(--text-1);
+}
+
+.settings-rail-count {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* DEVIATION from the first design ruling, which asked for the count in `--accent`
+   — and the reason is the very criterion that ruling stated ("both themes AA"):
+   `--accent` as 11px text measures 4.34:1 light / 5.07:1 dark on `--bg-1`, but
+   only 3.74:1 light / 3.51:1 dark on the `--selection` fill of a SELECTED rail
+   item, i.e. worse on that case than the `opacity: .5` this replaced. `--text-1`
+   is 15.4:1 light / 13.5:1 dark on `--bg-1` and 13.3:1 / 9.4:1 on the selection
+   fill, so it is AA everywhere the count can land.
+
+   UPHELD by ui-designer in P69l (see `P69-settings-ui.md` §3.2): the count is a
+   number the user reads, so 4.5:1 applies and accent fails it in both themes.
+   Three carriers survive — the digit (0 vs N, a literal value), a whole-item
+   luminance step that reads as mass rather than hue, and the accessible-name
+   suffix. Do NOT "restore" `var(--accent)` here; that is a recorded a11y defect,
+   and accent-on-`--selection` is now prohibited house-wide in ui-reference §2.
+   If the lift proves too subtle on a real display, the sanctioned next step is to
+   render NOTHING instead of `0` on zero-count items — not a hue change. */
+.settings-rail-item.is-hit .settings-rail-count {
+  color: var(--text-1);
+}
+
+/* ---- Search bar (UI §2.2 / §3) ---- */
+
+.settings-search {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-0);
+  min-width: 0;
+}
+
+/* The shared sidebar filter box is 24px and margin-topped under a section
+   header; in the settings card it is a full-width 32px field. Compound
+   selectors, so the override wins on specificity whatever the import order. */
+.settings-search .list-filter {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.settings-search .list-filter-input {
+  height: 32px;
+  font-size: 13px;
+  padding: 0 8px;
+}
+
+/* Visually-hidden search status live region — hiding comes from the shared
+   `.sr-only` utility (tokens-and-base.css). */
+
+/* ---- Search results (UI §3.1) ---- */
+
+.settings-results-group + .settings-results-group {
+  margin-top: 8px;
+}
+
+/* `center`, not `baseline`: the Go-to button is a 24px hit target (§7.4) and a
+   baseline alignment would hang it off the heading's text baseline. */
+.settings-results-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+/* --text-2, not --text-3: in a result list this heading is the primary
+   wayfinder, not decoration (it was 2.86:1 in light). The uppercase + 600
+   weight keeps it distinct from the 400-weight button beside it. */
+.settings-results-title {
+  margin: 0;
+  margin-right: auto;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+}
+
+/* 24px minimum target (§7.4). The negative margin keeps the TEXT flush with the
+   pane's right edge while the padding grows the hit area. */
+.settings-results-goto {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: none;
+  padding: 0 6px;
+  margin-right: -6px;
+  background: transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings-results-goto:hover {
+  color: var(--text-1);
+}
+
+.settings-results-goto:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+/* The scope switch is a pane-HEADER row; in a result block it has no header to
+   right-align inside, so it lays out as an ordinary block. */
+.settings-results-trailing .settings-scope {
+  margin-left: 0;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.settings-results-trailing .settings-scope-line {
+  text-align: left;
+}
+
+/* --text-1 on --selection: 9.4:1 dark / 13.3:1 light (UI §6.3). */
+.settings-match {
+  background: var(--selection);
+  color: var(--text-1);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ---- Pane (UI §2.2) ---- */
+
+.settings-pane {
+  grid-column: 2;
+  grid-row: 3;
+  padding: 16px 24px 24px;
+  overflow-y: auto;
+  scroll-behavior: auto;
+  background: var(--bg-0);
+  min-width: 0;
+}
+
+.settings-pane:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.settings-pane-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.settings-pane-heading {
+  min-width: 0;
+}
+
+.settings-pane-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.settings-pane-subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* ---- P69h: Git-config scope + in-pane empty block (UI §1.1 / §1.2) ---- */
+
+/* The scope switch sits in the pane header's trailing slot, right-aligned so the
+   title/subtitle column keeps its own reading rhythm. */
+.settings-scope {
+  margin-left: auto;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.settings-scope-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-scope-label {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* Names the FILE, so the scope is a fact rather than an inference. */
+.settings-scope-line {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-2);
+  text-align: right;
+}
+
+/* ui-reference §8's centred-pane idiom, at pane scale (NOT the app-level hero). */
+.settings-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 40ch;
+  margin: 0 auto;
+  padding: 24px 16px;
+  text-align: center;
+}
+
+.settings-empty-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.settings-empty-body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text-2);
+}
+
+.settings-empty-action {
+  margin-top: 4px;
+}
+
+/* A curated key inside a stacked row: the row owns the label and the width, so
+   the legacy `.settings-control` flex/gap would fight it. */
+.settings-row-control > .settings-control {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  margin-top: 0;
+  width: 100%;
+}
+
+.settings-row-control > .settings-control > .settings-config-field,
+.settings-row-control > .settings-control > .settings-config-select {
+  width: 100%;
+}
+
+.settings-group {
+  margin-bottom: 24px;
+}
+
+.settings-group-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+
+.settings-group-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+
+/* ---- Overflow / narrow window (UI §2.2) ----
+   A Tauri desktop app, so these are an insurance policy, not a target. Below
+   720px the rail becomes a horizontally scrolling strip ABOVE the search bar;
+   roles and tab order are unchanged (the strip is still one tab stop). */
+
+@media (max-height: 560px) {
+  .dialog-card.settings-card {
+    height: calc(100vh - 32px);
+  }
+}
+
+@media (max-width: 720px) {
+  .dialog-card.settings-card {
+    grid-template-columns: 1fr;
+    grid-template-rows: 48px 40px 56px 1fr;
+  }
+
+  .settings-rail {
+    grid-column: 1;
+    grid-row: 2;
+    flex-direction: row;
+    align-items: center;
+    height: 40px;
+    padding: 4px 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .settings-rail-divider {
+    width: 1px;
+    height: 16px;
+    margin: 0 4px;
+  }
+
+  .settings-search {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .settings-pane {
+    grid-column: 1;
+    grid-row: 4;
+  }
+}

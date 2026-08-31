@@ -120,7 +120,7 @@ describe('PrCreateForm', () => {
     expect(onGenerateDescription).toHaveBeenCalledTimes(1);
     resolve(proposal);
     await waitFor(() => expect(titleInput()).toHaveValue('feat: add widgets'));
-    expect(generateBtn()).toHaveTextContent('✨ Generate with AI');
+    expect(generateBtn()).toHaveTextContent('Generate with AI');
     expect(generateBtn()).toBeEnabled();
   });
 
@@ -158,5 +158,106 @@ describe('PrCreateForm', () => {
   it('error prop renders the alert banner', () => {
     renderForm({ error: 'boom from forge' });
     expect(screen.getByRole('alert')).toHaveTextContent('boom from forge');
+  });
+});
+
+// P78 — Base/Compare fields are Comboboxes (allowFreeInput) fed by base/compareOptions.
+describe('PrCreateForm — P78 Base/Compare branch dropdowns', () => {
+  const baseOptions = [
+    { value: 'main', label: 'main' },
+    { value: 'origin/main', label: 'origin/main' },
+    { value: 'develop', label: 'develop' },
+  ];
+  const compareOptions = [
+    { value: 'feature/widgets', label: 'feature/widgets' },
+    { value: 'feature/logs', label: 'feature/logs' },
+  ];
+
+  // Placeholders are load-bearing (e2e selectors); keep querying by them.
+  const baseInput = () =>
+    screen.getByPlaceholderText('target branch (e.g. main)') as HTMLInputElement;
+  const compareInput = () =>
+    screen.getByPlaceholderText('source branch') as HTMLInputElement;
+
+  it('defaultBase seeds the Base field', () => {
+    renderForm({ defaultBase: 'develop', baseOptions, compareOptions });
+    expect(baseInput()).toHaveValue('develop');
+  });
+
+  it('focusing Base renders its options as selectable dropdown suggestions', () => {
+    // Start empty so the popover shows the full unfiltered list.
+    renderForm({ defaultBase: '', defaultHead: '', baseOptions, compareOptions });
+    // No popover before focus.
+    expect(screen.queryByRole('option')).toBeNull();
+    fireEvent.focus(baseInput());
+    const opts = screen.getAllByRole('option').map((o) => o.textContent);
+    expect(opts).toEqual(['main', 'origin/main', 'develop']);
+  });
+
+  it('selecting a Base option sets the value; selecting Compare enables + drives submit', () => {
+    const { onSubmit } = renderForm({
+      defaultBase: '',
+      defaultHead: '',
+      baseOptions,
+      compareOptions,
+    });
+    fireEvent.change(titleInput(), { target: { value: 'My PR' } });
+    // Base + Compare empty → submit still disabled.
+    expect(submitBtn()).toBeDisabled();
+
+    // Pick Base from the dropdown (select fires on mouseDown).
+    fireEvent.focus(baseInput());
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'origin/main' }));
+    expect(baseInput()).toHaveValue('origin/main');
+    // Compare still empty → still disabled.
+    expect(submitBtn()).toBeDisabled();
+
+    // Pick Compare from the dropdown.
+    fireEvent.focus(compareInput());
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'feature/logs' }));
+    expect(compareInput()).toHaveValue('feature/logs');
+    expect(submitBtn()).toBeEnabled();
+
+    fireEvent.click(submitBtn());
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceBranch: 'feature/logs',
+        targetBranch: 'origin/main',
+      }),
+    );
+  });
+
+  it('a free-typed branch not in the options list still works and submits (allowFreeInput)', () => {
+    const { onSubmit } = renderForm({
+      defaultBase: '',
+      defaultHead: '',
+      baseOptions,
+      compareOptions,
+    });
+    fireEvent.change(titleInput(), { target: { value: 'My PR' } });
+    // Type branch names absent from the option lists.
+    fireEvent.change(baseInput(), { target: { value: 'release/1.2' } });
+    fireEvent.change(compareInput(), { target: { value: 'wip/experiment' } });
+    expect(baseInput()).toHaveValue('release/1.2');
+    expect(compareInput()).toHaveValue('wip/experiment');
+    expect(submitBtn()).toBeEnabled();
+
+    fireEvent.click(submitBtn());
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceBranch: 'wip/experiment',
+        targetBranch: 'release/1.2',
+      }),
+    );
+  });
+
+  it('empty options list: fields accept typed text and popover shows "No matches"', () => {
+    renderForm({ defaultBase: '', defaultHead: '', baseOptions: [], compareOptions: [] });
+    fireEvent.focus(baseInput());
+    // A filter with no matching options renders the empty-affordance row.
+    fireEvent.change(baseInput(), { target: { value: 'anything' } });
+    expect(screen.getByRole('option')).toHaveTextContent('No matches');
+    expect(baseInput()).toHaveValue('anything');
   });
 });

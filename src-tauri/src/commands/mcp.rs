@@ -37,18 +37,23 @@ pub async fn set_mcp_allow_write(
 /// Registers Bonsai's running embedded MCP server with the local `claude` CLI
 /// (P16). Reads the live `url` + `token` from the running server (errors if the
 /// server is not enabled). `scope` is `"user"` (register globally) or `"local"`
-/// (register in the open repo, private/not committed). cwd = `repo_path` when
+/// (register in the open repo, private/not committed) — it is validated against
+/// that allow-list up front, so `"project"` (which would write the embedded
+/// server's bearer token into a committable repo-local `.mcp.json`) or any other
+/// value is rejected BEFORE spawning. cwd = `repo_path` when
 /// given (required for a meaningful `local` registration), else the process cwd.
 /// The `claude mcp add` argv is built in `bonsai-core` as an argument list, so
 /// the variadic `--header` cannot swallow the URL. A provided `repo_path` is
 /// prechecked to exist as a directory (T2.1 BUG-3). Errors:
-/// `aiUnavailable` | `aiFailed` | `io` (missing repo dir) | `other`.
+/// `aiUnavailable` | `aiFailed` | `io` (missing repo dir) | `other` (server not
+/// running, or an invalid `scope`).
 #[tauri::command]
 pub async fn register_mcp_with_claude(
     scope: String,
     repo_path: Option<String>,
     mcp_state: tauri::State<'_, crate::mcp::McpServerState>,
 ) -> Result<(), AppError> {
+    validate_register_scope(&scope)?;
     let status = crate::mcp::status_of(&mcp_state);
     let (url, token) = match (status.url, status.token) {
         (Some(u), Some(t)) => (u, t),
@@ -60,6 +65,22 @@ pub async fn register_mcp_with_claude(
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Validates the `register_mcp_with_claude` `scope` against the locked
+/// allow-list (`"user"` | `"local"`) BEFORE anything is spawned
+/// (defense-in-depth). `claude mcp add --scope project` would write the server
+/// config — INCLUDING the embedded server's bearer token — into a repo-local,
+/// committable `.mcp.json`, so a `"project"` (or any other) value could leak the
+/// token into a pushed commit. The frontend only ever sends `"user"`/`"local"`;
+/// this rejects anything else as a clean `AppError::Other` with no subprocess.
+pub(crate) fn validate_register_scope(scope: &str) -> Result<(), AppError> {
+    match scope {
+        "user" | "local" => Ok(()),
+        other => Err(AppError::Other(format!(
+            "invalid MCP registration scope {other:?}: expected \"user\" or \"local\""
+        ))),
+    }
 }
 
 /// Resolves the cwd for `register_mcp_with_claude` (T2.1 BUG-3): a provided

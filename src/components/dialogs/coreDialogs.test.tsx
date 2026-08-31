@@ -113,8 +113,34 @@ describe('DestructiveDialogs', () => {
     render(<DestructiveDialogs {...p} />);
     expect(screen.getByText('Revert 1 file and permanently delete 2 files?')).toBeInTheDocument();
     expect(screen.getByText('n1.txt')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Discard all changes' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Discard all' }));
     expect(p.handleDiscardForce).toHaveBeenCalledWith(['m.txt', 'n1.txt', 'n2.txt']);
+  });
+
+  it('a new-files-only set reads as a deletion, not a discard', () => {
+    const p = destructiveProps({
+      pendingDiscardForce: { paths: ['n1.txt'], modified: 0, created: 1, untracked: ['n1.txt'] },
+    });
+    render(<DestructiveDialogs {...p} />);
+    expect(screen.getByRole('dialog', { name: 'Delete new file' })).toBeInTheDocument();
+    expect(screen.getByText('Permanently delete 1 file?')).toBeInTheDocument();
+    expect(screen.getByText('n1.txt')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(p.handleDiscardForce).toHaveBeenCalledWith(['n1.txt']);
+  });
+
+  it('several new files pluralize the delete title', () => {
+    const p = destructiveProps({
+      pendingDiscardForce: {
+        paths: ['n1.txt', 'n2.txt'],
+        modified: 0,
+        created: 2,
+        untracked: ['n1.txt', 'n2.txt'],
+      },
+    });
+    render(<DestructiveDialogs {...p} />);
+    expect(screen.getByRole('dialog', { name: 'Delete new files' })).toBeInTheDocument();
   });
 
   it('abort dialog picks title/handler from opState (rebase)', () => {
@@ -166,23 +192,25 @@ function stashProps(over: Partial<StashDialogsProps> = {}): StashDialogsProps {
 
 describe('StashDialogs', () => {
   it('drop stash: confirm calls the handler once with the index; cancel does not', () => {
-    const p = stashProps({ pendingDropStash: 2 });
+    const p = stashProps({ pendingDropStash: { index: 2, oid: 'stashoid2' } });
     render(<StashDialogs {...p} />);
     expect(screen.getByRole('dialog', { name: 'Drop stash' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Drop stash' }));
     expect(p.handleDropStash).toHaveBeenCalledTimes(1);
-    expect(p.handleDropStash).toHaveBeenCalledWith(2);
+    // F-A6-B: the rendered oid is forwarded alongside the index.
+    expect(p.handleDropStash).toHaveBeenCalledWith(2, 'stashoid2');
   });
 
   it('reserved-files gate routes pop vs apply and is primary-styled', () => {
     const p = stashProps({
-      pendingReservedStash: { index: 1, op: 'pop', paths: ['nul.txt'] },
+      pendingReservedStash: { index: 1, op: 'pop', paths: ['nul.txt'], oid: 'stashoid1' },
     });
     render(<StashDialogs {...p} />);
     const btn = screen.getByRole('button', { name: 'Apply the rest' });
     expect(btn).toHaveClass('btn-primary');
     fireEvent.click(btn);
-    expect(p.handlePopStashSkipping).toHaveBeenCalledWith(1);
+    // F-A6-B: the same rendered oid is forwarded on the skip-reserved retry.
+    expect(p.handlePopStashSkipping).toHaveBeenCalledWith(1, 'stashoid1');
     expect(p.handleApplyStashSkipping).not.toHaveBeenCalled();
   });
 });

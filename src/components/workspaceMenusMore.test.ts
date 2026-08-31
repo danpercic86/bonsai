@@ -43,14 +43,15 @@ describe('externalToolsItems (standalone)', () => {
 describe('stashMenuItems', () => {
   it('Apply/Pop/Drop wired to the index', () => {
     const deps = makeDeps();
-    const items = createWorkspaceMenus(deps).stashMenuItems(3);
+    const items = createWorkspaceMenus(deps).stashMenuItems(3, 'oid3');
     expect(labelsOf(items)).toEqual(['Apply', 'Pop', 'Drop']);
     itemByLabel(items, 'Apply').onSelect?.();
     itemByLabel(items, 'Pop').onSelect?.();
     itemByLabel(items, 'Drop').onSelect?.();
-    expect(deps.handleApplyStash).toHaveBeenCalledWith(3);
-    expect(deps.handlePopStash).toHaveBeenCalledWith(3);
-    expect(deps.setPendingDropStash).toHaveBeenCalledWith(3);
+    // F-A6-B: the rendered oid is threaded into all three actions.
+    expect(deps.handleApplyStash).toHaveBeenCalledWith(3, 'oid3');
+    expect(deps.handlePopStash).toHaveBeenCalledWith(3, 'oid3');
+    expect(deps.setPendingDropStash).toHaveBeenCalledWith({ index: 3, oid: 'oid3' });
   });
 
   it('opActive gates Apply/Pop but NOT Drop; mutating gates all three', () => {
@@ -62,17 +63,17 @@ describe('stashMenuItems', () => {
 
   it('index 0 (the newest stash) is passed through unmangled', () => {
     const deps = makeDeps();
-    itemByLabel(createWorkspaceMenus(deps).stashMenuItems(0), 'Apply').onSelect?.();
-    expect(deps.handleApplyStash).toHaveBeenCalledWith(0);
+    itemByLabel(createWorkspaceMenus(deps).stashMenuItems(0, 'oid0'), 'Apply').onSelect?.();
+    expect(deps.handleApplyStash).toHaveBeenCalledWith(0, 'oid0');
   });
 });
 
 describe('submoduleMenuItems', () => {
-  it('initialized submodule: Init + Deinit gating, open-in-tab enabled', () => {
+  it('initialized submodule: Update live, "Initialize and check out" dead, open-in-tab enabled', () => {
     const deps = makeDeps();
     const items = createWorkspaceMenus(deps).submoduleMenuItems(makeSubmodule());
     expect(labelsOf(items)).toEqual([
-      'Init',
+      'Initialize and check out',
       'Update',
       'Sync',
       'Deinitialize…',
@@ -80,7 +81,9 @@ describe('submoduleMenuItems', () => {
       'Open in new tab',
       ...EXT_LABELS,
     ]);
-    expect(itemByLabel(items, 'Init').disabled).toBe(true); // already initialized
+    // P73 §3.2: mutually exclusive — files are already on disk.
+    expect(itemByLabel(items, 'Initialize and check out').disabled).toBe(true);
+    expect(itemByLabel(items, 'Update').disabled).toBe(false);
     expect(itemByLabel(items, 'Deinitialize…').disabled).toBe(false);
     expect(itemByLabel(items, 'Open in new tab').disabled).toBe(false);
     expect(itemByLabel(items, 'Remove…').tone).toBe('danger');
@@ -88,12 +91,13 @@ describe('submoduleMenuItems', () => {
     expect(deps.onOpenRepoPath).toHaveBeenCalledWith('/repo/libs/dep');
   });
 
-  it('uninitialized submodule flips the gates: Init enabled, Deinit + open-in-tab disabled', () => {
+  it('uninitialized submodule flips every gate: init enabled, Update + Deinit + open-in-tab disabled', () => {
     const items = createWorkspaceMenus(makeDeps()).submoduleMenuItems(
       makeSubmodule({ status: 'uninitialized', wtOid: null }),
     );
-    expect(itemByLabel(items, 'Init').disabled).toBe(false);
-    expect(itemByLabel(items, 'Update').disabled).toBe(false); // init-then-update
+    expect(itemByLabel(items, 'Initialize and check out').disabled).toBe(false);
+    // P73 §3.2: Update is the exact inverse gate (no row to update yet).
+    expect(itemByLabel(items, 'Update').disabled).toBe(true);
     expect(itemByLabel(items, 'Deinitialize…').disabled).toBe(true);
     expect(itemByLabel(items, 'Open in new tab').disabled).toBe(true);
   });
@@ -103,6 +107,7 @@ describe('submoduleMenuItems', () => {
       makeSubmodule(),
     );
     expect(itemByLabel(items, 'Update').disabled).toBe(true);
+    expect(itemByLabel(items, 'Initialize and check out').disabled).toBe(true);
     expect(itemByLabel(items, 'Sync').disabled).toBe(true);
     expect(itemByLabel(items, 'Remove…').disabled).toBe(true);
     for (const l of EXT_LABELS) expect(itemByLabel(items, l).disabled).toBe(false);
@@ -178,23 +183,26 @@ describe('worktreeMenuItems', () => {
 });
 
 describe('tagMenuItems', () => {
-  it('sidebar row (oid null): delete/copy/release-notes/push only — no commit actions', () => {
+  it('sidebar row (oid null): push/copy/release-notes/delete only — no commit actions', () => {
+    // P77 §3: resolve-in-place first, then publish, utility items, then the
+    // destructive local delete. No sync report → the resolve/remote items are absent.
     const items = createWorkspaceMenus(makeDeps()).tagMenuItems('v1.0', null);
     expect(labelsOf(items)).toEqual([
-      'Delete tag',
+      'Push tag to origin',
       'Copy tag name',
       'Release notes since previous tag',
-      'Push tag to origin',
+      'Delete tag',
     ]);
   });
 
   it('graph pill (oid set): commit actions appended after the tag items', () => {
     const items = createWorkspaceMenus(makeDeps()).tagMenuItems('v1.0', OID_OTHER);
     expect(labelsOf(items)).toEqual([
-      'Delete tag',
+      'Checkout commit (detached)',
+      'Push tag to origin',
       'Copy tag name',
       'Release notes since previous tag',
-      'Push tag to origin',
+      'Delete tag',
       'Create branch here',
       'Create tag here',
       'Compare with HEAD',

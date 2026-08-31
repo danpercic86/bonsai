@@ -17,7 +17,12 @@ import type { DiffSlot } from '../StatusPanel';
 
 afterEach(() => vi.restoreAllMocks());
 
-const COMMIT_RES: CommitResult = { oid: 'a'.repeat(40), summary: 's', branch: 'main' };
+const COMMIT_RES: CommitResult = {
+  oid: 'a'.repeat(40),
+  summary: 's',
+  branch: 'main',
+  hookWarning: null,
+};
 const entry = (path: string) => ({ path, origPath: null, status: 'modified' as const });
 const FILE_DIFF: FileDiff = {
   path: 'b.ts',
@@ -34,7 +39,6 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
   return {
     ...base(),
     refreshAll: asyncFn(),
-    refetchStatus: asyncFn(),
     reportStatusError: vi.fn(),
     fetchDiffSlot: vi.fn(async (_key: string, fetcher: () => Promise<FileDiff>) => {
       await fetcher();
@@ -45,6 +49,7 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
     diffSlotRef: { current: null },
     diffViewModeRef: { current: 'diff' },
     intralineRef: { current: false },
+    listViewRef: { current: 'flat' as const },
     head: { branchName: 'main', oid: 'h'.repeat(40), detached: false, unborn: false },
     headBranch: {
       name: 'main',
@@ -72,7 +77,8 @@ describe('handleStage', () => {
     const deps = makeDeps();
     await useCommitActions(deps).handleStage(['a.ts']);
     expect(stage).toHaveBeenCalledWith(REPO, ['a.ts']);
-    expect(deps.refetchStatus).toHaveBeenCalledTimes(1);
+    // P86a: staging is index-only → an echo-armed `worktree`-scope round.
+    expect(deps.refreshAll).toHaveBeenCalledWith('worktree');
     expectMutatingCycle(deps.setMutating);
   });
 
@@ -96,6 +102,70 @@ describe('handleStage', () => {
     expect(deps.fetchDiffSlot).toHaveBeenCalledWith('unstaged:b.ts', expect.any(Function));
     // args: (repoId, path, origPath, staged, wholeFile, intraline)
     expect(wdDiff).toHaveBeenCalledWith(REPO, 'b.ts', null, false, false, false);
+  });
+
+  // Regression (tree-order auto-advance bug): flat backend order and the
+  // rendered tree order (dirs-first, sorted via buildPathTree/flattenTreeLeaves)
+  // diverge. Staging src/a.ts must advance to the VISUALLY-next leaf.
+  //   flat  order: src/z.ts, root.ts, src/a.ts, lib/c.ts  → flat-next = lib/c.ts
+  //   tree  order: lib/c.ts, src/a.ts, src/z.ts, root.ts  → tree-next = src/z.ts
+  const DIVERGENT_UNSTAGED = [
+    entry('src/z.ts'),
+    entry('root.ts'),
+    entry('src/a.ts'),
+    entry('lib/c.ts'),
+  ];
+
+  it('tree view: advances to the visually-next leaf (tree order), not the flat-next', async () => {
+    vi.spyOn(mockIpc, 'stage').mockResolvedValue(undefined);
+    const wdDiff = vi.spyOn(mockIpc, 'getWorkdirFileDiff').mockResolvedValue(FILE_DIFF);
+    const status: StatusSnapshot = {
+      staged: [],
+      unstaged: DIVERGENT_UNSTAGED,
+      untracked: [],
+      conflicted: [],
+    };
+    const postStage: StatusSnapshot = {
+      ...status,
+      unstaged: [entry('src/z.ts'), entry('root.ts'), entry('lib/c.ts')],
+    };
+    const slot: DiffSlot = { key: 'unstaged:src/a.ts', state: 'ready', diff: null, error: null };
+    const deps = makeDeps({
+      status,
+      statusRef: { current: postStage },
+      diffSlotRef: { current: slot },
+      listViewRef: { current: 'tree' as const },
+    });
+    await useCommitActions(deps).handleStage(['src/a.ts']);
+    // tree-next is src/z.ts — NOT the flat-next lib/c.ts.
+    expect(deps.fetchDiffSlot).toHaveBeenCalledWith('unstaged:src/z.ts', expect.any(Function));
+    expect(wdDiff).toHaveBeenCalledWith(REPO, 'src/z.ts', null, false, false, false);
+  });
+
+  it('flat view: advances in flat backend order (regression guard)', async () => {
+    vi.spyOn(mockIpc, 'stage').mockResolvedValue(undefined);
+    const wdDiff = vi.spyOn(mockIpc, 'getWorkdirFileDiff').mockResolvedValue(FILE_DIFF);
+    const status: StatusSnapshot = {
+      staged: [],
+      unstaged: DIVERGENT_UNSTAGED,
+      untracked: [],
+      conflicted: [],
+    };
+    const postStage: StatusSnapshot = {
+      ...status,
+      unstaged: [entry('src/z.ts'), entry('root.ts'), entry('lib/c.ts')],
+    };
+    const slot: DiffSlot = { key: 'unstaged:src/a.ts', state: 'ready', diff: null, error: null };
+    const deps = makeDeps({
+      status,
+      statusRef: { current: postStage },
+      diffSlotRef: { current: slot },
+      listViewRef: { current: 'flat' as const },
+    });
+    await useCommitActions(deps).handleStage(['src/a.ts']);
+    // flat-next is lib/c.ts.
+    expect(deps.fetchDiffSlot).toHaveBeenCalledWith('unstaged:lib/c.ts', expect.any(Function));
+    expect(wdDiff).toHaveBeenCalledWith(REPO, 'lib/c.ts', null, false, false, false);
   });
 
   it('does not advance when the target vanished from the fresh snapshot', async () => {
@@ -132,7 +202,8 @@ describe('handleUnstage', () => {
     const deps = makeDeps();
     await useCommitActions(deps).handleUnstage(['a.ts']);
     expect(unstage).toHaveBeenCalledWith(REPO, ['a.ts']);
-    expect(deps.refetchStatus).toHaveBeenCalledTimes(1);
+    // P86a: index-only → `worktree`-scope round.
+    expect(deps.refreshAll).toHaveBeenCalledWith('worktree');
 
     unstage.mockRejectedValue(appErr('git'));
     await useCommitActions(deps).handleUnstage(['a.ts']);
@@ -299,7 +370,10 @@ describe('reset / discard', () => {
     await actions.handleDiscardForce(['a.ts']);
     expect(force).toHaveBeenCalledWith(REPO, ['a.ts']);
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Discarded 1 file(s)');
+    // P86a: discard reverts the worktree/index only → `worktree`-scope rounds.
     expect(deps.refreshAll).toHaveBeenCalledTimes(2);
+    expect(deps.refreshAll).toHaveBeenNthCalledWith(1, 'worktree');
+    expect(deps.refreshAll).toHaveBeenNthCalledWith(2, 'worktree');
   });
 });
 

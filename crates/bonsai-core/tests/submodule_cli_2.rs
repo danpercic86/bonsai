@@ -165,7 +165,7 @@ fn remove_submodule_refuses_traversal_name() {
     let sentinel = p.join(".git").join("sentinel.txt");
     std::fs::write(&sentinel, b"keep me").expect("sentinel");
 
-    match remove_submodule(p, &SpawnGitRunner, "../../sentinel") {
+    match remove_submodule(p, &SpawnGitRunner, "../../sentinel", false) {
         Err(AppError::Git(m)) => assert!(m.contains("unsafe name"), "got: {m}"),
         other => panic!("traversal name must be refused, got {other:?}"),
     }

@@ -9,13 +9,11 @@ export function recomputeDrift(inv: AiAssetInventory, canonical?: string): Drift
   const exists = (id: string) => byId(id)?.exists ?? false;
   const nhash = (id: string) => byId(id)?.files[0]?.normalizedHash ?? null;
 
-  let canonicalId: string | null = null;
-  if (canonical && COMPARABLE_IDS.includes(canonical) && exists(canonical)) {
-    canonicalId = canonical;
-  } else {
-    // Priority == table order for the comparable set.
-    canonicalId = COMPARABLE_IDS.find((id) => exists(id)) ?? null;
-  }
+  const canonicalId: string | null =
+    canonical && COMPARABLE_IDS.includes(canonical) && exists(canonical)
+      ? canonical
+      : // Priority == table order for the comparable set.
+        (COMPARABLE_IDS.find((id) => exists(id)) ?? null);
   const canonicalHash = canonicalId ? nhash(canonicalId) : null;
 
   const entries = COMPARABLE_IDS.map((id) => {

@@ -5,6 +5,7 @@ import { lineDiff, reconstructLines } from '../../fixtures/diffs';
 import { randomOid } from '../../fixtures/oids';
 import { delay, requireRepo } from '../repoState';
 import { hookRejectionFor } from '../hooksGate';
+import { runMockActivity } from '../gitActivity';
 import { MAIN_RS_PATH, collectSelection, linesEqual, sortByPath, takeMatching, upsert } from '../statusHelpers';
 import type { AppError, CommitResult, LineSelection, StatusSnapshot } from '../../types';
 
@@ -141,6 +142,16 @@ export const statusHandlers = {
     _sign?: boolean | null,
     skipHooks?: boolean,
   ): Promise<CommitResult> {
+    return runMockActivity('commit', () => commitInner(repoId, message, skipHooks));
+  },
+} satisfies Partial<IpcApi>;
+
+async function commitInner(
+  repoId: string,
+  message: string,
+  skipHooks?: boolean,
+): Promise<CommitResult> {
+  {
     await delay(150);
     const state = requireRepo(repoId);
     const rejection = hookRejectionFor(state, message, skipHooks);
@@ -182,7 +193,6 @@ export const statusHandlers = {
     // P1 contract §3.5: the DEFAULT graph fixture gains a synthetic lane-0 row
     // per mock commit (newest first) so the harness shows the commit on top.
     state.commits.unshift({ oid: state.headOid, summary });
-    return { oid: state.headOid, summary, branch: state.headBranch };
-  },
-
-} satisfies Partial<IpcApi>;
+    return { oid: state.headOid, summary, branch: state.headBranch, hookWarning: null };
+  }
+}

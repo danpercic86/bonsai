@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import type { BranchNameProposal } from '../ipc';
+import { SummarizeIcon } from './menuIcons';
 import { errorMessage } from '../utils/errors';
 
 export interface BranchNameSuggestProps {
@@ -66,7 +67,14 @@ export function BranchNameSuggest({ aiEligible, workingDirty, onPick, suggest }:
         title={title}
         onClick={onClick}
       >
-        {loading ? 'Suggesting…' : 'Suggest name ✨'}
+        {loading ? (
+          'Suggesting…'
+        ) : (
+          <>
+            <span>Suggest name</span>
+            <SummarizeIcon />
+          </>
+        )}
       </button>
       {error !== null && <p className="branch-name-suggest-error">{error}</p>}
       {names !== null && names.length > 0 && (

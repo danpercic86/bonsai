@@ -3,16 +3,16 @@ import { ConfirmDialog } from '../ConfirmDialog';
 export interface StashDialogsProps {
   mutating: boolean;
 
-  pendingDropStash: number | null;
-  setPendingDropStash: (v: number | null) => void;
-  handleDropStash(index: number): void;
+  pendingDropStash: { index: number; oid?: string } | null;
+  setPendingDropStash: (v: { index: number; oid?: string } | null) => void;
+  handleDropStash(index: number, oid?: string): void;
 
-  pendingReservedStash: { index: number; op: 'apply' | 'pop'; paths: string[] } | null;
+  pendingReservedStash: { index: number; op: 'apply' | 'pop'; paths: string[]; oid?: string } | null;
   setPendingReservedStash: (
-    v: { index: number; op: 'apply' | 'pop'; paths: string[] } | null,
+    v: { index: number; op: 'apply' | 'pop'; paths: string[]; oid?: string } | null,
   ) => void;
-  handleApplyStashSkipping(index: number): void;
-  handlePopStashSkipping(index: number): void;
+  handleApplyStashSkipping(index: number, oid?: string): void;
+  handlePopStashSkipping(index: number, oid?: string): void;
 }
 
 /** Stash confirmations: drop a stash, and the Windows "skip reserved files"
@@ -35,13 +35,13 @@ export function StashDialogs({
         confirmLabel="Drop stash"
         busy={mutating}
         onConfirm={() => {
-          const i = pendingDropStash;
+          const p = pendingDropStash;
           setPendingDropStash(null);
-          if (i !== null) void handleDropStash(i);
+          if (p !== null) void handleDropStash(p.index, p.oid);
         }}
         onCancel={() => setPendingDropStash(null)}
       >
-        <div>Drop <span className="mono">stash@{`{${pendingDropStash ?? 0}}`}</span>?</div>
+        <div>Drop <span className="mono">stash@{`{${pendingDropStash?.index ?? 0}}`}</span>?</div>
         <div className="dialog-body-note">
           This permanently discards the stashed changes and cannot be undone.
         </div>
@@ -57,8 +57,8 @@ export function StashDialogs({
           const p = pendingReservedStash;
           setPendingReservedStash(null);
           if (p === null) return;
-          if (p.op === 'pop') handlePopStashSkipping(p.index);
-          else handleApplyStashSkipping(p.index);
+          if (p.op === 'pop') handlePopStashSkipping(p.index, p.oid);
+          else handleApplyStashSkipping(p.index, p.oid);
         }}
         onCancel={() => setPendingReservedStash(null)}
       >

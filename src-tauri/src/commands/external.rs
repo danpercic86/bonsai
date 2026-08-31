@@ -41,6 +41,23 @@ pub async fn open_in_editor(app: tauri::AppHandle, path: String) -> Result<(), A
     launch_inner(Some(file), Action::Editor, path).await
 }
 
+/// Open `url` in the user's default browser (P72). Web URLs only —
+/// `bonsai_core::external::validate_web_url` rejects anything else BEFORE a
+/// process is spawned. Deliberately NOT folded into `launch_inner`: it needs no
+/// `AppHandle`, reads no settings template, and must SKIP the `path.exists()`
+/// precheck (which would reject every URL). Rejects `externalToolFailed` for an
+/// invalid URL or when no launcher succeeded.
+#[tauri::command]
+pub async fn open_url(url: String) -> Result<(), AppError> {
+    // spawn_blocking: `Command::spawn`/`status` blocks, and the macOS rung waits
+    // on `open`'s exit code.
+    tauri::async_runtime::spawn_blocking(move || {
+        external::open_url(&SpawnRunner, TargetOs::host(), &url)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
 /// spawn_blocking body shared by the three commands: (1) fs-precheck that `path`
 /// still exists (→ `AppError::Io`); (2) for Terminal/Editor load the configured
 /// template from settings; (3) dispatch to the matching `external::` entry with

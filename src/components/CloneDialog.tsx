@@ -108,13 +108,22 @@ export function CloneDialog({
   const percent = Math.round(fraction * 100);
 
   return (
-    <div className="dialog-overlay" onClick={onCancel}>
+    // Backdrop dismiss uses mousedown + a target guard (a drag that ends on the
+    // backdrop must not cancel) and is suppressed while a clone is in flight —
+    // an accidental backdrop click would otherwise abandon the running clone
+    // (it finishes on disk but opens no tab). Esc / the Cancel button stay live
+    // as the deliberate "stop watching" path.
+    <div
+      className="dialog-overlay"
+      onMouseDown={(e) => {
+        if (!busy && e.target === e.currentTarget) onCancel();
+      }}
+    >
       <div
         className="dialog-card"
         role="dialog"
         aria-modal="true"
         aria-label="Clone repository"
-        onClick={(e) => e.stopPropagation()}
       >
         <h2 className="dialog-title">Clone repository</h2>
         <form

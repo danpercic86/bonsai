@@ -7,6 +7,7 @@ import type {
   ReflogEntry,
   ResetMode,
 } from '../../ipc';
+import type { RefreshScope } from './refreshScope';
 
 /** Convenience alias for a `useState` setter. */
 export type Setter<T> = Dispatch<SetStateAction<T>>;
@@ -15,7 +16,7 @@ export type Setter<T> = Dispatch<SetStateAction<T>>;
  *  action hooks. These are the stable `useCallback` refetch/clear helpers +
  *  `refreshAll` defined once in the container. */
 export interface RefreshDeps {
-  refreshAll: () => Promise<void>;
+  refreshAll: (scope?: RefreshScope) => Promise<void>;
   refetchStatus: () => Promise<void>;
   refetchGraph: () => Promise<void>;
   refetchBranches: () => Promise<void>;
@@ -23,6 +24,13 @@ export interface RefreshDeps {
   refetchSubmodules: () => Promise<void>;
   refetchWorktrees: () => Promise<void>;
   refetchRemotes: () => Promise<void>;
+}
+
+/** P73 §6.1: the submodule with an op in flight, and the present-participle
+ *  label its row badge shows meanwhile. null ⇒ no submodule op running. */
+export interface SubmoduleBusy {
+  name: string;
+  label: string;
 }
 
 /** The most common trio every mutating handler needs. */
@@ -38,6 +46,10 @@ export interface PendingReservedStash {
   index: number;
   op: 'apply' | 'pop';
   paths: string[];
+  /** F-A6-B: the oid the UI rendered for this stack index, forwarded verbatim on
+   *  the skip-reserved retry so it hits the same entry the user saw. Undefined
+   *  only for legacy callers that never captured an oid. */
+  oid?: string;
 }
 
 export interface PendingReset {

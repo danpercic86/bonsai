@@ -37,6 +37,14 @@ Write tight, implementable specs. No prose bloat, no implementation bodies. If a
 is ambiguous, state the options and your recommendation in the contract file, and flag it for
 the orchestrator. End by reporting the contract file path back.
 
+**Lean-contract cap.** A contract is interfaces + types + IPC surface + algorithm pseudocode +
+acceptance criteria — not narration of decisions already made. Target **well under ~15k tokens
+(~600 lines)** per contract file; if a milestone genuinely needs more, split it per sub-increment
+rather than writing one giant file. Every contract you add stays in the active `docs/contracts/`
+read path (and its token cost is re-paid on every spawn pointed at it) until its milestone's USER
+CHECKPOINT is confirmed and `docs-curator` moves it to `docs/contracts/archive/` — so keep it
+terse for its whole active life.
+
 Token discipline: use `Grep`/partial reads to inspect prior contracts and code — do not read
 whole large files or re-read what you have already seen. Your report back to the orchestrator
 is just the contract file path plus any flagged ambiguities, not the contract's contents.

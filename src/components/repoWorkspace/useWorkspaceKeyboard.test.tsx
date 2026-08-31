@@ -9,6 +9,7 @@ import { ShortcutOverlay } from '../ShortcutOverlay';
 import type { GraphLayout, GraphNode } from '../../ipc';
 import type { GraphCanvasHandle } from '../../graph/GraphCanvas';
 import type { DiffSlot } from '../StatusPanel';
+import { shortcutKeys } from '../../utils/platform';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -71,6 +72,8 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
     selectedIndex: null,
     graph: null,
     graphRef: { current: null },
+    onAiActivity: vi.fn(),
+    onGitActivity: vi.fn(),
     handleRefresh: vi.fn(),
     handleFetch: vi.fn(),
     handlePull: vi.fn(),
@@ -401,15 +404,29 @@ describe('graph navigation', () => {
     expect(deps.setSelectedIndex).toHaveBeenLastCalledWith(9);
   });
 
-  it('nav is inert (and not default-prevented) with no selection or no graph', () => {
-    for (const over of [{ selectedIndex: null }, { graph: null }] as const) {
-      const deps = navDeps(over);
-      const h = mount(deps);
-      expect(press('ArrowDown').defaultPrevented).toBe(false);
-      expect(press('Home').defaultPrevented).toBe(false);
-      expect(deps.setSelectedIndex).not.toHaveBeenCalled();
-      h.unmount();
-    }
+  it('nav is inert (and not default-prevented) with no graph', () => {
+    // No graph → the M2 seed block is skipped and every nav key falls through to
+    // the inert guards (ts:340-341), which return before preventDefault.
+    const deps = navDeps({ graph: null });
+    mount(deps);
+    expect(press('ArrowDown').defaultPrevented).toBe(false);
+    expect(press('Home').defaultPrevented).toBe(false);
+    expect(deps.setSelectedIndex).not.toHaveBeenCalled();
+  });
+
+  it('first nav key seeds an anchor when a graph is present but nothing is selected (M2)', () => {
+    // navDeps' graph(10) has headIndex null, so headAnchor falls back to 0 and
+    // lastRow = 9 (ts:319-338). Down/Home anchor at headAnchor; Up/End at lastRow.
+    const deps = navDeps({ selectedIndex: null });
+    mount(deps);
+    expect(press('ArrowDown').defaultPrevented).toBe(true);
+    expect(deps.setSelectedIndex).toHaveBeenLastCalledWith(0);
+    expect(press('Home').defaultPrevented).toBe(true);
+    expect(deps.setSelectedIndex).toHaveBeenLastCalledWith(0);
+    expect(press('ArrowUp').defaultPrevented).toBe(true);
+    expect(deps.setSelectedIndex).toHaveBeenLastCalledWith(9);
+    expect(press('End').defaultPrevented).toBe(true);
+    expect(deps.setSelectedIndex).toHaveBeenLastCalledWith(9);
   });
 
   it('nav is inert while typing in an input', () => {
@@ -435,14 +452,18 @@ describe('ShortcutOverlay sync', () => {
     return screen.getByRole('dialog').textContent ?? '';
   }
 
+  /** Overlay caps stay '+'-joined on every platform; only the modifier CAP text
+   *  is platform-dependent (Ctrl vs ⌘), so build the needle through the helper. */
+  const cap = (spec: string) => shortcutKeys(spec).join('+');
+
   it('documents every workspace binding it has historically covered', () => {
     const text = overlayText();
     for (const needle of [
-      'Ctrl+R',
+      cap('Mod+R'),
       'F5',
-      'Ctrl+Shift+F',
-      'Ctrl+Shift+P',
-      'Ctrl+Shift+U',
+      cap('Mod+Shift+F'),
+      cap('Mod+Shift+P'),
+      cap('Mod+Shift+U'),
       'Esc',
       'Home',
       'End',
@@ -456,9 +477,19 @@ describe('ShortcutOverlay sync', () => {
   // FINDING [T3.2b] F-T32b-1 (FIXED): useWorkspaceKeyboard binds Ctrl/Cmd-F
   // (commit search, P50b) and Ctrl/Cmd-K (command palette, P50c); the
   // ShortcutOverlay §6.1 table was stale until the campaign fix added both rows.
-  it('documents Ctrl+F (search) and Ctrl+K (palette) in the overlay table', () => {
+  it('documents Ctrl/Cmd+F (search) and Ctrl/Cmd+K (palette) in the overlay table', () => {
     const text = overlayText();
-    expect(text).toContain('Ctrl+F');
-    expect(text).toContain('Ctrl+K');
+    expect(text).toContain(cap('Mod+F'));
+    expect(text).toContain(cap('Mod+K'));
+  });
+
+  // P68e §4.4: the AI activity dock's shortcut is documented too.
+  it('documents Ctrl/Cmd+Shift+A (AI activity dock)', () => {
+    expect(overlayText()).toContain(cap('Mod+Shift+A'));
+  });
+
+  // P87b §5: the git activity dock's shortcut is documented too.
+  it('documents Ctrl/Cmd+Shift+L (git activity dock)', () => {
+    expect(overlayText()).toContain(cap('Mod+Shift+L'));
   });
 });

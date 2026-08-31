@@ -67,6 +67,57 @@ export const MERGE_AUTH_THEIRS = [
   '',
 ].join('\n');
 
+/**
+ * P68d: a DEEP, long conflicted path for the merge fixture.
+ *
+ * Two jobs: (1) the paused merge now has TWO text-mergeable (`bothModified`)
+ * conflicts, which is the minimum for the item-5 scenario ("start on file A, switch
+ * to file B, come back") and for P68f's "Resolve all with AI" to appear at all;
+ * (2) it is long enough to exercise path truncation in the dock header and the run
+ * queue, which a 12-character `src/auth.ts` never could. It is also an i18n JSON
+ * file on purpose — the user's actual item-6 repro.
+ */
+export const MERGE_DEEP_PATH =
+  'src/features/internationalization/locales/de-DE/components/settings/advanced/notifications/messages.json';
+
+export const MERGE_DEEP_TEXT = [
+  '{',
+  '  "notifications": {',
+  '    "title": "Benachrichtigungen",',
+  '<<<<<<< HEAD',
+  '    "unreadCount": "{{count}} ungelesene Einträge",',
+  '    "markAllRead": "Alle als gelesen markieren"',
+  '=======',
+  '    "unreadCount": "{{count}} ungelesene Eintraege",',
+  '    "markAllRead": "Alles als gelesen markieren"',
+  '>>>>>>> feature/login',
+  '  }',
+  '}',
+  '',
+].join('\n');
+
+export const MERGE_DEEP_OURS = [
+  '{',
+  '  "notifications": {',
+  '    "title": "Benachrichtigungen",',
+  '    "unreadCount": "{{count}} ungelesene Einträge",',
+  '    "markAllRead": "Alle als gelesen markieren"',
+  '  }',
+  '}',
+  '',
+].join('\n');
+
+export const MERGE_DEEP_THEIRS = [
+  '{',
+  '  "notifications": {',
+  '    "title": "Benachrichtigungen",',
+  '    "unreadCount": "{{count}} ungelesene Eintraege",',
+  '    "markAllRead": "Alles als gelesen markieren"',
+  '  }',
+  '}',
+  '',
+].join('\n');
+
 export const MERGE_README_TEXT = [
   '# Bonsai fixture',
   '',

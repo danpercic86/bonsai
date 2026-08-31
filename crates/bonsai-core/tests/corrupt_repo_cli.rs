@@ -4,9 +4,11 @@
 //! Each surface call is wrapped in `catch_unwind`; a panic fails only its
 //! labeled matrix cell. Behavior per cell is pinned as discovered.
 //!
-//! Git-gated: the healthy baseline is built with the git CLI. Hangs are not a
-//! realistic risk for these synchronous git2 reads, so no watchdog thread is
-//! used (contract §3 permits either).
+//! Git-gated: the healthy baseline is built with the git CLI. Every surface
+//! call runs under a watchdog thread so a libgit2 spin surfaces as `Hung`
+//! instead of wedging the suite; the read surfaces additionally run through
+//! the F-T5-4 `git::timeout` wrapper (the production composition), so a spin
+//! there resolves to a clean `Err`.
 
 // Test-only: several cells clear a read-only bit to overwrite a git object.
 #![allow(clippy::permissions_set_readonly_false)]
@@ -16,11 +18,19 @@ mod prop_common;
 
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
+use bonsai_core::git::timeout::run_with_git_timeout_with;
 use bonsai_core::git::{commit::create_commit, status::read_status};
-use bonsai_core::graph::compute_graph;
+use bonsai_core::graph::{compute_graph, stream_graph_core};
 
 use prop_common::common;
+
+/// Inactivity deadline for the timeout-wrapped read surfaces below — tiny so
+/// the F-T5-4 cell (C1) resolves in seconds instead of the 30s production
+/// default. Healthy surfaces on these fixture repos finish in <1s, so the
+/// short deadline can never produce a false timeout in the other cells.
+const TEST_DEADLINE: Duration = Duration::from_secs(2);
 
 macro_rules! require_git {
     () => {
@@ -39,10 +49,18 @@ enum Outcome {
     Hung,
 }
 
-/// Run surface `kind` (0 open, 1 status, 2 graph, 3 commit) on a worker thread
-/// with a 30s watchdog: a panic ⇒ `Panicked`, a timeout ⇒ `Hung` (the worker is
-/// abandoned). This guarantees the suite always terminates even if a corruption
-/// makes a git2 call spin (which is itself a FINDING, surfaced as `Hung`).
+/// Run surface `kind` (0 open, 1 status, 2 graph, 3 commit, 4 stream) on a
+/// worker thread with a watchdog: a panic ⇒ `Panicked`, a timeout ⇒ `Hung`
+/// (the worker is abandoned). This guarantees the suite always terminates even
+/// if a corruption makes a git2 call spin (which is itself a FINDING, surfaced
+/// as `Hung`).
+///
+/// The READ surfaces (status / graph / stream) run through the F-T5-4
+/// command-layer timeout wrapper exactly as the app's command layer composes
+/// them, with a test-shortened deadline — a libgit2 zlib spin now resolves to
+/// a clean `Err`, never `Hung`. `create_commit` is a MUTATION and is
+/// deliberately NOT wrapped (aborting a mutation on a false timeout could race
+/// a late-landing commit), so a corrupt HEAD still hangs it — pinned below.
 fn run_watch(path: &Path, kind: u8) -> Outcome {
     let p = path.to_path_buf();
     let (tx, rx) = std::sync::mpsc::channel();
@@ -54,8 +72,30 @@ fn run_watch(path: &Path, kind: u8) -> Outcome {
                 std::iter::empty::<&std::ffi::OsStr>(),
             )
             .is_ok(),
-            1 => read_status(&p).is_ok(),
-            2 => compute_graph(&p).is_ok(),
+            1 => {
+                let path = p.clone();
+                run_with_git_timeout_with("read_status", TEST_DEADLINE, move |_pr| {
+                    read_status(&path)
+                })
+                .is_ok()
+            }
+            2 => {
+                let path = p.clone();
+                run_with_git_timeout_with("compute_graph", TEST_DEADLINE, move |_pr| {
+                    compute_graph(&path)
+                })
+                .is_ok()
+            }
+            4 => {
+                let path = p.clone();
+                run_with_git_timeout_with("stream_graph", TEST_DEADLINE, move |pr| {
+                    stream_graph_core(&path, |_chunk| {
+                        pr.tick();
+                        true
+                    })
+                })
+                .is_ok()
+            }
             _ => create_commit(&p, "corrupt probe", None, true).is_ok(),
         }));
         let _ = tx.send(r);
@@ -79,12 +119,13 @@ fn run_watch(path: &Path, kind: u8) -> Outcome {
     }
 }
 
-/// The four app surfaces against `path`.
-fn surfaces(path: &Path) -> [(&'static str, Outcome); 4] {
+/// The five app surfaces against `path`.
+fn surfaces(path: &Path) -> [(&'static str, Outcome); 5] {
     [
         ("open", run_watch(path, 0)),
         ("read_status", run_watch(path, 1)),
         ("compute_graph", run_watch(path, 2)),
+        ("stream_graph", run_watch(path, 4)),
         ("create_commit", run_watch(path, 3)),
     ]
 }
@@ -122,14 +163,16 @@ fn healthy_repo() -> (tempfile::TempDir, PathBuf) {
 fn corrupt_repo_matrix_never_panics() {
     require_git!();
 
-    // C1 — truncate a loose object. FINDING F-T5-4: truncating the HEAD COMMIT
-    // object makes every surface that peels HEAD (read_status, compute_graph,
-    // create_commit) HANG instead of returning an error — a libgit2-level spin
-    // reading the truncated loose commit. Only `open` (which does not peel HEAD)
-    // survives. Truncating a TREE or BLOB is handled cleanly (probed ⇒ Ok). A
-    // hang freezes the UI — user-hostile — flagged for senior-dev. Pinned as the
-    // DISCOVERED behavior; when the object read is hardened to error, these pins
-    // flip and the test is updated.
+    // C1 — truncate a loose object. FINDING F-T5-4 (FIXED, audit #2 §3.2):
+    // truncating the HEAD COMMIT object makes libgit2 spin forever inflating
+    // the truncated zlib stream on every surface that peels HEAD. The command-
+    // layer timeout wrapper (`git::timeout`) now converts that spin into a
+    // clean `AppError::Git` for the READ surfaces (read_status, compute_graph,
+    // stream_graph) — asserted as `Err` here with a test-shortened deadline.
+    // `create_commit` is a MUTATION and stays deliberately unwrapped (a false
+    // timeout could race a late-landing commit), so its hang remains the
+    // pinned, documented behavior. Truncating a TREE or BLOB is handled
+    // cleanly (probed ⇒ Ok).
     {
         let (dir, root) = healthy_repo();
         let head = common::git(&root, &["rev-parse", "HEAD"]);
@@ -148,14 +191,22 @@ fn corrupt_repo_matrix_never_panics() {
         }
         // `open` does not read the HEAD commit ⇒ it stays responsive.
         assert_ne!(outcome(&out, "open"), Outcome::Hung, "C1 open must not hang");
-        // PINNED FINDING F-T5-4: the HEAD-peeling surfaces all hang.
-        for name in ["read_status", "compute_graph", "create_commit"] {
+        // F-T5-4 FIX: the timeout-wrapped read surfaces return a clean error
+        // instead of hanging (the wedged worker thread is abandoned).
+        for name in ["read_status", "compute_graph", "stream_graph"] {
             assert_eq!(
                 outcome(&out, name),
-                Outcome::Hung,
-                "F-T5-4: {name} hangs on a truncated HEAD commit object"
+                Outcome::Err,
+                "F-T5-4 fix: {name} must time out with a clean error on a \
+                 truncated HEAD commit object"
             );
         }
+        // Residual pin: the unwrapped mutation still hangs (watchdog-abandoned).
+        assert_eq!(
+            outcome(&out, "create_commit"),
+            Outcome::Hung,
+            "create_commit is deliberately not timeout-wrapped (mutation)"
+        );
         drop(dir);
     }
 

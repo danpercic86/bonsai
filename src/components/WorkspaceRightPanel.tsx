@@ -1,12 +1,14 @@
 import type { ComponentProps, RefObject } from 'react';
+import type { ComboboxOption } from './Combobox';
 import { CommitBox } from './CommitBox';
 import type { CommitBoxHandle } from './CommitBox';
+import { ChecksPanel } from './checksPanel/ChecksPanel';
+import type { ChecksTarget } from './checksPanel/checksTarget';
 import { CommitPanel } from './CommitPanel';
 import { ComparePanel } from './ComparePanel';
 import { OpBanner } from './OpBanner';
 import { PrPanel } from './PrPanel';
 import { StatusPanel } from './StatusPanel';
-import { StashSplitButton } from './StashSplitButton';
 import { shortOid } from './workspaceUtils';
 import type {
   AiAnalysisMode,
@@ -16,6 +18,8 @@ import type {
   GraphLayout,
   HeadInfo,
   ListView,
+  PanelDensity,
+  PrimaryCommitAction,
   PrNavRequest,
   RepoOpState,
   SigningStatus,
@@ -33,11 +37,26 @@ export interface WorkspaceRightPanelProps {
 
   /** P62c: canonical repo id — threaded to the PR panel under the 'prs' tab. */
   repoId: string;
-  /** P62c: active right-pane tab (owned by RepoWorkspace). */
-  rightPaneTab: 'work' | 'prs';
-  onSelectRightPaneTab(tab: 'work' | 'prs'): void;
+  /** P62c/P90: active right-pane tab (owned by RepoWorkspace). */
+  rightPaneTab: 'work' | 'prs' | 'checks';
+  onSelectRightPaneTab(tab: 'work' | 'prs' | 'checks'): void;
+  /** P90: the branch resolved from the last sidebar reveal (or HEAD) → Checks tab. */
+  checksTarget: ChecksTarget | null;
+  /** P90: bumped on fetch/pull to force a silent Checks refetch. */
+  checksRefreshSeq: number;
+  /** P90 §4.4: push the checks target (defined only when it is the current
+   *  branch); drives the "Push branch" affordance in the no-upstream empty state. */
+  onPushChecksBranch?(): void;
+  /** P90: reveal a commit oid in the graph (Checks tip-sha affordance). */
+  onRevealCommit?(oid: string): void;
   /** P62c: current branch name — seeds the PR create form's compare field. */
   prDefaultHead: string | null;
+  /** P78: base-branch hint for the PR create form (upstream target/main). */
+  prDefaultBase: string | null;
+  /** P78: branch suggestions for the PR create form's Base combobox. */
+  prBaseOptions: ComboboxOption[];
+  /** P78: branch suggestions for the PR create form's Compare combobox. */
+  prCompareOptions: ComboboxOption[];
   /** P63: external "open PR N" request from a graph PR-badge click (bumped
    *  `seq` re-opens the same PR). Threaded into PrPanel's `openToPr`. */
   prNav: PrNavRequest | null;
@@ -62,6 +81,12 @@ export interface WorkspaceRightPanelProps {
   compareError: ComparePanelProps['error'];
   headBranch: BranchInfo | null;
   listView: ListView;
+  /** P67 §4: right-panel density — rendered as `data-density` on the `<aside>`
+   *  (D7: a prop, not `documentElement.dataset`, so the cascade stays scoped to
+   *  this panel and the value is unit-testable by `render()`). */
+  panelDensity: PanelDensity;
+  /** P80 D1: which commit button is emphasized in the CommitBox footer. */
+  primaryCommitAction: PrimaryCommitAction;
   scope: ComparePanelProps['scope'];
   setScope: ComparePanelProps['onSelectScope'];
   clearCompare(): void;
@@ -81,7 +106,11 @@ export interface WorkspaceRightPanelProps {
   statusLoading: boolean;
   statusError: StatusPanelProps['error'];
   diffSlot: StatusPanelProps['diffSlot'];
-  aiResolvingPath: StatusPanelProps['aiResolvingPath'];
+  aiRows: StatusPanelProps['aiRows'];
+  aiAtCapacity: StatusPanelProps['aiAtCapacity'];
+  /** P68f: ONE control, rendered by BOTH entry points — the conflicts-section header
+   *  and the merge banner (OQ4). Same object ⇒ they can never disagree. */
+  aiBulk?: StatusPanelProps['aiBulk'];
   aiPanelLoading: boolean;
   onStage: StatusPanelProps['onStage'];
   onUnstage: StatusPanelProps['onUnstage'];
@@ -91,6 +120,8 @@ export interface WorkspaceRightPanelProps {
   onResolveConflict: StatusPanelProps['onResolveConflict'];
   onToggleConflictView: StatusPanelProps['onToggleConflictView'];
   onAiResolve: StatusPanelProps['onAiResolve'];
+  onAiReview: StatusPanelProps['onAiReview'];
+  onAiReveal?: StatusPanelProps['onAiReveal'];
   onBlame: StatusPanelProps['onBlame'];
   onFileHistory: StatusPanelProps['onFileHistory'];
   /** P34: stash the worktree per scope (staging-panel split button + sidebar). */
@@ -114,11 +145,18 @@ export interface WorkspaceRightPanelProps {
   /** P40b: open Settings → Git config → Identity from a `configMissing` commit
    *  error banner. */
   onOpenIdentitySettings: CommitBoxProps['onOpenIdentitySettings'];
+  /** P80: open Settings → Accounts (the PR panel's "Manage accounts…"). */
+  onOpenAccountSettings?: () => void;
   /** P58c: effective signing config (drives the CommitBox sign toggle + hint). */
   signingStatus: SigningStatus | null;
   /** P58c: the selected commit's signature verdict (CommitPanel line); null when
    *  unverified / disabled / unsigned. */
   commitSignature: CommitVerification | null;
+  /** P87b View C §2.2: the active commit-family run's phase readout, forwarded to
+   *  CommitBox so the granular phase is visible beside the commit button. */
+  commitPhase?: CommitBoxProps['commitPhase'];
+  /** P87b §5-3: expand the git activity dock + reveal the active run. */
+  onShowGitActivity?: CommitBoxProps['onShowGitActivity'];
 }
 
 /** P3e: the right panel — op banner + the compare / commit-details / status
@@ -145,6 +183,8 @@ export function WorkspaceRightPanel({
   compareError,
   headBranch,
   listView,
+  panelDensity,
+  primaryCommitAction,
   scope,
   setScope,
   clearCompare,
@@ -162,7 +202,9 @@ export function WorkspaceRightPanel({
   statusLoading,
   statusError,
   diffSlot,
-  aiResolvingPath,
+  aiRows,
+  aiAtCapacity,
+  aiBulk,
   aiPanelLoading,
   onStage,
   onUnstage,
@@ -172,6 +214,8 @@ export function WorkspaceRightPanel({
   onResolveConflict,
   onToggleConflictView,
   onAiResolve,
+  onAiReview,
+  onAiReveal,
   onBlame,
   onFileHistory,
   onCreateStash,
@@ -188,16 +232,37 @@ export function WorkspaceRightPanel({
   workingDirty,
   onCompose,
   onOpenIdentitySettings,
+  onOpenAccountSettings,
   signingStatus,
   commitSignature,
+  commitPhase,
+  onShowGitActivity,
   repoId,
   rightPaneTab,
   onSelectRightPaneTab,
   prDefaultHead,
+  prDefaultBase,
+  prBaseOptions,
+  prCompareOptions,
   prNav,
+  checksTarget,
+  checksRefreshSeq,
+  onPushChecksBranch,
+  onRevealCommit,
 }: WorkspaceRightPanelProps) {
+  // Audit §2.2: `selectedIndex` can point PAST the end of `graph.nodes` — a
+  // streaming refetch publishes its first partial batch BEFORE the progressive
+  // selection remap runs, and a rebased/GC'd commit never comes back at all.
+  // `graph.nodes[i]` is then `undefined`, and CommitPanel (non-optional `node`)
+  // would deref it → TypeError → the ErrorBoundary tears down the workspace.
+  // Derive the node ONCE and gate BOTH uses on it; until the row arrives (or the
+  // stream ends and RepoWorkspace clears the selection) we fall back to the
+  // status panel, exactly like the commit-diff effect already skips.
+  const selectedNode =
+    selectedIndex !== null && graph !== null ? (graph.nodes[selectedIndex] ?? null) : null;
+
   return (
-    <aside className="right-panel" style={{ width: rightPanelWidth }}>
+    <aside className="right-panel" data-density={panelDensity} style={{ width: rightPanelWidth }}>
       <div className="right-pane-tabs" role="tablist" aria-label="Right panel view">
         <button
           type="button"
@@ -217,6 +282,15 @@ export function WorkspaceRightPanel({
         >
           Pull requests
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={rightPaneTab === 'checks'}
+          className={`right-pane-tab${rightPaneTab === 'checks' ? ' active' : ''}`}
+          onClick={() => onSelectRightPaneTab('checks')}
+        >
+          Checks
+        </button>
       </div>
       <div className="right-panel-work" hidden={rightPaneTab !== 'work'}>
       <OpBanner
@@ -233,6 +307,7 @@ export function WorkspaceRightPanel({
         onBisectMark={onBisectMark}
         onBisectSkip={onBisectSkip}
         bisectSummaries={bisectSummaries}
+        aiBulk={aiBulk}
       />
       {compare !== null ? (
         <ComparePanel
@@ -245,9 +320,9 @@ export function WorkspaceRightPanel({
           onSelectScope={setScope}
           onClose={clearCompare}
         />
-      ) : selectedIndex !== null && graph !== null ? (
+      ) : selectedNode !== null ? (
         <CommitPanel
-          node={graph.nodes[selectedIndex]}
+          node={selectedNode}
           data={commitDiff}
           loading={commitDiffLoading}
           error={commitDiffError}
@@ -261,7 +336,7 @@ export function WorkspaceRightPanel({
           onClose={() => setSelectedIndex(null)}
           aiEligible={aiEligible}
           onExplain={() => {
-            const oid = graph.nodes[selectedIndex].id;
+            const oid = selectedNode.id;
             runAnalyze({ kind: 'commit', oid }, 'explain', `Explain commit ${shortOid(oid)}`);
           }}
           signature={commitSignature}
@@ -277,84 +352,47 @@ export function WorkspaceRightPanel({
             listView={listView}
             conflicts={conflicts}
             aiEligible={aiEligible}
-            aiResolvingPath={aiResolvingPath}
-            aiAnalyzing={aiPanelLoading}
+            aiRows={aiRows}
+            aiAtCapacity={aiAtCapacity}
+            aiBulk={aiBulk}
             onStage={onStage}
             onUnstage={onUnstage}
             onDiscard={onDiscard}
             onDiscardForce={onDiscardForce}
-            onReviewStaged={() =>
-              runAnalyze({ kind: 'staged' }, 'review', 'Review staged changes')
-            }
-            onReviewWorktree={() =>
-              runAnalyze({ kind: 'worktree' }, 'review', 'Review working tree')
-            }
             onToggleDiff={onToggleDiff}
             onResolveConflict={onResolveConflict}
             onToggleConflictView={onToggleConflictView}
             onAiResolve={onAiResolve}
+            onAiReview={onAiReview}
+            onAiReveal={onAiReveal}
             onBlame={onBlame}
             onFileHistory={onFileHistory}
           />
-          {opState.kind === 'none' && head !== null && !head.unborn && (
-            <StashSplitButton
-              disabled={
-                mutating ||
-                ((status?.staged.length ?? 0) === 0 &&
-                  (status?.unstaged.length ?? 0) === 0 &&
-                  (status?.untracked.length ?? 0) === 0)
-              }
-              stagedCount={status?.staged.length ?? 0}
-              hasTrackedChanges={
-                (status?.staged.length ?? 0) > 0 || (status?.unstaged.length ?? 0) > 0
-              }
-              hasUntracked={(status?.untracked.length ?? 0) > 0}
-              onStash={onCreateStash}
-            />
-          )}
-          {opState.kind === 'none' && head !== null && !head.unborn && (
-            <div className="amend-affordance">
-              <label className="amend-toggle">
-                <input
-                  type="checkbox"
-                  checked={amend}
-                  disabled={mutating}
-                  onChange={(e) => void onToggleAmend(e.target.checked)}
-                />
-                <span>Amend last commit</span>
-              </label>
-              {amend &&
-                headBranch !== null &&
-                headBranch.upstream !== null &&
-                headBranch.ahead === 0 && (
-                  <div className="amend-push-warning" role="note">
-                    This commit is already pushed — amending rewrites published history.
-                  </div>
-                )}
-            </div>
-          )}
+          {/* P80 §2b: the former `.rp-actions` row is gone — amend, stash, sign,
+              skip-hooks, compose and the context-scoped review all fold into
+              CommitBox's `⋯` menu. Amend stays owned upstream (RepoWorkspace),
+              threaded in as a prop; CommitBox reseeds its message via an internal
+              effect (no remount), so the menu item keeps focus on toggle. */}
           <CommitBox
-            key={
-              amend
-                ? 'amend'
-                : opState.kind === 'merge'
-                  ? `merge:${opState.incoming}`
-                  : 'commit'
-            }
+            key={opState.kind === 'merge' ? `merge:${opState.incoming}` : 'commit'}
             ref={commitBoxRef}
             stagedCount={status?.staged.length ?? 0}
             busy={mutating}
             mode={opState.kind === 'merge' && !amend ? 'merge' : 'commit'}
-            initialMessage={
-              amend
-                ? (amendMessage ?? undefined)
-                : opState.kind === 'merge'
-                  ? opState.message
-                  : undefined
-            }
+            initialMessage={opState.kind === 'merge' ? opState.message : undefined}
             conflictCount={conflicts.length}
             blocked={!amend && opState.kind !== 'none' && opState.kind !== 'merge'}
             amend={amend}
+            amendMessage={amendMessage}
+            canAmend={opState.kind === 'none' && head !== null && !head.unborn}
+            onToggleAmend={onToggleAmend}
+            showAmendPushWarning={
+              amend &&
+              headBranch !== null &&
+              headBranch.upstream !== null &&
+              headBranch.ahead === 0
+            }
+            primaryCommitAction={primaryCommitAction}
             onCommit={
               amend
                 ? onCommitAmend
@@ -367,8 +405,21 @@ export function WorkspaceRightPanel({
             onGenerate={onGenerate}
             workingDirty={workingDirty}
             onCompose={onCompose}
+            onReviewStaged={() => runAnalyze({ kind: 'staged' }, 'review', 'Review staged changes')}
+            onReviewWorktree={() =>
+              runAnalyze({ kind: 'worktree' }, 'review', 'Review working tree')
+            }
+            aiAnalyzing={aiPanelLoading}
+            onStash={onCreateStash}
+            canStash={opState.kind === 'none' && head !== null && !head.unborn}
+            hasTrackedChanges={
+              (status?.staged.length ?? 0) > 0 || (status?.unstaged.length ?? 0) > 0
+            }
+            hasUntracked={(status?.untracked.length ?? 0) > 0}
             onOpenIdentitySettings={onOpenIdentitySettings}
             signingStatus={signingStatus}
+            commitPhase={commitPhase}
+            onShowGitActivity={onShowGitActivity}
           />
         </>
       )}
@@ -377,8 +428,23 @@ export function WorkspaceRightPanel({
         <PrPanel
           repoId={repoId}
           defaultHead={prDefaultHead}
+          defaultBase={prDefaultBase}
+          baseOptions={prBaseOptions}
+          compareOptions={prCompareOptions}
           openToPr={prNav}
           aiEligible={aiEligible}
+          onManageAccounts={onOpenAccountSettings}
+        />
+      )}
+      {rightPaneTab === 'checks' && (
+        <ChecksPanel
+          repoId={repoId}
+          target={checksTarget}
+          refreshSeq={checksRefreshSeq}
+          active={rightPaneTab === 'checks'}
+          onRevealCommit={onRevealCommit}
+          onPush={onPushChecksBranch}
+          onManageAccounts={onOpenAccountSettings}
         />
       )}
     </aside>

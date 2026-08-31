@@ -1,9 +1,9 @@
 /** T3.4 — merge.ts: fresh-merge outcomes, the T3.4 gap fix (a fresh conflicted
  *  merge now seeds coherent opState/conflict state, matching ?op=merge), the
  *  full conflict → resolve → commitMerge cycle, and abort/guard rejections. */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { MERGE_DEEP_PATH } from '../../fixtures/conflicts';
 import { freshRepoPath, run, runErr } from '../../../test/mockIpcKit';
 import { repoHandlers } from './repo';
 import { mergeHandlers } from './merge';
@@ -67,7 +67,7 @@ describe('T3.4 gap fix: fresh conflicted merge seeds coherent state', () => {
     const outcome = await run(mergeHandlers.mergeBranch(repoId, 'demo-conflict'));
     expect(outcome).toMatchObject({
       kind: 'conflicts',
-      paths: ['README.md', 'src/auth.ts'],
+      paths: ['README.md', 'src/auth.ts', MERGE_DEEP_PATH],
       stashed: true,
     });
     // getOpState reflects the paused merge with the ACTUAL branch name.
@@ -76,7 +76,7 @@ describe('T3.4 gap fix: fresh conflicted merge seeds coherent state', () => {
     if (op.kind === 'merge') expect(op.message).toContain("Merge branch 'demo-conflict'");
     // listConflicts serves both entries, path-ascending like the backend.
     const conflicts = await run(mergeHandlers.listConflicts(repoId));
-    expect(conflicts.map((c) => c.path)).toEqual(['README.md', 'src/auth.ts']);
+    expect(conflicts.map((c) => c.path)).toEqual(['README.md', 'src/auth.ts', MERGE_DEEP_PATH]);
     // getConflict works for both paths (this rejected before the fix).
     const auth = await run(mergeHandlers.getConflict(repoId, 'src/auth.ts'));
     expect(auth.kind).toBe('bothModified');
@@ -85,7 +85,11 @@ describe('T3.4 gap fix: fresh conflicted merge seeds coherent state', () => {
     expect(readme.kind).toBe('deletedByThem');
     // Status mirrors the conflicts; README.md left the unstaged list.
     const status = await run(statusHandlers.getStatus(repoId));
-    expect(status.conflicted.map((e) => e.path)).toEqual(['README.md', 'src/auth.ts']);
+    expect(status.conflicted.map((e) => e.path)).toEqual([
+      'README.md',
+      'src/auth.ts',
+      MERGE_DEEP_PATH,
+    ]);
     expect(status.unstaged.some((e) => e.path === 'README.md')).toBe(false);
   });
 
@@ -98,6 +102,7 @@ describe('T3.4 gap fix: fresh conflicted merge seeds coherent state', () => {
     // Resolve src/auth.ts via edited text, README.md by taking THEIRS (deletion).
     await run(mergeHandlers.resolveConflictText(repoId, 'src/auth.ts', 'merged body'));
     await run(mergeHandlers.resolveConflict(repoId, 'README.md', 'theirs'));
+    await run(mergeHandlers.resolveConflictText(repoId, MERGE_DEEP_PATH, 'merged json'));
     expect(await run(mergeHandlers.listConflicts(repoId))).toEqual([]);
     // Taking theirs on deletedByThem stages the deletion.
     const status = await run(statusHandlers.getStatus(repoId));
@@ -140,6 +145,7 @@ describe('conflict-command guards', () => {
     await run(mergeHandlers.mergeBranch(repoId, 'demo-conflict'));
     await run(mergeHandlers.resolveConflictText(repoId, 'src/auth.ts', 'x'));
     await run(mergeHandlers.resolveConflict(repoId, 'README.md', 'ours'));
+    await run(mergeHandlers.resolveConflictText(repoId, MERGE_DEEP_PATH, 'merged json'));
     expect((await runErr(mergeHandlers.commitMerge(repoId, '   '))).kind).toBe('emptyMessage');
   });
 

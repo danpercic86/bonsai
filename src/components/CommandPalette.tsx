@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { PaletteAction, PaletteGroup } from './paletteActions';
 import { filterActions } from './paletteActions';
 
@@ -52,6 +52,10 @@ export function CommandPalette({
   const [highlight, setHighlight] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  // Stable ids wiring the combobox input to its listbox + active option (a11y).
+  const baseId = useId();
+  const listboxId = `${baseId}-listbox`;
+  const optionId = (i: number) => `${baseId}-opt-${i}`;
 
   // Reset the query + focus the input on every open (a fresh session each time).
   useEffect(() => {
@@ -113,11 +117,20 @@ export function CommandPalette({
     return ordered;
   }, [dynamicRows, filtered]);
 
-  // Land the highlight on the first enabled row whenever the visible set changes
-  // (mirrors Combobox's reset-on-filter-change behavior).
+  // Stable key over the rows currently in `flat` (their ids, in order). This is
+  // what actually determines the visible set — unlike `flat`'s array identity,
+  // which churns whenever the `actions` prop is rebuilt (streamed search batches,
+  // once-a-second AI runs) even though the rows are unchanged.
+  const flatKey = useMemo(() => flat.map((a) => a.id).join(' '), [flat]);
+
+  // Land the highlight on the first enabled row whenever the visible set actually
+  // changes (mirrors Combobox's reset-on-filter-change behavior). Keyed on the row
+  // ids rather than `flat`'s identity so a churning `actions` prop no longer steals
+  // the user's keyboard selection mid-typing.
   useEffect(() => {
     setHighlight(firstEnabledIndex(flat));
-  }, [flat]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on the id set, not `flat`'s churning identity
+  }, [flatKey]);
 
   // Keep the highlighted row visible when navigating with the keyboard.
   useEffect(() => {
@@ -175,6 +188,8 @@ export function CommandPalette({
           type="text"
           role="combobox"
           aria-expanded={true}
+          aria-controls={listboxId}
+          aria-activedescendant={flat.length > 0 ? optionId(highlight) : undefined}
           aria-autocomplete="list"
           spellCheck={false}
           autoComplete="off"
@@ -184,7 +199,7 @@ export function CommandPalette({
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onInputKeyDown}
         />
-        <ul className="command-palette-list" role="listbox" ref={listRef}>
+        <ul className="command-palette-list" role="listbox" id={listboxId} ref={listRef}>
           {flat.length === 0 ? (
             <li className="command-palette-empty" role="option" aria-selected={false}>
               No matching commands
@@ -201,6 +216,7 @@ export function CommandPalette({
                 <Fragment key={a.id}>
                   {header}
                   <li
+                    id={optionId(i)}
                     role="option"
                     aria-selected={i === highlight}
                     aria-disabled={a.disabled === true}

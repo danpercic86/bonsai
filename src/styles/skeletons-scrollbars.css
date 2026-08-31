@@ -1,0 +1,62 @@
+/* Bonsai — Panel scrollbars (P1 §8 item 5) and the loading-skeleton recipe (P1 §8 item 1).
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- Panel scrollbars (P1 §8 item 5 — WebView2 is Chromium, safe) ---------- */
+
+.sidebar::-webkit-scrollbar,
+.right-panel-work > .status-panel::-webkit-scrollbar,
+.commit-panel::-webkit-scrollbar,
+.diff-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar::-webkit-scrollbar-track,
+.right-panel-work > .status-panel::-webkit-scrollbar-track,
+.commit-panel::-webkit-scrollbar-track,
+.diff-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar::-webkit-scrollbar-thumb,
+.right-panel-work > .status-panel::-webkit-scrollbar-thumb,
+.commit-panel::-webkit-scrollbar-thumb,
+.diff-scroll::-webkit-scrollbar-thumb {
+  background: var(--bg-3);
+  border-radius: 4px;
+}
+
+/* ---------- Loading skeletons (P1 §8 item 1: one recipe everywhere) ---------- */
+
+.skeleton-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skeleton-row {
+  height: 20px;
+  margin: 0;
+  border-radius: 6px;
+  background: var(--bg-2);
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+.skeleton-row:nth-child(2n) {
+  width: 80%;
+}
+
+.skeleton-row:nth-child(3n) {
+  width: 65%;
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+

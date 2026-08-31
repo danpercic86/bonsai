@@ -1,0 +1,238 @@
+/* Bonsai — AI output card, hunk stage buttons, syntax tokens and intraline emphasis.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* P15b: AI explain/review output card. Floats over the graph pane, above the
+   single-file diff-overlay (z 5) so "Explain file" from a diff header is visible. */
+.ai-output-panel {
+  z-index: 7;
+}
+
+/* Icon-system §2.7: the AI-output header marker — a 14px SummarizeIcon centered
+   in the (already aria-hidden) icon slot. */
+.ai-output-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.ai-output-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.ai-output-cost {
+  font-family: var(--font-mono);
+}
+
+.ai-output-text {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-1);
+}
+
+/* P56b: header Copy button — a compact text button (not a single-glyph icon) that
+   sits left of the close ×. Shared by every AI output. min-width fits the wider
+   "Copied" flash so the header doesn't jump when the confirmation shows. */
+.ai-output-copy {
+  flex: none;
+  width: auto;
+  min-width: 52px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* P56b: editable changelog body — matches the read-only .ai-output-text metrics
+   but is an interactive <textarea> in copy-friendly monospace so the Markdown
+   source can be tweaked before pasting. */
+.ai-output-editable {
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  outline: none;
+  font-family: var(--font-mono);
+  tab-size: 2;
+}
+
+.diff-view {
+  position: relative; /* P17c: anchors the .diff-stage-float action button */
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.diff-hunk-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-3);
+  background: var(--bg-2);
+  padding: 2px 8px;
+  min-width: 100%;
+}
+
+.diff-hunk-header-text {
+  white-space: pre;
+  flex: 1;
+  min-width: 0;
+}
+
+/* P17c: right-aligned "Stage hunk" / "Unstage hunk" button (Diff View only). */
+.diff-hunk-stage-btn {
+  flex: none;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-1);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.diff-hunk-stage-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* P28: danger sibling of .diff-hunk-stage-btn (same size/placement). */
+.diff-hunk-discard-btn {
+  flex: none;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-1);
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.diff-hunk-discard-btn:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.diff-line {
+  display: grid;
+  grid-template-columns: 40px 40px 16px auto;
+  white-space: pre;
+  width: max-content;
+  min-width: 100%;
+}
+
+.diff-lineno {
+  text-align: right;
+  padding-right: 6px;
+  color: var(--text-3);
+  user-select: none;
+  /* P46 WS2: the line-number gutter is the range-staging drag handle (native
+     text selection stays available over .diff-content). */
+  cursor: row-resize;
+}
+
+.diff-marker {
+  text-align: center;
+  user-select: none;
+}
+
+.diff-content {
+  color: var(--text-1);
+  padding-right: 8px;
+}
+
+/* P4e Step 2: highlight.js token classes → --syn-* variables, scoped to diff
+   bodies. Token colors compose over the add/del line backgrounds (which live on
+   the ancestor .diff-line span) and leave markers + line-number gutters
+   untouched. No stock hljs theme CSS is imported. */
+.diff-content .hljs-keyword,
+.diff-content .hljs-built_in,
+.diff-content .hljs-literal      { color: var(--syn-keyword); }
+.diff-content .hljs-string,
+.diff-content .hljs-regexp       { color: var(--syn-string); }
+.diff-content .hljs-comment,
+.diff-content .hljs-quote        { color: var(--syn-comment); font-style: italic; }
+.diff-content .hljs-number       { color: var(--syn-number); }
+.diff-content .hljs-title,
+.diff-content .hljs-title.function_,
+.diff-content .hljs-function .hljs-title { color: var(--syn-function); }
+.diff-content .hljs-type,
+.diff-content .hljs-class .hljs-title,
+.diff-content .hljs-title.class_ { color: var(--syn-type); }
+.diff-content .hljs-attr,
+.diff-content .hljs-attribute,
+.diff-content .hljs-property     { color: var(--syn-attr); }
+.diff-content .hljs-tag,
+.diff-content .hljs-name,
+.diff-content .hljs-selector-tag { color: var(--syn-tag); }
+.diff-content .hljs-operator,
+.diff-content .hljs-symbol       { color: var(--syn-operator); }
+.diff-content .hljs-punctuation  { color: var(--syn-punctuation); }
+.diff-content .hljs-meta,
+.diff-content .hljs-doctag       { color: var(--syn-meta); }
+
+.diff-line-add {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+.diff-line-del {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+/* P61a: word-level intraline emphasis on the CHANGED sub-range of a modified
+   line. A stronger tint PLUS an underline keeps it legible over the row's faint
+   add/del wash AND over the accent selection gradient (.diff-line-selected). */
+.diff-intra {
+  border-radius: 2px;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.diff-intra-add {
+  background: color-mix(in srgb, var(--intra-add) 40%, transparent);
+  text-decoration-color: var(--intra-add);
+}
+.diff-intra-del {
+  background: color-mix(in srgb, var(--intra-del) 40%, transparent);
+  text-decoration-color: var(--intra-del);
+}
+
+.diff-nonewline .diff-content {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+.diff-placeholder {
+  padding: 12px;
+  text-align: center;
+  color: var(--text-3);
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.diff-slot-loading {
+  padding: 0 4px;
+}
+
+.diff-slot-error {
+  margin-bottom: 0;
+}
+

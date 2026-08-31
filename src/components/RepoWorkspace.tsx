@@ -3,9 +3,8 @@ import type { CommitBoxHandle } from './CommitBox';
 import type { ContextMenuItem } from './ContextMenu';
 import { WorkspaceToolbar } from './WorkspaceToolbar';
 import { WorkspaceDialogs } from './WorkspaceDialogs';
-import { CherrypickMessageDialog } from './CherrypickMessageDialog';
-import { NonFfPullDialog } from './dialogs/NonFfPullDialog';
-import { UndoDialog } from './dialogs/UndoDialog';
+import { WorkspaceOverlays } from './WorkspaceOverlays';
+import type { PendingForceSubmodule } from './dialogs/SubmoduleDialogs';
 import { WorkspaceGraphPane } from './WorkspaceGraphPane';
 import { WorkspaceRightPanel } from './WorkspaceRightPanel';
 import { isUsableRepo, shortOid } from './workspaceUtils';
@@ -16,18 +15,22 @@ import { PaneDivider } from './PaneDivider';
 import { Sidebar } from './Sidebar';
 import type { DiffSlot, WorkdirSection } from './StatusPanel';
 import type { GraphCanvasHandle, GraphContextTarget, WipSummary } from '../graph/GraphCanvas';
+import { useChecksTab } from './repoWorkspace/useChecksTab';
+import { useAiPanel } from './repoWorkspace/useAiPanel';
+import { useReveal } from './repoWorkspace/useReveal';
+import { RevealAnnouncer } from './RevealAnnouncer';
 import { effectiveMetrics } from '../graph/metrics';
 import type { GraphDisplayOptions } from '../graph/rightColumns';
+import { createGraphStream } from '../graph/streamAssembler';
+import { createGraphStreamApplier } from './repoWorkspace/graphStreamApply';
+import { useCoalescedRefresh, type RefreshOrigin } from './repoWorkspace/useCoalescedRefresh';
+import { type RefreshScope, slicesForScope } from './repoWorkspace/refreshScope';
+import { useRepoChangeSubscription } from './repoWorkspace/useRepoChangeSubscription';
+import type { IncrementalEdgeIndex } from '../graph/incrementalEdgeIndex';
 import { ipc } from '../ipc';
 import type {
-  AiAnalysisMode,
-  AiAutonomy,
-  AiAvailability,
-  AiDiffTarget,
-  AiDigestRange,
   BlameLine,
   BranchesSnapshot,
-  ChangelogRange,
   CommitDiff,
   CompareDiff,
   ConflictEntry,
@@ -35,17 +38,14 @@ import type {
   FileHistoryEntry,
   FileStatus,
   GraphLayout,
-  GraphPrefs,
   HeadInfo,
   ImageDiff,
   ImageDiffRequest,
   JobStatus,
   LineSelection,
-  ListView,
   PrNavRequest,
   ProposedOperation,
   RebaseTodoOp,
-  PaneWidths,
   ReflogEntry,
   UndoPlan,
   RemoteInfo,
@@ -66,13 +66,27 @@ import { isImagePath } from '../utils/imagePaths';
 
 import { useRemoteOps, type NonFfPullInfo } from './repoWorkspace/useRemoteOps';
 import { useCommitActions } from './repoWorkspace/useCommitActions';
+import { usePartialStaging } from './repoWorkspace/usePartialStaging';
 import { useHookGate } from './repoWorkspace/useHookGate';
+import { useHookDisclosure } from './repoWorkspace/useHookDisclosure';
 import { useBranchActions } from './repoWorkspace/useBranchActions';
+import { useAiRuns } from './repoWorkspace/useAiRuns';
+import { AiActivityPanel } from './AiActivityPanel';
+import { useAiDock } from './repoWorkspace/useAiDock';
+import { useGitDock } from './repoWorkspace/useGitDock';
+import { GitActivityDock } from './GitActivityDock';
+import { useBulkAiResolve } from './repoWorkspace/useBulkAiResolve';
 import { useMergeActions } from './repoWorkspace/useMergeActions';
 import { useStashActions } from './repoWorkspace/useStashActions';
-import { useSubmoduleActions } from './repoWorkspace/useSubmoduleActions';
+import { useSubmoduleActions, type SubmoduleBusy } from './repoWorkspace/useSubmoduleActions';
 import { useWorktreeActions } from './repoWorkspace/useWorktreeActions';
 import { useTagRemoteActions } from './repoWorkspace/useTagRemoteActions';
+import {
+  TagSyncDialogs,
+  type PendingDeleteRemoteTag,
+  type PendingForceMoveTag,
+} from './dialogs/TagSyncDialogs';
+import { useTagSync } from './repoWorkspace/useTagSync';
 import { useRebaseActions } from './repoWorkspace/useRebaseActions';
 import { useCherrypickRevertActions } from './repoWorkspace/useCherrypickRevertActions';
 import { useBisectActions } from './repoWorkspace/useBisectActions';
@@ -83,54 +97,13 @@ import { useCommitVerification } from './repoWorkspace/useCommitVerification';
 import { useForgeSignals } from './repoWorkspace/useForgeSignals';
 import { useHistorySearch } from './repoWorkspace/useHistorySearch';
 import { useCommitComposer } from './repoWorkspace/useCommitComposer';
-import { ComposerDialog } from './ComposerDialog';
 import { usePalette } from './repoWorkspace/usePalette';
-import { CommandPalette } from './CommandPalette';
 import { buildPaletteActions, type PaletteAction } from './paletteActions';
-import { ProposedOpDialog } from './ProposedOpDialog';
-import { PromptDialog } from './PromptDialog';
-import { SubmoduleDialogs } from './dialogs/SubmoduleDialogs';
-import { ChangelogDialog } from './ChangelogDialog';
 import { safeOpDispatch } from './safeOpDispatch';
 import type { ComboboxOption } from './Combobox';
 
-export interface RepoWorkspaceProps {
-  /** Canonical workdir path (== repoId, P3e §2). */
-  repoId: string;
-  /** True when this tab is visible (the others are display:none). Gates the
-   *  keyboard shortcut + Esc effects, window-focus rescan, GraphCanvas remeasure
-   *  and the activation self-heal refresh (§5.1/§7). */
-  active: boolean;
-  /** App-global display prefs / pane sizing threaded down. */
-  listView: ListView;
-  themeVersion: number;
-  paneWidths: PaneWidths;
-  /** True when a global modal (shortcut overlay / tab menu) is open — the
-   *  workspace suppresses its own shortcuts + Esc handling (§5.1). */
-  globalModalOpen: boolean;
-  /** P11d §3.3/§4: user graph geometry knobs (threaded into the canvas). */
-  graph: GraphPrefs;
-  /** P11d §4.3: bumped by App on every graph-knob change → GraphCanvas re-measure. */
-  metricsVersion: number;
-  /** P13 §8: AI assistance settings + CLI health (App owns these + consent). */
-  aiEnabled: boolean;
-  aiConflictAutonomy: AiAutonomy;
-  aiConsented: boolean;
-  /** CLI health status; null while App is probing. */
-  aiAvailability: AiAvailability | null;
-  onSidebarResize(delta: number): void;
-  onRightPanelResize(delta: number): void;
-  onPaneResizeEnd(): void;
-  /** P19 §6.5: open `path` in a new/focused tab (App.openTab). Used by the
-   *  submodule "Open in new tab" action; reuses the existing open-repo flow. */
-  onOpenRepoPath(path: string): void;
-  /** P40b: open Settings → Git config → Identity (commit-error linkage). */
-  onOpenIdentitySettings(): void;
-  /** P50c: App-level command-palette entries (toggle theme/lists, open Settings
-   *  / AI Assets / Health, open repo / clone / new) — merged with the repo-scoped
-   *  entries this workspace assembles. Built once in App. */
-  appCommands: PaletteAction[];
-}
+export type { RepoWorkspaceProps } from './repoWorkspace/RepoWorkspaceProps';
+import type { RepoWorkspaceProps } from './repoWorkspace/RepoWorkspaceProps';
 
 /** P3e §5.1: the entire per-repo state cluster + handlers + render tree, one
  *  instance per open tab (keyed by repoId in App). Consumes toasts via
@@ -139,6 +112,8 @@ export function RepoWorkspace({
   repoId,
   active,
   listView,
+  panelDensity,
+  primaryCommitAction,
   themeVersion,
   paneWidths,
   globalModalOpen,
@@ -148,11 +123,16 @@ export function RepoWorkspace({
   aiConflictAutonomy,
   aiConsented,
   aiAvailability,
+  aiDockHeight,
+  aiDockCollapsed,
+  aiStreamLog,
+  onAiDockChange,
   onSidebarResize,
   onRightPanelResize,
   onPaneResizeEnd,
   onOpenRepoPath,
   onOpenIdentitySettings,
+  onOpenAccountSettings,
   appCommands,
 }: RepoWorkspaceProps) {
   const pushToast = usePushToast();
@@ -177,7 +157,7 @@ export function RepoWorkspace({
 
   // P62c: right-pane tab — the existing working/compare/commit tri-state
   // ('work') vs the pull-request panel ('prs'). PrPanel mounts only under 'prs'.
-  const [rightPaneTab, setRightPaneTab] = useState<'work' | 'prs'>('work');
+  const [rightPaneTab, setRightPaneTab] = useState<'work' | 'prs' | 'checks'>('work');
 
   // P30 D11: background-job status readout (fed by get_job_status on mount +
   // live job-status-changed events); jobNow re-renders the relative label.
@@ -192,6 +172,7 @@ export function RepoWorkspace({
   const [branches, setBranches] = useState<BranchesSnapshot | null>(null);
   const [branchesError, setBranchesError] = useState<string | null>(null);
   const [branchesLoading, setBranchesLoading] = useState(false);
+  const checksTab = useChecksTab(branches, branches?.local.find((b) => b.isHead)?.name ?? null); // P90
 
   // P51c: local-branch ahead/behind, keyed by branch name, for the graph's
   // ahead/behind chip. Only branches WITH an upstream (non-null counts) are
@@ -207,15 +188,12 @@ export function RepoWorkspace({
   }, [branches]);
 
   const [stashes, setStashes] = useState<StashEntry[]>([]);
-
   const [submodules, setSubmodules] = useState<SubmoduleInfo[]>([]);
-
+  const [submoduleBusy, setSubmoduleBusy] = useState<SubmoduleBusy | null>(null);
   // P27 §6.3: worktrees (main first), refetched alongside submodules.
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([]);
-
   // P22 §7.1: configured remotes (name + fetch URL), refetched alongside branches.
   const [remotes, setRemotes] = useState<RemoteInfo[]>([]);
-
   const [remoteOp, setRemoteOp] = useState<'fetch' | 'pull' | 'push' | null>(null);
 
   const [opState, setOpState] = useState<RepoOpState>({ kind: 'none' });
@@ -223,26 +201,19 @@ export function RepoWorkspace({
   // Tracks conflict count across renders so we auto-open the first conflicted
   // file exactly once per conflict episode (0 -> >0 edge), not on every refetch.
   const prevConflictCountRef = useRef(0);
-  // P13 §8.3: path whose AI resolution is in flight (calls take seconds). Gates
-  // the per-row ✨ AI button without freezing the whole panel like `mutating`.
-  const [aiResolvingPath, setAiResolvingPath] = useState<string | null>(null);
-  // P15b: explain/review output panel (read-only prose). RepoWorkspace owns the
-  // ipc.aiAnalyzeDiff call + the panel's loading/error/result state; the panel is
-  // presentational. `null` => not shown. A req-id guards against a stale response
-  // overwriting a newer request or a closed panel.
-  const [aiPanel, setAiPanel] = useState<{
-    title: string;
-    text: string | null;
-    loading: boolean;
-    error: string | null;
-    costUsd: number | null;
-    /** P56b: opt-in editable body — set only by runChangelog so the notes can be
-     *  tweaked before copying. Every other runner omits it (read-only <pre>). */
-    editable?: boolean;
-  } | null>(null);
-  const aiPanelReqId = useRef(0);
-  const aiPanelOpenRef = useRef(false);
-  aiPanelOpenRef.current = aiPanel !== null;
+  // P15b/P15c/P28/P53a/P56b/P57c: the shared read-only AI-output panel + every
+  // runner that fills it now live in useAiPanel (repoWorkspace/useAiPanel.ts).
+  const {
+    aiPanel,
+    aiPanelOpenRef,
+    runAnalyze,
+    runHistoryAnswer,
+    runSummarize,
+    runDigest,
+    runChangelog,
+    onBlameExplain,
+    closeAiPanel,
+  } = useAiPanel(repoId);
   const [abortConfirmOpen, setAbortConfirmOpen] = useState(false);
   const commitBoxRef = useRef<CommitBoxHandle>(null);
   // P6 §4.5: pending branch/remote deletes drive the two confirm dialogs; the
@@ -252,13 +223,20 @@ export function RepoWorkspace({
   // onto; `cur` = the current branch whose commits get rewritten (for the copy).
   const [pendingRebase, setPendingRebase] = useState<{ name: string; cur: string } | null>(null);
   const [pendingDeleteRemote, setPendingDeleteRemote] = useState<string | null>(null);
-  const [pendingDropStash, setPendingDropStash] = useState<number | null>(null);
+  // F-A6-B: carry the rendered oid alongside the index so the Drop confirm hits
+  // exactly the entry the user saw, even if the stack shifts before confirming.
+  const [pendingDropStash, setPendingDropStash] = useState<{
+    index: number;
+    oid?: string;
+  } | null>(null);
   // Reserved-path recovery: a stash apply/pop hit Windows-reserved paths (e.g.
   // `NUL`). Arms a ConfirmDialog offering to apply the rest, skipping those.
+  // `oid` (F-A6-B) is forwarded on the skip-reserved retry.
   const [pendingReservedStash, setPendingReservedStash] = useState<{
     index: number;
     op: 'apply' | 'pop';
     paths: string[];
+    oid?: string;
   } | null>(null);
   // P20: destructive reset (all three modes confirm; hard warns extra) + discard.
   const [pendingReset, setPendingReset] = useState<{ oid: string; mode: ResetMode } | null>(null);
@@ -287,9 +265,13 @@ export function RepoWorkspace({
     // P59a: the "Skip hooks" choice parked alongside the message.
     skipHooks: boolean;
   } | null>(null);
+  // First-time per-repo git-hook execution disclosure — sits at the TOP of the
+  // shared hook gate (before any hook could run), so all four hook-bearing ops
+  // (commit/amend/merge-commit/push) disclose once with zero per-call-site change.
+  const hookDisclosure = useHookDisclosure(repoId);
   // P59a: the shared hook gate — parks a commit/amend/merge behind the
   // HookOutputDialog when a git hook blocks it, with a "Commit anyway" retry.
-  const hookGate = useHookGate();
+  const hookGate = useHookGate(hookDisclosure.ensureHooksDisclosed);
   // P37b: force-push-with-lease confirm gate (targets the current branch).
   const [pendingForcePush, setPendingForcePush] = useState(false);
   // P28: pending "Discard hunk" confirmation (unstaged diffs only).
@@ -317,6 +299,10 @@ export function RepoWorkspace({
   const [pendingAddSubmodule, setPendingAddSubmodule] = useState(false);
   const [pendingDeinitSubmodule, setPendingDeinitSubmodule] = useState<string | null>(null);
   const [pendingRemoveSubmodule, setPendingRemoveSubmodule] = useState<string | null>(null);
+  // P82 (F-A7-7): a plain deinit/remove refused because the submodule worktree is
+  // dirty → the danger force-escalation dialog (attempt-then-offer-force).
+  const [pendingForceSubmodule, setPendingForceSubmodule] =
+    useState<PendingForceSubmodule | null>(null);
   // P60b: a non-fast-forward pull → drives NonFfPullDialog (Merge / Rebase).
   const [pendingNonFfPull, setPendingNonFfPull] = useState<NonFfPullInfo | null>(null);
   // P60c: one-click undo. The toolbar Undo button describes the last op
@@ -336,6 +322,21 @@ export function RepoWorkspace({
   // P22 §7.1: tag + remote management dialog state.
   const [pendingCreateTag, setPendingCreateTag] = useState<{ oid: string } | null>(null);
   const [pendingDeleteTag, setPendingDeleteTag] = useState<string | null>(null);
+  // P77: remote-tag destructive confirms (delete-on-remote, force-move-on-remote).
+  const [pendingDeleteRemoteTag, setPendingDeleteRemoteTag] =
+    useState<PendingDeleteRemoteTag | null>(null);
+  const [pendingForceMoveTag, setPendingForceMoveTag] = useState<PendingForceMoveTag | null>(null);
+  // P77: live tag-sync report + its ls-remote lifecycle (owned by useTagSync).
+  // Best-effort — the tags list never blocks on it; a rejection degrades to
+  // `unavailable` (no badges).
+  const {
+    report: tagSyncReport,
+    state: tagSyncState,
+    remote: tagSyncRemote,
+    checkedAt: tagSyncCheckedAt,
+    refetch: refetchTagSync,
+    clear: clearTagSync,
+  } = useTagSync(repoId, remotes);
   const [pendingAddRemote, setPendingAddRemote] = useState<boolean>(false);
   const [pendingRenameRemote, setPendingRenameRemote] = useState<{ name: string } | null>(null);
   const [pendingEditUrl, setPendingEditUrl] = useState<{ name: string; url: string } | null>(null);
@@ -429,11 +430,14 @@ export function RepoWorkspace({
     pendingAddSubmodule ||
     pendingDeinitSubmodule !== null ||
     pendingRemoveSubmodule !== null ||
+    pendingForceSubmodule !== null ||
     pendingNonFfPull !== null ||
     pendingUndo !== null ||
     pendingCherrypick !== null ||
     pendingCreateTag !== null ||
     pendingDeleteTag !== null ||
+    pendingDeleteRemoteTag !== null ||
+    pendingForceMoveTag !== null ||
     pendingAddRemote ||
     pendingRenameRemote !== null ||
     pendingEditUrl !== null ||
@@ -448,14 +452,28 @@ export function RepoWorkspace({
     pendingWorktreeLock !== null ||
     worktreeContextOpen ||
     hookGate.pendingHook !== null ||
+    hookDisclosure.pendingHookDisclosure ||
     rebasePlan !== null;
 
   const [graph, setGraph] = useState<GraphLayout | null>(null);
+  // P65b: the stream assembler's incremental edge index + total row count for the
+  // active graph, threaded into GraphCanvas alongside `graph` (set together with
+  // it per applied batch so they never disagree).
+  const [graphEdgeIndex, setGraphEdgeIndex] = useState<IncrementalEdgeIndex | null>(null);
+  const [graphTotal, setGraphTotal] = useState<number | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const graphRef = useRef<GraphCanvasHandle>(null);
 
+  // P84: reveal-in-graph — flash descriptor + a11y announcement + reduced-motion
+  // flag + oid/refName→row lookups now live in useReveal (repoWorkspace/useReveal.ts).
+  const { revealFlash, revealMessage, reducedMotion, handleReveal } = useReveal({
+    graph,
+    setSelectedIndex,
+    revealBranch: checksTab.revealBranch,
+    pushToast,
+  });
   const [commitDiff, setCommitDiff] = useState<CommitDiff | null>(null);
   const [commitDiffLoading, setCommitDiffLoading] = useState(false);
   const [commitDiffError, setCommitDiffError] = useState<string | null>(null);
@@ -472,6 +490,11 @@ export function RepoWorkspace({
   const [intraline, setIntraline] = useState(false);
   const intralineRef = useRef(intraline);
   intralineRef.current = intraline;
+  // Bug fix: the "Changes" list view mode (tree vs flat), read through a ref by
+  // handleStage so the auto-advance target is computed in the SAME order the UI
+  // renders. Threaded via ref so toggling never re-creates the stage handler.
+  const listViewRef = useRef(listView);
+  listViewRef.current = listView;
   // P61b: image-diff data for the open overlay slot when its path is an image
   // (D4). Fetched in parallel with the text slot (getWorkdirFileDiff still runs
   // and returns a cheap binary FileDiff); DiffOverlay renders DiffImageView from
@@ -721,7 +744,6 @@ export function RepoWorkspace({
     );
     // overlayMeta is read via ref; the primitive deps below capture every change
     // that matters (which file, which section) plus a status-driven refresh.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repoId, overlayMeta?.path, overlayMeta?.kind, overlayMeta?.origPath, status]);
 
   // P17c: which granular action the open overlay offers, or null (read-only).
@@ -938,29 +960,51 @@ export function RepoWorkspace({
   }, [collapseDiffSlot]);
 
   const refetchGraph = useCallback(async () => {
+    // The `graphReqId` generation is the cancellation crux (P65 §6): it now gates
+    // chunk APPLICATION — chunks from a superseded stream (repo switch / new
+    // refetch) are dropped before they ever touch the assembler.
     const id = ++graphReqId.current;
     // Preserve selection across refetches (activation self-heal, focus rescan,
-    // watcher ticks) by commit OID: capture it BEFORE the fetch, remap after.
+    // watcher ticks) by commit OID: capture it BEFORE the stream, remap during.
     const prevSelectedId =
       selectedIndexRef.current != null
         ? (graphDataRef.current?.nodes[selectedIndexRef.current]?.id ?? null)
         : null;
+    const stream = createGraphStream();
+    // Chunk application + audit-§3.8 throw containment live in
+    // graphStreamApply.ts: the assembler throws on a non-contiguous batch (a
+    // correct invariant guard), but this callback runs inside Channel.onmessage
+    // where an escaped throw never reaches the catch below. The first throw
+    // surfaces via setGraphError and poisons the stream (later chunks drop).
+    const applier = createGraphStreamApplier(
+      stream,
+      prevSelectedId,
+      { setGraph, setGraphEdgeIndex, setGraphTotal, setSelectedIndex },
+      (e) => {
+        if (id === graphReqId.current) setGraphError(errorMessage(e));
+      },
+    );
     setGraphLoading(true);
     try {
-      const layout = await ipc.getGraph(repoId);
+      await ipc.streamGraph(repoId, (chunk) => {
+        if (id !== graphReqId.current) return; // stale / superseded stream
+        applier.handle(chunk);
+      });
       if (id !== graphReqId.current) return;
-      setGraph(layout);
+      // A poisoned stream already surfaced its error — don't clear it, and
+      // don't resolve the selection against the partial layout.
+      if (applier.poisoned) return;
       setGraphError(null);
-      if (prevSelectedId !== null) {
-        const idx = layout.nodes.findIndex((n) => n.id === prevSelectedId);
-        // Found -> remap to its (possibly shifted) row; gone -> clear.
-        setSelectedIndex(idx >= 0 ? idx : null);
-      } else {
-        setSelectedIndex(null);
-      }
+      // Post-stream selection resolution: a prior selection that never reappeared
+      // is gone -> clear; no prior selection -> null.
+      if (prevSelectedId === null || !applier.remapped) setSelectedIndex(null);
     } catch (e) {
       if (id !== graphReqId.current) return;
       setGraphError(errorMessage(e));
+      // Poison the rejected stream like a superseded one: a timed-out backend
+      // worker is detached, not stopped — late chunks must not pass the gate.
+      graphReqId.current++;
+      setGraphLoading(false);
     } finally {
       if (id === graphReqId.current) setGraphLoading(false);
     }
@@ -1060,72 +1104,129 @@ export function RepoWorkspace({
   const clearGraph = useCallback(() => {
     graphReqId.current += 1;
     setGraph(null);
+    setGraphEdgeIndex(null);
+    setGraphTotal(null);
     setGraphError(null);
     setGraphLoading(false);
     setSelectedIndex(null);
   }, []);
 
-  /** Composite post-op refresh (P1 §4.6): re-openRepo (refreshes header HEAD +
-   *  self-heals the watcher) + refetch status/graph/branches/opstate. Never
-   *  throws — failures surface as a sticky error toast. */
-  const refreshAll = useCallback(async (): Promise<void> => {
-    try {
-      const { info } = await ipc.openRepo(repoPath);
-      setRepo(info);
-      if (isUsableRepo(info)) {
-        await Promise.all([
-          refetchStatus(),
-          refetchGraph(),
-          refetchBranches(),
-          refetchStashes(),
-          refetchSubmodules(),
-          refetchWorktrees(),
-          refetchRemotes(),
-          refetchOpState(),
-          refetchCompare(),
-        ]);
-      } else {
-        clearStatus();
-        clearGraph();
-        clearBranches();
-        clearStashes();
-        clearSubmodules();
-        clearWorktrees();
-        clearRemotes();
-        clearOpState();
-        clearCompare();
-        // P23d: drop any blame/history overlay + invalidate in-flight fetches so
-        // a stale overlay can't linger over the now-empty pane.
-        blameReqId.current += 1;
-        setBlame(null);
-        historyReqId.current += 1;
-        setHistory(null);
+  // P81: origin-forced tag-sync flag for the NEXT round. Set synchronously by
+  // `refresh(origin)` before the coalescer starts a round; read+cleared at the
+  // start of `runRefreshRound`. `manual`/`activation`/`focus`/`mutation` origins
+  // force an ls-remote tag-drift re-check; the `watcher` (external repo-changed)
+  // origin leaves it false → NON-forced tagSync (P77: no-op until Tags opened),
+  // so an external FS event never forces a network ls-remote (Flag 2).
+  const pendingTagForceRef = useRef(false);
+
+  /** Composite post-op refresh (P1 §4.6): the canonical refresh round (P81 §2);
+   *  all origins funnel through the coalescer to it. P86a: SCOPED — only the
+   *  slices `scope` implies run, so a ref-only mutation never pays the O(worktree)
+   *  `get_status` scan and non-`full` scopes skip `openRepo` (they never move
+   *  HEAD). `full` still re-openRepos (refreshes header HEAD + self-heals the
+   *  watcher; clears everything if the repo went unusable). Never throws —
+   *  failures surface as a sticky error toast. */
+  const runRefreshRound = useCallback(
+    async (scope: RefreshScope): Promise<void> => {
+      const forceTagSync = pendingTagForceRef.current;
+      pendingTagForceRef.current = false;
+      const slices = slicesForScope(scope);
+      try {
+        if (slices.openRepo) {
+          const { info } = await ipc.openRepo(repoPath);
+          setRepo(info);
+          if (!isUsableRepo(info)) {
+            clearStatus();
+            clearGraph();
+            clearBranches();
+            clearStashes();
+            clearSubmodules();
+            clearWorktrees();
+            clearRemotes();
+            clearTagSync();
+            clearOpState();
+            clearCompare();
+            // P23d: drop any blame/history overlay + invalidate in-flight fetches
+            // so a stale overlay can't linger over the now-empty pane.
+            blameReqId.current += 1;
+            setBlame(null);
+            historyReqId.current += 1;
+            setHistory(null);
+            return;
+          }
+        }
+        const tasks: Promise<void>[] = [];
+        if (slices.status) tasks.push(refetchStatus());
+        if (slices.graph) tasks.push(refetchGraph());
+        if (slices.branches) tasks.push(refetchBranches());
+        if (slices.stashes) tasks.push(refetchStashes());
+        if (slices.submodules) tasks.push(refetchSubmodules());
+        if (slices.worktrees) tasks.push(refetchWorktrees());
+        if (slices.remotes) tasks.push(refetchRemotes());
+        if (slices.opState) tasks.push(refetchOpState());
+        if (slices.compare) tasks.push(refetchCompare());
+        if (slices.tagSync) {
+          // P77: re-check tag drift (no-op until the Tags section has been opened
+          // once this session). P81 Flag 2 / P86a: only `full` from a forcing
+          // origin (manual/focus/mutation) pays the ls-remote; `remoteMeta` and
+          // watcher-driven rounds run non-forced.
+          const forced = slices.tagSyncForcable && forceTagSync;
+          tasks.push(refetchTagSync(forced ? { force: true } : undefined));
+        }
+        await Promise.all(tasks);
+      } catch (e) {
+        pushToast('error', `Refresh failed: ${errorMessage(e)}`);
       }
-    } catch (e) {
-      pushToast('error', `Refresh failed: ${errorMessage(e)}`);
-    }
-  }, [
-    repoPath,
-    refetchStatus,
-    refetchGraph,
-    refetchBranches,
-    refetchStashes,
-    refetchSubmodules,
-    refetchWorktrees,
-    refetchRemotes,
-    refetchOpState,
-    refetchCompare,
-    clearStatus,
-    clearGraph,
-    clearBranches,
-    clearStashes,
-    clearSubmodules,
-    clearWorktrees,
-    clearRemotes,
-    clearOpState,
-    clearCompare,
-    pushToast,
-  ]);
+    },
+    [
+      repoPath,
+      refetchStatus,
+      refetchGraph,
+      refetchBranches,
+      refetchStashes,
+      refetchSubmodules,
+      refetchWorktrees,
+      refetchRemotes,
+      refetchOpState,
+      refetchCompare,
+      refetchTagSync,
+      clearStatus,
+      clearGraph,
+      clearBranches,
+      clearStashes,
+      clearSubmodules,
+      clearWorktrees,
+      clearRemotes,
+      clearTagSync,
+      clearOpState,
+      clearCompare,
+      pushToast,
+    ],
+  );
+
+  // P81 §2/§3: coalesce every refresh entry point onto the one canonical round.
+  // The coalescer collapses overlapping requests (leading + at-most-one-trailing)
+  // and the shared echo registry drops the self-caused watcher echo within TTL.
+  const { refresh: coalescedRefresh } = useCoalescedRefresh(repoId, runRefreshRound);
+  const refresh = useCallback(
+    (origin: RefreshOrigin, scope: RefreshScope): Promise<void> => {
+      // Forced tag-drift re-check for user-initiated origins (mutation writes,
+      // manual refresh, activation self-heal, focus rescan). Set BEFORE enqueuing
+      // so the round about to start reads it (P81 Flag 2). `watcher` (raw fs echo)
+      // and `external` (backend-confirmed change — the backend already ran the
+      // tag-sync) do NOT force a fresh ls-remote.
+      if (origin !== 'watcher' && origin !== 'external') pendingTagForceRef.current = true;
+      return coalescedRefresh(origin, scope);
+    },
+    [coalescedRefresh],
+  );
+  // Name preserved: the mutation call sites + hook deps stay untouched (they now
+  // pass an explicit scope; the default keeps unscoped callers on `full`).
+  // A mutation is a local write → arms echo suppression + (for `full`) forces tagSync.
+  const refreshAll = useCallback(
+    (scope: RefreshScope = 'full'): Promise<void> => refresh('mutation', scope),
+    [refresh],
+  );
 
   // Initial load on mount: fetch state for repoId (the repo is already opened by
   // App — do NOT openRepo again here, §5.1). Runs for active AND background tabs.
@@ -1147,22 +1248,29 @@ export function RepoWorkspace({
   // Activation self-heal (§7): on every flip TO active AFTER mount, refreshAll —
   // catches events missed while the tab was display:none. Skips the mount run
   // (the initial load above already covers first paint).
-  const refreshAllRef = useRef(refreshAll);
-  refreshAllRef.current = refreshAll;
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
   const activeFlipRef = useRef(false);
   useEffect(() => {
     if (!activeFlipRef.current) {
       activeFlipRef.current = true;
       return;
     }
-    if (active) void refreshAllRef.current();
+    // P81: activation ALWAYS refreshes (never echo-gated) — catches events
+    // missed while the tab was display:none. Full scope for the self-heal.
+    if (active) void refreshRef.current('activation', 'full');
   }, [active]);
 
   // Selection -> commit diff (M4 §4.4). Every selection change resets the shared
   // expansion slot (its keys belong to the previous mode/commit).
   useEffect(() => {
     if (selectedIndex !== null && graph !== null) {
-      const oid = graph.nodes[selectedIndex].id;
+      const node = graph.nodes[selectedIndex];
+      // Mid-stream partial layout: the selected commit's row is not in the
+      // streamed window yet. Skip — leave the current panel untouched until the
+      // refetch remap re-points selectedIndex and this effect re-runs.
+      if (!node) return;
+      const oid = node.id;
       const key = `${repoId}:${oid}`;
       // Same commit as already loaded (a refetch only shifted its row, or the
       // graph object churned) -> keep the panel + open file diff untouched.
@@ -1208,51 +1316,9 @@ export function RepoWorkspace({
     setCommitBrowserOpen(false);
   }, [compare?.oid, selectedOid]);
 
-  // repo-changed subscription: filter to THIS repo; refetch regardless of active
-  // so a background tab stays fresh when its watcher fires (§7).
-  useEffect(() => {
-    let cancelled = false;
-    const unsubs: Unsubscribe[] = [];
-    const subscribe = async () => {
-      const off = await ipc.onRepoChanged((p) => {
-        if (p.repoId !== repoId) return;
-        void refetchStatus();
-        void refetchGraph();
-        void refetchBranches();
-        void refetchStashes();
-        void refetchSubmodules();
-        void refetchWorktrees();
-        void refetchRemotes();
-        void refetchOpState();
-        void refetchCompare();
-      });
-      if (cancelled) {
-        off();
-        return;
-      }
-      unsubs.push(off);
-    };
-    // Subscription loss = degraded live refresh only (manual refresh + focus
-    // rescan still work) — log, don't crash.
-    void subscribe().catch((e: unknown) => {
-      console.error('repo-changed subscription failed', e);
-    });
-    return () => {
-      cancelled = true;
-      for (const unsub of unsubs) unsub();
-    };
-  }, [
-    repoId,
-    refetchStatus,
-    refetchGraph,
-    refetchBranches,
-    refetchStashes,
-    refetchSubmodules,
-    refetchWorktrees,
-    refetchRemotes,
-    refetchOpState,
-    refetchCompare,
-  ]);
+  // P86a: repo-changed + tag-auto-sync subscriptions (reason-aware refresh routing
+  // + the CI-3 tag-count toast) live in their own hook so the container stays thin.
+  useRepoChangeSubscription(repoId, refresh, pushToast);
 
   // Window-focus rescan: ACTIVE tab only (the visible tab is the one the user
   // just returned to; background tabs self-heal on activation, §7).
@@ -1262,16 +1328,10 @@ export function RepoWorkspace({
     const unsubs: Unsubscribe[] = [];
     const subscribe = async () => {
       const off = await ipc.onWindowFocus(() => {
-        void refetchStatus();
-        void refetchGraph();
-        void refetchBranches();
-        void refetchStashes();
-        void refetchSubmodules();
-        void refetchWorktrees();
-        void refetchRemotes();
-        void refetchOpState();
-        void refetchCompare();
+        // P81 §7: focus rescan ALWAYS refreshes (never echo-gated). Full self-heal.
+        void refresh('focus', 'full');
         forgeSignals.refresh('focus'); // P63: TTL-guarded (not forced)
+        checksTab.bumpRefresh(); // P90: refresh-on-focus for the Checks tab
       });
       if (cancelled) {
         off();
@@ -1287,19 +1347,7 @@ export function RepoWorkspace({
       cancelled = true;
       for (const unsub of unsubs) unsub();
     };
-  }, [
-    active,
-    refetchStatus,
-    refetchGraph,
-    refetchBranches,
-    refetchStashes,
-    refetchSubmodules,
-    refetchWorktrees,
-    refetchRemotes,
-    refetchOpState,
-    refetchCompare,
-    forgeSignals.refresh,
-  ]);
+  }, [active, refresh, forgeSignals.refresh, checksTab.bumpRefresh]);
 
   // P63: a new graph layout identity (post fetch/pull/branch-op) may carry new
   // branch tips → TTL-guarded forge-signal refresh so their badges appear. Fires
@@ -1389,15 +1437,35 @@ export function RepoWorkspace({
     if (refreshing) return;
     setRefreshing(true);
     try {
-      await refreshAll();
+      await refresh('manual', 'full'); // P81: always runs (never echo-gated)
       verification.refresh();
       forgeSignals.refresh('manual', true); // P63: forced (bypass TTL)
       void refetchSigningStatus();
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing, refreshAll, verification.refresh, forgeSignals.refresh, refetchSigningStatus]);
+  }, [refreshing, refresh, verification.refresh, forgeSignals.refresh, refetchSigningStatus]);
   const headBranch = branches?.local.find((b) => b.isHead) ?? null;
+
+  // P78: branch suggestions + base hint for the PR create form. Compare = local
+  // branches; Base = local + remote-tracking branches. Base hint prefers the head
+  // branch's upstream, then a local main/master, else empty.
+  const prCompareOptions = useMemo<ComboboxOption[]>(
+    () => (branches?.local ?? []).map((b) => ({ value: b.name, label: b.name })),
+    [branches],
+  );
+  const prBaseOptions = useMemo<ComboboxOption[]>(() => {
+    const locals = (branches?.local ?? []).map((b) => ({ value: b.name, label: b.name }));
+    const remotes = (branches?.remote ?? []).map((b) => ({ value: b.name, label: b.name }));
+    return [...locals, ...remotes];
+  }, [branches]);
+  const prDefaultBase = useMemo<string | null>(() => {
+    if (headBranch?.upstream != null && headBranch.upstream !== '') return headBranch.upstream;
+    const localNames = (branches?.local ?? []).map((b) => b.name);
+    if (localNames.includes('main')) return 'main';
+    if (localNames.includes('master')) return 'master';
+    return '';
+  }, [headBranch, branches]);
 
   // P58c: the selected commit's signature verdict for the CommitPanel line —
   // reuses the shared verify cache (single source; no extra IPC). null when
@@ -1406,29 +1474,26 @@ export function RepoWorkspace({
   const commitSignature =
     selectedOid !== null ? (verification.detailsFor(selectedOid) ?? null) : null;
 
+  // P63/P90: force forge-signal + Checks refetch after any remote op (fetch/pull + push).
+  const bumpForgeAndChecks = useCallback(() => {
+    forgeSignals.refresh('remote', true);
+    checksTab.bumpRefresh();
+  }, [forgeSignals.refresh, checksTab.bumpRefresh]);
   const { handleFetch, handlePull, pushCurrentBranch, handlePush, handleForcePush, doForcePush } =
     useRemoteOps({
       repoId,
       pushToast,
       setMutating,
       refreshAll,
-      refetchBranches,
-      refetchGraph,
       setRemoteOp,
       setPendingForcePush,
       setPendingNonFfPull,
       runWithHookGate: hookGate.runWithHookGate,
+      onPushComplete: bumpForgeAndChecks,
     });
 
-  // P63: fetch/pull success may land new tips or new CI verdicts → FORCE a
-  // forge-signal refresh (bypass TTL) after they complete. Both internally catch
-  // + toast, so they resolve normally (the `.then` runs on completion).
-  const onFetch = useCallback(() => {
-    void handleFetch().then(() => forgeSignals.refresh('remote', true));
-  }, [handleFetch, forgeSignals.refresh]);
-  const onPull = useCallback(() => {
-    void handlePull().then(() => forgeSignals.refresh('remote', true));
-  }, [handlePull, forgeSignals.refresh]);
+  const onFetch = useCallback(() => void handleFetch().then(bumpForgeAndChecks), [handleFetch, bumpForgeAndChecks]);
+  const onPull = useCallback(() => void handlePull().then(bumpForgeAndChecks), [handlePull, bumpForgeAndChecks]);
 
   const {
     handleStage,
@@ -1449,7 +1514,6 @@ export function RepoWorkspace({
     pushToast,
     setMutating,
     refreshAll,
-    refetchStatus,
     reportStatusError,
     fetchDiffSlot,
     pushCurrentBranch,
@@ -1458,6 +1522,7 @@ export function RepoWorkspace({
     diffSlotRef,
     diffViewModeRef,
     intralineRef,
+    listViewRef,
     head,
     headBranch,
     setAmend,
@@ -1473,6 +1538,7 @@ export function RepoWorkspace({
   const {
     handleCreateBranch,
     handleCheckoutBranch,
+    handleCheckoutCommit,
     handleCreateBranchHere,
     handleDeleteBranch,
     handleRenameBranch,
@@ -1483,8 +1549,6 @@ export function RepoWorkspace({
     pushToast,
     setMutating,
     refreshAll,
-    refetchBranches,
-    refetchGraph,
     branches,
     setBranchesError,
     setPendingCreateBranch,
@@ -1495,7 +1559,8 @@ export function RepoWorkspace({
     handleMergeBranch,
     handleResolveConflict,
     handleResolveConflictText,
-    handleAiResolveConflict,
+    handleAiApplyResolution,
+    openAiProposal,
     handleCommitMerge,
     handleAbortMerge,
   } = useMergeActions({
@@ -1503,12 +1568,29 @@ export function RepoWorkspace({
     pushToast,
     setMutating,
     refreshAll,
-    aiConflictAutonomy,
-    setAiResolvingPath,
     setDiffSlot,
     fileDiffReqId,
     runWithHookGate: hookGate.runWithHookGate,
   });
+
+  // P68d §C: the per-path AI run store — THE item-5 fix (rationale in the hook's header).
+  const conflictPaths = useMemo(() => conflicts.map((c) => c.path), [conflicts]);
+  const aiRuns = useAiRuns({
+    repoId,
+    pushToast,
+    aiConflictAutonomy,
+    aiEligible,
+    applyResolution: handleAiApplyResolution, // P68 #7 / H1: GATED writer (not the manual save)
+    refreshAll, // P68f: ONE refresh after a multi-file autoResolve stage, not N.
+    openAiProposal,
+    conflictPaths,
+    // FOLD-IN 1: never steal the center pane from a user who navigated away while
+    // the run worked (the rationale lives on `AiRunsDeps.diffSlotKey`).
+    diffSlotKey: () => diffSlotRef.current?.key ?? null,
+  });
+
+  // P68f §6.4: "Resolve all with AI" — ONE run over every AI-eligible conflict, confirm-gated.
+  const aiBulk = useBulkAiResolve({ conflicts, aiEligible, aiConflictAutonomy, aiRuns });
 
   const { handleCreateStash, handleApplyStash, handlePopStash, handleDropStash } = useStashActions({
     repoId,
@@ -1516,7 +1598,6 @@ export function RepoWorkspace({
     setMutating,
     refreshAll,
     refetchStashes,
-    refetchGraph,
     setPendingReservedStash,
   });
 
@@ -1531,9 +1612,10 @@ export function RepoWorkspace({
     repoId,
     pushToast,
     setMutating,
+    setSubmoduleBusy,
+    refreshAll,
     refetchSubmodules,
-    refetchStatus,
-    refetchGraph,
+    onSubmoduleDirtyRefused: (name, op) => setPendingForceSubmodule({ name, op }),
   });
 
   const { handleAddWorktree, handleLockWorktree, handleUnlockWorktree, handleRemoveWorktree } =
@@ -1549,6 +1631,10 @@ export function RepoWorkspace({
     handleCreateTag,
     handleDeleteTag,
     handlePushTag,
+    handleForceRefreshTag,
+    handleFetchRemoteTag,
+    handleDeleteRemoteTag,
+    handleForceMoveRemoteTag,
     handleAddRemote,
     handleRemoveRemote,
     handleRenameRemote,
@@ -1557,9 +1643,9 @@ export function RepoWorkspace({
     repoId,
     pushToast,
     setMutating,
-    refetchBranches,
-    refetchGraph,
+    refreshAll,
     refetchRemotes,
+    refetchTagSync,
   });
 
   const {
@@ -1603,343 +1689,39 @@ export function RepoWorkspace({
       refreshAll,
       setPendingBisectBad,
     });
-  // P17c: switch File/Diff view. When a workdir file diff is open, re-fetch it
-  // with the new `fullContext` (File View = one whole-file hunk); the same key
-  // keeps the stale content visible during the swap. Conflict/ai-proposal slots
-  // are not FileDiffs (they use getConflict), so they need no refetch.
-  const handleSetViewMode = useCallback(
-    (m: 'diff' | 'file' | 'split') => {
-      setDiffViewMode(m);
-      const meta = overlayMetaRef.current;
-      const slot = diffSlotRef.current;
-      if (slot === null || meta === null) return;
-      if (meta.kind === 'staged' || meta.kind === 'unstaged' || meta.kind === 'untracked') {
-        const staged = meta.kind === 'staged';
-        void fetchDiffSlot(slot.key, () =>
-          ipc.getWorkdirFileDiff(
-            repoId,
-            meta.path,
-            meta.origPath,
-            staged,
-            m === 'file',
-            intralineRef.current,
-          ),
-        );
-      }
-    },
-    [repoId, fetchDiffSlot],
-  );
-
-  // P61a: flip "Highlight changes" and refetch the open workdir slot with the
-  // new `intraline` flag (same refetch pattern as handleSetViewMode; the same
-  // key keeps stale content visible during the swap). Commit/compare diffs live
-  // in DiffBrowser, not the overlay slot, so nothing else refetches here.
-  const handleToggleIntraline = useCallback(
-    (next: boolean) => {
-      setIntraline(next);
-      const meta = overlayMetaRef.current;
-      const slot = diffSlotRef.current;
-      if (slot === null || meta === null) return;
-      if (meta.kind === 'staged' || meta.kind === 'unstaged' || meta.kind === 'untracked') {
-        const staged = meta.kind === 'staged';
-        void fetchDiffSlot(slot.key, () =>
-          ipc.getWorkdirFileDiff(
-            repoId,
-            meta.path,
-            meta.origPath,
-            staged,
-            diffViewModeRef.current === 'file',
-            next,
-          ),
-        );
-      }
-    },
-    [repoId, fetchDiffSlot],
-  );
-
-  // P17c: stage/unstage exactly `selection` (already Context-dropped) for the
-  // file open in the overlay. Direction + path/origPath come from the current
-  // stageable/overlay meta. Guarded by the `mutating` flag like handleStage.
-  // refetchStatus re-fetches the matching mode-A workdir slot by path in the new
-  // snapshot (honoring the current view mode), so no extra slot fetch is needed;
-  // a src/main.rs-style file persists in its section (and may now appear in both
-  // staged & unstaged). If the entry leaves its section, refetchStatus collapses.
-  const handleStageLines = useCallback(
-    async (selection: LineSelection[]) => {
-      if (selection.length === 0) return; // empty selection -> skip
-      if (mutatingRef.current) return;
-      const meta = overlayMetaRef.current;
-      const dir = stageableRef.current;
-      if (meta === null || dir === null) return;
-      setMutating(true);
-      try {
-        if (dir === 'stage') {
-          await ipc.stagePartial(repoId, meta.path, meta.origPath, selection);
-        } else {
-          await ipc.unstagePartial(repoId, meta.path, meta.origPath, selection);
-        }
-        await refetchStatus();
-      } catch (e) {
-        reportStatusError(errorMessage(e));
-      } finally {
-        setMutating(false);
-      }
-    },
-    [repoId, refetchStatus, reportStatusError],
-  );
-
-  // P17c: stage/unstage every add/del line of hunk `hunkIndex` from the open
-  // diff (Diff View hunk-header button). Builds the selection then delegates.
-  const handleStageHunk = useCallback(
-    (hunkIndex: number) => {
-      const d = diffSlotRef.current?.diff ?? null;
-      const hunk = d?.hunks[hunkIndex];
-      if (hunk === undefined) return;
-      const selection: LineSelection[] = hunk.lines
-        .filter((l) => l.kind === 'add' || l.kind === 'del')
-        .map((l) => ({ kind: l.kind, oldNo: l.oldNo, newNo: l.newNo }));
-      void handleStageLines(selection);
-    },
-    [handleStageLines],
-  );
-
-  // P28: request a hunk discard — just arms the ConfirmDialog (destructive ops
-  // always confirm first). Passed to DiffOverlay only for unstaged tracked
-  // diffs (see the render-site gating), so meta here is the unstaged file.
-  const handleDiscardHunk = useCallback((hunkIndex: number) => {
-    const meta = overlayMetaRef.current;
-    if (meta === null) return;
-    setPendingHunkDiscard({ path: meta.path, origPath: meta.origPath, hunkIndex });
-  }, []);
-
-  // P28: confirmed hunk discard — build the LineSelection from the open diff's
-  // hunk (same rule as handleStageHunk) and revert it in the worktree, then
-  // refetch like handleStageLines does. Guarded by `mutating`.
-  const handleConfirmHunkDiscard = useCallback(
-    async (pending: { path: string; origPath: string | null; hunkIndex: number }) => {
-      if (mutatingRef.current) return;
-      // The slot must still show the file the dialog was armed for.
-      if (overlayMetaRef.current?.path !== pending.path) return;
-      const d = diffSlotRef.current?.diff ?? null;
-      const hunk = d?.hunks[pending.hunkIndex];
-      if (hunk === undefined) return; // stale click; diff changed underneath
-      const selection: LineSelection[] = hunk.lines
-        .filter((l) => l.kind === 'add' || l.kind === 'del')
-        .map((l) => ({ kind: l.kind, oldNo: l.oldNo, newNo: l.newNo }));
-      if (selection.length === 0) return;
-      setMutating(true);
-      try {
-        await ipc.discardPartial(repoId, pending.path, pending.origPath, selection);
-        await refetchStatus();
-      } catch (e) {
-        reportStatusError(errorMessage(e));
-      } finally {
-        setMutating(false);
-      }
-    },
-    [repoId, refetchStatus, reportStatusError],
-  );
-
-  // P45: request a per-line discard — just arms the ConfirmDialog (destructive
-  // ops always confirm first). The selection is captured verbatim because
-  // arbitrary lines can't be re-derived after the diff refetches (unlike a hunk
-  // index). Passed to DiffOverlay only for unstaged tracked diffs (see gating).
-  const handleDiscardLines = useCallback((selection: LineSelection[]) => {
-    if (selection.length === 0) return;
-    const meta = overlayMetaRef.current;
-    if (meta === null) return;
-    setPendingLineDiscard({ path: meta.path, origPath: meta.origPath, selection });
-  }, []);
-
-  // P45: confirmed per-line discard — revert exactly the stored selection in the
-  // worktree, then refetch like handleConfirmHunkDiscard. Guarded by `mutating`;
-  // the backend's stale() guard rejects a selection whose coordinates moved.
-  const handleConfirmLineDiscard = useCallback(
-    async (pending: { path: string; origPath: string | null; selection: LineSelection[] }) => {
-      if (mutatingRef.current) return;
-      // The slot must still show the file the dialog was armed for.
-      if (overlayMetaRef.current?.path !== pending.path) return;
-      if (pending.selection.length === 0) return;
-      setMutating(true);
-      try {
-        await ipc.discardPartial(repoId, pending.path, pending.origPath, pending.selection);
-        await refetchStatus();
-      } catch (e) {
-        reportStatusError(errorMessage(e));
-      } finally {
-        setMutating(false);
-      }
-    },
-    [repoId, refetchStatus, reportStatusError],
-  );
-
-  // P15b: run an explain/review analysis of a diff target and show the prose in
-  // the AiOutputPanel. Read-only — writes nothing. Guarded by a req-id so a slow
-  // response can't clobber a newer request or a closed panel.
-  const runAnalyze = useCallback(
-    (target: AiDiffTarget, mode: AiAnalysisMode, title: string) => {
-      const id = ++aiPanelReqId.current;
-      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null });
-      ipc.aiAnalyzeDiff(repoId, target, mode).then(
-        (res) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: res.text, loading: false, error: null, costUsd: res.costUsd });
-        },
-        (e: unknown) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: null, loading: false, error: errorMessage(e), costUsd: null });
-        },
-      );
-    },
-    [repoId],
-  );
-
-  // P57c: answer a natural-language history question grounded in the retrieved
-  // commits' real diffs, rendering the prose in the shared AiOutputPanel. Shares
-  // runAnalyze's last-wins req-id guard so a slow/superseded response can't
-  // clobber a newer request or a closed panel. `runHistoryAnswer` is handed to
-  // useHistorySearch as its `runAiAnswer` route.
-  const runHistoryAnswer = useCallback(
-    (question: string, topK: number) => {
-      const title = `History: "${question}"`;
-      const id = ++aiPanelReqId.current;
-      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null });
-      ipc.aiSearchHistory(repoId, question, topK).then(
-        (res) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: res.text, loading: false, error: null, costUsd: res.costUsd });
-        },
-        (e: unknown) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: null, loading: false, error: errorMessage(e), costUsd: null });
-        },
-      );
-    },
-    [repoId],
-  );
-
-  // P15c: summarize the commits/diff unique to `target` vs `base` and show the
-  // prose in the AiOutputPanel. Read-only — writes nothing. Shares the same
-  // req-id guard as runAnalyze so a slow response can't clobber a newer request
-  // or a closed panel.
-  const runSummarize = useCallback(
-    (base: string, target: string) => {
-      const title = `Summary: ${base} → ${target}`;
-      const id = ++aiPanelReqId.current;
-      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null });
-      ipc.aiSummarizeRange(repoId, base, target).then(
-        (res) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: res.text, loading: false, error: null, costUsd: res.costUsd });
-        },
-        (e: unknown) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: null, loading: false, error: errorMessage(e), costUsd: null });
-        },
-      );
-    },
-    [repoId],
-  );
-
-  // P28 §7: digest "what changed" over a range and show the prose in the
-  // AiOutputPanel. Read-only — writes nothing. Shares the same req-id guard as
-  // runAnalyze so a slow response can't clobber a newer request or a closed
-  // panel. `title` is range-derived, built by WhatChangedDialog.
-  const runDigest = useCallback(
-    (range: AiDigestRange, title: string) => {
-      const id = ++aiPanelReqId.current;
-      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null });
-      ipc.aiDigest(repoId, range).then(
-        (res) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: res.text, loading: false, error: null, costUsd: res.costUsd });
-        },
-        (e: unknown) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: null, loading: false, error: errorMessage(e), costUsd: null });
-        },
-      );
-    },
-    [repoId],
-  );
-
-  // P56b §6: generate grouped release notes for a tag/ref range and show the
-  // Markdown in the AiOutputPanel (editable). Read-only — writes nothing. Shares
-  // the same req-id guard as runAnalyze so a slow response can't clobber a newer
-  // request or a closed panel. The provisional `title` covers the loading state;
-  // on success the header becomes `Release notes: <fromRef>..<toRef>` from the
-  // RESOLVED range (e.g. the previous-tag name for sinceLastTag).
-  const runChangelog = useCallback(
-    (range: ChangelogRange, title: string) => {
-      const id = ++aiPanelReqId.current;
-      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null, editable: true });
-      ipc.aiChangelog(repoId, range).then(
-        (res) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({
-            title: `Release notes: ${res.fromRef}..${res.toRef}`,
-            text: res.text,
-            loading: false,
-            error: null,
-            costUsd: res.costUsd,
-            editable: true,
-          });
-        },
-        (e: unknown) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({
-            title,
-            text: null,
-            loading: false,
-            error: errorMessage(e),
-            costUsd: null,
-            editable: true,
-          });
-        },
-      );
-    },
-    [repoId],
-  );
+  // P17c/P28/P45: partial staging + hunk/line discard + the two overlay refetch
+  // toggles, all in one hook (see repoWorkspace/usePartialStaging.ts). The state
+  // they drive stays here because the render body and `opActive` read it.
+  const {
+    handleSetViewMode,
+    handleToggleIntraline,
+    handleStageLines,
+    handleStageHunk,
+    handleDiscardHunk,
+    handleConfirmHunkDiscard,
+    handleDiscardLines,
+    handleConfirmLineDiscard,
+  } = usePartialStaging({
+    repoId,
+    setMutating,
+    mutatingRef,
+    overlayMetaRef,
+    diffSlotRef,
+    stageableRef,
+    diffViewModeRef,
+    intralineRef,
+    setDiffViewMode,
+    setIntraline,
+    setPendingHunkDiscard,
+    setPendingLineDiscard,
+    fetchDiffSlot,
+    refetchStatus,
+    reportStatusError,
+  });
 
   // P56b: open the general "Release notes…" range picker (palette entry). Stable
   // so the palette-action useMemo doesn't rebuild each render.
   const openChangelog = useCallback(() => setChangelogOpen(true), []);
-
-  // P53a: blame-why — explain WHY a line exists and show the prose in the
-  // AiOutputPanel. Read-only — writes nothing. Shares the same req-id guard as
-  // runAnalyze so a slow response can't clobber a newer request or a closed
-  // panel. `atOid` is the blamed version (null => HEAD in v1).
-  const runExplainLine = useCallback(
-    (path: string, lineNo: number, atOid: string | null, title: string) => {
-      const id = ++aiPanelReqId.current;
-      setAiPanel({ title, text: null, loading: true, error: null, costUsd: null });
-      ipc.aiExplainLine(repoId, path, lineNo, atOid).then(
-        (res) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: res.text, loading: false, error: null, costUsd: res.costUsd });
-        },
-        (e: unknown) => {
-          if (id !== aiPanelReqId.current) return;
-          setAiPanel({ title, text: null, loading: false, error: errorMessage(e), costUsd: null });
-        },
-      );
-    },
-    [repoId],
-  );
-
-  // P53a: BlameView "Why?" entry point — blame is always vs HEAD in v1, so
-  // atOid is null. Title mirrors the mock/backend grounding label.
-  const onBlameExplain = useCallback(
-    (path: string, lineNo: number) => {
-      runExplainLine(path, lineNo, null, `Why line ${lineNo} of ${path}`);
-    },
-    [runExplainLine],
-  );
-
-  const closeAiPanel = useCallback(() => {
-    aiPanelReqId.current += 1;
-    setAiPanel(null);
-  }, []);
 
   // P55c: map a natural-language `request` to ONE allowlisted, previewable op via
   // the READ-ONLY planner. Mirrors runAnalyze's last-wins req-id guard so a slow,
@@ -1976,6 +1758,25 @@ export function RepoWorkspace({
     setAskBusy(false);
     setAskOpen(true);
   }, []);
+
+  // P68e: all of the dock's container-side glue lives in the hook (§9). It sits HERE,
+  // after `openChangelog`/`openAskBonsai`, so those two stable `useCallback`s can be
+  // passed BY REFERENCE — inline-arrow thunks made `aiDock.paletteEntries` (and so the
+  // palette's `actions` array) a fresh object every render, resetting its highlight.
+  const aiDock = useAiDock({
+    aiRuns,
+    height: aiDockHeight,
+    collapsed: aiDockCollapsed,
+    onChange: onAiDockChange,
+    density: panelDensity,
+    streamLogEnabled: aiStreamLog,
+    aiEligible,
+    onAskBonsai: openAskBonsai,
+    onChangelog: openChangelog,
+  });
+
+  // P87b: the git-activity session store (View C + View D) + its dock container.
+  const gitDock = useGitDock({ density: panelDensity });
 
   // P60c: describe the last HEAD-moving op (READ-ONLY) and open the UndoDialog.
   // Confirming there reuses the shipped resetBranch (handleResetBranch) with the
@@ -2115,8 +1916,7 @@ export function RepoWorkspace({
   );
   const composer = useCommitComposer({
     repoId,
-    refetchStatus,
-    refetchGraph,
+    refreshAll,
     pushToast,
     previewFileDiff: previewComposerFileDiff,
   });
@@ -2189,31 +1989,11 @@ export function RepoWorkspace({
       revealCommitByOid,
       appCommands,
     });
-    // P55c / P56b: prepend the AI entries (registry pattern, gated aiEligible) so
-    // they lead the Action group and are fuzzy-filterable. "Ask Bonsai to…" opens
-    // the read-only NL input (nothing mutates until the resolved op's confirm);
-    // "Release notes…" opens the read-only ChangelogDialog range picker. unshift
-    // with two args keeps Ask first, Release notes second.
-    if (aiEligible) {
-      actions.unshift(
-        {
-          id: 'ai.ask',
-          title: 'Ask Bonsai to…',
-          hint: '✨',
-          group: 'action',
-          keywords: 'ai natural language nl request undo revert switch stash discard merge branch',
-          run: openAskBonsai,
-        },
-        {
-          id: 'ai.changelog',
-          title: 'Release notes…',
-          hint: '✨',
-          group: 'action',
-          keywords: 'ai changelog release notes tag range markdown between refs since last tag',
-          run: openChangelog,
-        },
-      );
-    }
+    // P55c / P56b lead the Action group; P68e's dock rows trail it. Both registries
+    // live in `paletteActions.ts` (§E) so this container stays a composition site.
+    actions.unshift(...aiDock.paletteEntries.lead);
+    actions.push(...aiDock.paletteEntries.trail);
+    actions.push(...gitDock.paletteEntries); // P87b §5: the "Git activity" row.
     return actions;
   }, [
     palette.open,
@@ -2236,9 +2016,8 @@ export function RepoWorkspace({
     graph,
     revealCommitByOid,
     appCommands,
-    aiEligible,
-    openAskBonsai,
-    openChangelog,
+    aiDock.paletteEntries,
+    gitDock.paletteEntries,
   ]);
 
   function handleToggleConflictView(path: string) {
@@ -2278,7 +2057,9 @@ export function RepoWorkspace({
 
   function handleSelectParent(parentOrdinal: number) {
     if (selectedIndex === null || graph === null) return;
-    const parentIndex = graph.nodes[selectedIndex].parents[parentOrdinal];
+    const node = graph.nodes[selectedIndex];
+    if (!node) return; // selection not yet in the streamed (partial) window
+    const parentIndex = node.parents[parentOrdinal];
     if (parentIndex !== undefined) setSelectedIndex(parentIndex);
   }
 
@@ -2309,8 +2090,8 @@ export function RepoWorkspace({
   }
 
   // P9 §6.4: right-click a sidebar stash row → open the shared context menu.
-  function handleStashContextMenu(index: number, clientX: number, clientY: number) {
-    setMenu({ x: clientX, y: clientY, items: menus.stashMenuItems(index) });
+  function handleStashContextMenu(index: number, oid: string, clientX: number, clientY: number) {
+    setMenu({ x: clientX, y: clientY, items: menus.stashMenuItems(index, oid) });
   }
 
   // P19 §6.4: right-click a sidebar submodule row → open the shared context
@@ -2400,11 +2181,17 @@ export function RepoWorkspace({
     graphLoading,
     mutating,
     canPullPush,
-    dialogOpen,
+    // Audit §3.9: the bulk-AI confirm is a sibling modal — suppress workspace
+    // shortcuts (Ctrl+K/Ctrl+F/F5, graph navigation) under it like the rest.
+    // It joins here rather than in the line-~444 disjunction because `aiBulk`
+    // is declared after that point.
+    dialogOpen: dialogOpen || aiBulk.confirm.open,
     abortConfirmOpen,
     selectedIndex,
     graph,
     graphRef,
+    onAiActivity: aiDock.focusDock,
+    onGitActivity: gitDock.toggleDock,
     handleRefresh,
     handleFetch: onFetch, // P63: refresh forge signals after fetch
     handlePull: onPull, // P63: refresh forge signals after pull
@@ -2451,6 +2238,7 @@ export function RepoWorkspace({
     pushToast,
     handleCheckoutRemote,
     handleCheckoutBranch,
+    handleCheckoutCommit,
     setPendingCreateBranch,
     runSummarize,
     runAnalyze,
@@ -2462,8 +2250,10 @@ export function RepoWorkspace({
     setPendingDeleteRemote,
     setPendingDeleteBranch,
     setPendingRenameBranch,
-    handleApplyStash,
-    handlePopStash,
+    // F-A6-B: the menu passes the rendered oid as arg 2; forward it as the
+    // wrong-target guard (skipReserved stays false for the first attempt).
+    handleApplyStash: (index, oid) => void handleApplyStash(index, false, oid),
+    handlePopStash: (index, oid) => void handlePopStash(index, false, oid),
     setPendingDropStash,
     handleInitSubmodule,
     handleUpdateSubmodule,
@@ -2477,6 +2267,11 @@ export function RepoWorkspace({
     setPendingWorktreeRemove,
     setPendingDeleteTag,
     handlePushTag,
+    tagSync: tagSyncReport,
+    handleForceRefreshTag,
+    handleFetchRemoteTag,
+    setPendingDeleteRemoteTag,
+    setPendingForceMoveTag,
     setPendingRenameRemote,
     setPendingEditUrl,
     setPendingRemoveRemote,
@@ -2545,16 +2340,22 @@ export function RepoWorkspace({
     }
     // Commit mode: EXPLICIT-open only.
     if (selectedIndex !== null && graph !== null && commitBrowserOpen && commitDiff !== null) {
-      const oid = graph.nodes[selectedIndex].id;
-      return {
-        source: {
-          mode: 'commit' as const,
-          oid,
-          title: `${shortOid(oid)} · ${commitDiff.details.summary}`,
-        },
-        files: commitDiff.files,
-        onClose: () => setCommitBrowserOpen(false),
-      };
+      // Mid-stream partial layout: the selected commit's row is not in the
+      // streamed window yet -> fall through to null (no browser) until the
+      // refetch remap re-points selectedIndex and this memo re-runs.
+      const node = graph.nodes[selectedIndex];
+      if (node) {
+        const oid = node.id;
+        return {
+          source: {
+            mode: 'commit' as const,
+            oid,
+            title: `${shortOid(oid)} · ${commitDiff.details.summary}`,
+          },
+          files: commitDiff.files,
+          onClose: () => setCommitBrowserOpen(false),
+        };
+      }
     }
     return null;
   }, [compare, compareData, selectedIndex, graph, commitBrowserOpen, commitDiff, headBranch, clearCompare]);
@@ -2564,6 +2365,7 @@ export function RepoWorkspace({
       <WorkspaceToolbar
         remoteOp={remoteOp}
         refreshing={refreshing}
+        netBusy={submoduleBusy !== null}
         mutating={mutating}
         statusLoading={statusLoading}
         graphLoading={graphLoading}
@@ -2587,6 +2389,7 @@ export function RepoWorkspace({
         headBorn={head !== null && !head.unborn}
         onRefresh={() => void handleRefresh()}
         externalItems={menus.externalToolsItems(repoPath)}
+        {...gitDock.toolbarProps}
       />
 
       <div className="panes">
@@ -2608,15 +2411,22 @@ export function RepoWorkspace({
           onStashContextMenu={handleStashContextMenu}
           submodules={submodules}
           onSubmoduleContextMenu={handleSubmoduleContextMenu}
+          submoduleBusy={submoduleBusy}
           onNewSubmodule={() => setPendingAddSubmodule(true)}
           worktrees={worktrees}
           onWorktreeContextMenu={handleWorktreeContextMenu}
           onNewWorktree={() => setNewWorktreeOpen(true)}
           onTagContextMenu={handleTagContextMenu}
+          tagSyncReport={tagSyncReport}
+          tagSyncState={tagSyncState}
+          tagSyncRemote={tagSyncRemote}
+          tagSyncCheckedAt={tagSyncCheckedAt}
+          onTagsExpand={() => void refetchTagSync()}
           remotes={remotes}
           onRemoteContextMenu={handleRemoteContextMenu}
           onAddRemote={() => setPendingAddRemote(true)}
           onCleanupBranches={() => setStaleCleanupOpen(true)}
+          onReveal={handleReveal}
         />
         <PaneDivider side="sidebar" onResize={onSidebarResize} onResizeEnd={onPaneResizeEnd} />
         <WorkspaceGraphPane
@@ -2638,6 +2448,10 @@ export function RepoWorkspace({
           verifyStatus={verification.verifyStatus}
           onVisibleRangeChange={verification.onVisibleRangeChange}
           onOpenPr={onOpenPr}
+          edgeIndex={graphEdgeIndex ?? undefined}
+          totalRows={graphTotal ?? undefined}
+          revealFlash={revealFlash}
+          reducedMotion={reducedMotion}
           search={search}
           searchScopeOptions={searchScopeOptions}
           historySearch={historySearch}
@@ -2691,7 +2505,14 @@ export function RepoWorkspace({
           rightPaneTab={rightPaneTab}
           onSelectRightPaneTab={setRightPaneTab}
           prDefaultHead={headBranch?.name ?? null}
+          prDefaultBase={prDefaultBase}
+          prBaseOptions={prBaseOptions}
+          prCompareOptions={prCompareOptions}
           prNav={prNav}
+          checksTarget={checksTab.target}
+          checksRefreshSeq={checksTab.refreshSeq}
+          onPushChecksBranch={checksTab.target?.name === headBranch?.name ? () => void pushCurrentBranch() : undefined}
+          onRevealCommit={(oid) => handleReveal({ kind: 'oid', oid })}
           opState={opState}
           conflicts={conflicts}
           mutating={mutating}
@@ -2710,6 +2531,8 @@ export function RepoWorkspace({
           compareError={compareError}
           headBranch={headBranch}
           listView={listView}
+          panelDensity={panelDensity}
+          primaryCommitAction={primaryCommitAction}
           scope={scope}
           setScope={setScope}
           clearCompare={clearCompare}
@@ -2727,7 +2550,9 @@ export function RepoWorkspace({
           statusLoading={statusLoading}
           statusError={statusError}
           diffSlot={diffSlot}
-          aiResolvingPath={aiResolvingPath}
+          aiRows={aiRuns.rowStates}
+          aiAtCapacity={aiRuns.atCapacity}
+          aiBulk={aiBulk.control}
           aiPanelLoading={aiPanel?.loading === true}
           onStage={(paths) => void handleStage(paths)}
           onUnstage={(paths) => void handleUnstage(paths)}
@@ -2736,7 +2561,9 @@ export function RepoWorkspace({
           onToggleDiff={handleToggleWorkdirDiff}
           onResolveConflict={(path, r) => void handleResolveConflict(path, r)}
           onToggleConflictView={handleToggleConflictView}
-          onAiResolve={(path) => void handleAiResolveConflict(path)}
+          onAiResolve={(path) => aiRuns.startConflictRun(path)}
+          onAiReview={aiDock.reviewForPath}
+          onAiReveal={aiDock.revealForPath}
           onBlame={(path) => void handleBlame(path)}
           onFileHistory={(path) => void handleFileHistory(path)}
           onCreateStash={(scope) => void handleCreateStash(scope)}
@@ -2755,10 +2582,24 @@ export function RepoWorkspace({
           workingDirty={workingDirty}
           onCompose={() => composer.openComposer()}
           onOpenIdentitySettings={onOpenIdentitySettings}
+          onOpenAccountSettings={onOpenAccountSettings}
           signingStatus={signingStatus}
           commitSignature={commitSignature}
+          commitPhase={gitDock.commitPhase}
+          onShowGitActivity={gitDock.focusDock}
         />
       </div>
+
+      {/* P68e / P87b: `.workspace-host`'s bottom children — git dock (outermost) →
+          AI dock → .panes. Each renders null until its first run of the session. */}
+      <AiActivityPanel {...aiDock.panelProps} />
+      <GitActivityDock {...gitDock.panelProps} />
+
+      {/* P84: always-mounted a11y live region for reveal announcements. Rendered
+          AFTER the dock so `.workspace-host`'s counted toolbar → .panes → dock
+          child order (dock = 3rd child) is preserved — a `.sr-only` region is
+          position-agnostic for screen readers. */}
+      <RevealAnnouncer message={revealMessage} />
 
       <WorkspaceDialogs
         repoId={repoId}
@@ -2786,11 +2627,11 @@ export function RepoWorkspace({
         handleDeleteRemoteTracking={(name) => void handleDeleteRemoteTracking(name)}
         pendingDropStash={pendingDropStash}
         setPendingDropStash={setPendingDropStash}
-        handleDropStash={(index) => void handleDropStash(index)}
+        handleDropStash={(index, oid) => void handleDropStash(index, oid)}
         pendingReservedStash={pendingReservedStash}
         setPendingReservedStash={setPendingReservedStash}
-        handleApplyStashSkipping={(index) => void handleApplyStash(index, true)}
-        handlePopStashSkipping={(index) => void handlePopStash(index, true)}
+        handleApplyStashSkipping={(index, oid) => void handleApplyStash(index, true, oid)}
+        handlePopStashSkipping={(index, oid) => void handlePopStash(index, true, oid)}
         pendingReset={pendingReset}
         setPendingReset={setPendingReset}
         handleResetBranch={(oid, mode) => void handleResetBranch(oid, mode)}
@@ -2811,6 +2652,9 @@ export function RepoWorkspace({
         hookRetrying={hookGate.hookRetrying}
         onHookSkipRetry={hookGate.onHookSkipRetry}
         onHookCancel={hookGate.onHookCancel}
+        pendingHookDisclosure={hookDisclosure.pendingHookDisclosure}
+        onHookDiscloseConfirm={hookDisclosure.onHookDiscloseConfirm}
+        onHookDiscloseCancel={hookDisclosure.onHookDiscloseCancel}
         pendingHunkDiscard={pendingHunkDiscard}
         setPendingHunkDiscard={setPendingHunkDiscard}
         handleConfirmHunkDiscard={(pending) => void handleConfirmHunkDiscard(pending)}
@@ -2871,125 +2715,63 @@ export function RepoWorkspace({
         }
         menu={menu}
         closeMenu={closeMenu}
+        bulkAiConfirm={aiBulk.confirm}
       />
-      <CherrypickMessageDialog
-        open={pendingCherrypick !== null}
-        oid={pendingCherrypick?.oid ?? ''}
-        initialMessage={pendingCherrypick?.initialMessage ?? ''}
-        loading={pendingCherrypick?.loading ?? false}
-        busy={mutating}
-        onConfirm={(message) => {
-          const p = pendingCherrypick;
-          if (p !== null) void confirmCherrypick(p.oid, message);
-        }}
-        onCancel={() => setPendingCherrypick(null)}
-      />
-      {/* P60b: non-FF pull → Merge / Rebase, each routed through the EXISTING
-          merge_branch / rebase_branch handlers (conflict overlay, op-state,
-          toasts). Cancel is a no-op. This dialog is the confirm gate. */}
-      <NonFfPullDialog
-        open={pendingNonFfPull !== null}
-        branch={pendingNonFfPull?.branch ?? ''}
-        upstream={pendingNonFfPull?.upstream ?? ''}
-        ahead={pendingNonFfPull?.ahead ?? 0}
-        behind={pendingNonFfPull?.behind ?? 0}
-        busy={mutating}
-        onMerge={() => {
-          const p = pendingNonFfPull;
-          setPendingNonFfPull(null);
-          if (p !== null) void handleMergeBranch(p.upstream);
-        }}
-        onRebase={() => {
-          const p = pendingNonFfPull;
-          setPendingNonFfPull(null);
-          if (p !== null) void handleRebaseBranch(p.upstream);
-        }}
-        onCancel={() => setPendingNonFfPull(null)}
-      />
-      {/* P60c: one-click undo. The plan is computed READ-ONLY by describeLastUndo;
-          confirming reuses the shipped resetBranch (mixed/hard per the plan). The
-          dialog blocks itself when !undoable or a hard undo hits a dirty tree. */}
-      <UndoDialog
-        plan={pendingUndo}
-        busy={mutating}
-        onConfirm={() => {
-          const p = pendingUndo;
-          setPendingUndo(null);
-          if (
-            p !== null &&
-            p.undoable &&
-            p.resetMode !== null &&
-            !(p.requiresCleanWorktree && p.worktreeDirty)
-          ) {
-            void handleResetBranch(p.targetOid, p.resetMode);
-          }
-        }}
-        onCancel={() => setPendingUndo(null)}
-      />
-      <CommandPalette
-        open={palette.open}
-        actions={paletteActions}
-        onClose={palette.close}
-        onRunSearch={paletteRunSearch}
-        onJumpToCommit={paletteJumpToCommit}
-      />
-      {/* P55c: the shared "Ask Bonsai to…" NL input — opened from the palette
-          action or the toolbar ✨ Ask button. Submitting runs the READ-ONLY
-          planner; the proposal (if any) then opens ProposedOpDialog below. */}
-      <PromptDialog
-        open={askOpen}
-        title="Ask Bonsai to…"
-        label="Describe what you want to do in plain language"
-        placeholder="e.g. undo my last merge · switch to main · stash my changes"
-        confirmLabel="Ask"
-        busy={askBusy}
-        validate={(v) => (v.trim() === '' ? 'Type a request' : null)}
-        onSubmit={(v) => runPlanOperation(v.trim())}
-        onCancel={cancelAskBonsai}
-      />
-      {/* P55c: preview + confirm gate. NOTHING mutates until its Confirm, which
-          dispatches the resolved op via safeOpDispatch (existing typed command). */}
-      <ProposedOpDialog
-        open={pendingProposedOp !== null}
-        operation={pendingProposedOp}
-        busy={opDispatching}
-        onConfirm={() => void confirmProposedOp()}
-        onCancel={cancelProposedOp}
-      />
-      {/* P56b §6: the "Release notes…" range picker — opened from the palette
-          "Release notes…" action (the tag-pill menu calls runChangelog directly).
-          Submitting kicks off the READ-ONLY changelog; output renders in the
-          AiOutputPanel over the graph. */}
-      <ChangelogDialog
-        open={changelogOpen}
-        refNames={[
-          ...(branches?.tags ?? []),
-          ...(branches?.local.map((b) => b.name) ?? []),
-          ...(branches?.remote.map((b) => b.name) ?? []),
-        ]}
-        currentBranch={headBranch?.name ?? null}
-        onSubmit={(range, title) => {
-          setChangelogOpen(false);
-          runChangelog(range, title);
-        }}
-        onCancel={() => setChangelogOpen(false)}
-      />
-      {composer.open && (
-        <ComposerDialog composer={composer} statusByPath={composerStatusByPath} />
-      )}
-      {/* P60d: submodule add (url + path) / deinit / remove. add + deinit + remove
-          refetch submodules + status + graph on success (see useSubmoduleActions). */}
-      <SubmoduleDialogs
+      <WorkspaceOverlays
         mutating={mutating}
-        addOpen={pendingAddSubmodule}
-        setAddOpen={setPendingAddSubmodule}
-        handleAddSubmodule={(url, path) => void handleAddSubmodule(url, path)}
-        pendingDeinit={pendingDeinitSubmodule}
-        setPendingDeinit={setPendingDeinitSubmodule}
-        handleDeinitSubmodule={(name) => void handleDeinitSubmodule(name)}
-        pendingRemove={pendingRemoveSubmodule}
-        setPendingRemove={setPendingRemoveSubmodule}
-        handleRemoveSubmodule={(name) => void handleRemoveSubmodule(name)}
+        pendingCherrypick={pendingCherrypick}
+        setPendingCherrypick={setPendingCherrypick}
+        confirmCherrypick={confirmCherrypick}
+        pendingNonFfPull={pendingNonFfPull}
+        setPendingNonFfPull={setPendingNonFfPull}
+        handleMergeBranch={handleMergeBranch}
+        handleRebaseBranch={handleRebaseBranch}
+        pendingUndo={pendingUndo}
+        setPendingUndo={setPendingUndo}
+        handleResetBranch={handleResetBranch}
+        paletteOpen={palette.open}
+        paletteActions={paletteActions}
+        onClosePalette={palette.close}
+        paletteRunSearch={paletteRunSearch}
+        paletteJumpToCommit={paletteJumpToCommit}
+        askOpen={askOpen}
+        askBusy={askBusy}
+        runPlanOperation={runPlanOperation}
+        cancelAskBonsai={cancelAskBonsai}
+        pendingProposedOp={pendingProposedOp}
+        opDispatching={opDispatching}
+        confirmProposedOp={confirmProposedOp}
+        cancelProposedOp={cancelProposedOp}
+        changelogOpen={changelogOpen}
+        branches={branches}
+        headBranch={headBranch}
+        setChangelogOpen={setChangelogOpen}
+        runChangelog={runChangelog}
+        composer={composer}
+        composerStatusByPath={composerStatusByPath}
+        pendingAddSubmodule={pendingAddSubmodule}
+        setPendingAddSubmodule={setPendingAddSubmodule}
+        handleAddSubmodule={handleAddSubmodule}
+        pendingDeinitSubmodule={pendingDeinitSubmodule}
+        setPendingDeinitSubmodule={setPendingDeinitSubmodule}
+        handleDeinitSubmodule={handleDeinitSubmodule}
+        pendingRemoveSubmodule={pendingRemoveSubmodule}
+        setPendingRemoveSubmodule={setPendingRemoveSubmodule}
+        handleRemoveSubmodule={handleRemoveSubmodule}
+        pendingForceSubmodule={pendingForceSubmodule}
+        setPendingForceSubmodule={setPendingForceSubmodule}
+      />
+      {/* P77 §4: destructive remote-tag confirms (delete-on-remote, force-move). */}
+      <TagSyncDialogs
+        busy={mutating}
+        pendingDeleteRemoteTag={pendingDeleteRemoteTag}
+        setPendingDeleteRemoteTag={setPendingDeleteRemoteTag}
+        handleDeleteRemoteTag={(remote, name) => void handleDeleteRemoteTag(remote, name)}
+        pendingForceMoveTag={pendingForceMoveTag}
+        setPendingForceMoveTag={setPendingForceMoveTag}
+        handleForceMoveRemoteTag={(remote, name, newShort) =>
+          void handleForceMoveRemoteTag(remote, name, newShort)
+        }
       />
     </>
   );

@@ -1,0 +1,110 @@
+/* Bonsai — Right-panel density variables (P67 §3) and the compact override (P67c §3).
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- P67 §3: right-panel density variables ----------
+   Declared ONCE here; every consuming declaration uses the fallback form
+   `var(--rp-x, <pre-P67 value>)` (D8) because `.file-row`, `.file-list`,
+   `.tree-dir-row` (DiffFileTree, inside the diff overlay) and `.section-label`
+   (Sidebar / EmptyState / OnboardingSteps) also render OUTSIDE this panel and
+   never inherit these properties — the fallback is what keeps them
+   pixel-identical to today. The values below are the P67b "cozy" default: every
+   px shaved off the `flex: none` chrome goes straight to the changes tree. */
+.right-panel {
+  --rp-pad-outer: 10px;
+  --rp-gap: 10px;
+  --rp-section-pad: 5px 6px 6px;
+  --rp-row-h: 24px;
+  /* NOTE (P67b review NIT 5): a CSS-wide keyword inside a *custom property*
+     value makes the property guaranteed-invalid at computed-value time, so the
+     consumer `font-size: var(--rp-row-font, inherit)` actually resolves to its
+     FALLBACK, not to an inherited value. That is exactly the intent here — the
+     "cozy" default must leave row text at the parent's size, i.e. behave as if
+     no declaration existed — and `font-size` is inherited, so every resolution
+     path yields the same computed size. Do NOT "fix" this to a length: P67c's
+     compact density is what overrides it with a real value. */
+  --rp-row-font: inherit;
+  --rp-list-margin: 3px;
+  --rp-label-font: 11px;
+  --rp-tab-pad: 4px 8px;
+  --rp-tab-btn-pad: 3px 10px;
+  --rp-banner-pad: 6px 10px;
+  --rp-box-pad: 10px;
+  --rp-box-gap: 6px;
+  --rp-msg-min: 48px;
+  --rp-msg-max: 160px;
+  --rp-ctl-h: 22px;
+  --rp-ctl-gap: 8px;
+  --rp-ctl-font: 12px;
+}
+
+/* ---------- P67c §3: "compact" density override ----------
+   The ONLY layout change P67c makes: every consuming declaration is already
+   `var(--rp-x, …)`-driven from the P67b block above, so flipping the setting is
+   a pure custom-property swap (D5). Scoped to `.right-panel[data-density]`
+   (D7 — a prop on the `<aside>`), so the diff overlay's file tree and the
+   sidebar keep their D8 fallbacks untouched.
+   Values are the MODERATE variant confirmed by the user: 20px rows and a 12px
+   row font are the floor — do NOT go tighter (an 18px/11px variant was
+   explicitly rejected as unreadable). `--rp-msg-max` RETURNS to the pre-P67
+   120px (cozy raised it to 160px), i.e. compact lowers the ceiling too — still
+   3.3x the 36px min, so the commit box can grow well past its floor. */
+.right-panel[data-density='compact'] {
+  --rp-pad-outer: 8px;
+  --rp-gap: 6px;
+  --rp-section-pad: 3px 6px 4px;
+  --rp-row-h: 20px;
+  /* Unlike the cozy default, this IS a real length — that is what makes the
+     compact file rows shrink their text as well as their height. */
+  --rp-row-font: 12px;
+  --rp-list-margin: 2px;
+  --rp-label-font: 10px;
+  --rp-tab-pad: 3px 6px;
+  --rp-tab-btn-pad: 2px 8px;
+  --rp-banner-pad: 5px 8px;
+  --rp-box-pad: 8px;
+  --rp-box-gap: 4px;
+  --rp-msg-min: 36px;
+  --rp-msg-max: 120px;
+  --rp-ctl-h: 20px;
+  --rp-ctl-gap: 6px;
+  --rp-ctl-font: 11px;
+}
+
+/* P62c: the working tri-state lives in an always-mounted wrapper (hidden while
+   the 'prs' tab is active) so a half-typed commit survives a tab toggle. It
+   fills the right pane below the tab strip exactly as the direct children did. */
+.right-panel-work {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Beat both the class's own `display` and the UA `[hidden]` rule. */
+.right-panel-work[hidden] {
+  display: none;
+}
+
+.right-panel-work > .status-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--rp-pad-outer, 12px);
+  min-height: 0;
+}
+
+.section-label {
+  font-size: var(--rp-label-font, 11px);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  font-weight: 600;
+}
+
+.pane-empty {
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: center;
+  margin: 0;
+}
+

@@ -1,0 +1,159 @@
+/* Bonsai — Diff view (M4) and the diff overlay (P3a §2.5).
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- Diff view (M4) ---------- */
+
+/* Row text area doubles as the accordion toggle (button for a11y). */
+.file-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+  height: 100%;
+}
+
+span.file-row-main {
+  cursor: default;
+}
+
+.file-chevron {
+  flex: none;
+  width: 10px;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 0.12s ease;
+}
+
+.file-chevron-open {
+  transform: rotate(90deg);
+}
+
+/* Selected (expanded-for-diff) row. Distinct from :hover — which is var(--bg-2)
+ * — so a selected file no longer reads as merely hovered. Uses the house
+ * selected-row recipe (ui-reference §12.1): --selection bg + --text-1/600 label
+ * + the inset accent bar used for active items elsewhere (tabs, settings rail).
+ * The status badge keeps its semantic hue (green A / red D / …). */
+.file-row-expanded,
+.file-row-expanded:hover {
+  background: var(--selection);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.file-row-expanded .file-name {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+/* P3a: DiffSlotView renders only inside the overlay body — height comes from
+   the flex column there (no viewport cap). */
+.diff-scroll {
+  overflow-y: auto;
+}
+
+/* ---------- Diff overlay (P3a §2.5) ---------- */
+
+.diff-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5; /* above canvas + graph banners; toasts/ShortcutOverlay are
+                 outside .graph-pane and unaffected */
+  background: var(--bg-0);
+  display: flex;
+  flex-direction: column;
+}
+
+.diff-overlay-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+  min-width: 0;
+}
+
+.diff-overlay-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-overlay-kind {
+  color: var(--text-3);
+  font-size: 12px;
+  flex: none;
+}
+
+/* Icon-system §2.7: the Explain button — 14px leading SummarizeIcon + label. */
+.diff-explain-button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.diff-explain-button svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+/* P4e Step 1: file-type accent chip in the diff overlay header. */
+.lang-chip {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-1);
+  background: var(--bg-2);
+  border-left: 3px solid var(--lang-accent, var(--lang-default));
+}
+.lang-chip[data-lang="typescript"] { --lang-accent: var(--lang-ts); }
+.lang-chip[data-lang="javascript"] { --lang-accent: var(--lang-js); }
+.lang-chip[data-lang="json"]       { --lang-accent: var(--lang-json); }
+.lang-chip[data-lang="xml"]        { --lang-accent: var(--lang-html); }
+.lang-chip[data-lang="css"],
+.lang-chip[data-lang="scss"]       { --lang-accent: var(--lang-css); }
+.lang-chip[data-lang="markdown"]   { --lang-accent: var(--lang-md); }
+.lang-chip[data-lang="rust"]       { --lang-accent: var(--lang-rust); }
+.lang-chip[data-lang="python"]     { --lang-accent: var(--lang-py); }
+.lang-chip[data-lang="csharp"]     { --lang-accent: var(--lang-cs); }
+.lang-chip[data-lang="go"]         { --lang-accent: var(--lang-go); }
+.lang-chip[data-lang="bash"]       { --lang-accent: var(--lang-shell); }
+/* remaining ids fall back to --lang-default via the .lang-chip default */
+
+.diff-overlay-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
+}
+
+.diff-overlay-body .diff-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+/* P1 §4.1: stale content shown dimmed during a same-key refetch. */
+.diff-scroll.diff-stale {
+  opacity: 0.6;
+}
+

@@ -22,7 +22,9 @@ Bugs/oddities discovered while writing tests. One bullet per finding:
   `git status` reports). Implemented by turning OFF `StatusOptions::renames_index_to_workdir`
   (staged-rename detection via `renames_head_to_index` is unchanged, so `git mv` staged renames still
   show as renames). Revert = set `renames_index_to_workdir(true)` in `git/status.rs::read_status`.
-- F-T5-4 (recommendation, NO code change yet): a repository with a **truncated/corrupt loose HEAD
+- F-T5-4 **(update 2026-08-19: the recommended timeout was implemented in commit `7edd23e`, audit
+  #2 §3.2 — see the F-T5-4 entry below for the resolved status)**: a repository with a
+  **truncated/corrupt loose HEAD
   commit object hangs the app forever** (libgit2 spins inflating the truncated zlib during any
   HEAD-peel — graph/status/commit). A bounded pre-check was investigated and rejected:
   `git2::Odb::read_header`/`exists` return a healthy-looking result on the truncated object (the
@@ -619,8 +621,15 @@ status oracle mapping), `prop_graph_layout.rs`, `prop_intraline.rs`, `prop_histo
   **blob** is handled cleanly (`Ok`). Root cause is a libgit2 spin inflating a truncated zlib loose
   object during the revwalk / HEAD-peel. A single corrupt loose commit thus freezes the app.
   Repro pinned deterministically by `corrupt_repo_cli.rs` cell C1 (10s watchdog ⇒ `Hung`).
-  **Status: DOCUMENTED — bounded probe NOT viable; command-layer timeout wrapper is the real fix
-  (architecture decision → FOR USER REVIEW).** Timeboxed mitigation investigation (2026-08-09):
+  **Status: RESOLVED for read surfaces (2026-08-19, commit `7edd23e`, audit #2 §3.2).** The
+  recommended command-layer timeout landed as `run_with_git_timeout` (`git/timeout.rs`: worker
+  thread + 30 s inactivity deadline, `BONSAI_GIT_TIMEOUT_MS` override, wedged worker detached,
+  clean `AppError::Git` returned). Wraps `get_status`, `get_graph`, `stream_graph` and the
+  history-index build; `corrupt_repo_cli.rs` C1 now pins **Err-not-Hung** for those surfaces.
+  `create_commit` is deliberately NOT wrapped (a false timeout on a mutation could race a late
+  commit — rationale at the C1 cell). Earlier status, kept for the record: **DOCUMENTED — bounded
+  probe NOT viable; command-layer timeout wrapper is the real fix (architecture decision → FOR
+  USER REVIEW).** Timeboxed mitigation investigation (2026-08-09):
   probed the `git2::Odb` header path against the truncated HEAD commit oid on a watchdog thread.
   Result — `odb.read_header(oid)` returns **`Ok((size=213, Commit))`** and `odb.exists(oid)` returns
   **`true`**, i.e. neither hangs BUT neither detects the truncation: the loose-object header

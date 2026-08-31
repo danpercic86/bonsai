@@ -14,8 +14,6 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
   return {
     ...base(),
     refreshAll: asyncFn(),
-    refetchBranches: asyncFn(),
-    refetchGraph: asyncFn(),
     setRemoteOp: vi.fn(),
     setPendingForcePush: vi.fn(),
     setPendingNonFfPull: vi.fn(),
@@ -33,7 +31,7 @@ function expectRemoteOpCycle(deps: Deps, op: 'fetch' | 'pull' | 'push') {
 }
 
 describe('handleFetch', () => {
-  it('toasts remote + updated-ref counts and refetches branches + graph', async () => {
+  it('toasts remote + updated-ref counts and refreshes via refreshAll', async () => {
     const fetch = vi.spyOn(mockIpc, 'fetch').mockResolvedValue({
       remotes: [
         { remote: 'origin', receivedObjects: 10, updatedRefs: 2 },
@@ -44,8 +42,10 @@ describe('handleFetch', () => {
     await useRemoteOps(deps).handleFetch();
     expect(fetch).toHaveBeenCalledWith(REPO);
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Fetched 2 remotes — 3 refs updated');
-    expect(deps.refetchBranches).toHaveBeenCalledTimes(1);
-    expect(deps.refetchGraph).toHaveBeenCalledTimes(1);
+    // P85 A1: one echo-armed refreshAll (tag counts now arrive via tag-auto-sync).
+    // P86a: a fetch only touches remote metadata → remoteMeta scope.
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('remoteMeta');
     expectRemoteOpCycle(deps, 'fetch');
   });
 
@@ -109,7 +109,7 @@ describe('handlePull', () => {
 });
 
 describe('handlePush / pushCurrentBranch', () => {
-  it('pushed with upstream set → toast notes it; branches + graph refetched', async () => {
+  it('pushed with upstream set → toast notes it; refreshes via refreshAll', async () => {
     const push = vi.spyOn(mockIpc, 'push').mockResolvedValue({
       kind: 'pushed',
       remote: 'origin',
@@ -123,8 +123,10 @@ describe('handlePush / pushCurrentBranch', () => {
       'success',
       'Pushed feat → origin/feat (upstream set)',
     );
-    expect(deps.refetchBranches).toHaveBeenCalledTimes(1);
-    expect(deps.refetchGraph).toHaveBeenCalledTimes(1);
+    // P85 A1: one echo-armed refreshAll, not raw refetchBranches/refetchGraph.
+    // P86a: a push only advances remote-tracking refs → refsOnly scope.
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('refsOnly');
     expectRemoteOpCycle(deps, 'push');
   });
 

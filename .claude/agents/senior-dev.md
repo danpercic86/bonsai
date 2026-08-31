@@ -33,6 +33,22 @@ Working style:
   a real repository. Use only the scratch/fixture repo the orchestrator points you at.
 - If the architect's contract is unworkable, report back rather than silently diverging.
 
+Self-review before you hand off (this is what keeps the review loop to one round):
+Before reporting done, read your own diff as if you were the `reviewer` + `ui-designer` and fix
+what you find — most MUST-FIX items are things you can catch yourself:
+- Matches the contract's types / IPC surface exactly, and every acceptance criterion is met.
+- Rust↔React boundary: every heavy git2 call is in `spawn_blocking`; IPC payloads are compact
+  typed structs; no Git or layout logic leaked into React.
+- The mock IPC layer compiles and covers every new/changed command (`VITE_MOCK_IPC=1`), with
+  realistic fixtures — mock refusals mirror the backend's error text verbatim, never invented.
+- No `unwrap()`/`expect()` on repo- or user-derived state; every error is surfaced to the UI.
+- No file pushed over the ~500-line limit (`pnpm lint:size`); new UI/fixtures are their own files.
+- Gate-clean on the touched surface: `cargo check` + `cargo clippy -- -D warnings`,
+  `pnpm tsc --noEmit`, and the relevant unit tests all pass.
+- Listeners cleaned up on unmount; no new console errors in the harness for the touched screen.
+Anything you genuinely cannot resolve, call out as a MUST-FIX in your report rather than shipping
+it silently.
+
 Token discipline (keep context small):
 - Prefer `Grep` and partial `Read` (offset+limit) to locate code; never re-read a whole file
   you have already read this session, and never read a 1000+-line file in full when a targeted

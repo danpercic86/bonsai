@@ -1,7 +1,10 @@
 import { ipc } from '../../ipc';
 import { errorMessage, isAppError } from '../../utils/errors';
+import { reportRemoteOpError } from '../../ipc/gitNotFound';
+import { isGitNotFound } from '../../ipc/errors';
 import { shortOid } from '../workspaceUtils';
 import { COMMIT_HOOK_CANCELED } from '../commitPushSignal';
+import type { RefreshScope } from './refreshScope';
 import type { BaseActionDeps, Setter } from './types';
 
 /** P60b: a fast-forward-only pull hit a diverged branch — drives NonFfPullDialog.
@@ -17,9 +20,7 @@ export interface NonFfPullInfo {
 /** M6 + P37b: fetch / pull / push / force-push-with-lease. */
 export function useRemoteOps(
   deps: BaseActionDeps & {
-    refreshAll: () => Promise<void>;
-    refetchBranches: () => Promise<void>;
-    refetchGraph: () => Promise<void>;
+    refreshAll: (scope?: RefreshScope) => Promise<void>;
     setRemoteOp: Setter<'fetch' | 'pull' | 'push' | null>;
     setPendingForcePush: Setter<boolean>;
     /** P60b: open the non-FF reconcile dialog (Merge / Rebase / Cancel). */
@@ -31,6 +32,10 @@ export function useRemoteOps(
       attempt: (skipHooks: boolean) => Promise<void>,
       skipHooks: boolean,
     ) => Promise<void>;
+    /** P90: fire after a push/force-push completes so the Checks tab + graph CI
+     *  badges refetch (fetch/pull are wrapped at the call site; push is not, and
+     *  wrapping onPush would miss the commit-and-push path — so bump here). */
+    onPushComplete?: () => void;
   },
 ) {
   const {
@@ -38,13 +43,20 @@ export function useRemoteOps(
     pushToast,
     setMutating,
     refreshAll,
-    refetchBranches,
-    refetchGraph,
     setRemoteOp,
     setPendingForcePush,
     setPendingNonFfPull,
     runWithHookGate,
+    onPushComplete,
   } = deps;
+
+  // P85 A1: fetch/push/force-push route their post-op refresh through the
+  // ECHO-ARMED refreshAll (like handlePull already does), NOT raw
+  // refetchGraph/refetchBranches — so the op's own `.git/refs/**` watcher echo is
+  // dropped and only ONE refresh round runs. `refreshAll` never throws (P81), so
+  // the push/force-push hook-gate `attempt` bodies keep the same success
+  // semantics. A3: fetch's tag counts now arrive via the async `tag-auto-sync`
+  // event (fired off the response) rather than in the fetch result.
 
   function beginRemoteOp(op: 'fetch' | 'pull' | 'push') {
     setMutating(true);
@@ -67,9 +79,13 @@ export function useRemoteOps(
         `Fetched ${n} remote${n === 1 ? '' : 's'}` +
           (k > 0 ? ` — ${k} ref${k === 1 ? '' : 's'} updated` : ''),
       );
-      await Promise.all([refetchBranches(), refetchGraph()]);
+      // P86a: a fetch only updates remote-tracking refs + remote metadata (no
+      // local HEAD move, no worktree change) — remoteMeta scope.
+      await refreshAll('remoteMeta');
     } catch (e) {
-      pushToast('error', errorMessage(e));
+      // P70 (UI §10.3): a user-PRESSED remote op still gets exactly one toast —
+      // coalesced by key, so three presses never stack three sticky errors.
+      reportRemoteOpError('Fetch', e, pushToast);
     } finally {
       endRemoteOp();
     }
@@ -99,7 +115,7 @@ export function useRemoteOps(
       }
       await refreshAll();
     } catch (e) {
-      pushToast('error', errorMessage(e));
+      reportRemoteOpError('Pull', e, pushToast);
     } finally {
       endRemoteOp();
     }
@@ -124,11 +140,15 @@ export function useRemoteOps(
               (res.setUpstream ? ' (upstream set)' : ''),
           );
         }
-        await Promise.all([refetchBranches(), refetchGraph()]);
+        // P86a: a push advances the remote-tracking ref (+ maybe sets upstream) —
+        // refsOnly (no local HEAD move, no worktree change).
+        await refreshAll('refsOnly');
+        // P90: refresh the Checks tab + graph CI badges after a successful push.
+        onPushComplete?.();
       }, false);
     } catch (e) {
       // Dialog dismissed (pre-push not skipped): nothing pushed, no error banner.
-      if (e !== COMMIT_HOOK_CANCELED) pushToast('error', errorMessage(e));
+      if (e !== COMMIT_HOOK_CANCELED) reportRemoteOpError('Push', e, pushToast);
     } finally {
       endRemoteOp();
     }
@@ -157,11 +177,18 @@ export function useRemoteOps(
         } else {
           pushToast('success', `Force-pushed ${res.branch} → ${res.remote}/${res.branch}`);
         }
-        await Promise.all([refetchBranches(), refetchGraph()]);
+        // P86a: force-push only moves the remote-tracking ref — refsOnly.
+        await refreshAll('refsOnly');
+        // P90: refresh the Checks tab + graph CI badges after a successful push.
+        onPushComplete?.();
       }, false);
     } catch (e) {
       // Dialog dismissed (pre-push not skipped): nothing pushed, no error banner.
       if (e === COMMIT_HOOK_CANCELED) return;
+      if (isGitNotFound(e)) {
+        reportRemoteOpError('Push', e, pushToast);
+        return;
+      }
       // Any pushRejected from a force-push resolves the same way: fetch first.
       const hint = isAppError(e) && e.kind === 'pushRejected' ? ' — fetch and retry' : '';
       pushToast('error', errorMessage(e) + hint);

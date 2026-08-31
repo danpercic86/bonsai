@@ -30,33 +30,91 @@ type Deps = Parameters<typeof useSubmoduleActions>[0];
 function makeDeps(over: Partial<Deps> = {}): Deps {
   return {
     ...base(),
+    refreshAll: asyncFn(),
     refetchSubmodules: asyncFn(),
-    refetchStatus: asyncFn(),
-    refetchGraph: asyncFn(),
+    setSubmoduleBusy: vi.fn(),
+    onSubmoduleDirtyRefused: vi.fn(),
     ...over,
   };
 }
 
 describe('init / update / sync (non-destructive to the superproject)', () => {
-  it('init toasts and refetches ONLY the submodule list', async () => {
+  it('P73: init means init + CHECKOUT — it calls updateSubmodule, never initSubmodule', async () => {
+    const update = vi.spyOn(mockIpc, 'updateSubmodule').mockResolvedValue(undefined);
     const init = vi.spyOn(mockIpc, 'initSubmodule').mockResolvedValue(undefined);
     const deps = makeDeps();
     await useSubmoduleActions(deps).handleInitSubmodule('libs/core');
-    expect(init).toHaveBeenCalledWith(REPO, 'libs/core');
-    expect(deps.pushToast).toHaveBeenCalledWith('success', 'Initialized libs/core');
+    expect(update).toHaveBeenCalledWith(REPO, 'libs/core');
+    expect(init).not.toHaveBeenCalled();
+    expect(deps.pushToast).toHaveBeenCalledWith('success', 'Checked out libs/core');
     expect(deps.refetchSubmodules).toHaveBeenCalledTimes(1);
-    expect(deps.refetchStatus).not.toHaveBeenCalled();
-    expect(deps.refetchGraph).not.toHaveBeenCalled();
+    // init/update/sync touch no superproject state ⇒ no worktree refresh round.
+    expect(deps.refreshAll).not.toHaveBeenCalled();
     expectMutatingCycle(deps.setMutating);
   });
 
-  it('update error → error toast, no refetch, mutating cleared', async () => {
+  it('P73 §6.1: the row busy pill carries the participle and is cleared afterwards', async () => {
+    vi.spyOn(mockIpc, 'updateSubmodule').mockResolvedValue(undefined);
+    vi.spyOn(mockIpc, 'syncSubmodule').mockResolvedValue(undefined);
+    const deps = makeDeps();
+    const actions = useSubmoduleActions(deps);
+    await actions.handleInitSubmodule('libs/core');
+    expect(deps.setSubmoduleBusy).toHaveBeenNthCalledWith(1, {
+      name: 'libs/core',
+      label: 'checking out…',
+    });
+    expect(deps.setSubmoduleBusy).toHaveBeenLastCalledWith(null);
+    await actions.handleSyncSubmodule('libs/core');
+    expect(deps.setSubmoduleBusy).toHaveBeenNthCalledWith(3, {
+      name: 'libs/core',
+      label: 'syncing…',
+    });
+    expect(deps.setSubmoduleBusy).toHaveBeenLastCalledWith(null);
+  });
+
+  it('P73 §5.2: init failure names the action + target and keeps the backend sentence', async () => {
+    const refusal =
+      "The folder already has files in it. Move or delete everything inside 'libs/core', then try again.";
+    vi.spyOn(mockIpc, 'updateSubmodule').mockRejectedValue(appErr('git', refusal));
+    const deps = makeDeps();
+    await useSubmoduleActions(deps).handleInitSubmodule('libs/core');
+    expect(deps.pushToast).toHaveBeenCalledWith(
+      'error',
+      `Couldn't check out libs/core. ${refusal}`,
+      'submodule:libs/core',
+    );
+    // Refetch on failure too, so the badge always reflects what is on disk.
+    expect(deps.refetchSubmodules).toHaveBeenCalledTimes(1);
+    expect(deps.setSubmoduleBusy).toHaveBeenLastCalledWith(null);
+    expect(deps.setMutating).toHaveBeenLastCalledWith(false);
+  });
+
+  it('update error → prefixed error toast under the row dedupe key', async () => {
     vi.spyOn(mockIpc, 'updateSubmodule').mockRejectedValue(appErr('networkError', 'clone failed'));
     const deps = makeDeps();
     await useSubmoduleActions(deps).handleUpdateSubmodule('libs/core');
-    expect(deps.pushToast).toHaveBeenCalledWith('error', 'clone failed');
-    expect(deps.refetchSubmodules).not.toHaveBeenCalled();
+    expect(deps.pushToast).toHaveBeenCalledWith(
+      'error',
+      "Couldn't update libs/core. clone failed",
+      'submodule:libs/core',
+    );
     expect(deps.setMutating).toHaveBeenLastCalledWith(false);
+  });
+
+  it('a rejecting refetch is swallowed: the op toast stands and busy/mutating still clear', async () => {
+    vi.spyOn(mockIpc, 'updateSubmodule').mockResolvedValue(undefined);
+    const refetchSubmodules = vi.fn(() => Promise.reject(new Error('refetch exploded')));
+    const deps = makeDeps({ refetchSubmodules });
+    // Must RESOLVE (not reject): nothing above the hook awaits it, so an escaping
+    // rejection would be an unhandled rejection.
+    await expect(useSubmoduleActions(deps).handleInitSubmodule('libs/core')).resolves.toBeUndefined();
+    expect(refetchSubmodules).toHaveBeenCalledTimes(1);
+    // The operation's own toast still fired, and no error toast was invented.
+    expect(deps.pushToast).toHaveBeenCalledTimes(1);
+    expect(deps.pushToast).toHaveBeenCalledWith('success', 'Checked out libs/core');
+    // Both `finally` cleanups ran despite the refetch failure.
+    expect(deps.setSubmoduleBusy).toHaveBeenLastCalledWith(null);
+    expectMutatingCycle(deps.setMutating);
   });
 
   it('sync toasts the URL update', async () => {
@@ -69,33 +127,73 @@ describe('init / update / sync (non-destructive to the superproject)', () => {
 });
 
 describe('add / deinit / remove (superproject index changes)', () => {
-  it('add toasts the resolved path and refetches submodules + status + graph', async () => {
+  it('add toasts the resolved path and fires refreshAll(worktree) + a submodule refetch (P88a row 14)', async () => {
     const add = vi.spyOn(mockIpc, 'addSubmodule').mockResolvedValue(INFO);
     const deps = makeDeps();
     await useSubmoduleActions(deps).handleAddSubmodule('https://x/core.git', 'libs/core');
     expect(add).toHaveBeenCalledWith(REPO, 'https://x/core.git', 'libs/core');
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Added submodule libs/core');
     expect(deps.refetchSubmodules).toHaveBeenCalledTimes(1);
-    expect(deps.refetchStatus).toHaveBeenCalledTimes(1);
-    expect(deps.refetchGraph).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('worktree');
   });
 
-  it('deinit + remove refetch all three; errors toast without refetch', async () => {
-    const deinit = vi.spyOn(mockIpc, 'deinitSubmodule').mockResolvedValue(undefined);
+  it('deinit + remove fire refreshAll(worktree) + a submodule refetch; errors still refresh', async () => {
+    const deinit = vi
+      .spyOn(mockIpc, 'deinitSubmodule')
+      .mockResolvedValue({ kind: 'deinitialized' });
     const remove = vi
       .spyOn(mockIpc, 'removeSubmodule')
       .mockRejectedValue(appErr('git', 'has local changes'));
     const deps = makeDeps();
     const actions = useSubmoduleActions(deps);
     await actions.handleDeinitSubmodule('libs/core');
-    expect(deinit).toHaveBeenCalledWith(REPO, 'libs/core');
+    expect(deinit).toHaveBeenCalledWith(REPO, 'libs/core', false);
     expect(deps.pushToast).toHaveBeenCalledWith('success', 'Deinitialized libs/core');
-    expect(deps.refetchStatus).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('worktree');
 
     await actions.handleRemoveSubmodule('libs/core');
-    expect(remove).toHaveBeenCalledWith(REPO, 'libs/core');
-    expect(deps.pushToast).toHaveBeenCalledWith('error', 'has local changes');
-    expect(deps.refetchStatus).toHaveBeenCalledTimes(1); // unchanged after the failure
+    expect(remove).toHaveBeenCalledWith(REPO, 'libs/core', false);
+    expect(deps.pushToast).toHaveBeenCalledWith(
+      'error',
+      "Couldn't remove libs/core. has local changes",
+      'submodule:libs/core',
+    );
+    // P73: the failure path refreshes too (the row may not be what we thought).
+    expect(deps.refreshAll).toHaveBeenCalledTimes(2);
     expect(deps.setMutating).toHaveBeenLastCalledWith(false);
+  });
+
+  // P82 (F-A7-7): the dirty refusal is a RESOLVED outcome, not a throw.
+  it('deinit refused-dirty: opens the force dialog, no success toast, no mutation-complete', async () => {
+    const deinit = vi
+      .spyOn(mockIpc, 'deinitSubmodule')
+      .mockResolvedValue({ kind: 'dirtyNeedsForce' });
+    const deps = makeDeps();
+    await useSubmoduleActions(deps).handleDeinitSubmodule('libs/core');
+    expect(deinit).toHaveBeenCalledWith(REPO, 'libs/core', false);
+    expect(deps.onSubmoduleDirtyRefused).toHaveBeenCalledWith('libs/core', 'deinit');
+    // No success toast (the op did not complete) and no error toast (not a throw).
+    expect(deps.pushToast).not.toHaveBeenCalled();
+  });
+
+  it('remove refused-dirty: opens the force dialog keyed remove', async () => {
+    vi.spyOn(mockIpc, 'removeSubmodule').mockResolvedValue({ kind: 'dirtyNeedsForce' });
+    const deps = makeDeps();
+    await useSubmoduleActions(deps).handleRemoveSubmodule('libs/core');
+    expect(deps.onSubmoduleDirtyRefused).toHaveBeenCalledWith('libs/core', 'remove');
+    expect(deps.pushToast).not.toHaveBeenCalled();
+  });
+
+  it('force retry: force=true re-invokes and toasts success (no re-escalation)', async () => {
+    const deinit = vi
+      .spyOn(mockIpc, 'deinitSubmodule')
+      .mockResolvedValue({ kind: 'deinitialized' });
+    const deps = makeDeps();
+    await useSubmoduleActions(deps).handleDeinitSubmodule('libs/core', true);
+    expect(deinit).toHaveBeenCalledWith(REPO, 'libs/core', true);
+    expect(deps.onSubmoduleDirtyRefused).not.toHaveBeenCalled();
+    expect(deps.pushToast).toHaveBeenCalledWith('success', 'Deinitialized libs/core');
   });
 });

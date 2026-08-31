@@ -1,79 +1,53 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CloneDialog, deriveRepoName, joinRepoPath } from './components/CloneDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { ContextMenu } from './components/ContextMenu';
 import { RepoWorkspace } from './components/RepoWorkspace';
 import { SettingsPanel } from './components/SettingsPanel';
 import { externalToolsItems } from './components/workspaceMenus';
-import type { PaletteAction } from './components/paletteActions';
+import { AiConsentDialog } from './components/dialogs/AiConsentDialog';
 import { AiAssetsPanel } from './components/AiAssetsPanel';
 import { RepoHealthPanel } from './components/RepoHealthPanel';
 import { OnboardingOverlay } from './components/OnboardingOverlay';
 import { EmptyState } from './components/EmptyState';
+import { GitMissingBanner } from './components/GitMissingBanner';
+import { HeaderToolbar } from './components/HeaderToolbar';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
-import { TabStrip } from './components/TabStrip';
-import type { TabMeta } from './components/TabStrip';
+import { TabStrip, type TabMeta } from './components/TabStrip';
 import { Toasts } from './components/Toasts';
+import { applyToastPush } from './components/toastQueue';
 import type { Toast, ToastTone } from './components/Toasts';
 import { UpdateNotification } from './components/UpdateNotification';
 import { UpdateDialog } from './components/UpdateDialog';
+import { useAppCommands } from './hooks/useAppCommands';
+import { useSettingsRequest } from './hooks/useSettingsRequest';
 import { useUpdateController } from './hooks/useUpdateController';
+import { useGitAvailability } from './hooks/useGitAvailability';
+import { useUiSettings } from './hooks/useUiSettings';
 import { ToastContext } from './ToastContext';
 import { ipc } from './ipc';
+import { isGitNotFound } from './ipc/errors';
+import { gitNotFoundToastText, noteGitNotFound } from './ipc/gitNotFound';
 import type {
-  AiAutonomy,
   AiAvailability,
-  AutoFetchSettings,
   CloneProgress,
-  GraphPrefs,
-  HealthRefreshSettings,
-  IdentityProfile,
   ListView,
   McpStatus,
   PaneWidths,
   RecentRepo,
-  RepoInfo,
   SessionState,
   Theme,
-  UiSettingsPatch,
 } from './ipc';
 import { errorMessage, isAppError } from './utils/errors';
-
-function folderName(path: string): string {
-  const segments = path.split(/[\\/]/).filter(Boolean);
-  return segments[segments.length - 1] ?? path;
-}
-
-function isUsableRepo(info: RepoInfo): boolean {
-  return info.isRepo && !info.bare;
-}
-
-function unusableRepoMessage(info: RepoInfo): string {
-  return info.isRepo
-    ? `Bare repositories are not supported: ${info.path}`
-    : `Not a Git repository: ${info.path}`;
-}
-
-// P2a §2.5: persisted-sanity clamp ranges (mirrors settings.rs clamp_pane_widths).
-const SIDEBAR_MIN = 180;
-const SIDEBAR_MAX = 480;
-const RIGHT_PANEL_MIN = 280;
-const RIGHT_PANEL_MAX = 640;
-const GRAPH_MIN_WIDTH = 480;
-const DEFAULT_PANE_WIDTHS: PaneWidths = { sidebar: 240, rightPanel: 380 };
-
-/** Live-drag clamp (§2.5): the persisted range intersected with the current
- * window size and the graph pane's floor. */
-function clampLive(value: number, side: 'sidebar' | 'rightPanel', otherWidth: number): number {
-  const [min, max] = side === 'sidebar' ? [SIDEBAR_MIN, SIDEBAR_MAX] : [RIGHT_PANEL_MIN, RIGHT_PANEL_MAX];
-  const dynamicMax = Math.min(max, window.innerWidth - otherWidth - GRAPH_MIN_WIDTH);
-  return Math.max(min, Math.min(value, Math.max(min, dynamicMax)));
-}
-
-/** P2b §4.2: sets data-theme on <html>. */
-function applyTheme(theme: Theme): void {
-  document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
-}
+import {
+  applyTheme,
+  clampLive,
+  DEFAULT_PANE_WIDTHS,
+  folderName,
+  isUsableRepo,
+  unusableRepoMessage,
+} from './appHelpers';
+import { useAppShortcuts } from './hooks/useAppShortcuts';
 
 export default function App() {
   // ----- App-global state (§5.1) -----
@@ -91,29 +65,21 @@ export default function App() {
 
   const [paneWidths, setPaneWidths] = useState<PaneWidths>(DEFAULT_PANE_WIDTHS);
   const paneWidthsRef = useRef(paneWidths);
-  paneWidthsRef.current = paneWidths;
-  const saveTimerRef = useRef<number | null>(null);
 
   const [theme, setTheme] = useState<Theme>('dark');
   const [themeVersion, setThemeVersion] = useState(0);
   const [listView, setListView] = useState<ListView>('tree');
 
   // P11c §3.2: Settings page + the live-preview knob state it drives.
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  // P40b: when opened from a `configMissing` commit error, focus the Git-config
-  // Identity sub-section; cleared when the panel closes.
-  const [configFocus, setConfigFocus] = useState<'identity' | null>(null);
-  const openIdentitySettings = useCallback(() => {
-    setConfigFocus('identity');
-    setSettingsOpen(true);
-  }, []);
+  // P69h §5.3: open state + the deep-link request (category, focus, monotonic
+  // seq) that lands even while Settings is already open.
+  const settings = useSettingsRequest();
   // P43a: re-open the onboarding overlay (Settings "Show welcome tour"); does
   // NOT reset the seen flag.
   const showOnboarding = useCallback(() => {
-    setSettingsOpen(false);
-    setConfigFocus(null);
+    settings.close();
     setOnboardingOpen(true);
-  }, []);
+  }, [settings]);
   // P24d: AI-asset inventory / drift / context-profile overlay (active repo only).
   const [aiAssetsOpen, setAiAssetsOpen] = useState(false);
   // P29c: read-only repo-health overlay (active repo only).
@@ -122,38 +88,6 @@ export default function App() {
   // is false (or `?onboarding=1`); re-openable from Settings. Dismissal persists
   // `onboardingSeen: true` so it does not reappear.
   const [onboardingOpen, setOnboardingOpen] = useState(false);
-  const [autoFetch, setAutoFetch] = useState<AutoFetchSettings>({
-    enabled: false,
-    intervalMinutes: 5,
-  });
-  // P30: healthRefresh background job (backend scheduler; Settings UI only).
-  const [healthRefresh, setHealthRefresh] = useState<HealthRefreshSettings>({
-    enabled: false,
-    intervalMinutes: 30,
-  });
-  const [graph, setGraph] = useState<GraphPrefs>({
-    avatarRadius: 10,
-    rowHeight: 32,
-    laneWidth: 16,
-    // P51: per-row detail toggles (mirror GraphPrefs::default in settings.rs).
-    showSha: true,
-    showAuthor: false,
-    showDate: true,
-    dateBasis: 'author',
-    showAheadBehind: true,
-    compact: false,
-    showSignatureBadge: true,
-    // P63: forge signal badges OFF by default (network+auth-gated, opt-in).
-    showPrBadge: false,
-    showCiStatus: false,
-  });
-  // P11d §4.3: bumped on every graph-knob change → GraphCanvas full re-measure.
-  const [metricsVersion, setMetricsVersion] = useState(0);
-  // P13 §8: AI assistance settings (App-owned; threaded to Settings + each
-  // workspace). Consent is a one-time gate — enabling without it opens a dialog.
-  const [aiEnabled, setAiEnabled] = useState(true);
-  const [aiConflictAutonomy, setAiConflictAutonomy] = useState<AiAutonomy>('proposeReview');
-  const [aiConsented, setAiConsented] = useState(false);
   // CLI health probe result; null while probing. Re-fetched on Settings open and
   // on repo open (§8.3). A req-id guards against out-of-order probe resolutions.
   const [aiAvailability, setAiAvailability] = useState<AiAvailability | null>(null);
@@ -162,34 +96,25 @@ export default function App() {
   // has not yet been recorded).
   const [consentOpen, setConsentOpen] = useState(false);
   // P16: embedded MCP server. `mcpStatus` is the live runtime state (from the
-  // backend, kept fresh via `mcp-server-changed`); `mcpConsented` is the
-  // one-time consent gate for the enable toggle; the dialog defers enabling.
+  // backend, kept fresh via `mcp-server-changed`); the one-time consent gates
+  // (`mcpConsented` / `mcpWriteConsented`) are persisted settings and live in
+  // useUiSettings — these two flags only track the deferring dialogs.
   const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
-  const [mcpConsented, setMcpConsented] = useState(false);
   const [mcpConsentOpen, setMcpConsentOpen] = useState(false);
-  // P16c: the write-gate has its own one-time consent (a stronger grant than
-  // read) and its own defer-to-dialog flow.
-  const [mcpWriteConsented, setMcpWriteConsented] = useState(false);
   const [mcpWriteConsentOpen, setMcpWriteConsentOpen] = useState(false);
-  // P42b: auto-check-for-updates-on-launch preference (persisted; default OFF).
-  const [autoCheckUpdates, setAutoCheckUpdates] = useState(false);
-  // P44: named identity profiles (global). Source of truth for the Settings
-  // section; persisted via handleSettingsChange like every other setting.
-  const [profiles, setProfiles] = useState<IdentityProfile[]>([]);
-  // P49b: external-tool command templates ('' ⇒ backend auto-detects per-OS).
-  // Threaded into the Settings section; persisted via handleSettingsChange.
-  const [terminalCommand, setTerminalCommand] = useState('');
-  const [editorCommand, setEditorCommand] = useState('');
   // P49b: per-tab "Open externally" context menu (App owns it — the strip spans
   // all tabs). Holds the right-clicked tab's repo path + anchor point.
   const [tabMenu, setTabMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   // P42b: the update state machine (check/notify/download/restart) lives here so
   // App only wires the notification, dialog, and Settings section to it.
   const update = useUpdateController();
-  // P11c §3.2: debounced settings persist — accumulates partial patches so a
-  // burst of knob changes within the window all reach disk in one write.
-  const settingsSaveTimerRef = useRef<number | null>(null);
-  const pendingSettingsPatchRef = useRef<UiSettingsPatch>({});
+  // P70: the git preflight behind the "Git is not available" notice bar. Probes
+  // once from an effect (after first paint) — nothing renders is gated on it.
+  const git = useGitAvailability();
+  // Destructured so the palette memo depends on the STABLE callback, not on the
+  // hook's per-render state object (which would rebuild every palette row on
+  // every App render).
+  const gitRecheck = git.recheck;
 
   // ----- Tab state (§5.2) -----
   const [tabs, setTabs] = useState<TabMeta[]>([]);
@@ -211,20 +136,57 @@ export default function App() {
     setToasts((cur) => cur.filter((t) => t.id !== id));
   }, []);
 
+  // `key` (P70, UI §10.1) coalesces a repeatable failure into ONE toast:
+  //   same key + same text -> no-op (no remount, no flicker, no re-announce)
+  //   same key + new  text -> replace IN PLACE, same slot, new id + timer
+  //   no key               -> the pre-P70 behaviour, byte for byte.
+  // Error toasts are sticky, so without this three failed presses would leave
+  // three permanent identical toasts — the exact symptom P70 exists to kill.
   const pushToast = useCallback(
-    (tone: ToastTone, text: string) => {
+    (tone: ToastTone, text: string, key?: string) => {
       const id = ++toastId.current;
       const sticky = tone === 'error';
-      setToasts((cur) => {
-        const next = [...cur, { id, tone, text, sticky }];
-        if (next.length <= 5) return next;
-        const dropIdx = next.findIndex((t) => !t.sticky && t.id !== id);
-        return next.filter((_, i) => i !== (dropIdx !== -1 ? dropIdx : 0));
-      });
+      // The updater stays PURE — nothing is read back out of it (React may run
+      // it at render time, and StrictMode runs it twice). The timer decision is
+      // therefore made from the arguments alone: a same-key/same-text push is a
+      // no-op inside `applyToastPush`, and arming a timer for its unrendered id
+      // is harmless — `dismissToast` finds nothing to remove, exactly as it
+      // already does for a keyed toast that was replaced in place.
+      setToasts((cur) => applyToastPush(cur, { id, tone, text, sticky, key }));
       if (!sticky) window.setTimeout(() => dismissToast(id), 5000);
     },
     [dismissToast],
   );
+
+  // P11c §3.2: every persisted setting that rides the debounced `setUiSettings`
+  // patch path, plus that path itself (see src/hooks/useUiSettings.ts). Declared
+  // after `pushToast` because the debounced write reports failures through it;
+  // `handleSettingsChange` is as stable as `pushToast` is, so children that take
+  // it as a prop do not re-render on its account.
+  const {
+    panelDensity,
+    primaryCommitAction,
+    autoFetch,
+    healthRefresh,
+    graph,
+    metricsVersion,
+    aiEnabled,
+    aiConflictAutonomy,
+    aiConsented,
+    mcpConsented,
+    mcpWriteConsented,
+    autoCheckUpdates,
+    profiles,
+    terminalCommand,
+    editorCommand,
+    aiDockHeight,
+    aiDockCollapsed,
+    aiStreamLog,
+    aiRun,
+    handleSettingsChange,
+    queueSettingsWrite,
+    hydrateUiSettings,
+  } = useUiSettings(pushToast);
 
   // ----- Session persistence (§6): debounced whole-session write -----
   const sessionSaveTimer = useRef<number | null>(null);
@@ -265,10 +227,8 @@ export default function App() {
   // it does not reappear on the next launch.
   const closeOnboarding = useCallback(() => {
     setOnboardingOpen(false);
-    void ipc
-      .setUiSettings({ onboardingSeen: true })
-      .catch((e) => pushToast('error', `Could not save onboarding state: ${errorMessage(e)}`));
-  }, [pushToast]);
+    queueSettingsWrite({ onboardingSeen: true });
+  }, [queueSettingsWrite]);
 
   /** Open (or focus) a repo as a tab (§5.2). Non-usable opens surface an error
    *  (empty-state error when no tabs, else a toast) and add no tab. */
@@ -342,67 +302,27 @@ export default function App() {
     });
   }, []);
 
+  // P69b: these three (plus `closeOnboarding`) each used to fire their own
+  // `ipc.setUiSettings`, racing the hook's debounced merge — disjoint key sets
+  // today, silent field loss the day they overlap. They now update App's state
+  // for the live preview and hand the persist to the ONE coalescing window.
   const commitPaneWidths = useCallback(() => {
-    if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = window.setTimeout(() => {
-      void ipc
-        .setUiSettings({ paneWidths: paneWidthsRef.current })
-        .catch((e) => pushToast('error', `Could not save pane widths: ${errorMessage(e)}`));
-    }, 300);
-  }, [pushToast]);
+    queueSettingsWrite({ paneWidths: paneWidthsRef.current });
+  }, [queueSettingsWrite]);
 
   const toggleTheme = useCallback(() => {
     const next: Theme = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
     applyTheme(next);
     setThemeVersion((v) => v + 1);
-    void ipc
-      .setUiSettings({ theme: next })
-      .catch((e) => pushToast('error', `Could not save theme: ${errorMessage(e)}`));
-  }, [theme, pushToast]);
+    queueSettingsWrite({ theme: next });
+  }, [theme, queueSettingsWrite]);
 
   const toggleListView = useCallback(() => {
     const next: ListView = listView === 'tree' ? 'flat' : 'tree';
     setListView(next);
-    void ipc
-      .setUiSettings({ listView: next })
-      .catch((e) => pushToast('error', `Could not save list view: ${errorMessage(e)}`));
-  }, [listView, pushToast]);
-
-  // P11c §3.2: apply a Settings patch — update local state immediately (live
-  // preview; graph changes bump metricsVersion so the canvas re-measures), then
-  // debounce a single merged persist (~300 ms, mirrors commitPaneWidths).
-  const handleSettingsChange = useCallback(
-    (patch: UiSettingsPatch) => {
-      if (patch.autoFetch !== undefined) setAutoFetch(patch.autoFetch);
-      if (patch.healthRefresh !== undefined) setHealthRefresh(patch.healthRefresh);
-      if (patch.graph !== undefined) {
-        setGraph(patch.graph);
-        setMetricsVersion((v) => v + 1);
-      }
-      if (patch.aiEnabled !== undefined) setAiEnabled(patch.aiEnabled);
-      if (patch.aiConflictAutonomy !== undefined) setAiConflictAutonomy(patch.aiConflictAutonomy);
-      if (patch.aiConsented !== undefined) setAiConsented(patch.aiConsented);
-      if (patch.mcpConsented !== undefined) setMcpConsented(patch.mcpConsented);
-      if (patch.mcpWriteConsented !== undefined) setMcpWriteConsented(patch.mcpWriteConsented);
-      if (patch.autoCheckUpdates !== undefined) setAutoCheckUpdates(patch.autoCheckUpdates);
-      if (patch.profiles !== undefined) setProfiles(patch.profiles);
-      if (patch.terminalCommand !== undefined) setTerminalCommand(patch.terminalCommand);
-      if (patch.editorCommand !== undefined) setEditorCommand(patch.editorCommand);
-      pendingSettingsPatchRef.current = { ...pendingSettingsPatchRef.current, ...patch };
-      if (settingsSaveTimerRef.current !== null) {
-        window.clearTimeout(settingsSaveTimerRef.current);
-      }
-      settingsSaveTimerRef.current = window.setTimeout(() => {
-        const merged = pendingSettingsPatchRef.current;
-        pendingSettingsPatchRef.current = {};
-        void ipc
-          .setUiSettings(merged)
-          .catch((e) => pushToast('error', `Could not save settings: ${errorMessage(e)}`));
-      }, 300);
-    },
-    [pushToast],
-  );
+    queueSettingsWrite({ listView: next });
+  }, [listView, queueSettingsWrite]);
 
   // P49b: external-tool launchers for the per-tab context menu (the strip is
   // App-owned, spanning all tabs). Same shape as RepoWorkspace's — never gated
@@ -444,8 +364,8 @@ export default function App() {
   // Probe on Settings open (fresh status for the AI section) and whenever a repo
   // becomes active (§8.3). Cheap enough to re-run; the req-id dedupes races.
   useEffect(() => {
-    if (settingsOpen) probeAiAvailability();
-  }, [settingsOpen, probeAiAvailability]);
+    if (settings.open) probeAiAvailability();
+  }, [settings.open, probeAiAvailability]);
   useEffect(() => {
     if (activeRepo !== null) probeAiAvailability();
   }, [activeRepo, probeAiAvailability]);
@@ -538,16 +458,23 @@ export default function App() {
     handleSetMcpAllowWrite(true);
   }, [handleSettingsChange, handleSetMcpAllowWrite]);
 
-  const handleSidebarResize = useCallback((delta: number) => {
-    setPaneWidths((w) => ({ ...w, sidebar: clampLive(w.sidebar + delta, 'sidebar', w.rightPanel) }));
+  // P69b: `paneWidthsRef` is authoritative AT CALL TIME, not from the next
+  // render — PaneDivider's Arrow-key path calls onResize + onResizeEnd in one
+  // handler, so `commitPaneWidths` would otherwise persist the pre-nudge width.
+  const applyPaneWidths = useCallback((next: PaneWidths) => {
+    paneWidthsRef.current = next;
+    setPaneWidths(next);
   }, []);
 
+  const handleSidebarResize = useCallback((delta: number) => {
+    const w = paneWidthsRef.current;
+    applyPaneWidths({ ...w, sidebar: clampLive(w.sidebar + delta, 'sidebar', w.rightPanel) });
+  }, [applyPaneWidths]);
+
   const handleRightPanelResize = useCallback((delta: number) => {
-    setPaneWidths((w) => ({
-      ...w,
-      rightPanel: clampLive(w.rightPanel + delta, 'rightPanel', w.sidebar),
-    }));
-  }, []);
+    const w = paneWidthsRef.current;
+    applyPaneWidths({ ...w, rightPanel: clampLive(w.rightPanel + delta, 'rightPanel', w.sidebar) });
+  }, [applyPaneWidths]);
 
   const handlePaneResizeEnd = useCallback(() => {
     commitPaneWidths();
@@ -616,7 +543,16 @@ export default function App() {
         setCloneOpen(false);
         await openTab(path);
       } catch (e) {
-        if (cloneSessionRef.current === session) setCloneError(errorMessage(e));
+        if (cloneSessionRef.current !== session) return;
+        // P70: latch so the notice bar appears, and replace the raw payload with
+        // the plain-language line. NOT toasted: the clone dialog is still open
+        // and owns its own error row — a toast on top would say it twice.
+        if (isGitNotFound(e)) {
+          noteGitNotFound();
+          setCloneError(gitNotFoundToastText('Clone'));
+        } else {
+          setCloneError(errorMessage(e));
+        }
       } finally {
         if (cloneSessionRef.current === session) setCloneBusy(false);
       }
@@ -642,79 +578,29 @@ export default function App() {
     }
   }, [openTab, pushToast]);
 
-  // P50c: App-level command-palette entries — everything valid app-wide. Threaded
-  // down to every RepoWorkspace, which merges them with its repo-scoped actions.
-  // The setState-based openers are stable; only the useCallback handlers are deps.
-  const appCommands = useMemo<PaletteAction[]>(
-    () => [
-      {
-        id: 'app.openRepo',
-        title: 'Open repository…',
-        hint: 'Ctrl+O',
-        group: 'action',
-        keywords: 'folder browse',
-        run: () => void handleOpenRepository(),
-      },
-      {
-        id: 'app.clone',
-        title: 'Clone repository…',
-        group: 'action',
-        keywords: 'git url download',
-        run: handleCloneOpen,
-      },
-      {
-        id: 'app.init',
-        title: 'New repository…',
-        group: 'action',
-        keywords: 'init create',
-        run: () => void handleInitRepository(),
-      },
-      {
-        id: 'app.settings',
-        title: 'Open Settings',
-        group: 'action',
-        keywords: 'preferences config options',
-        run: () => setSettingsOpen(true),
-      },
-      {
-        id: 'app.aiAssets',
-        title: 'AI Assets',
-        group: 'action',
-        keywords: 'agents claude context',
-        run: () => setAiAssetsOpen(true),
-      },
-      {
-        id: 'app.health',
-        title: 'Repository Health',
-        group: 'action',
-        keywords: 'stats status',
-        run: () => setHealthOpen(true),
-      },
-      {
-        id: 'app.toggleTheme',
-        title: 'Toggle theme (light / dark)',
-        group: 'action',
-        keywords: 'appearance dark light',
-        run: toggleTheme,
-      },
-      {
-        id: 'app.toggleListView',
-        title: 'Toggle tree / flat lists',
-        group: 'action',
-        keywords: 'sidebar view branches',
-        run: toggleListView,
-      },
-      {
-        id: 'app.shortcuts',
-        title: 'Keyboard shortcuts',
-        hint: '?',
-        group: 'action',
-        keywords: 'help keys',
-        run: () => setOverlayOpen(true),
-      },
-    ],
-    [handleOpenRepository, handleCloneOpen, handleInitRepository, toggleTheme, toggleListView],
-  );
+  /** Stable wrapper so `SettingsPanel`'s action bag (and anything else that
+   *  memoises over it) does not churn on every App render. */
+  const openRepository = useCallback(() => void handleOpenRepository(), [handleOpenRepository]);
+
+  // EVERY value here must be render-stable (a `useCallback`, a `useState`
+  // setter, or a plain value). `useAppCommands` memoises over them and its result
+  // is `CommandPalette`'s `actions` array — a new array identity re-lands the
+  // palette highlight on row 0 mid-typing. Inline arrows are forbidden here; the
+  // closures are built inside the memo instead.
+  const appCommands = useAppCommands({
+    activeRepo,
+    openRepository: handleOpenRepository,
+    cloneOpen: handleCloneOpen,
+    initRepository: handleInitRepository,
+    openSettingsAt: settings.openAt,
+    setAiAssetsOpen,
+    setHealthOpen,
+    setOverlayOpen,
+    toggleTheme,
+    toggleListView,
+    gitRecheck,
+    pushToast,
+  });
 
   // ----- Reopen-all-on-launch (§6.2) -----
   const launchedRef = useRef(false);
@@ -730,24 +616,12 @@ export default function App() {
       // UI settings first (theme/panes/listView).
       try {
         const s = await ipc.getUiSettings();
-        setPaneWidths(s.paneWidths);
+        applyPaneWidths(s.paneWidths);
         setTheme(s.theme);
         applyTheme(s.theme);
         setThemeVersion((v) => v + 1);
         setListView(s.listView);
-        setAutoFetch(s.autoFetch);
-        setHealthRefresh(s.healthRefresh);
-        setGraph(s.graph);
-        setMetricsVersion((v) => v + 1);
-        setAiEnabled(s.aiEnabled);
-        setAiConflictAutonomy(s.aiConflictAutonomy);
-        setAiConsented(s.aiConsented);
-        setMcpConsented(s.mcpConsented);
-        setMcpWriteConsented(s.mcpWriteConsented);
-        setAutoCheckUpdates(s.autoCheckUpdates);
-        setProfiles(s.profiles);
-        setTerminalCommand(s.terminalCommand);
-        setEditorCommand(s.editorCommand);
+        hydrateUiSettings(s);
         if (!s.onboardingSeen) showOnboard = true;
         // P42b D4: auto-check on launch when the setting is on. A `?update=`
         // query (harness) forces one too, mirroring `?onboarding=1`. Silent —
@@ -825,94 +699,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Esc: close only the TOPMOST global overlay per keypress (LIFO peel:
-  // shortcut overlay → settings → AI assets → health → onboarding). TabStrip's
-  // own Esc handles its menu; skip when it consumed the keypress. Workspace
-  // Esc-layering is separate.
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (menuOpen) return;
-      if (overlayOpen) {
-        setOverlayOpen(false);
-        return;
-      }
-      if (settingsOpen) {
-        setSettingsOpen(false);
-        setConfigFocus(null);
-        return;
-      }
-      if (aiAssetsOpen) {
-        setAiAssetsOpen(false);
-        return;
-      }
-      if (healthOpen) {
-        setHealthOpen(false);
-        return;
-      }
-      if (onboardingOpen) closeOnboarding();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [menuOpen, overlayOpen, settingsOpen, aiAssetsOpen, healthOpen, onboardingOpen, closeOnboarding]);
-
-  // Global shortcuts (§5.1): Ctrl+O open, ? overlay, Ctrl+Tab / Ctrl+Shift+Tab
-  // cycle tabs, Ctrl+W close active tab.
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      const ctrl = e.ctrlKey || e.metaKey;
-
-      const target = e.target as HTMLElement | null;
-      const typing =
-        target !== null &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable);
-
-      if (menuOpen) return;
-
-      if (ctrl && e.key.toLowerCase() === 'o') {
-        e.preventDefault();
-        void handleOpenRepository();
-        return;
-      }
-
-      if (ctrl && e.key === 'Tab') {
-        e.preventDefault();
-        const cur = tabsRef.current;
-        if (cur.length === 0) return;
-        const idx = cur.findIndex((t) => t.repoId === activeRepo);
-        const base = idx === -1 ? 0 : idx;
-        const nextIdx = (base + (e.shiftKey ? -1 : 1) + cur.length) % cur.length;
-        setActiveRepo(cur[nextIdx].repoId);
-        return;
-      }
-
-      if (typing) return;
-
-      // Ctrl+W gated behind the typing guard: word-delete muscle memory in the
-      // commit box must not close the tab (and lose the unsent message).
-      if (ctrl && e.key.toLowerCase() === 'w') {
-        e.preventDefault();
-        if (activeRepo !== null) closeTab(activeRepo);
-        return;
-      }
-
-      if (e.key === '?') {
-        e.preventDefault();
-        setOverlayOpen((cur) => !cur);
-        return;
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [menuOpen, activeRepo, handleOpenRepository, closeTab]);
-
   const globalModalOpen =
     overlayOpen ||
     menuOpen ||
-    settingsOpen ||
+    settings.open ||
     aiAssetsOpen ||
     healthOpen ||
     onboardingOpen ||
@@ -920,6 +710,25 @@ export default function App() {
     mcpConsentOpen ||
     mcpWriteConsentOpen ||
     update.dialogOpen;
+
+  useAppShortcuts({
+    menuOpen,
+    overlayOpen,
+    settings,
+    aiAssetsOpen,
+    healthOpen,
+    onboardingOpen,
+    closeOnboarding,
+    setOverlayOpen,
+    setAiAssetsOpen,
+    setHealthOpen,
+    activeRepo,
+    handleOpenRepository,
+    closeTab,
+    globalModalOpen,
+    tabsRef,
+    setActiveRepo,
+  });
 
   return (
     <ToastContext.Provider value={pushToast}>
@@ -940,58 +749,26 @@ export default function App() {
             onMenuOpenChange={setMenuOpen}
             onTabMenu={(path, x, y) => setTabMenu({ path, x, y })}
           />
-          <div className="header-toolbar">
-            <button
-              type="button"
-              className="btn-icon theme-toggle"
-              onClick={toggleTheme}
-              title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-              aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-            >
-              {theme === 'dark' ? '☀' : '☾'}
-            </button>
-            <button
-              type="button"
-              className="btn-icon list-view-toggle"
-              onClick={toggleListView}
-              title={listView === 'tree' ? 'Switch to flat lists' : 'Switch to tree lists'}
-              aria-label={listView === 'tree' ? 'Switch to flat lists' : 'Switch to tree lists'}
-            >
-              {listView === 'tree' ? '☰' : '⋔'}
-            </button>
-            {activeRepo !== null && (
-              <button
-                type="button"
-                className="btn-icon ai-assets-toggle"
-                onClick={() => setAiAssetsOpen(true)}
-                title="AI Assets"
-                aria-label="AI Assets"
-              >
-                {'🤖'}
-              </button>
-            )}
-            {activeRepo !== null && (
-              <button
-                type="button"
-                className="btn-icon repo-health-toggle"
-                onClick={() => setHealthOpen(true)}
-                title="Health"
-                aria-label="Health"
-              >
-                {'📊'}
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn-icon settings-toggle"
-              onClick={() => setSettingsOpen(true)}
-              title="Settings"
-              aria-label="Settings"
-            >
-              {'⚙'}
-            </button>
-          </div>
+          <HeaderToolbar
+            theme={theme}
+            onToggleTheme={toggleTheme}
+            listView={listView}
+            onToggleListView={toggleListView}
+            activeRepo={activeRepo}
+            onOpenAiAssets={() => setAiAssetsOpen(true)}
+            onOpenHealth={() => setHealthOpen(true)}
+            onOpenSettings={() => settings.openAt(null)}
+            onOpenSettingsAt={settings.openAt}
+            onMenuOpenChange={setMenuOpen}
+            profiles={profiles}
+            onProfilesChange={(next) => handleSettingsChange({ profiles: next })}
+          />
         </header>
+
+        {/* P70: app-level, in-flow, directly below the header — git availability
+            is a process-global fact, and a per-tab banner would both duplicate
+            and disappear on the no-repo empty state. */}
+        <GitMissingBanner git={git} onGitAvailable={(text) => pushToast('success', text)} />
 
         {tabs.length > 0 ? (
           tabs.map((t) => (
@@ -1004,6 +781,8 @@ export default function App() {
                 repoId={t.repoId}
                 active={t.repoId === activeRepo}
                 listView={listView}
+                panelDensity={panelDensity}
+                primaryCommitAction={primaryCommitAction}
                 themeVersion={themeVersion}
                 paneWidths={paneWidths}
                 globalModalOpen={globalModalOpen}
@@ -1013,11 +792,16 @@ export default function App() {
                 aiConflictAutonomy={aiConflictAutonomy}
                 aiConsented={aiConsented}
                 aiAvailability={aiAvailability}
+                aiDockHeight={aiDockHeight}
+                aiDockCollapsed={aiDockCollapsed}
+                aiStreamLog={aiStreamLog}
+                onAiDockChange={handleSettingsChange}
                 onSidebarResize={handleSidebarResize}
                 onRightPanelResize={handleRightPanelResize}
                 onPaneResizeEnd={handlePaneResizeEnd}
                 onOpenRepoPath={(path) => void openTab(path)}
-                onOpenIdentitySettings={openIdentitySettings}
+                onOpenIdentitySettings={settings.openIdentity}
+                onOpenAccountSettings={() => settings.openAt('accounts')}
                 appCommands={appCommands}
               />
             </div>
@@ -1027,7 +811,7 @@ export default function App() {
             loading={loading}
             error={error}
             recents={recents}
-            onOpenRepository={() => void handleOpenRepository()}
+            onOpenRepository={openRepository}
             onCloneOpen={handleCloneOpen}
             onInitRepository={() => void handleInitRepository()}
             onOpenRecent={(path) => void openTab(path)}
@@ -1041,19 +825,20 @@ export default function App() {
           activeRepo={activeRepo}
           recents={recents}
           loading={loading}
-          onOpenRepository={() => void handleOpenRepository()}
+          onOpenRepository={openRepository}
           onCloneOpen={handleCloneOpen}
           onInitRepository={() => void handleInitRepository()}
           onOpenRecent={(path) => void openTab(path)}
         />
         <SettingsPanel
-          open={settingsOpen}
-          onClose={() => {
-            setSettingsOpen(false);
-            setConfigFocus(null);
-          }}
+          open={settings.open}
+          initialCategory={settings.request.category ?? undefined}
+          requestSeq={settings.request.seq}
+          onClose={settings.close}
           theme={theme}
           listView={listView}
+          panelDensity={panelDensity}
+          primaryCommitAction={primaryCommitAction}
           autoFetch={autoFetch}
           healthRefresh={healthRefresh}
           graph={graph}
@@ -1065,6 +850,7 @@ export default function App() {
           aiConsented={aiConsented}
           aiAvailability={aiAvailability}
           onRequestEnableAi={() => setConsentOpen(true)}
+          aiRun={aiRun}
           mcpStatus={mcpStatus}
           mcpConsented={mcpConsented}
           onSetMcpEnabled={handleSetMcpEnabled}
@@ -1073,12 +859,14 @@ export default function App() {
           onSetMcpAllowWrite={handleSetMcpAllowWrite}
           onRequestEnableMcpWrite={() => setMcpWriteConsentOpen(true)}
           repoPath={activeRepo}
-          configInitialFocus={configFocus}
+          configInitialFocus={settings.request.focus}
+          focusProfileId={settings.request.focusProfileId}
           profiles={profiles}
           terminalCommand={terminalCommand}
           editorCommand={editorCommand}
           onRegisterMcp={handleRegisterMcp}
           onShowOnboarding={showOnboarding}
+          onOpenRepository={openRepository}
           updateCurrentVersion={update.currentVersion}
           autoCheckUpdates={autoCheckUpdates}
           updateState={update.state}
@@ -1100,20 +888,11 @@ export default function App() {
             repoId={activeRepo}
           />
         )}
-        <ConfirmDialog
+        <AiConsentDialog
           open={consentOpen}
-          title="Enable AI features?"
-          confirmLabel="Enable"
-          busy={false}
           onConfirm={handleConfirmConsent}
           onCancel={() => setConsentOpen(false)}
-        >
-          <div>
-            Bonsai will send the contents of conflicted files to the Claude Code CLI installed on
-            this machine, under your Claude subscription. Nothing is sent to Bonsai's own servers,
-            and no files are changed without your review. Enable AI features?
-          </div>
-        </ConfirmDialog>
+        />
         <ConfirmDialog
           open={mcpConsentOpen}
           title="Enable MCP server?"

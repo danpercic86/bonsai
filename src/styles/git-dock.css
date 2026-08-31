@@ -1,0 +1,493 @@
+/* Bonsai — Git activity dock (P87b, ui-reference §12.10): the in-flight toolbar
+   phase readout (View C), the determinate progress bar, and the session log dock
+   (View D — the git twin of the AI dock §9).
+
+   §11 tokens: every colour below aliases an existing themed custom property (a
+   §2 token) or is a color-mix over one, so ONE rule set serves both themes — NO
+   [data-theme] block, NO hex. Status hue via a local `--h`. Cascade order is fixed
+   by the import list in src/styles.css — do not reorder. */
+
+/* ---------- View C: toolbar phase readout + determinate bar ---------- */
+
+/* §2.1: reuses `.toolbar-job-status` (11px --text-2); a real <button> so it is a
+   ≥24px clickable that expands the dock, with the chrome stripped back to the span. */
+.toolbar-phase {
+  border: none;
+  background: transparent;
+  padding: 0 4px;
+  min-height: 24px;
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  font-family: inherit;
+  /* §2.1/§6: the "is it hung?" reassurance string must be legible — set --text-2
+     explicitly (~7.2:1); do NOT inherit .toolbar-job-status's --text-3 (fails AA
+     at 11px: ~3.0-3.4:1 both themes). */
+  color: var(--text-2);
+}
+
+.toolbar-phase:hover {
+  color: var(--text-1);
+}
+
+.toolbar-phase:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+/* §2.3: determinate mode — a full-width fill scaled by transform (no layout). */
+.header-progress[data-determinate]::after {
+  animation: none;
+  width: 100%;
+  transform-origin: left center;
+  transform: scaleX(var(--progress, 0));
+  transition: transform 150ms ease-out;
+}
+
+/* ---------- View D: the git activity dock ---------- */
+
+.git-activity-dock {
+  /* geometry — cozy (matches §9 dock bar) */
+  --git-dock-header-h: 30px;
+  --git-dock-pad-x: 12px;
+  --git-dock-gap: 8px;
+  --git-dock-ctl-h: 28px; /* AA floor 24px */
+  --git-dock-row-h: 28px;
+  --git-dock-log-font: 12px;
+  --git-dock-log-line-h: 18px;
+  --git-dock-label-font: 12px;
+
+  /* §11 colour aliases — theme-safe by construction */
+  --git-dock-bg: var(--bg-1);
+  --git-dock-log-bg: var(--bg-0);
+  --git-dock-meta: var(--text-2);
+  --git-dock-border: var(--border);
+
+  flex: none;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--git-dock-bg, var(--bg-1));
+  border-top: 1px solid var(--git-dock-border, var(--border));
+}
+
+.git-activity-dock[data-density='compact'] {
+  --git-dock-header-h: 28px;
+  --git-dock-pad-x: 8px;
+  --git-dock-gap: 6px;
+  --git-dock-ctl-h: 24px;
+  --git-dock-row-h: 26px;
+  --git-dock-log-font: 11px;
+  --git-dock-log-line-h: 16px;
+  --git-dock-label-font: 11px;
+}
+
+/* §3 progress cue: 2px indeterminate sweep on the dock's top edge, reusing the
+   existing @keyframes header-progress-sweep. Absolutely positioned so it does not
+   steal the resizer's hit strip. */
+.git-dock-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.git-dock-progress::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: var(--accent);
+  animation: header-progress-sweep 1.1s ease-in-out infinite;
+}
+
+/* §3.1: horizontal resizer on the top edge, 4px visual / 8px pointer band. */
+.pane-divider-git-dock {
+  height: 4px;
+  flex: none;
+  cursor: row-resize;
+}
+
+.pane-divider-git-dock::after {
+  content: '';
+  position: absolute;
+  inset: -2px 0;
+}
+
+.pane-divider-git-dock:hover {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.pane-divider-git-dock:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* ---- header row (§3.3) */
+
+.git-dock-header {
+  flex: none;
+  height: var(--git-dock-header-h, 30px);
+  display: flex;
+  align-items: center;
+  gap: var(--git-dock-gap, 8px);
+  padding: 0 var(--git-dock-pad-x, 12px);
+  min-width: 0;
+}
+
+.git-dock-toggle {
+  flex: none;
+  width: var(--git-dock-ctl-h, 28px);
+  height: var(--git-dock-ctl-h, 28px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--git-dock-meta, var(--text-2));
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.git-dock-toggle:hover {
+  background: var(--bg-2);
+}
+
+.git-dock-glyph {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--git-dock-meta, var(--text-2));
+}
+
+.git-dock-noun {
+  flex: none;
+  font-size: var(--git-dock-label-font, 12px);
+  font-weight: 600;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+.git-dock-idle {
+  font-weight: 600;
+  color: var(--git-dock-meta, var(--text-2));
+}
+
+.git-dock-detail {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--git-dock-meta, var(--text-2));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.git-dock-elapsed {
+  flex: none;
+  margin-left: auto;
+  font-size: var(--git-dock-label-font, 12px);
+  color: var(--git-dock-meta, var(--text-2));
+  font-variant-numeric: tabular-nums;
+}
+
+/* When there is no elapsed (idle empty), Clear still hugs the right edge. */
+.git-dock-header > .git-dock-clear {
+  margin-left: auto;
+}
+
+.git-dock-elapsed ~ .git-dock-clear {
+  margin-left: 0;
+}
+
+.git-dock-clear {
+  flex: none;
+  height: var(--git-dock-ctl-h, 28px);
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.git-dock-clear:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+
+.git-dock-clear:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+/* §4.4 status pill — the hue lives in the border + glyph; the LABEL is --text-1. */
+.git-dock-status,
+.git-run-pill,
+.git-run-hook-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--h, var(--accent)) 14%, var(--git-dock-bg, var(--bg-1)));
+  border: 1px solid color-mix(in srgb, var(--h, var(--accent)) 40%, var(--git-dock-bg, var(--bg-1)));
+}
+
+.git-dock-status[data-status='running'],
+.git-run-pill[data-status='running'] {
+  --h: var(--accent);
+}
+
+.git-dock-status[data-status='success'],
+.git-run-pill[data-status='success'],
+.git-run-hook-pill[data-status='success'] {
+  --h: var(--success);
+}
+
+.git-dock-status[data-status='failed'],
+.git-run-pill[data-status='failed'],
+.git-run-hook-pill[data-status='failed'] {
+  --h: var(--danger);
+}
+
+.git-run-pill-glyph {
+  color: var(--h, var(--accent));
+}
+
+/* ---- body (§3.1) */
+
+.git-dock-body {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--git-dock-border, var(--border));
+}
+
+.git-dock-empty {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px;
+}
+
+.git-dock-empty-title {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-1);
+}
+
+.git-dock-empty-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--git-dock-meta, var(--text-2));
+}
+
+/* ---- run rows (§3.4/§3.5) */
+
+.git-activity-rows {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  background: var(--git-dock-bg, var(--bg-1));
+}
+
+.git-activity-rows:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.git-run {
+  border-bottom: 1px solid color-mix(in srgb, var(--git-dock-border, var(--border)) 60%, transparent);
+}
+
+.git-run-summary {
+  min-height: var(--git-dock-row-h, 28px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 var(--git-dock-pad-x, 12px);
+  cursor: pointer;
+}
+
+.git-run-summary:hover {
+  background: var(--bg-2);
+}
+
+.git-run-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.git-run-chevron {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--git-dock-meta, var(--text-2));
+  cursor: pointer;
+}
+
+.git-run-glyph {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--git-dock-meta, var(--text-2));
+}
+
+.git-run-noun {
+  flex: none;
+  font-size: var(--git-dock-label-font, 12px);
+  color: var(--text-1);
+}
+
+.git-run-subphase {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--git-dock-meta, var(--text-2));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.git-run-trimmed {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--git-dock-meta, var(--text-2));
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.git-run-duration,
+.git-run-time {
+  flex: none;
+  font-size: 11px;
+  color: var(--git-dock-meta, var(--text-2));
+  font-variant-numeric: tabular-nums;
+}
+
+/* The status pill + the metadata cluster hug the right edge. */
+.git-run-pill {
+  margin-left: auto;
+}
+
+.git-run-subphase ~ .git-run-pill,
+.git-run-trimmed ~ .git-run-pill {
+  margin-left: auto;
+}
+
+/* ---- expanded detail (§3.5) */
+
+.git-run-detail {
+  padding: 4px var(--git-dock-pad-x, 12px) 8px;
+  background: var(--git-dock-bg, var(--bg-1));
+}
+
+.git-run-hooks {
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.git-run-hook {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 24px;
+}
+
+.git-run-hook-dot {
+  flex: none;
+  color: var(--git-dock-meta, var(--text-2));
+}
+
+.git-run-hook-name {
+  flex: none;
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+.git-run-output {
+  position: relative;
+}
+
+.git-run-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+/* Reuse `.ai-log` for the mono/pre-wrap surface; a bounded output block. */
+.git-run-log {
+  max-height: 220px;
+  border: 1px solid var(--git-dock-border, var(--border));
+  border-radius: 6px;
+  font-size: var(--git-dock-log-font, 12px);
+  line-height: var(--git-dock-log-line-h, 18px);
+}
+
+.git-log-empty {
+  color: var(--git-dock-meta, var(--text-2));
+  font-size: 11px;
+}
+
+/* §3.5-2: stdout is muted; stderr carries a shape cue (left border) + brightness
+   (--text-1), never colour alone. */
+.git-log-line {
+  color: var(--git-dock-meta, var(--text-2));
+}
+
+.git-log-line[data-stream='stderr'] {
+  color: var(--text-1);
+  border-left: 2px solid var(--warning);
+  padding-left: 6px;
+  margin-left: -8px;
+}
+
+/* §3.5-4: the tie to HookOutputDialog. */
+.git-run-note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--git-dock-meta, var(--text-2));
+}
+
+.git-activity-dock :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

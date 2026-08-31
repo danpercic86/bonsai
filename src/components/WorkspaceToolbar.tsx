@@ -1,13 +1,27 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type CSSProperties } from 'react';
 import { minutesLabel } from './workspaceUtils';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
-import { FolderOpenIcon } from './menuIcons';
-import type { BranchInfo, JobStatus } from '../ipc';
+import { FolderOpenIcon, HistoryIcon, SummarizeIcon } from './menuIcons';
+import {
+  UndoIcon,
+  FetchIcon,
+  PullIcon,
+  PushIcon,
+  CaretDownIcon,
+  RefreshIcon,
+} from './appIcons';
+import { ToolbarPhaseReadout } from './ToolbarPhaseReadout';
+import { categoryMeta } from './gitActivityFormat';
+import type { BranchInfo, GitActivityCategory, JobStatus } from '../ipc';
+import { shortcutLabel } from '../utils/platform';
 
 export interface WorkspaceToolbarProps {
   remoteOp: 'fetch' | 'pull' | 'push' | null;
   refreshing: boolean;
+  /** P73 §6.2: a non-remote background op (submodule init/update/sync) is
+   *  running — drives the 2px sweep only; remote buttons keep `remoteOp`. */
+  netBusy?: boolean;
   mutating: boolean;
   statusLoading: boolean;
   graphLoading: boolean;
@@ -40,6 +54,18 @@ export interface WorkspaceToolbarProps {
    *  bound to RepoWorkspace's launch handlers. Rendered behind an always-enabled
    *  dropdown button (external launches never touch git state, so no op-gating). */
   externalItems: ContextMenuItem[];
+  /** P87b View C: the active REMOTE git-activity run's category — drives the busy
+   *  button participle (so a force-push reads `Force-pushing…`). Null when idle. */
+  gitCategory?: GitActivityCategory | null;
+  /** P87b View C: the in-flight phase/transfer readout (`Running pre-push hook…`,
+   *  `12,340 / 50,000 objects`), rendered in an adjacent `.toolbar-phase` span so
+   *  the toolbar never reflows. Null unless a remote op is running. */
+  gitPhase?: string | null;
+  /** P87b §2.3: the determinate progress fraction (0..1) during a fetch/pull
+   *  transfer, or null → the indeterminate sweep. */
+  gitProgress?: number | null;
+  /** P87b §5-3: expand the git activity dock + reveal the active run. */
+  onShowGitActivity?: () => void;
 }
 
 /** P3e: the top workspace toolbar (fetch/pull/push + auto-fetch readout + AI
@@ -48,6 +74,7 @@ export interface WorkspaceToolbarProps {
 export function WorkspaceToolbar({
   remoteOp,
   refreshing,
+  netBusy,
   mutating,
   statusLoading,
   graphLoading,
@@ -69,6 +96,10 @@ export function WorkspaceToolbar({
   headBorn,
   onRefresh,
   externalItems,
+  gitCategory,
+  gitPhase,
+  gitProgress,
+  onShowGitActivity,
 }: WorkspaceToolbarProps) {
   // P37b: anchor for the Push caret dropdown (positioned at the caret's rect).
   const caretRef = useRef<HTMLButtonElement>(null);
@@ -129,16 +160,18 @@ export function WorkspaceToolbar({
             onClick={() => onUndo()}
             title="Undo the last operation (commit, merge, rebase, reset…)"
           >
-            ↶ Undo
+            <UndoIcon />
+            <span>Undo</span>
           </button>
           <button
             type="button"
             className="toolbar-btn"
             disabled={refreshing || mutating}
             onClick={() => onFetch()}
-            title="Fetch all remotes (Ctrl+Shift+F)"
+            title={`Fetch all remotes (${shortcutLabel('Mod+Shift+F')})`}
           >
-            {remoteOp === 'fetch' ? 'Fetching…' : '↓ Fetch'}
+            <FetchIcon />
+            <span>{remoteOp === 'fetch' ? 'Fetching…' : 'Fetch'}</span>
           </button>
           {autoFetchReadout !== null && (
             <span className="toolbar-job-status" title={autoFetchReadout.title}>
@@ -150,9 +183,10 @@ export function WorkspaceToolbar({
             className="toolbar-btn"
             disabled={refreshing || mutating || !canPullPush}
             onClick={() => onPull()}
-            title="Pull (fast-forward only) (Ctrl+Shift+P)"
+            title={`Pull (fast-forward only) (${shortcutLabel('Mod+Shift+P')})`}
           >
-            {remoteOp === 'pull' ? 'Pulling…' : '⇣ Pull'}
+            <PullIcon />
+            <span>{remoteOp === 'pull' ? 'Pulling…' : 'Pull'}</span>
           </button>
           <span className="toolbar-split">
             <button
@@ -160,9 +194,14 @@ export function WorkspaceToolbar({
               className="toolbar-btn toolbar-split-main"
               disabled={refreshing || mutating || !canPullPush}
               onClick={() => onPush()}
-              title={`${pushTitle} (Ctrl+Shift+U)`}
+              title={`${pushTitle} (${shortcutLabel('Mod+Shift+U')})`}
             >
-              {remoteOp === 'push' ? 'Pushing…' : '↑ Push'}
+              <PushIcon />
+              <span>
+                {remoteOp === 'push'
+                  ? categoryMeta(gitCategory === 'forcePush' ? 'forcePush' : 'push').participle
+                  : 'Push'}
+              </span>
             </button>
             <button
               ref={caretRef}
@@ -178,9 +217,16 @@ export function WorkspaceToolbar({
                   : "Force-push needs a branch with an upstream."
               }
             >
-              ▾
+              <CaretDownIcon />
             </button>
           </span>
+          {/* P87b View C: the granular phase/transfer readout, adjacent to the op
+              buttons so the RunningHook → Network transition is visible without
+              reflowing the toolbar. */}
+          <ToolbarPhaseReadout
+            phase={gitPhase ?? null}
+            onShow={onShowGitActivity}
+          />
           {aiEligible && (
             <button
               type="button"
@@ -189,7 +235,8 @@ export function WorkspaceToolbar({
               onClick={() => onWhatChanged()}
               title="AI digest of what changed over a range (read-only)"
             >
-              ✨ What changed…
+              <SummarizeIcon />
+              <span>What changed…</span>
             </button>
           )}
           {aiEligible && (
@@ -199,7 +246,8 @@ export function WorkspaceToolbar({
               onClick={() => onAskBonsai()}
               title="Ask Bonsai to perform a safe git operation from a natural-language request (previewed + confirmed)"
             >
-              ✨ Ask…
+              <SummarizeIcon />
+              <span>Ask…</span>
             </button>
           )}
           <button
@@ -209,7 +257,8 @@ export function WorkspaceToolbar({
             onClick={() => onViewHeadReflog()}
             title="View the HEAD reflog (recover prior positions after reset/rebase/amend)"
           >
-            ↺ Reflog
+            <HistoryIcon />
+            <span>Reflog</span>
           </button>
         </div>
         <div className="toolbar-right">
@@ -231,14 +280,27 @@ export function WorkspaceToolbar({
             className="btn-icon toolbar-refresh"
             disabled={refreshing || statusLoading || graphLoading || mutating}
             onClick={() => onRefresh()}
-            title="Refresh (Ctrl+R)"
+            title={`Refresh (${shortcutLabel('Mod+R')})`}
             aria-label="Refresh"
           >
-            {'⟳'}
+            <RefreshIcon />
           </button>
         </div>
       </div>
-      {(remoteOp !== null || refreshing) && <div className="header-progress" aria-hidden="true" />}
+      {(remoteOp !== null || refreshing || netBusy === true) && (
+        <div
+          className="header-progress"
+          aria-hidden="true"
+          data-determinate={
+            gitProgress !== null && gitProgress !== undefined ? 'true' : undefined
+          }
+          style={
+            gitProgress !== null && gitProgress !== undefined
+              ? ({ '--progress': gitProgress } as CSSProperties)
+              : undefined
+          }
+        />
+      )}
       {pushMenu !== null && (
         <ContextMenu
           x={pushMenu.x}

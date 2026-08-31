@@ -198,9 +198,12 @@ pub fn classify_copy(
 /// written. Empty `selections` == a plain `add_worktree`.
 ///
 /// Each destination is guarded by `ensure_contained(&dest, &wt_root)` so no path
-/// escapes the worktree; parents are created before write; binary files copy as
-/// raw bytes. A selection whose source file no longer exists is silently skipped
-/// (untracked file removed mid-flow); only a real IO failure returns an error.
+/// escapes the worktree LEXICALLY, and by [`ensure_no_symlink_dest`] +
+/// [`ensure_canon_contained`] so it cannot escape THROUGH A SYMLINK that the
+/// just-checked-out branch planted in the worktree (audit §3.1); parents are
+/// created before write; binary files copy as raw bytes. A selection whose source
+/// file no longer exists is silently skipped (untracked file removed mid-flow);
+/// only a real IO failure returns an error.
 ///
 /// **Non-transactional:** a mid-copy IO error returns the error with the worktree
 /// ALREADY created — the row exists and the user sees the error. Acceptable in v1.
@@ -215,6 +218,9 @@ pub fn add_worktree_with_changes(
 ) -> Result<WorktreeInfo, AppError> {
     let info = worktree::add_worktree(workdir, branch, name)?;
     let wt_root = PathBuf::from(&info.abs_path);
+    // Canonicalized root for the symlink-aware containment check below; the
+    // worktree was just created by `add_worktree`, so this resolves.
+    let canon_root = wt_root.canonicalize()?;
     let src_root = workdir;
 
     for sel in selections {
@@ -231,6 +237,11 @@ pub fn add_worktree_with_changes(
         }
         let dest = wt_root.join(&sel.path);
         ensure_contained(&dest, &wt_root)?;
+        // The target branch is ALREADY checked out here, so its tree may have
+        // planted a symlink at the leaf or at a directory component of the
+        // destination; create_dir_all/write both FOLLOW symlinks. Lexical
+        // containment cannot see that - probe the filesystem before touching it.
+        ensure_no_symlink_dest(&dest, &wt_root)?;
 
         let src = src_root.join(&sel.path);
         let bytes = match std::fs::read(&src) {
@@ -241,6 +252,12 @@ pub fn add_worktree_with_changes(
         };
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)?;
+            // Defence in depth (same pattern as
+            // `submodule::remove_cached_git_dir`, F-A7-2): once the dirs exist, the
+            // CANONICALIZED parent must still be inside the canonicalized worktree
+            // root - catching anything the lexical + per-component checks could
+            // have missed (incl. a racing symlink swap).
+            ensure_canon_contained(parent, &canon_root)?;
         }
         std::fs::write(&dest, bytes)?;
     }
@@ -284,6 +301,59 @@ fn is_unsafe_rel(rel: &str) -> bool {
                     | std::path::Component::Prefix(_)
             )
         })
+}
+
+/// Symlink write-through defense (audit §3.1). `add_worktree_with_changes` copies
+/// AFTER the target branch is checked out, so the worktree may ALREADY contain a
+/// symlink at the destination's leaf or at one of its directory components - and
+/// both `create_dir_all` and `fs::write` follow symlinks. A branch carrying
+/// `config -> ~/.gitconfig` would otherwise let an Overwrite copy clobber a file
+/// OUTSIDE the worktree.
+///
+/// Every component of `dest` below `wt_root` is probed with `symlink_metadata`
+/// (which never follows) and an EXISTING symlink is refused. Absent components are
+/// fine - they get created inside the worktree.
+fn ensure_no_symlink_dest(dest: &Path, wt_root: &Path) -> Result<(), AppError> {
+    let Ok(rel) = dest.strip_prefix(wt_root) else {
+        return Err(AppError::Git(format!(
+            "copy destination '{}' escapes the worktree root",
+            dest.display()
+        )));
+    };
+    let mut cur = wt_root.to_path_buf();
+    for comp in rel.components() {
+        cur.push(comp);
+        match std::fs::symlink_metadata(&cur) {
+            Ok(md) if md.file_type().is_symlink() => {
+                return Err(AppError::Git(format!(
+                    "refusing to copy to '{}': '{}' is a symlink",
+                    dest.display(),
+                    cur.display()
+                )));
+            }
+            Ok(_) => {}
+            // Absent (or unreadable): nothing below it can exist either.
+            Err(_) => break,
+        }
+    }
+    Ok(())
+}
+
+/// Canonicalized containment for a write destination's parent dir, mirroring
+/// `submodule::remove_cached_git_dir` (F-A7-2): the resolved parent must be inside
+/// the resolved worktree root. Defence in depth behind the lexical
+/// [`ensure_contained`] and the per-component [`ensure_no_symlink_dest`], not a
+/// replacement for either. Errors when the parent cannot be resolved.
+fn ensure_canon_contained(parent: &Path, canon_root: &Path) -> Result<(), AppError> {
+    let canon_parent = parent.canonicalize()?;
+    if canon_parent.starts_with(canon_root) {
+        Ok(())
+    } else {
+        Err(AppError::Git(format!(
+            "copy destination '{}' resolves outside the worktree root",
+            parent.display()
+        )))
+    }
 }
 
 #[cfg(test)]
@@ -347,5 +417,48 @@ mod tests {
         let info = add_worktree_with_changes(&repo_dir, "feature", "wt-empty", &[]).expect("wt");
         assert!(!info.is_main);
         assert!(PathBuf::from(&info.abs_path).exists());
+    }
+
+    /// Audit §3.1: the destination symlink guard. Ordinary paths (existing dir,
+    /// absent leaf/dirs) pass everywhere; a dest outside the root is refused; an
+    /// EXISTING symlink at the leaf or at a directory component is refused
+    /// (symlink creation needs privilege on Windows -> those asserts are unix-only).
+    #[test]
+    fn symlink_dest_guard_refuses_write_through() {
+        let dir = crate::testutil::scratch_dir();
+        let root = dir.path().join("wt");
+        std::fs::create_dir_all(root.join("sub")).expect("mkdir");
+        std::fs::write(root.join("sub/plain.txt"), b"x").expect("write");
+
+        assert!(ensure_no_symlink_dest(&root.join("sub/new.txt"), &root).is_ok());
+        assert!(ensure_no_symlink_dest(&root.join("sub/plain.txt"), &root).is_ok());
+        assert!(ensure_no_symlink_dest(&root.join("a/b/c.txt"), &root).is_ok());
+        assert!(ensure_no_symlink_dest(&dir.path().join("outside.txt"), &root).is_err());
+
+        #[cfg(unix)]
+        {
+            let outside = dir.path().join("precious.txt");
+            std::fs::write(&outside, b"precious").expect("write outside");
+            std::os::unix::fs::symlink(&outside, root.join("link.txt")).expect("symlink");
+            std::os::unix::fs::symlink(dir.path(), root.join("linkdir")).expect("symlink");
+            assert!(ensure_no_symlink_dest(&root.join("link.txt"), &root).is_err());
+            assert!(ensure_no_symlink_dest(&root.join("linkdir/x.txt"), &root).is_err());
+            // The guard must not have followed anything.
+            assert_eq!(std::fs::read(&outside).expect("read"), b"precious");
+        }
+    }
+
+    /// Audit §3.1 (defence in depth): canonicalized parent containment accepts the
+    /// root itself + real subdirs, rejects a sibling dir and an absent path.
+    #[test]
+    fn canon_contained_accepts_root_rejects_outside() {
+        let dir = crate::testutil::scratch_dir();
+        let root = dir.path().join("wt");
+        std::fs::create_dir_all(root.join("sub")).expect("mkdir");
+        let canon_root = root.canonicalize().expect("canonicalize root");
+        assert!(ensure_canon_contained(&root, &canon_root).is_ok());
+        assert!(ensure_canon_contained(&root.join("sub"), &canon_root).is_ok());
+        assert!(ensure_canon_contained(dir.path(), &canon_root).is_err());
+        assert!(ensure_canon_contained(&root.join("missing"), &canon_root).is_err());
     }
 }

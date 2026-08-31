@@ -3,7 +3,7 @@
  *  machine rendering). GitConfig/Profiles sections own IPC and are covered via
  *  their own flows elsewhere; range clamping is unit-tested in settings/ranges. */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { SettingsGraphSection } from './SettingsGraphSection';
 import { SettingsExternalToolsSection } from './SettingsExternalToolsSection';
 import { SettingsUpdatesSection } from './SettingsUpdatesSection';
@@ -89,17 +89,20 @@ describe('SettingsExternalToolsSection', () => {
     expect(onChange).toHaveBeenCalledWith({ editorCommand: 'code {path}' });
   });
 
-  it('reset is disabled when empty (auto-detect) and clears a set template', () => {
-    const empty = renderTools();
-    const resets = screen.getAllByRole('button', { name: 'Reset to auto-detect' });
-    expect(resets[0]).toBeDisabled();
-    expect(resets[1]).toBeDisabled();
-    expect(empty).not.toHaveBeenCalled();
+  // P69g / UI §5.7: the dedicated "Reset to auto-detect" button is gone. The one
+  // app-wide idiom is the row ↺, which is ABSENT (not disabled) at the default —
+  // behaviour genuinely changed, so the assertion changes with it.
+  it('the row ↺ is absent at the default and clears a set template', () => {
+    renderTools();
+    expect(screen.queryByRole('button', { name: /^Reset .* to default$/ })).toBeNull();
+
+    cleanup();
     const onChange = renderTools('wt -d {path}', '');
-    const [termReset] = screen
-      .getAllByRole('button', { name: 'Reset to auto-detect' })
-      .slice(2); // second render's buttons
-    expect(termReset).toBeEnabled();
+    expect(
+      screen.queryByRole('button', { name: 'Reset Editor command to default' }),
+    ).toBeNull();
+    const termReset = screen.getByRole('button', { name: 'Reset Terminal command to default' });
+    expect(termReset).toHaveAttribute('title', 'Reset to default (auto-detect)');
     fireEvent.click(termReset);
     expect(onChange).toHaveBeenCalledWith({ terminalCommand: '' });
   });

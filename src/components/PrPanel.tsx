@@ -10,13 +10,15 @@ import type {
   ReviewComment,
 } from '../ipc';
 import { usePushToast } from '../ToastContext';
-import { errorMessage } from '../utils/errors';
+import { errorMessage, isAppError } from '../utils/errors';
+import type { ComboboxOption } from './Combobox';
 import { SkeletonRows } from './CommitPanel';
-import { ForgeConnect } from './ForgeConnect';
+import { ForgeAccountHeader } from './ForgeAccountHeader';
+import { ForgeConnect, type ConnectMode } from './ForgeConnect';
 import { PrCreateForm } from './PrCreateForm';
-import { PrDetailView } from './PrDetailView';
+import { PrDetailContainer } from './prPanel/PrDetailContainer';
 import { PrList } from './PrList';
-import { PrReviewComments } from './PrReviewComments';
+import { useForgeAccountCache } from './prPanel/useForgeAccountCache';
 
 // P62c: right-pane PR panel CONTAINER (contract §8). Owns view state, the
 // forge* IPC calls, and last-wins req-id guards (mirrors DiffImageCard). It is
@@ -40,6 +42,13 @@ export interface PrPanelProps {
    *  button: always shown, but disabled with an explanatory tooltip when false
    *  (mirrors CommitBox). */
   aiEligible?: boolean;
+  /** P78: branch suggestions for the create form's Base combobox (local + remote). */
+  baseOptions?: ComboboxOption[];
+  /** P78: branch suggestions for the create form's Compare combobox (local). */
+  compareOptions?: ComboboxOption[];
+  /** P80: open Settings → Accounts (the kebab's "Manage accounts…"). Optional —
+   *  a no-op when the host app does not wire it. */
+  onManageAccounts?(): void;
 }
 
 export function PrPanel({
@@ -48,6 +57,9 @@ export function PrPanel({
   defaultBase,
   openToPr,
   aiEligible = false,
+  baseOptions = [],
+  compareOptions = [],
+  onManageAccounts,
 }: PrPanelProps) {
   const pushToast = usePushToast();
 
@@ -69,16 +81,36 @@ export function PrPanel({
 
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+  // P79: which connect flow ForgeConnect renders — first connect vs replace
+  // (change) vs expiry (reauth). Distinct from the View union (§4/§5).
+  const [connectMode, setConnectMode] = useState<ConnectMode>('connect');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
   const [bootstrapTick, setBootstrapTick] = useState(0);
   const [listTick, setListTick] = useState(0);
 
+  // P80: the switcher's account cache + per-repo override writes (extracted to a
+  // hook to keep this container focused). The header still renders from `ctx`.
+  const {
+    accounts,
+    accountsError,
+    accountsBusy,
+    handleOpenAccountMenu,
+    refetchAccounts,
+    handleSelectAccount,
+    handleUseHostDefault,
+    handleResetToDefault,
+  } = useForgeAccountCache(repoId, () => setBootstrapTick((t) => t + 1));
+
   // Per-concern last-wins guards: only the newest in-flight request may write.
   const ctxReqRef = useRef(0);
   const listReqRef = useRef(0);
   const detailReqRef = useRef(0);
+  // P79: the list effect's error branch calls the LATEST authFailed handler
+  // without listing it as a dep (it closes over `ctx` + setters that change on
+  // every render). Assigned in the body below, after the handler is defined.
+  const handleAuthFailedRef = useRef<(e: unknown) => boolean>(() => false);
 
   // Any KNOWN provider (gitHub | gitLab | …) is supported; only 'unknown' falls
   // through to the unsupported empty state (set in the bootstrap effect below).
@@ -125,9 +157,10 @@ export function PrPanel({
       },
       (e: unknown) => {
         if (id !== listReqRef.current) return;
+        setListLoading(false);
+        if (handleAuthFailedRef.current(e)) return; // → reauth (no toast, OD-3)
         setPrs([]);
         setListError(errorMessage(e));
-        setListLoading(false);
         pushToast('error', `Could not load pull requests: ${errorMessage(e)}`);
       },
     );
@@ -163,6 +196,7 @@ export function PrPanel({
       },
       (e: unknown) => {
         if (id !== detailReqRef.current) return;
+        if (handleAuthFailed(e)) return; // → reauth (no toast, OD-3)
         setDetailError(errorMessage(e));
         pushToast('error', `Could not load PR #${number}: ${errorMessage(e)}`);
       },
@@ -184,9 +218,14 @@ export function PrPanel({
   function handleConnect(token: string) {
     setConnecting(true);
     setConnectError(null);
+    // Same overwrite for connect / change / reauth (the backend replaces the
+    // keychain entry only AFTER the new token validates — §2.4 / §5).
     void ipc.forgeSetToken(repoId, token).then(
       () => {
         setConnecting(false);
+        setConnectMode('connect');
+        // P80: an `add`-mode connect changed the account set + this repo's pin.
+        if (accounts !== null) refetchAccounts();
         setBootstrapTick((t) => t + 1); // re-run context → authenticated → list
       },
       (e: unknown) => {
@@ -195,6 +234,56 @@ export function PrPanel({
         pushToast('error', `Could not connect: ${errorMessage(e)}`);
       },
     );
+  }
+
+  /** P79 (§4): expiry → reconnect. A forge call rejecting `authFailed` means the
+   *  saved token was expired/revoked. Evict the cache-warm viewer WITHOUT
+   *  deleting the token, then route to ForgeConnect in `reauth` mode. Returns
+   *  true when it handled the error, so the caller suppresses the extra toast
+   *  (the reauth banner IS the notification — OD-3). */
+  function handleAuthFailed(e: unknown): boolean {
+    if (!(isAppError(e) && e.kind === 'authFailed')) return false;
+    // Intentional divergence from contract §2.4: route straight to the reauth
+    // connect view and DO NOT follow the invalidate with a context refetch —
+    // a refetch would re-route to 'list' and re-trip authFailed (reauth loop).
+    void ipc.forgeInvalidateViewer(ctx?.host ?? ''); // keeps the token
+    setConnectError(null);
+    setConnectMode('reauth');
+    setView('connect');
+    return true;
+  }
+  handleAuthFailedRef.current = handleAuthFailed;
+
+  /** Switcher "Add another account…" — route into the connect view's `add`
+   *  mode; on success forgeSetToken auto-pins the new account (OD-3). */
+  function handleAddAnother() {
+    setConnectError(null);
+    setConnectMode('add');
+    setView('connect');
+  }
+
+  function handleManageAccounts() {
+    onManageAccounts?.();
+  }
+
+  /** P72: the ONE open-external-URL implementation, shared by the connect
+   *  panel's "Create a token" link and the detail view's "Open in browser".
+   *  Both children stay presentational; a launch failure names the intent first
+   *  (per-site prefix) and then the backend's tool/reason text. */
+  function openTokenPage(url: string) {
+    void ipc
+      .openUrl(url)
+      .catch((e: unknown) =>
+        pushToast('error', `Could not open the token page: ${errorMessage(e)}`),
+      );
+  }
+
+  function openPrPage(url: string) {
+    void ipc
+      .openUrl(url)
+      .catch((e: unknown) =>
+        pushToast('error', `Could not open the pull request page: ${errorMessage(e)}`),
+      );
   }
 
   function handleCreate(input: CreatePrInput) {
@@ -217,13 +306,46 @@ export function PrPanel({
       },
       (e: unknown) => {
         setCreating(false);
+        if (handleAuthFailed(e)) return; // → reauth (no toast, OD-3)
         setCreateError(errorMessage(e));
         pushToast('error', `Could not open the pull request: ${errorMessage(e)}`);
       },
     );
   }
 
-  return <div className="pr-panel">{renderBody()}</div>;
+  const showHeader =
+    ctx?.viewer != null && (view === 'list' || view === 'detail' || view === 'create');
+
+  return (
+    <div className="pr-panel">
+      {showHeader && ctx?.viewer != null && (
+        <ForgeAccountHeader
+          viewer={ctx.viewer}
+          host={ctx.host}
+          kind={ctx.provider}
+          accountSource={ctx.accountSource}
+          resolvedAccountId={ctx.resolvedAccountId}
+          accounts={
+            accounts === null ? null : accounts.filter((a) => a.host === ctx.host)
+          }
+          accountsError={accountsError}
+          busy={accountsBusy}
+          onOpenMenu={handleOpenAccountMenu}
+          onSelectAccount={handleSelectAccount}
+          onUseHostDefault={handleUseHostDefault}
+          onAddAnother={handleAddAnother}
+          onChangeToken={() => {
+            setConnectError(null);
+            setConnectMode('change');
+            setView('connect');
+          }}
+          onResetToDefault={handleResetToDefault}
+          onManageAccounts={handleManageAccounts}
+        />
+      )}
+      {renderBody()}
+    </div>
+  );
 
   function renderBody() {
     switch (view) {
@@ -261,12 +383,27 @@ export function PrPanel({
       case 'connect':
         return (
           <ForgeConnect
+            provider={ctx?.provider ?? 'unknown'}
             host={ctx?.host ?? 'the forge'}
             owner={ctx?.owner ?? ''}
             repo={ctx?.repo ?? ''}
             submitting={connecting}
             error={connectError}
+            mode={connectMode}
+            login={ctx?.viewer?.login ?? null}
             onSubmit={handleConnect}
+            // §2.4 / P80 §1.6a: Cancel in `change` + `add` modes (there is a list
+            // to return to); first-connect / reauth have no back path.
+            onCancel={
+              connectMode === 'change' || connectMode === 'add'
+                ? () => {
+                    setConnectMode('connect');
+                    setConnectError(null);
+                    setView('list');
+                  }
+                : undefined
+            }
+            onOpenUrl={openTokenPage}
           />
         );
       case 'create':
@@ -274,6 +411,8 @@ export function PrPanel({
           <PrCreateForm
             defaultHead={defaultHead}
             defaultBase={defaultBase}
+            baseOptions={baseOptions}
+            compareOptions={compareOptions}
             submitting={creating}
             error={createError}
             onSubmit={handleCreate}
@@ -316,9 +455,24 @@ export function PrPanel({
   function renderDetail() {
     if (detail !== null) {
       return (
-        <PrDetailView detail={detail} onBack={() => setView('list')}>
-          <PrReviewComments comments={comments} loading={commentsLoading} error={commentsError} />
-        </PrDetailView>
+        <PrDetailContainer
+          repoId={repoId}
+          detail={detail}
+          kind={ctx?.provider ?? 'unknown'}
+          host={ctx?.host ?? 'the forge'}
+          comments={comments}
+          commentsLoading={commentsLoading}
+          commentsError={commentsError}
+          onBack={() => setView('list')}
+          onOpenUrl={openPrPage}
+          onDetailReplaced={(d) => {
+            setDetail(d);
+            setDetailError(null);
+          }}
+          onListChanged={() => setListTick((t) => t + 1)}
+          onReload={loadDetail}
+          onAuthFailed={handleAuthFailed}
+        />
       );
     }
     return (

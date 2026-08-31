@@ -1,0 +1,476 @@
+/* Bonsai — Settings page (P11c §3) — the section-level furniture the canonical
+   row does not own: section/subsection headings, the Git-config and identity
+   blocks, the surviving radio group, and the AI/MCP status lines.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files.
+
+   P69j retired the LEGACY `.settings-row` flex rule that used to live here: all
+   seven categories now render the canonical grid row from
+   settings-primitives.css, so that selector is unscoped and this file must not
+   reintroduce a `.settings-row` rule — it is imported AFTER the primitives, so
+   at equal specificity anything here would win. */
+
+.settings-section {
+  margin-top: 20px;
+}
+
+.settings-section:first-of-type {
+  margin-top: 12px;
+}
+
+.settings-section-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+
+.settings-section-desc {
+  margin: 4px 0 10px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.settings-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.settings-control.is-disabled {
+  opacity: 0.5;
+}
+
+.settings-control-label {
+  flex: none;
+  font-size: 13px;
+  color: var(--text-1);
+}
+
+.settings-control-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-range {
+  width: 140px;
+  accent-color: var(--accent);
+}
+
+.settings-number {
+  width: 56px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+/* P69c §13.7 N1: this used to recolour the BORDER, which put it in a fight with
+   the draft-divergence warning ring for the same 1px — and since the field is
+   always focused while a draft exists, source order became load-bearing. A real
+   outline removes the conflict structurally. */
+.settings-number:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.settings-unit {
+  flex: none;
+  width: 48px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.settings-toggle-btn {
+  min-width: 72px;
+}
+
+.settings-toggle-btn.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Hint under a radio, aligned with the radio's label text. A radio group exists
+   BECAUSE each option needs a sentence (ui-reference §12.3.2), so that sentence is
+   the row's primary help and matches row help at 12px — 11px next to 12px in the
+   same dialog is an inconsistency, not a hierarchy. */
+.settings-radio-hint {
+  margin: 2px 0 0 24px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* ---------- Settings: Git config (P40b) ---------- */
+
+.settings-config-group {
+  margin-top: 12px;
+}
+
+.settings-config-subtitle {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+
+.settings-config-field,
+.settings-config-select {
+  width: 200px;
+}
+
+.settings-config-hint {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.settings-config-warn {
+  color: var(--warn, #b8860b);
+}
+
+.settings-config-error {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--danger, #d9534f);
+}
+
+.settings-config-advanced-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.settings-config-advanced-name {
+  flex: 1 1 120px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-1);
+}
+
+.settings-config-add-row {
+  margin-top: 12px;
+}
+
+/* ================= P79 — Accounts settings section ================= */
+
+/* One connected/known forge account. Reuses .settings-profile chrome. */
+.settings-account {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.settings-account-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settings-account-login {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-account-host {
+  margin: 2px 0 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Connected-state chip: dot + word (colour is never the sole carrier). */
+.settings-account-state {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.settings-account-state .settings-account-dot {
+  font-size: 9px;
+  line-height: 1;
+}
+
+.settings-account-state.is-connected .settings-account-dot {
+  color: var(--success);
+}
+
+.settings-account-state.is-disconnected .settings-account-dot {
+  color: var(--text-3);
+}
+
+.settings-account-kebab {
+  margin-left: auto;
+}
+
+.settings-account-form,
+.settings-account-add {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-account-add {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.settings-account-form .settings-config-field,
+.settings-account-add .settings-config-field {
+  width: 100%;
+}
+
+.settings-config-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.settings-account-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.settings-account-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+.settings-account-kind input:disabled + span {
+  color: var(--text-3);
+}
+
+.settings-account-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* ===== P80 — per-host account groups + default control ===== */
+
+.settings-account-group {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.settings-account-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-account-group-host {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* OD-4 no-default nudge (self-resolving, not dismissible). Plain muted note,
+   consistent with .settings-group-note — a nudge, not a warning. */
+.settings-account-group-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* Per-account Default radio + its (only account) static variant. */
+.settings-account-default {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+.settings-account-default input:disabled + span {
+  color: var(--text-3);
+}
+
+.settings-account-default--static {
+  color: var(--text-3);
+}
+
+/* Locked provider row in the add-another form (static badge, not radios). */
+.settings-account-kind-locked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* P44: identity-profile rows. */
+.settings-profile {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.settings-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* P69i / UI §8: the hueless `in use` pill (ui-reference §11 recipe) — --text-2
+   over its OWN 12% tint, transparent 1px border so it matches a verdict pill's
+   height. The old accent-on-accent badge was a hue-only carrier. */
+.settings-profile-badge {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-2) 12%, transparent);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+}
+
+.settings-profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.settings-profile-applied {
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.settings-config-advanced-details {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-config-advanced-summary {
+  margin-top: 12px;
+  padding: 4px 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.settings-config-advanced-summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-config-advanced-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+
+.settings-config-advanced-details[open] > .settings-config-advanced-summary::before {
+  transform: rotate(90deg);
+}
+
+.settings-config-advanced-summary:hover {
+  color: var(--text-2);
+}
+
+.settings-config-advanced-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.commit-error-action {
+  flex: none;
+  margin-left: 8px;
+}
+
+/* ---------- Settings: AI assistance (P13 §8.1) ---------- */
+
+/* The autonomy choice is the ONE surviving radio group (UI §5.2: each option
+   needs a sentence). P69j moved it into a canonical row, so the group is a
+   `role="radiogroup"` div named by the row label — the `<fieldset>`/`<legend>`
+   and their rules are gone, and the disabled dim now comes from the row. */
+
+.settings-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-1);
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.settings-radio input {
+  accent-color: var(--accent);
+}
+
+/* Readable prose ("Checking for the Claude Code CLI…"), so --text-2: --text-3 is
+   reserved for decorative text (§2) and measures 3.5:1 on --bg-0 dark. The -ok /
+   -warn variants below override this colour. */
+.settings-ai-status {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.settings-ai-status-ok {
+  color: var(--success);
+}
+
+.settings-ai-status-warn {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+

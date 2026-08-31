@@ -18,10 +18,18 @@ pub(crate) async fn list_worktrees_inner(
     state: &AppState,
     repo_id: &str,
 ) -> Result<Vec<WorktreeInfo>, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || worktree::list_worktrees(&path))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    // P88b/B2b: route through the per-thread handle cache. `list_worktrees_with`
+    // re-checks bare and re-reads worktree metadata on demand.
+    let (path, generation) = repo_path_and_gen(state, repo_id)?;
+    let perf = state.perf.clone();
+    let repo_id = repo_id.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::repo_handle::with_repo(&repo_id, generation, &path, &perf, |repo| {
+            worktree::list_worktrees_with(repo)
+        })
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Creates a linked worktree checking out the EXISTING local branch `branch` at

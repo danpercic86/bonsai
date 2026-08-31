@@ -10,9 +10,11 @@
 // badges to their pills, and `commitStatusFor(sha)` returns a CommitStatus for
 // each of those branch-tip shas covering every CheckRollup (success / failure /
 // pending / neutral / none).
+import { MOCK_OID } from './branches';
 import type {
   CheckRollup,
   CommitStatus,
+  ForgeAccount,
   ForgeRepoContext,
   ForgeViewer,
   PrDetail,
@@ -41,6 +43,50 @@ export const FORGE_VIEWER: ForgeViewer = {
   avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4',
 };
 
+/** P79/P80: the seed forge account served to the Accounts settings section when
+ *  the harness starts authenticated (`?forge=auth`). A warm github.com sign-in
+ *  with login + avatar; `connected` true, host default. Never carries a token. */
+export const FORGE_ACCOUNT_GITHUB: ForgeAccount = {
+  accountId: 'gitHub:github.com:octocat',
+  host: 'github.com',
+  kind: 'gitHub',
+  login: FORGE_VIEWER.login,
+  avatarUrl: FORGE_VIEWER.avatarUrl,
+  connected: true,
+  isHostDefault: true,
+};
+
+/** P79: a second account with an intentionally long host + login, so the
+ *  harness can verify ellipsis + tooltip truncation in the account cards. */
+export const FORGE_ACCOUNT_LONG: ForgeAccount = {
+  accountId: 'gitLab:gitlab.self-hosted.very-long-enterprise-subdomain.example.com:a-rather-long-enterprise-account-login-name',
+  host: 'gitlab.self-hosted.very-long-enterprise-subdomain.example.com',
+  kind: 'gitLab',
+  login: 'a-rather-long-enterprise-account-login-name',
+  avatarUrl: null,
+  connected: true,
+  isHostDefault: true,
+};
+
+/** P80 `?forge=multi`: a SECOND github.com account (distinct login) coexisting
+ *  with {@link FORGE_ACCOUNT_GITHUB} on the same host, so the harness exercises
+ *  account switching, owner match, and per-repo override without a native window.
+ *  This account's login matches the multi-repo owner (`danpercic86`), so it wins
+ *  an owner match; {@link FORGE_ACCOUNT_GITHUB} is the host default. */
+export const FORGE_ACCOUNT_GITHUB_2: ForgeAccount = {
+  accountId: 'gitHub:github.com:danpercic86',
+  host: 'github.com',
+  kind: 'gitHub',
+  login: 'danpercic86',
+  avatarUrl: null,
+  connected: true,
+  isHostDefault: false,
+};
+
+/** P80 `?forge=multi`: the repo owner used for the owner-match step (matches
+ *  {@link FORGE_ACCOUNT_GITHUB_2}'s login, case-insensitively). */
+export const FORGE_MULTI_OWNER = 'danpercic86';
+
 /** Baseline identity for the fixture repo. The mock overrides `authenticated`
  *  + `viewer` from its live connect state before returning this. */
 export const FORGE_REPO_CONTEXT: ForgeRepoContext = {
@@ -48,10 +94,13 @@ export const FORGE_REPO_CONTEXT: ForgeRepoContext = {
   host: 'github.com',
   owner: 'octo-org',
   repo: 'bonsai',
+  project: null,
   remoteName: 'origin',
   webUrl: 'https://github.com/octo-org/bonsai',
   authenticated: false,
   viewer: null,
+  resolvedAccountId: null,
+  accountSource: 'none',
 };
 
 /** PR list: two open (one draft), one open with comments, one merged — so an
@@ -122,10 +171,94 @@ export const FORGE_PR_LIST: PrSummary[] = [
     comments: 8,
     createdAt: '2026-07-20T12:15:00Z',
     updatedAt: '2026-07-26T10:02:00Z',
-    url: 'https://github.com/octo-org/bonsai/pull/120',
+    // P72: carries the external-launch `#fail` sentinel (see
+    // `mock/handlers/external.ts`) so the harness/e2e can drive the
+    // "Open in browser" FAILURE toast from a real PR detail view. The three
+    // open PRs above keep clean URLs for the success path.
+    url: 'https://github.com/octo-org/bonsai/pull/120#fail',
     headSha: 'ffeeddccbbaa99887766554433221100ffeeddcc',
   },
+  {
+    // P83: an OPEN but NOT-mergeable PR (conflicts) so the harness shows the
+    // disabled Merge button + not-mergeable reason, and the mock rejects a merge
+    // attempt with a clear forgeApi message.
+    number: 124,
+    title: 'Refactor lane assignment (has conflicts with main)',
+    state: 'open',
+    isDraft: false,
+    author: 'linus-t',
+    authorAvatarUrl: null,
+    sourceBranch: 'refactor/lanes',
+    targetBranch: 'main',
+    comments: 2,
+    createdAt: '2026-07-27T10:00:00Z',
+    updatedAt: '2026-08-03T09:00:00Z',
+    url: 'https://github.com/octo-org/bonsai/pull/124',
+    headSha: '1122334455667788990011223344556677889900',
+  },
+  {
+    // P83: an OPEN PR whose mergeability is still being computed (mergeable=null)
+    // → Merge disabled with the "still checking" reason.
+    number: 123,
+    title: 'Add keyboard shortcuts for the graph pane',
+    state: 'open',
+    isDraft: false,
+    author: 'grace-h',
+    authorAvatarUrl: null,
+    sourceBranch: 'feat/shortcuts',
+    targetBranch: 'main',
+    comments: 0,
+    createdAt: '2026-07-25T14:20:00Z',
+    updatedAt: '2026-08-02T12:00:00Z',
+    url: 'https://github.com/octo-org/bonsai/pull/123',
+    headSha: '99aabbccddeeff00112233445566778899aabbcc',
+  },
+  {
+    // P89 §8: a PATHOLOGICAL fixture — a 5-digit PR number with a very long
+    // title on a graph tip (local `main`, MAIN_TIP, which also carries a pending
+    // CI dot). Exercises the PR-pill width cap / `#num` truncation in the graph
+    // FORGE column and the full-title tooltip overflow in the PR detail/list.
+    number: 98765,
+    title:
+      'Rework the commit-graph lane-assignment pass to keep colours stable while scrolling over very large histories, extract the layout math into its own Rust module, and add regression fixtures covering fork/merge fan-out',
+    state: 'open',
+    isDraft: false,
+    author: 'ada-lovelace',
+    authorAvatarUrl: null,
+    sourceBranch: 'main',
+    targetBranch: 'release',
+    comments: 12,
+    createdAt: '2026-08-20T09:00:00Z',
+    updatedAt: '2026-08-24T18:30:00Z',
+    url: 'https://github.com/octo-org/bonsai/pull/98765',
+    headSha: MAIN_TIP,
+  },
+  {
+    // P83: a CLOSED (not merged) PR so the action bar is absent.
+    number: 119,
+    title: 'Experiment: WebGL graph renderer (closed)',
+    state: 'closed',
+    isDraft: false,
+    author: 'ada-lovelace',
+    authorAvatarUrl: null,
+    sourceBranch: 'exp/webgl',
+    targetBranch: 'main',
+    comments: 4,
+    createdAt: '2026-07-18T08:00:00Z',
+    updatedAt: '2026-07-22T17:00:00Z',
+    url: 'https://github.com/octo-org/bonsai/pull/119',
+    headSha: 'aabbccddeeff00112233445566778899aabbccdd',
+  },
 ];
+
+/** P83: per-number mergeability overrides for the open fixture rows so
+ *  `forgeGetPr` reports a coherent `mergeable` (false ⇒ conflicts disable Merge,
+ *  null ⇒ pending). Numbers absent here fall back to the default (open ⇒ true).
+ *  #124 is the not-mergeable row the mock rejects a merge attempt against. */
+export const FORGE_PR_MERGEABLE: Record<number, boolean | null> = {
+  124: false,
+  123: null,
+};
 
 /** Detail for PR #128 — the row with comments. Carries labels + a resolved
  *  `mergeable` so the presentational detail view (P62c) has everything. */
@@ -193,6 +326,11 @@ function ctx(name: string, state: CheckRollup, description: string): StatusConte
   };
 }
 
+/** A status context with NO target URL (link-out column collapses — §2.3). */
+function ctxNoUrl(name: string, state: CheckRollup, description: string | null): StatusContext {
+  return { name, state, description, targetUrl: null };
+}
+
 /** Assemble a CommitStatus, counting passed/failed/pending from `contexts` the
  *  same way the Rust rollup does (neutral/none don't count toward the tallies). */
 function mkStatus(sha: string, state: CheckRollup, contexts: StatusContext[]): CommitStatus {
@@ -235,6 +373,49 @@ const FORGE_COMMIT_STATUSES: Record<string, CommitStatus> = {
   ]),
   // `gh-pages` tip (PR #125 head) — no checks configured ⇒ None (nothing drawn).
   [GH_PAGES_TIP]: mkStatus(GH_PAGES_TIP, 'none', []),
+
+  // --- P90: keyed by the SIDEBAR branch-snapshot tips (src/ipc/fixtures/
+  // branches.ts) so clicking a branch in the sidebar drives the Checks tab to a
+  // real state (the graph-tip keys above key the badge cache; these key the tab).
+  //
+  // `main` (MOCK_OID) — the pathological MIXED case: all five glyphs, the §4.9
+  // failure-first sort, a link-out mix (one row with no target_url), and a 90-char
+  // name + 200-char description + already-long branch context for ellipsis proof.
+  [MOCK_OID]: mkStatus(MOCK_OID, 'failure', [
+    ctx('build / linux', 'success', 'Compiled in 42s'),
+    ctx('build / windows', 'success', 'Compiled in 51s'),
+    ctx('test / integration', 'failure', '3 failing'),
+    ctx('deploy / preview', 'error', 'Errored: timeout contacting the preview cluster'),
+    ctxNoUrl('lint', 'pending', 'Queued…'),
+    ctx('codecov / patch', 'neutral', 'Neutral — no coverage delta'),
+    ctx(
+      'e2e / very-long-suite-name-that-should-ellipsize-across-the-available-row-width-xx',
+      'success',
+      'Ran 1,284 scenarios across chromium, firefox and webkit; the longest scenario took 3m12s and the whole shard finished well within the configured timeout budget for this branch.',
+    ),
+  ]),
+
+  // `feature/sidebar` tip ('a'*40) — all-pass (rollup pill green, §4.8).
+  ['a'.repeat(40)]: mkStatus('a'.repeat(40), 'success', [
+    ctx('build', 'success', 'Build succeeded'),
+    ctx('test', 'success', '512 passed'),
+    ctxNoUrl('format', 'success', null),
+  ]),
+
+  // `feat` tip ('d'*40) — a single failing test drives overall Failure.
+  ['d'.repeat(40)]: mkStatus('d'.repeat(40), 'failure', [
+    ctx('build', 'success', 'Build succeeded'),
+    ctx('test', 'failure', '2 tests failed'),
+  ]),
+
+  // `exp` tip ('e'*40) — forge returns an EMPTY set ⇒ noChecks (§4.6).
+  ['e'.repeat(40)]: mkStatus('e'.repeat(40), 'none', []),
+
+  // `dev` tip ('2'*40) — a deploy still running ⇒ Pending (§3 pending pill).
+  ['2'.repeat(40)]: mkStatus('2'.repeat(40), 'pending', [
+    ctx('build', 'success', 'Build succeeded'),
+    ctxNoUrl('deploy', 'pending', 'Deploying to staging'),
+  ]),
 };
 
 /** Canned CI/commit status for a branch-tip sha, or null when none is defined.

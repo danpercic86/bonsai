@@ -12,6 +12,10 @@ pub struct UiSettings {
     pub theme: ThemeChoice,
     pub pane_widths: PaneWidths,
     pub list_view: ListView,
+    /// P67: right-panel vertical density; display-only, patches independently.
+    pub panel_density: PanelDensity,
+    /// P80 D1: which commit button is emphasized in the Working tab.
+    pub primary_commit_action: PrimaryCommitAction,
     pub auto_fetch: AutoFetch,
     /// Health-refresh background job (P30 D7).
     pub health_refresh: HealthRefresh,
@@ -38,6 +42,19 @@ pub struct UiSettings {
     pub terminal_command: String,
     /// P49: editor launch command template. Empty ⇒ auto-detect VS Code.
     pub editor_command: String,
+    // ---- P68 §8.3: streaming AI-run knobs. Each patches independently; see
+    // `settings::Settings` for the per-field semantics and the two LOCKED
+    // defaults (`aiHardCapSecs = 0` unbounded, `aiMaxBudgetUsd = 0.0` no cap).
+    pub ai_idle_timeout_secs: u32,
+    pub ai_hard_cap_secs: u32,
+    pub ai_max_turns: u32,
+    pub ai_stream_log: bool,
+    pub ai_include_partial_messages: bool,
+    pub ai_conflict_tools: AiConflictTools,
+    pub ai_bulk_max_bytes: u32,
+    pub ai_max_budget_usd: f64,
+    pub ai_dock_height: u32,
+    pub ai_dock_collapsed: bool,
 }
 
 /// Partial patch for `set_ui_settings` — only `Some(..)` fields are applied
@@ -51,6 +68,11 @@ pub struct UiSettingsPatch {
     pub theme: Option<ThemeChoice>,
     pub pane_widths: Option<PaneWidths>,
     pub list_view: Option<ListView>,
+    /// P67: right-panel density (P67c). Patches independently of `list_view`
+    /// and `graph`; NOT clamped (no numeric range).
+    pub panel_density: Option<PanelDensity>,
+    /// P80 D1: primary commit action; patches independently.
+    pub primary_commit_action: Option<PrimaryCommitAction>,
     /// Whole-struct patch (like `pane_widths`): the frontend sends the entire
     /// nested object when any sub-field changes.
     pub auto_fetch: Option<AutoFetch>,
@@ -76,6 +98,19 @@ pub struct UiSettingsPatch {
     pub terminal_command: Option<String>,
     /// P49: editor launch command template; patches independently.
     pub editor_command: Option<String>,
+    /// P68 §8.3: the ten streaming AI-run knobs, each patching independently of
+    /// `graph` / `listView` / `panelDensity` and clamped on write by
+    /// `clamp_ai_settings`.
+    pub ai_idle_timeout_secs: Option<u32>,
+    pub ai_hard_cap_secs: Option<u32>,
+    pub ai_max_turns: Option<u32>,
+    pub ai_stream_log: Option<bool>,
+    pub ai_include_partial_messages: Option<bool>,
+    pub ai_conflict_tools: Option<AiConflictTools>,
+    pub ai_bulk_max_bytes: Option<u32>,
+    pub ai_max_budget_usd: Option<f64>,
+    pub ai_dock_height: Option<u32>,
+    pub ai_dock_collapsed: Option<bool>,
 }
 
 /// Pure patch application: only `Some(..)` fields of `patch` mutate `s`; pane
@@ -91,6 +126,12 @@ pub(crate) fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     }
     if let Some(list_view) = patch.list_view {
         s.list_view = list_view;
+    }
+    if let Some(panel_density) = patch.panel_density {
+        s.panel_density = panel_density;
+    }
+    if let Some(primary_commit_action) = patch.primary_commit_action {
+        s.primary_commit_action = primary_commit_action;
     }
     if let Some(auto_fetch) = patch.auto_fetch {
         s.auto_fetch = clamp_auto_fetch(auto_fetch);
@@ -131,6 +172,83 @@ pub(crate) fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     if let Some(editor_command) = patch.editor_command {
         s.editor_command = editor_command;
     }
+    // P68 §8.3. Assigned raw, then clamped ONCE at the end (mirrors
+    // `clamp_pane_widths` on write, but for ten top-level scalars): the clamp is
+    // idempotent, so running it unconditionally cannot disturb an untouched field.
+    if let Some(v) = patch.ai_idle_timeout_secs {
+        s.ai_idle_timeout_secs = v;
+    }
+    if let Some(v) = patch.ai_hard_cap_secs {
+        s.ai_hard_cap_secs = v;
+    }
+    if let Some(v) = patch.ai_max_turns {
+        s.ai_max_turns = v;
+    }
+    if let Some(v) = patch.ai_stream_log {
+        s.ai_stream_log = v;
+    }
+    if let Some(v) = patch.ai_include_partial_messages {
+        s.ai_include_partial_messages = v;
+    }
+    if let Some(v) = patch.ai_conflict_tools {
+        s.ai_conflict_tools = v;
+    }
+    if let Some(v) = patch.ai_bulk_max_bytes {
+        s.ai_bulk_max_bytes = v;
+    }
+    if let Some(v) = patch.ai_max_budget_usd {
+        s.ai_max_budget_usd = v;
+    }
+    if let Some(v) = patch.ai_dock_height {
+        s.ai_dock_height = v;
+    }
+    if let Some(v) = patch.ai_dock_collapsed {
+        s.ai_dock_collapsed = v;
+    }
+    clamp_ai_settings(s);
+}
+
+/// The `Settings` → `UiSettings` projection, in ONE place.
+///
+/// Extracted in P68b because it was duplicated verbatim in `get_ui_settings` and
+/// `set_ui_settings`: with 27 fields, adding one to a single copy compiles fine and
+/// then returns a stale value from exactly one of the two commands. One builder
+/// makes that class of bug impossible.
+///
+/// `pub(crate)` (P69 §3.2) so the defaults-parity test in
+/// `settings_defaults_parity_tests.rs` can serialise the default projection: there
+/// is no `UiSettings::default()`, and this is the ONE place that builds one.
+pub(crate) fn ui_settings_of(s: &settings::Settings) -> UiSettings {
+    UiSettings {
+        theme: s.theme,
+        pane_widths: s.pane_widths,
+        list_view: s.list_view,
+        panel_density: s.panel_density,
+        primary_commit_action: s.primary_commit_action,
+        auto_fetch: s.auto_fetch,
+        health_refresh: s.health_refresh,
+        graph: s.graph,
+        ai_enabled: s.ai_enabled,
+        ai_conflict_autonomy: s.ai_conflict_autonomy,
+        ai_consented: s.ai_consented,
+        mcp_consented: s.mcp_consented,
+        mcp_write_consented: s.mcp_write_consented,
+        onboarding_seen: s.onboarding_seen,
+        auto_check_updates: s.auto_check_updates,
+        profiles: s.profiles.clone(),
+        terminal_command: s.terminal_command.clone(),
+        editor_command: s.editor_command.clone(),
+        ai_idle_timeout_secs: s.ai_idle_timeout_secs,
+        ai_hard_cap_secs: s.ai_hard_cap_secs,
+        ai_max_turns: s.ai_max_turns,
+        ai_stream_log: s.ai_stream_log,
+        ai_include_partial_messages: s.ai_include_partial_messages,
+        ai_conflict_tools: s.ai_conflict_tools,
+        ai_bulk_max_bytes: s.ai_bulk_max_bytes,
+        ai_max_budget_usd: s.ai_max_budget_usd,
+        ai_dock_height: s.ai_dock_height,
+        ai_dock_collapsed: s.ai_dock_collapsed,
+    }
 }
 
 /// Current UI settings (theme + pane widths). Never rejects for a
@@ -139,29 +257,9 @@ pub(crate) fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
 #[tauri::command]
 pub async fn get_ui_settings(app: tauri::AppHandle) -> Result<UiSettings, AppError> {
     let file = settings::settings_file(&app)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let s = settings::load_from(&file);
-        UiSettings {
-            theme: s.theme,
-            pane_widths: s.pane_widths,
-            list_view: s.list_view,
-            auto_fetch: s.auto_fetch,
-            health_refresh: s.health_refresh,
-            graph: s.graph,
-            ai_enabled: s.ai_enabled,
-            ai_conflict_autonomy: s.ai_conflict_autonomy,
-            ai_consented: s.ai_consented,
-            mcp_consented: s.mcp_consented,
-            mcp_write_consented: s.mcp_write_consented,
-            onboarding_seen: s.onboarding_seen,
-            auto_check_updates: s.auto_check_updates,
-            profiles: s.profiles.clone(),
-            terminal_command: s.terminal_command.clone(),
-            editor_command: s.editor_command.clone(),
-        }
-    })
-    .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))
+    tauri::async_runtime::spawn_blocking(move || ui_settings_of(&settings::load_from(&file)))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))
 }
 
 /// Applies a partial patch (only `Some(..)` fields) to the persisted UI
@@ -179,24 +277,7 @@ pub async fn set_ui_settings(
     let ui = tauri::async_runtime::spawn_blocking(move || -> Result<UiSettings, AppError> {
         // Serialized load→mutate→save (audit §2.3) — never a bare load+save pair.
         let s = settings::update(&file, |s| apply_patch(s, patch))?;
-        Ok(UiSettings {
-            theme: s.theme,
-            pane_widths: s.pane_widths,
-            list_view: s.list_view,
-            auto_fetch: s.auto_fetch,
-            health_refresh: s.health_refresh,
-            graph: s.graph,
-            ai_enabled: s.ai_enabled,
-            ai_conflict_autonomy: s.ai_conflict_autonomy,
-            ai_consented: s.ai_consented,
-            mcp_consented: s.mcp_consented,
-            mcp_write_consented: s.mcp_write_consented,
-            onboarding_seen: s.onboarding_seen,
-            auto_check_updates: s.auto_check_updates,
-            profiles: s.profiles.clone(),
-            terminal_command: s.terminal_command.clone(),
-            editor_command: s.editor_command.clone(),
-        })
+        Ok(ui_settings_of(&s))
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))??;

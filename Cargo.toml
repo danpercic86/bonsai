@@ -14,6 +14,15 @@ serde_json = "1"
 thiserror = "2"
 tempfile = "3"
 
+# Dev-loop acceleration (2026-08-20). Full debuginfo (`debug = true`, the dev
+# default) is the bulk of this workspace's 65 GB debug target and a large share
+# of link time across 77+ test binaries. `line-tables-only` keeps file/line
+# info in backtraces and panics — everything the test suite and perf gates need
+# — while dropping the heavy variable/type debuginfo we never use (no native
+# debugger is in the loop). Reverting to `true` restores full debuginfo.
+[profile.dev]
+debug = "line-tables-only"
+
 # Vendored libgit2 at -O0 makes graph walks (merge-base / descendant-of) ~10x
 # slower, which breaks the P29 health perf-ceiling test that must run in the
 # ordinary (dev) test suite. Optimize ONLY the C library in dev; Rust crates

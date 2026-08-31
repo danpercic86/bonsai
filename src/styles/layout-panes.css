@@ -1,0 +1,87 @@
+/* Bonsai — 3-pane layout.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- 3-pane layout ---------- */
+
+.panes {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  /* P2a: sidebar/right-panel widths are inline-styled per pane (persisted via
+     settings.json); the two divider columns are fixed hit-strip width. */
+  grid-template-columns: auto 4px minmax(480px, 1fr) 4px auto;
+}
+
+.sidebar {
+  background: var(--bg-1);
+  border-right: 1px solid var(--border);
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.pane-divider {
+  position: relative;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.pane-divider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.graph-pane {
+  background: var(--bg-0);
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+
+.graph-pane-empty {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+/* P43b: friendlier unborn-HEAD ("no commits yet") card. */
+.graph-pane-empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 340px;
+  text-align: center;
+}
+
+.graph-pane-empty-mark {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.graph-pane-empty-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.graph-pane-empty .pane-empty {
+  line-height: 1.5;
+}
+
+.graph-pane-empty-identity {
+  margin-top: 4px;
+}
+
+.graph-error-banner {
+  margin: 12px;
+  max-width: none;
+  flex: none;
+}
+

@@ -4,10 +4,27 @@ import { randomOid } from '../../fixtures/oids';
 import { delay, requireRepo } from '../repoState';
 import { seedOpState } from '../opStateSeed';
 import { hookRejectionFor } from '../hooksGate';
+import { runMockActivity } from '../gitActivity';
 import { sortByPath, upsert } from '../statusHelpers';
-import type { AppError, CommitResult, ConflictEntry, ConflictFile, ConflictResolution, MergeOutcome, RepoOpState } from '../../types';
+import { resolutionIsNovel } from '../aiNovel';
+import type { AppError, CommitResult, ConflictEntry, ConflictFile, ConflictResolution, MergeOutcome, RepoHooksDisclosure, RepoOpState } from '../../types';
 
 export const mergeHandlers = {
+  // Hook disclosure: `?hooks=present` seeds `hasHooks:true`; ack persists for the
+  // session (`state.hooksAcked`), so the disclosure fires once then stays quiet —
+  // exactly the backend's once-per-repo behavior.
+  async getRepoHooksDisclosure(repoId: string): Promise<RepoHooksDisclosure> {
+    await delay(80);
+    const state = requireRepo(repoId);
+    return { hasHooks: state.hasHooks, acknowledged: state.hooksAcked };
+  },
+
+  async ackRepoHooks(repoId: string): Promise<void> {
+    await delay(80);
+    const state = requireRepo(repoId);
+    state.hooksAcked = true;
+  },
+
   async getOpState(repoId: string): Promise<RepoOpState> {
     await delay(150);
     const state = requireRepo(repoId);
@@ -63,37 +80,7 @@ export const mergeHandlers = {
   // P59a: `skipHooks` ≡ --no-verify; the commit hooks fire around the merge
   // commit (after the unresolved-conflicts guard, matching the backend order).
   async commitMerge(repoId: string, message: string, skipHooks?: boolean): Promise<CommitResult> {
-    await delay(150);
-    const state = requireRepo(repoId);
-    if (state.opState.kind !== 'merge') {
-      const err: AppError = { kind: 'noOperationInProgress', message: 'no merge in progress' };
-      throw err;
-    }
-    if (state.conflicts.length > 0) {
-      const err: AppError = {
-        kind: 'unresolvedConflicts',
-        message: `cannot commit: ${state.conflicts.length} unresolved conflict(s) remain`,
-      };
-      throw err;
-    }
-    const rejection = hookRejectionFor(state, message, skipHooks);
-    if (rejection) throw rejection;
-    if (message.trim() === '') {
-      const err: AppError = { kind: 'emptyMessage', message: 'commit message is empty' };
-      throw err;
-    }
-    state.opState = { kind: 'none' };
-    state.status.conflicted = [];
-    state.headOid = randomOid();
-    const summary = message.trim().split('\n', 1)[0] ?? '';
-    // Faithful twin: a visible 2-parent merge node on top of the graph
-    // (second parent = the 'feat' fixture tip, base row 1).
-    state.commits.unshift({ oid: state.headOid, summary, mergeParentBase: 1 });
-    const headBranch = state.branches.local.find((b) => b.name === state.headBranch);
-    if (headBranch !== undefined && headBranch.upstream !== null) {
-      headBranch.ahead = (headBranch.ahead ?? 0) + 1;
-    }
-    return { oid: state.headOid, summary, branch: state.headBranch };
+    return runMockActivity('mergeCommit', () => commitMergeInner(repoId, message, skipHooks));
   },
 
   async abortMerge(repoId: string): Promise<void> {
@@ -167,6 +154,71 @@ export const mergeHandlers = {
     state.status.conflicted = state.status.conflicted.filter((e) => e.path !== path);
   },
 
+  // P68 #7 / H1: the GATED AI stage. Runs the SAME novel-content predicate against the
+  // stored conflict sides (so the gate is real in the browser harness) and refuses a
+  // novel body with the SAME `aiNeedsReview` message the backend command returns; a
+  // clean body reuses the `resolveConflictText` state change.
+  async aiApplyResolution(repoId: string, path: string, content: string): Promise<void> {
+    await delay(150);
+    const state = requireRepo(repoId);
+    const entry = state.conflicts.find((c) => c.path === path);
+    if (entry === undefined) {
+      const err: AppError = { kind: 'git', message: `path '${path}' has no conflict` };
+      throw err;
+    }
+    const file = state.conflictTexts.get(path);
+    // ConflictFile carries ours/theirs (no base) — enough to detect novelty here.
+    const sides = file === undefined ? [] : [file.ours, file.theirs];
+    if (resolutionIsNovel(sides, content)) {
+      const err: AppError = {
+        kind: 'aiNeedsReview',
+        message: `AI introduced content not present in any version of '${path}' — opened for review`,
+      };
+      throw err;
+    }
+    state.conflicts = state.conflicts.filter((c) => c.path !== path);
+    state.conflictTexts.delete(path);
+    state.status.conflicted = state.status.conflicted.filter((e) => e.path !== path);
+  },
+
   // P13: cheap CLI health probe. `?ai=off` simulates no claude on PATH; never
   // rejects for CLI state (matches the backend's never-Err check_availability).
 } satisfies Partial<IpcApi>;
+
+async function commitMergeInner(
+  repoId: string,
+  message: string,
+  skipHooks?: boolean,
+): Promise<CommitResult> {
+  await delay(150);
+  const state = requireRepo(repoId);
+  if (state.opState.kind !== 'merge') {
+    const err: AppError = { kind: 'noOperationInProgress', message: 'no merge in progress' };
+    throw err;
+  }
+  if (state.conflicts.length > 0) {
+    const err: AppError = {
+      kind: 'unresolvedConflicts',
+      message: `cannot commit: ${state.conflicts.length} unresolved conflict(s) remain`,
+    };
+    throw err;
+  }
+  const rejection = hookRejectionFor(state, message, skipHooks);
+  if (rejection) throw rejection;
+  if (message.trim() === '') {
+    const err: AppError = { kind: 'emptyMessage', message: 'commit message is empty' };
+    throw err;
+  }
+  state.opState = { kind: 'none' };
+  state.status.conflicted = [];
+  state.headOid = randomOid();
+  const summary = message.trim().split('\n', 1)[0] ?? '';
+  // Faithful twin: a visible 2-parent merge node on top of the graph
+  // (second parent = the 'feat' fixture tip, base row 1).
+  state.commits.unshift({ oid: state.headOid, summary, mergeParentBase: 1 });
+  const headBranch = state.branches.local.find((b) => b.name === state.headBranch);
+  if (headBranch !== undefined && headBranch.upstream !== null) {
+    headBranch.ahead = (headBranch.ahead ?? 0) + 1;
+  }
+  return { oid: state.headOid, summary, branch: state.headBranch, hookWarning: null };
+}

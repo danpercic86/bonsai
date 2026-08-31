@@ -122,16 +122,19 @@ pub(crate) async fn add_submodule_inner(
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
-/// Deinits submodule `name` (P60d §D4, shell-out): `git submodule deinit -f --
+/// Deinits submodule `name` (P60d §D4, shell-out): `git submodule deinit [-f] --
 /// <path>` — clears its config + empties the worktree, KEEPS .gitmodules.
+/// P82 (F-A7-7): `force=false` refuses (`dirtyNeedsForce`, zero mutation) when
+/// the submodule worktree is dirty; `force=true` runs with `-f` and discards.
 /// Errors: `invalidName` | `git` | `noRepo`. Does NOT emit `repo-changed`.
 #[tauri::command]
 pub async fn deinit_submodule(
     state: tauri::State<'_, AppState>,
     repo_id: String,
     name: String,
-) -> Result<(), AppError> {
-    deinit_submodule_inner(state.inner(), &repo_id, name).await
+    force: bool,
+) -> Result<SubmoduleDeinitOutcome, AppError> {
+    deinit_submodule_inner(state.inner(), &repo_id, name, force).await
 }
 
 /// Runtime-free core of `deinit_submodule` (unit-testable without a Tauri app).
@@ -139,25 +142,29 @@ pub(crate) async fn deinit_submodule_inner(
     state: &AppState,
     repo_id: &str,
     name: String,
-) -> Result<(), AppError> {
+    force: bool,
+) -> Result<SubmoduleDeinitOutcome, AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        submodule::deinit_submodule(&path, &SpawnGitRunner, &name)
+        submodule::deinit_submodule(&path, &SpawnGitRunner, &name, force)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
-/// Removes submodule `name` entirely (P60d §D4, shell-out): deinit → `git rm -f
-/// -- <path>` → best-effort drop of `.git/modules/<name>`. DESTRUCTIVE. Errors:
-/// `invalidName` | `git` | `noRepo`. Does NOT emit `repo-changed`.
+/// Removes submodule `name` entirely (P60d §D4, shell-out): deinit → `git rm
+/// [-f] -- <path>` → best-effort drop of `.git/modules/<name>`. DESTRUCTIVE.
+/// P82 (F-A7-7): `force=false` refuses (`dirtyNeedsForce`, zero mutation) when
+/// the submodule worktree is dirty; `force=true` runs both shell-outs with `-f`.
+/// Errors: `invalidName` | `git` | `noRepo`. Does NOT emit `repo-changed`.
 #[tauri::command]
 pub async fn remove_submodule(
     state: tauri::State<'_, AppState>,
     repo_id: String,
     name: String,
-) -> Result<(), AppError> {
-    remove_submodule_inner(state.inner(), &repo_id, name).await
+    force: bool,
+) -> Result<SubmoduleRemoveOutcome, AppError> {
+    remove_submodule_inner(state.inner(), &repo_id, name, force).await
 }
 
 /// Runtime-free core of `remove_submodule` (unit-testable without a Tauri app).
@@ -165,10 +172,11 @@ pub(crate) async fn remove_submodule_inner(
     state: &AppState,
     repo_id: &str,
     name: String,
-) -> Result<(), AppError> {
+    force: bool,
+) -> Result<SubmoduleRemoveOutcome, AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        submodule::remove_submodule(&path, &SpawnGitRunner, &name)
+        submodule::remove_submodule(&path, &SpawnGitRunner, &name, force)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?

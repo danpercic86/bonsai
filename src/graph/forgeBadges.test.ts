@@ -3,10 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
   branchSignals,
   ciBadgeVisual,
+  layoutForgeCell,
   prBadgeVisual,
   prBadgeWidth,
+  prStateGlyph,
+  rowForgeSignal,
 } from './forgeBadges';
 import type { CiBadge, PrBadge } from './forgeBadges';
+import type { RefLabel } from '../ipc';
 import type { Theme } from './colors';
 import { METRICS } from './metrics';
 import type { GraphNode } from '../ipc';
@@ -161,13 +165,77 @@ describe('branchSignals (pure display-time gate)', () => {
   });
 });
 
+describe('prStateGlyph', () => {
+  it('open → hollow ring ○', () => expect(prStateGlyph(pr({ state: 'open' }))).toBe('○'));
+  it('merged → filled diamond ◆', () => expect(prStateGlyph(pr({ state: 'merged' }))).toBe('◆'));
+  it('closed → dismiss ✕', () => expect(prStateGlyph(pr({ state: 'closed' }))).toBe('✕'));
+  it('draft → ○ (open family, distinguished by outline fill)', () =>
+    expect(prStateGlyph(pr({ state: 'open', isDraft: true }))).toBe('○'));
+});
+
 describe('prBadgeWidth', () => {
-  it('= 2*padX + measure("#num") when under the cap', () => {
-    // "#7" == 2 chars * 10 = 20; + 2*5 = 30 (< 46).
-    expect(prBadgeWidth(makeCtx(), pr({ number: 7 }))).toBe(2 * METRICS.prBadgePadX + 2 * CHAR_W);
+  it('= 2*padX + glyphW + gap + measure("#num") when under the cap', () => {
+    // glyph "○" == 1 char * 10 = 10; gap 3; "#7" == 2 chars * 10 = 20;
+    // + 2*5 = 43 (< 56).
+    expect(prBadgeWidth(makeCtx(), pr({ number: 7 }))).toBe(
+      2 * METRICS.prBadgePadX + CHAR_W + 3 + 2 * CHAR_W,
+    );
   });
   it('is clamped to prBadgeMaxWidth for a long number', () => {
-    // "#1234567" == 8 chars * 10 = 80; + 10 = 90, clamped to 46.
+    // "#1234567" == 8 chars * 10 = 80; + glyph + gap + pad ≫ 56, clamped.
     expect(prBadgeWidth(makeCtx(), pr({ number: 1234567 }))).toBe(METRICS.prBadgeMaxWidth);
+  });
+});
+
+// ---------- rowForgeSignal (row-level selection) ----------
+
+const localRef = (name: string, isHead = false): RefLabel => ({ name, kind: 'localBranch', isHead });
+const tagRef = (name: string): RefLabel => ({ name, kind: 'tag', isHead: false });
+
+describe('rowForgeSignal', () => {
+  const prByBranch = new Map([['feat', pr({ number: 42 })]]);
+  const ciBySha = new Map([['tip-sha', ci({ rollup: 'failure' })]]);
+  const d = disp({ showPrBadge: true, showCiStatus: true, prByBranch, ciBySha });
+
+  it('picks the first branch entity with a signal', () => {
+    const s = rowForgeSignal([tagRef('v1'), localRef('feat')], NODE, d);
+    expect(s?.pr?.number).toBe(42);
+    expect(s?.ci?.rollup).toBe('failure');
+  });
+
+  it('null when no branch entity on the row carries a signal', () => {
+    // CI keys off node.id, so pick a node absent from ciBySha and a branch
+    // absent from prByBranch → no signal at all.
+    const bare = { lane: 0, id: 'no-sha' } as unknown as typeof NODE;
+    expect(rowForgeSignal([tagRef('v1')], bare, d)).toBeNull();
+    expect(rowForgeSignal([localRef('other')], bare, d)).toBeNull();
+    expect(rowForgeSignal(undefined, bare, d)).toBeNull();
+  });
+
+  it('null when toggles are OFF even with cached maps', () => {
+    const off = disp({ showPrBadge: false, showCiStatus: false, prByBranch, ciBySha });
+    expect(rowForgeSignal([localRef('feat')], NODE, off)).toBeNull();
+  });
+});
+
+// ---------- layoutForgeCell (intra-column geometry) ----------
+
+describe('layoutForgeCell', () => {
+  const LEFT = 200;
+  it('PR only → pill hugs leftX, no CI', () => {
+    const cell = layoutForgeCell(makeCtx(), LEFT, { pr: pr({ number: 7 }), ci: null });
+    expect(cell.ci).toBeNull();
+    expect(cell.pr?.x).toBe(LEFT);
+    expect(cell.pr?.w).toBe(prBadgeWidth(makeCtx(), pr({ number: 7 })));
+  });
+  it('CI only → dot centered at leftX + ciBadgeSize/2, no pill', () => {
+    const cell = layoutForgeCell(makeCtx(), LEFT, { pr: null, ci: ci() });
+    expect(cell.pr).toBeNull();
+    expect(cell.ci?.cx).toBe(LEFT + METRICS.ciBadgeSize / 2);
+  });
+  it('PR + CI → dot at leftX, pill after dot + signalGap', () => {
+    const cell = layoutForgeCell(makeCtx(), LEFT, { pr: pr({ number: 7 }), ci: ci() });
+    expect(cell.ci?.cx).toBe(LEFT + METRICS.ciBadgeSize / 2);
+    expect(cell.pr?.x).toBe(LEFT + METRICS.ciBadgeSize + METRICS.signalGap);
   });
 });

@@ -1,0 +1,218 @@
+/* Bonsai — All-files DiffBrowser (P11g §6).
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- All-files DiffBrowser (P11g §6) ---------- */
+
+.diff-browser {
+  position: absolute;
+  inset: 0;
+  z-index: 6; /* above the single-file diff-overlay (z 5) + canvas */
+  background: var(--bg-0);
+  display: flex;
+  flex-direction: column;
+}
+
+.diff-browser-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.diff-browser-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.diff-browser-endpoint {
+  color: var(--text-1);
+}
+
+.diff-browser-close {
+  flex: none;
+}
+
+/* Right-pane scope navigator (DiffFileTree) — these rules now style the file
+ * tree inside ComparePanel/CommitPanel, not a column inside the overlay. */
+.diff-tree-root {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 26px;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.diff-tree-root:hover {
+  background: var(--bg-2);
+}
+
+.diff-tree-root-label {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.diff-tree-count {
+  flex: none;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+/* Dir row: an independent chevron + a click-to-select name button. */
+.diff-tree-dir-row {
+  gap: 4px;
+}
+
+.diff-tree-chevron {
+  flex: none;
+  display: flex;
+  align-items: center;
+  border: none;
+  background: none;
+  padding: 0 2px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.diff-tree-dir-name-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  border: none;
+  background: none;
+  padding: 0 2px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* File row rendered as a full-width button (single-click select). */
+.diff-tree-file {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.diff-tree-flat {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+/* House selected-row recipe (ui-reference §12.1): --selection bg + --text-1/600
+ * label + the inset accent bar used for active items (tabs, settings rail). The
+ * status badge keeps its semantic hue. */
+.diff-tree-selected,
+.diff-tree-selected:hover {
+  background: var(--selection);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.diff-tree-selected .file-path,
+.diff-tree-selected .diff-tree-root-label,
+.diff-tree-selected .tree-dir-name {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+/* The DiffFileTree flows in the narrower right panel — no fixed width. */
+.commit-files .diff-tree {
+  padding: 0;
+}
+
+/* The pane-filling stacked per-file cards (the overlay is now header + this). */
+.diff-browser-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* No `overflow:hidden` here: it would make `.diff-card` a scroll container, so
+ * the sticky `.diff-card-header` would pin to the card (which never scrolls
+ * internally) instead of to `.diff-browser-scroll`. Rounded corners are instead
+ * achieved per-child — header top corners + body bottom corners (§6.2). */
+.diff-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-0);
+}
+
+/* The header is a <button> (click to collapse/expand). Reset the default button
+ * chrome (border, appearance, text-align, font) while keeping the exact look. */
+.diff-card-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  appearance: none;
+  background: var(--bg-1);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  /* Match the card's rounded top so the header bg never pokes past the corner. */
+  border-radius: 5px 5px 0 0;
+}
+
+.diff-card-header:hover {
+  background: var(--bg-2);
+}
+
+/* Collapsed: body is unmounted, so the header IS the whole card — round every
+ * corner and drop the divider. */
+.diff-card-collapsed .diff-card-header {
+  border-bottom: none;
+  border-radius: 5px;
+}
+
+.diff-card-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+}
+
+.diff-card-body {
+  padding: 8px 10px;
+}
+
+.diff-card-loading {
+  padding: 0 4px;
+}
+

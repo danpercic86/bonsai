@@ -13,8 +13,8 @@ use bonsai_core::error::AppError;
 // `provider::ForgeKind` alongside the trait, per contract §2a.
 pub use crate::types::ForgeKind;
 use crate::types::{
-    CommitStatus, CreatePrInput, ForgeRepoContext, ForgeViewer, PrDetail, PrListQuery, PrPage,
-    ReviewComment,
+    CommitStatus, CreatePrInput, ForgeRepoContext, ForgeViewer, MergePrInput, PrDetail,
+    PrListQuery, PrPage, PrRefs, ReviewComment,
 };
 
 pub trait ForgeProvider: Send + Sync {
@@ -28,9 +28,29 @@ pub trait ForgeProvider: Send + Sync {
 
     fn list_prs(&self, query: &PrListQuery) -> Result<PrPage, AppError>;
     fn get_pr(&self, number: u64) -> Result<PrDetail, AppError>;
+
+    /// P89: one network call to read the PR's base/head tips + a neutral fetch
+    /// plan (`PrRefs`). Fork heads carry the fork clone URL in `head_fetch.url`.
+    /// Requires the PR-read scope only. Consumed by
+    /// `bonsai_core::git::pr_diff::fetch_pr_endpoints` to bring both endpoints
+    /// local before the diff is computed.
+    fn pr_refs(&self, number: u64) -> Result<PrRefs, AppError>;
     /// Requires a token ⇒ `ForgeAuthRequired` when none is stored.
     fn create_pr(&self, input: &CreatePrInput) -> Result<PrDetail, AppError>;
     fn list_review_comments(&self, number: u64) -> Result<Vec<ReviewComment>, AppError>;
+
+    /// Merge PR `number` with the given method. REQUIRES a token
+    /// (`ForgeAuthRequired` when none). If the forge reports the PR is not
+    /// mergeable (conflicts / needs review / already merged / blocked), returns
+    /// a clear `AppError` (`ForgeApi`) and changes NOTHING — never forces, never
+    /// resolves conflicts. An unsupported method for this forge is rejected with
+    /// `ForgeApi` and sends nothing. Returns the updated `PrDetail`.
+    fn merge_pr(&self, number: u64, input: &MergePrInput) -> Result<PrDetail, AppError>;
+
+    /// Close (GitHub/GitLab) / decline (Bitbucket) / abandon (Azure) PR
+    /// `number` WITHOUT merging. REQUIRES a token. Returns the updated
+    /// `PrDetail` (state should read `Closed`).
+    fn close_pr(&self, number: u64) -> Result<PrDetail, AppError>;
 
     /// Defined + implemented in P62; exposed as an IPC command in P63.
     fn combined_status(&self, sha: &str) -> Result<CommitStatus, AppError>;

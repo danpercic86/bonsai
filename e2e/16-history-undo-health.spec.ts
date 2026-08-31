@@ -9,7 +9,7 @@ import { graphCanvas, openPalette, openRepo } from './helpers';
 test.describe('16 history, undo, health', () => {
   test('reflog viewer renders the seeded HEAD story', async ({ page }) => {
     await openRepo(page);
-    await page.getByRole('button', { name: '↺ Reflog' }).click();
+    await page.getByRole('button', { name: 'Reflog', exact: true }).click();
     const view = page.getByRole('region', { name: 'Reflog: HEAD' });
     await expect(view).toBeVisible();
     await expect(view.getByText('reset: moving to HEAD~1')).toBeVisible();
@@ -21,7 +21,7 @@ test.describe('16 history, undo, health', () => {
 
   test('undo (default seam): reset plan confirmed → branch moves back', async ({ page }) => {
     await openRepo(page);
-    await page.getByRole('button', { name: '↶ Undo' }).click();
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Undo reset' });
     await expect(dialog).toBeVisible();
     // RESET_HEAD.oldOid = fixture row 2 → target short 0202020 (mixed).
@@ -35,7 +35,7 @@ test.describe('16 history, undo, health', () => {
   test('undo seams: switch / none / merge-on-dirty-tree are blocked', async ({ page }) => {
     // ?undo=switch → not undoable, with the branch-switch reason.
     await openRepo(page, { flags: { undo: 'switch' } });
-    await page.getByRole('button', { name: '↶ Undo' }).click();
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
     let dialog = page.getByRole('dialog', { name: 'Undo branch switch' });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(/switching branches isn't undone here/)).toBeVisible();
@@ -44,7 +44,7 @@ test.describe('16 history, undo, health', () => {
 
     // ?undo=none → empty reflog → nothing to undo.
     await openRepo(page, { flags: { undo: 'none' } });
-    await page.getByRole('button', { name: '↶ Undo' }).click();
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
     dialog = page.getByRole('dialog', { name: 'Undo last operation' });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText('nothing to undo')).toBeVisible();
@@ -54,7 +54,7 @@ test.describe('16 history, undo, health', () => {
     // ?undo=merge → hard-reset undo, blocked while the (default-dirty) tree
     // has tracked changes (requiresCleanWorktree).
     await openRepo(page, { flags: { undo: 'merge' } });
-    await page.getByRole('button', { name: '↶ Undo' }).click();
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
     dialog = page.getByRole('dialog', { name: 'Undo merge' });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText('Commit or stash your changes first.')).toBeVisible();
@@ -94,7 +94,7 @@ test.describe('16 history, undo, health', () => {
     await palette.getByRole('option', { name: /^Refresh/ }).click();
     await expect(palette).toBeHidden();
     // Refresh is silent on success; the console-error gate + live canvas are
-    // the assertion (matches spec 13's Ctrl+R case).
+    // the assertion (matches spec 13's Mod+R case).
     await expect(graphCanvas(page)).toBeVisible();
     await expect(page.getByTestId('status-panel').getByText(/Staged \(/)).toBeVisible();
   });

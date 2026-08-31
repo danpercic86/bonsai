@@ -292,7 +292,9 @@ fn ensure_commit_graph(repo_path: &Path) {
 
 /// Whether the `git` CLI is on PATH (the commit-graph writer shells out to it).
 fn have_git() -> bool {
-    let ok = std::process::Command::new("git")
+    // P70: resolved via the shared ladder so fixture generation works under the
+    // same broken inherited PATH the app has to survive.
+    let ok = crate::gitbin::git_command()
         .arg("--version")
         .output()
         .is_ok();

@@ -93,6 +93,13 @@ scrolling over large histories (target: **20k+ commits without jank**).
 
 See `docs/architecture-reference.md` for the directory layout and the reference Rust/IPC
 contract shapes. The authoritative per-milestone contracts live in `docs/contracts/`.
+`docs/contracts/ui-reference.md` is the canonical design system (tokens, geometry, graph metrics,
+ref pills, states) and is owned by `ui-designer` — no other agent edits it.
+
+For scoped, ad-hoc feature work or fixes that don't warrant a full milestone, use the lightweight
+`/specify` → `/plan` → `/tasks` slash commands (`.claude/commands/`), which write to
+`docs/specs/<NNN-slug>/` — see `docs/specs/README.md` for how this relates to the milestone loop
+below.
 
 ## Gate verification — AI gates vs USER CHECKPOINTs
 
@@ -126,14 +133,29 @@ The workflow loop below applies to every milestone, past and present.
    (interfaces, types, IPC surface, algorithm pseudocode, acceptance criteria). Pass it the paths
    of prior contract files + current file state. Contracts must live on disk, not only in
    conversation — they are what survives session restarts and compaction.
+2b. **If the milestone touches anything the user sees** — a new panel/dialog/control, a layout or
+   density change, canvas-graph visuals, states, copy, keyboard/a11y behaviour — delegate to
+   `ui-designer` **before** senior-dev: it writes the UI contract to
+   `docs/contracts/<milestone>-ui.md` and keeps `docs/contracts/ui-reference.md` current. Pass it
+   the architect's contract path + the relevant `src/components/` paths. Skip this step entirely
+   for backend-only, IPC-plumbing, test, or tooling work — it is invoked on demand, not every
+   milestone. Also invoke it standalone for design reviews of existing screens.
 3. **Decompose the milestone into sub-increments**, each sized for a single fresh-context
    senior-dev pass (M2 is pre-split above; split the others yourself as needed). For each
    sub-increment, delegate to `senior-dev`: implement to the contract (pass the contract **file
-   path** + the exact source file paths).
-4. Delegate to `reviewer`: review the working-tree diff since the last commit against the contract
-   file + acceptance criteria.
-5. Route must-fix items back to `senior-dev`; repeat 3–4 until the reviewer approves. **Commit each
-   approved sub-increment** (`wip(M<N>): ...`) so review diffs stay small and resume points exist.
+   path** — plus the UI contract path when one exists — and the exact source file paths).
+4. **Review — run the code and design reviews concurrently.** In a *single* message, delegate the
+   working-tree diff since the last commit to `reviewer` (correctness, the Rust/React boundary,
+   performance, safety, against the contract + acceptance criteria) and — for UI increments — the
+   same diff to `ui-designer` (design review against its own contract: tokens used, all states
+   covered, a11y, both themes). They are independent read-only passes; serialising them only adds a
+   round-trip.
+5. **Velocity mode (this is the default — from P71).** Route only **MUST-FIX** items back to
+   `senior-dev`; file SHOULD-FIX / NIT as follow-ups (a TODO.md line or a spun-out task) instead of
+   blocking the increment. On intermediate rounds re-review only the changed surface and run
+   **targeted** checks (the specific tests + `cargo check` / `tsc`), saving the full gate for step 7.
+   Repeat 3–4 until `reviewer` (and `ui-designer`, for UI) approve. **Commit each approved
+   sub-increment** (`wip(M<N>): ...`) so review diffs stay small and resume points exist.
 6. Delegate to `tester`: write/run tests + smoke checklist against the scratch repo (pass the
    contract file path).
 7. Integrate, verify the AI gate yourself (tests, benchmarks, browser harness), present the
@@ -174,6 +196,15 @@ review.
   open files themselves. Require concise subagent reports (changed-files summary, MUST-FIX list,
   pass/fail + numbers), never full file bodies or diffs echoed back. Keep single UI/fixture files
   small enough to read in a targeted range rather than in full.
+  - **Locate before you read.** When you don't already know where code lives, use the
+    `context-explorer` agent (it returns `file:line` + snippets, so you never re-read whole files)
+    or `code_search` / `Grep` — do NOT open a large file just to find something in it.
+  - **Never whole-read a file >800 lines.** `Grep` for the symbol, then `Read` a bounded
+    `offset+limit` window around it. When you delegate work in such a file, pass the target **line
+    range** in the prompt so the subagent reads the slice, not the whole file.
+  - **Batch related increments into one spawn.** Every fresh subagent re-pays the fixed cost
+    (this CLAUDE.md + its agent def ≈ 6–8k tokens) before doing anything. Prefer one well-scoped
+    spawn covering a coherent unit of work over several small serial ones.
 - If a decision is ambiguous or you're blocked, **ask the user — do not guess.**
 
 ## Environment (prerequisites — verify first)
@@ -193,6 +224,8 @@ graph-layout algorithm.
 
 ## Subagents (`.claude/agents/`)
 
+**Per-milestone loop** (every milestone runs through these):
+
 - **`architect`** — designs module boundaries, Rust/TS interface contracts, the IPC surface, and the
   commit-graph algorithm. Writes contract files to `docs/contracts/` only; never edits application
   code.
@@ -201,6 +234,25 @@ graph-layout algorithm.
   MUST-FIX / SHOULD-FIX / NIT + a verdict; never edits code.
 - **`tester`** — writes/runs `cargo test` + fixtures and a frontend smoke checklist. Touches only test
   code and fixtures; never edits application code to make a test pass.
+
+**On-demand specialists** (not part of the per-milestone loop — invoke when the trigger applies):
+
+- **`ui-designer`** — owns the visual language: layout, placement, tokens, states, motion,
+  microcopy, and accessibility. Writes UI contracts to `docs/contracts/<milestone>-ui.md` and
+  maintains `docs/contracts/ui-reference.md`; never edits application code. Invoke for any work
+  that changes what the user sees (workflow step 2b), or standalone for a design review.
+- **`docs-curator`** — compacts and curates the written record: keeps `TODO.md` under ~300 lines,
+  archives resolved history losslessly into `docs/history/`, maintains `docs/contracts/INDEX.md`,
+  and keeps `CHANGELOG.md`/`README.md` honest. Invoke after a batch of milestones goes green, when
+  USER CHECKPOINTs are confirmed, or when `TODO.md` has bloated. It never upgrades status on its
+  own and never archives a milestone with a pending USER CHECKPOINT.
+- **`security-auditor`** — audits untrusted-input and privileged-capability surfaces: AI features
+  that feed repo content to a model, the MCP server's write tools, external-process launching,
+  credential/token storage, signing + the updater trust chain, hook execution, Tauri
+  capabilities/CSP, dependency advisories. Read-only on code; reports ranked findings.
+- **`refactorer`** — strictly behavior-preserving restructuring, chiefly splitting oversized files
+  back under the ~500-line limit. Proves equivalence by identical before/after test counts. Never
+  fixes bugs or changes behavior in the same pass — it reports what it finds instead.
 
 To begin or resume, follow `.claude/orchestrator-kickoff.md`.
 

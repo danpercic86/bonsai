@@ -17,10 +17,18 @@ pub(crate) async fn list_branches_inner(
     state: &AppState,
     repo_id: &str,
 ) -> Result<BranchesSnapshot, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || branches::list_refs(&path))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    // P88b/B2b: route through the per-thread handle cache. Refs/tags/HEAD are
+    // re-read on demand, so a reused handle reads current on-disk state.
+    let (path, generation) = repo_path_and_gen(state, repo_id)?;
+    let perf = state.perf.clone();
+    let repo_id = repo_id.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::repo_handle::with_repo(&repo_id, generation, &path, &perf, |repo| {
+            branches::list_refs_with(repo)
+        })
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Creates a local branch at the current HEAD commit — does NOT check out
@@ -96,6 +104,33 @@ pub(crate) async fn checkout_branch_inner(
 ) -> Result<CheckoutResult, AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || branches::checkout_branch_autostash(&path, &name))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Dirty-safe checkout of an arbitrary commit → DETACHED HEAD: auto-stash ->
+/// safe checkout -> set_head_detached -> re-apply stash. No auto-FF. A conflicted
+/// re-apply is a SUCCESS carrying `apply: Some(conflicts)` (stash retained).
+/// Errors: `invalidName` | `git` | `operationInProgress` | `configMissing` |
+/// `checkoutConflict` | `noRepo`. Does NOT emit `repo-changed` (frontend calls
+/// refreshAll).
+#[tauri::command]
+pub async fn checkout_commit(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    oid: String,
+) -> Result<CheckoutResult, AppError> {
+    checkout_commit_inner(state.inner(), &repo_id, oid).await
+}
+
+/// Runtime-free core of `checkout_commit` (unit-testable without a Tauri app).
+pub(crate) async fn checkout_commit_inner(
+    state: &AppState,
+    repo_id: &str,
+    oid: String,
+) -> Result<CheckoutResult, AppError> {
+    let path = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || branches::checkout_commit_detached(&path, &oid))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

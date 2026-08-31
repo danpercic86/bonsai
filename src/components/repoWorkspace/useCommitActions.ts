@@ -3,8 +3,11 @@ import { errorMessage } from '../../utils/errors';
 import { shortOid } from '../workspaceUtils';
 import { COMMIT_PUSH_CANCELED } from '../commitPushSignal';
 import { nextFileAfter, type WorkdirChange } from '../../utils/nextFile';
+import { buildPathTree, flattenTreeLeaves } from '../../utils/pathTree';
+import type { ListView } from '../../ipc';
 import type { BranchesSnapshot, FileDiff, HeadInfo, ResetMode, StatusSnapshot } from '../../ipc';
 import type { DiffSlot } from '../StatusPanel';
+import type { RefreshScope } from './refreshScope';
 import type { BaseActionDeps, PendingDiscardForce, Setter } from './types';
 
 type CommitPushResolver = {
@@ -20,8 +23,7 @@ type CommitPushResolver = {
 /** Stage/unstage/commit/amend/reset/discard + Commit & Push (M3/M6/P20). */
 export function useCommitActions(
   deps: BaseActionDeps & {
-    refreshAll: () => Promise<void>;
-    refetchStatus: () => Promise<void>;
+    refreshAll: (scope?: RefreshScope) => Promise<void>;
     reportStatusError: (message: string) => void;
     fetchDiffSlot: (key: string, fetcher: () => Promise<FileDiff>) => Promise<void>;
     pushCurrentBranch: () => Promise<void>;
@@ -32,6 +34,9 @@ export function useCommitActions(
     /** P61a: current "Highlight changes" flag, read when refetching the
      *  auto-advance target slot after a stage. */
     intralineRef: { current: boolean };
+    /** Current "Changes" list view mode. In tree view the auto-advance target
+     *  must be computed in the rendered tree order, not the flat backend order. */
+    listViewRef: { current: ListView };
     head: HeadInfo | null;
     headBranch: BranchesSnapshot['local'][number] | null;
     setAmend: Setter<boolean>;
@@ -56,7 +61,6 @@ export function useCommitActions(
     pushToast,
     setMutating,
     refreshAll,
-    refetchStatus,
     reportStatusError,
     fetchDiffSlot,
     pushCurrentBranch,
@@ -65,6 +69,7 @@ export function useCommitActions(
     diffSlotRef,
     diffViewModeRef,
     intralineRef,
+    listViewRef,
     head,
     headBranch,
     setAmend,
@@ -80,9 +85,9 @@ export function useCommitActions(
   async function handleStage(paths: string[]) {
     setMutating(true);
     // P46 WS3: when the file open in the diff overlay is the one being staged,
-    // auto-advance to the NEXT changed file (visible [unstaged, untracked]
-    // order). Compute the target from the PRE-stage snapshot; refetchStatus
-    // collapses the staged slot, then we open the target below.
+    // auto-advance to the NEXT changed file in the SAME order the UI renders the
+    // "Changes" list (tree or flat). Compute the target from the PRE-stage
+    // snapshot; refetchStatus collapses the staged slot, then we open it below.
     let nextTarget: WorkdirChange | null = null;
     const slot = diffSlotRef.current;
     if (
@@ -92,7 +97,7 @@ export function useCommitActions(
     ) {
       const openPath = slot.key.slice(slot.key.indexOf(':') + 1);
       if (paths.includes(openPath)) {
-        const changes: WorkdirChange[] = [
+        const flat: WorkdirChange[] = [
           ...status.unstaged.map((e) => ({
             section: 'unstaged' as const,
             path: e.path,
@@ -104,12 +109,22 @@ export function useCommitActions(
             origPath: e.origPath,
           })),
         ];
+        // Tree view renders leaves in buildPathTree/flattenTreeLeaves order
+        // (dirs-first, sorted) — the flat backend order diverges, so match the
+        // rendered order to advance to the visually-next file.
+        const changes =
+          listViewRef.current === 'tree'
+            ? flattenTreeLeaves(buildPathTree(flat, (c) => c.path))
+            : flat;
         nextTarget = nextFileAfter(changes, openPath, paths);
       }
     }
     try {
       await ipc.stage(repoId, paths);
-      await refetchStatus();
+      // P86a: staging is index-only (no HEAD move, no ref change) — `worktree`
+      // scope (status + opState). Routing through the echo-armed round also drops
+      // the `.git/index` write's own watcher echo (no more full re-walk per stage).
+      await refreshAll('worktree');
       if (nextTarget !== null) {
         const target = nextTarget;
         const fresh = statusRef.current;
@@ -139,7 +154,8 @@ export function useCommitActions(
     setMutating(true);
     try {
       await ipc.unstage(repoId, paths);
-      await refetchStatus();
+      // P86a: index-only — `worktree` scope (see handleStage).
+      await refreshAll('worktree');
     } catch (e) {
       reportStatusError(errorMessage(e));
     } finally {
@@ -155,7 +171,8 @@ export function useCommitActions(
     await runWithHookGate(async (sh) => {
       setMutating(true);
       try {
-        await ipc.commit(repoId, message, sign, sh);
+        const res = await ipc.commit(repoId, message, sign, sh);
+        if (res.hookWarning !== null) pushToast('warning', res.hookWarning);
         await refreshAll();
         refreshVerification();
       } finally {
@@ -197,7 +214,8 @@ export function useCommitActions(
     await runWithHookGate(async (sh) => {
       setMutating(true);
       try {
-        await ipc.commit(repoId, message, sign, sh);
+        const res = await ipc.commit(repoId, message, sign, sh);
+        if (res.hookWarning !== null) pushToast('warning', res.hookWarning);
       } finally {
         setMutating(false);
       }
@@ -246,7 +264,8 @@ export function useCommitActions(
     await runWithHookGate(async (sh) => {
       setMutating(true);
       try {
-        await ipc.commitAmend(repoId, message, sign, sh);
+        const res = await ipc.commitAmend(repoId, message, sign, sh);
+        if (res.hookWarning !== null) pushToast('warning', res.hookWarning);
         setAmend(false);
         setAmendMessage(null);
         await refreshAll();
@@ -297,7 +316,8 @@ export function useCommitActions(
     setMutating(true);
     try {
       await ipc.discardPaths(repoId, paths);
-      await refreshAll();
+      // P86a: discard reverts worktree/index only (no HEAD move) — `worktree` scope.
+      await refreshAll('worktree');
       pushToast('success', `Discarded changes to ${paths.length} file(s)`);
     } catch (e) {
       pushToast('error', errorMessage(e));
@@ -327,7 +347,8 @@ export function useCommitActions(
     setMutating(true);
     try {
       await ipc.discardPathsForce(repoId, paths);
-      await refreshAll();
+      // P86a: worktree/index-only revert (+ untracked delete) — `worktree` scope.
+      await refreshAll('worktree');
       pushToast('success', `Discarded ${paths.length} file(s)`);
     } catch (e) {
       pushToast('error', errorMessage(e));

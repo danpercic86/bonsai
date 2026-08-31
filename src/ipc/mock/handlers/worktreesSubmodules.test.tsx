@@ -111,7 +111,8 @@ describe('worktrees', () => {
 });
 
 describe('submodules', () => {
-  it('lists seeded rows; init flips uninitialized → upToDate', async () => {
+  // P73: init means init + CHECKOUT, so upToDate is the intended outcome.
+  it('lists seeded rows; init (= init + checkout) flips uninitialized → upToDate', async () => {
     const repoId = await openDefault();
     const subs = await run(submoduleHandlers.listSubmodules(repoId));
     expect(subs.length).toBeGreaterThan(0);
@@ -157,14 +158,102 @@ describe('submodules', () => {
   it('deinit keeps the row (uninitialized, wtOid null); remove drops it', async () => {
     const repoId = await openDefault();
     await run(submoduleHandlers.addSubmodule(repoId, 'https://example.com/y.git', 'libs/y'));
-    await run(submoduleHandlers.deinitSubmodule(repoId, 'libs/y'));
+    await run(submoduleHandlers.deinitSubmodule(repoId, 'libs/y', false));
     let subs = await run(submoduleHandlers.listSubmodules(repoId));
     expect(subs.find((s) => s.name === 'libs/y')).toMatchObject({
       status: 'uninitialized',
       wtOid: null,
     });
-    await run(submoduleHandlers.removeSubmodule(repoId, 'libs/y'));
+    await run(submoduleHandlers.removeSubmodule(repoId, 'libs/y', false));
     subs = await run(submoduleHandlers.listSubmodules(repoId));
     expect(subs.some((s) => s.name === 'libs/y')).toBe(false);
+  });
+});
+
+// P73 §8.3: the init/update error + slow seams. Before P73 neither command had a
+// reachable failure path in the harness, so the toast copy for the two backend
+// refusals could not be verified anywhere.
+describe('submodule seams (?submodule=…)', () => {
+  async function withSeam<T>(seam: string, fn: () => Promise<T>): Promise<T> {
+    window.history.replaceState({}, '', `/?submodule=${seam}`);
+    try {
+      return await fn();
+    } finally {
+      window.history.replaceState({}, '', '/');
+    }
+  }
+
+  it('notEmpty / urlMismatch / auth reject update + init with the backend sentences', async () => {
+    const repoId = await openDefault();
+    const notEmpty = await withSeam('notEmpty', () =>
+      runErr(submoduleHandlers.updateSubmodule(repoId, 'vendor/libcore')),
+    );
+    expect(notEmpty.kind).toBe('git');
+    expect(notEmpty.message).toBe(
+      "The folder already has files in it. Move or delete everything inside 'vendor/libcore', then try again.",
+    );
+
+    const mismatch = await withSeam('urlMismatch', () =>
+      runErr(submoduleHandlers.updateSubmodule(repoId, 'vendor/libcore')),
+    );
+    expect(mismatch.kind).toBe('git');
+    expect(mismatch.message).toContain('Bonsai has cached data for a different remote URL');
+    expect(mismatch.message).toContain('Run Sync on this submodule, then try again.');
+
+    const auth = await withSeam('auth', () =>
+      runErr(submoduleHandlers.initSubmodule(repoId, 'vendor/libcore')),
+    );
+    expect(auth.kind).toBe('authFailed');
+
+    // No seam mutates state — the row is exactly as seeded.
+    const subs = await run(submoduleHandlers.listSubmodules(repoId));
+    expect(subs.find((s) => s.name === 'vendor/libcore')?.status).toBe('uninitialized');
+  });
+
+  // P82 (F-A7-7): the dirty-refusal seam — force=false refuses (dirtyNeedsForce,
+  // zero mutation), force=true discards. Two triggers: a modifiedWorkdir fixture
+  // row, and the ?submodule=dirty seam (covers non-modifiedWorkdir dirtiness).
+  it('deinit/remove: force=false on a modifiedWorkdir row refuses; force=true succeeds', async () => {
+    const repoId = await openDefault();
+    // tools/ci is seeded modifiedWorkdir.
+    const refused = await run(submoduleHandlers.deinitSubmodule(repoId, 'tools/ci', false));
+    expect(refused).toEqual({ kind: 'dirtyNeedsForce' });
+    // Zero mutation: the row is still modifiedWorkdir.
+    let subs = await run(submoduleHandlers.listSubmodules(repoId));
+    expect(subs.find((s) => s.name === 'tools/ci')?.status).toBe('modifiedWorkdir');
+
+    const forced = await run(submoduleHandlers.deinitSubmodule(repoId, 'tools/ci', true));
+    expect(forced).toEqual({ kind: 'deinitialized' });
+    subs = await run(submoduleHandlers.listSubmodules(repoId));
+    expect(subs.find((s) => s.name === 'tools/ci')?.status).toBe('uninitialized');
+  });
+
+  it('?submodule=dirty seam forces the refusal on an otherwise-clean row', async () => {
+    const repoId = await openDefault();
+    const refused = await withSeam('dirty', () =>
+      run(submoduleHandlers.removeSubmodule(repoId, 'vendor/libcore', false)),
+    );
+    expect(refused).toEqual({ kind: 'dirtyNeedsForce' });
+    // Zero mutation: the row still exists.
+    let subs = await run(submoduleHandlers.listSubmodules(repoId));
+    expect(subs.some((s) => s.name === 'vendor/libcore')).toBe(true);
+    // force=true (still under the seam) removes it.
+    const removed = await withSeam('dirty', () =>
+      run(submoduleHandlers.removeSubmodule(repoId, 'vendor/libcore', true)),
+    );
+    expect(removed).toEqual({ kind: 'removed' });
+    subs = await run(submoduleHandlers.listSubmodules(repoId));
+    expect(subs.some((s) => s.name === 'vendor/libcore')).toBe(false);
+  });
+
+  it('fail also covers sync; slow eventually succeeds', async () => {
+    const repoId = await openDefault();
+    const failed = await withSeam('fail', () =>
+      runErr(submoduleHandlers.syncSubmodule(repoId, 'docs/spec')),
+    );
+    expect(failed.kind).toBe('git');
+    await withSeam('slow', () => run(submoduleHandlers.updateSubmodule(repoId, 'docs/spec')));
+    const subs = await run(submoduleHandlers.listSubmodules(repoId));
+    expect(subs.find((s) => s.name === 'docs/spec')?.status).toBe('upToDate');
   });
 });

@@ -15,7 +15,7 @@ describe('ShortcutOverlay', () => {
     const { container } = render(<ShortcutOverlay open onClose={vi.fn()} />);
     expect(screen.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
     const rows = container.querySelectorAll('.shortcut-row');
-    expect(rows).toHaveLength(15);
+    expect(rows).toHaveLength(17); // P68e added Ctrl+Shift+A; P87b added Ctrl+Shift+L
     const actions = [
       'Commit staged changes',
       'Deselect commit / close dialog',
@@ -25,6 +25,8 @@ describe('ShortcutOverlay', () => {
       'Fetch all remotes',
       'Pull (fast-forward only)',
       'Push current branch',
+      'AI activity dock',
+      'Git activity dock',
       'Move commit selection',
       'Move commit selection by one screenful',
       'Select the topmost commit',

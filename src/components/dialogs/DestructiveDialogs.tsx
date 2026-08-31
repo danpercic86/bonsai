@@ -16,6 +16,20 @@ function discardForceQuestion(
   return `Revert ${files(modified)} and permanently delete ${files(created)}?`;
 }
 
+/** Title + confirm label for the same dialog. A new-files-only set (the per-row
+ *  🗑 on an untracked row, or a folder/section holding only new files) is a
+ *  deletion, not a discard — say so rather than "Discard all changes". */
+function discardForceChrome(
+  pending: { modified: number; created: number } | null,
+): { title: string; confirmLabel: string } {
+  const modified = pending?.modified ?? 0;
+  const created = pending?.created ?? 0;
+  if (created > 0 && modified === 0) {
+    return { title: created === 1 ? 'Delete new file' : 'Delete new files', confirmLabel: 'Delete' };
+  }
+  return { title: 'Discard all changes', confirmLabel: 'Discard all' };
+}
+
 export interface DestructiveDialogsProps {
   mutating: boolean;
   opState: RepoOpState;
@@ -224,8 +238,8 @@ export function DestructiveDialogs({
 
       <ConfirmDialog
         open={pendingDiscardForce !== null}
-        title="Discard all changes"
-        confirmLabel="Discard all"
+        title={discardForceChrome(pendingDiscardForce).title}
+        confirmLabel={discardForceChrome(pendingDiscardForce).confirmLabel}
         busy={mutating}
         onConfirm={() => {
           const p = pendingDiscardForce;

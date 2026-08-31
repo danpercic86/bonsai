@@ -16,6 +16,9 @@ function renderBox(over: Partial<Props> = {}) {
 
 const textarea = () => screen.getByPlaceholderText('Commit message');
 const commitBtn = () => screen.getByRole('button', { name: 'Commit' });
+const generateBtn = () => screen.getByRole('button', { name: 'Generate commit message' });
+/** P80 §2b: sign/skip/amend/compose now live in the `⋯` menu — open it first. */
+const openMenu = () => fireEvent.click(screen.getByRole('button', { name: 'Commit options' }));
 
 describe('CommitBox', () => {
   it('empty message disables Commit; typing enables it', () => {
@@ -57,6 +60,15 @@ describe('CommitBox', () => {
     await waitFor(() => expect(textarea()).toHaveValue(''));
   });
 
+  it('Cmd+Enter (metaKey) submits too — macOS parity with Ctrl+Enter', async () => {
+    const { onCommit } = renderBox();
+    fireEvent.change(textarea(), { target: { value: 'feat: mac' } });
+    fireEvent.keyDown(textarea(), { key: 'Enter', metaKey: true });
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith('feat: mac', null, false);
+    await waitFor(() => expect(textarea()).toHaveValue(''));
+  });
+
   it('plain Enter does NOT submit', () => {
     const { onCommit } = renderBox();
     fireEvent.change(textarea(), { target: { value: 'feat: x' } });
@@ -87,25 +99,37 @@ describe('CommitBox', () => {
     expect(counter).toHaveClass('commit-counter-over');
   });
 
-  it('signing toggle defaults from config and sends the explicit value', () => {
+  it('signing toggle (⋯ menu) defaults from config and sends the explicit value', () => {
     const signingStatus: SigningStatus = { enabled: true, hasKey: true, format: 'ssh' } as SigningStatus;
     const { onCommit } = renderBox({ signingStatus });
-    const toggle = screen.getByRole('checkbox', { name: /Sign commit/ });
-    expect(toggle).toBeChecked();
-    expect(screen.getByText('Commits will be signed (SSH)')).toBeInTheDocument();
+    // The will-sign note shows below the toolbar regardless of menu open state.
+    expect(screen.getByText('Commits will be signed (SSH).')).toBeInTheDocument();
+    openMenu();
+    const toggle = screen.getByRole('menuitemcheckbox', { name: /Sign commit/ });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
     fireEvent.click(toggle); // explicit off
     fireEvent.change(textarea(), { target: { value: 'feat: x' } });
     fireEvent.click(commitBtn());
     expect(onCommit).toHaveBeenCalledWith('feat: x', false, false);
   });
 
-  it('skip-hooks checkbox is sent as skipHooks=true with a hint', () => {
+  it('skip-hooks menuitemcheckbox (⋯ menu) is sent as skipHooks=true with a hint', () => {
     const { onCommit } = renderBox();
-    fireEvent.click(screen.getByRole('checkbox', { name: /Skip hooks/ }));
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: /Skip hooks/ }));
     expect(screen.getByText(/won’t run for this commit/)).toBeInTheDocument();
     fireEvent.change(textarea(), { target: { value: 'feat: x' } });
     fireEvent.click(commitBtn());
     expect(onCommit).toHaveBeenCalledWith('feat: x', null, true);
+  });
+
+  // P80 §2b: sign + skip fold into the `⋯` overflow menu as menuitemcheckboxes.
+  it('sign and skip-hooks are menuitemcheckboxes in the ⋯ menu', () => {
+    const signingStatus: SigningStatus = { enabled: true, hasKey: true, format: 'ssh' };
+    renderBox({ signingStatus });
+    openMenu();
+    expect(screen.getByRole('menuitemcheckbox', { name: /Sign commit/ })).toBeInTheDocument();
+    expect(screen.getByRole('menuitemcheckbox', { name: /Skip hooks/ })).toBeInTheDocument();
   });
 
   it('merge mode: conflicts gate "Commit merge"; resolving enables it', () => {
@@ -151,12 +175,12 @@ describe('CommitBox', () => {
     const { rerender } = render(
       <CommitBox stagedCount={1} busy={false} onCommit={vi.fn()} onGenerate={onGenerate} aiEligible={false} />,
     );
-    expect(screen.getByRole('button', { name: '✨ Generate' })).toBeDisabled();
+    expect(generateBtn()).toBeDisabled();
     const onCommit = vi.fn();
     rerender(
       <CommitBox stagedCount={1} busy={false} onCommit={onCommit} onGenerate={onGenerate} aiEligible />,
     );
-    fireEvent.click(screen.getByRole('button', { name: '✨ Generate' }));
+    fireEvent.click(generateBtn());
     await waitFor(() => expect(textarea()).toHaveValue('feat: generated'));
     expect(onGenerate).toHaveBeenCalledTimes(1);
     expect(onCommit).not.toHaveBeenCalled();
@@ -166,14 +190,14 @@ describe('CommitBox', () => {
     const onGenerate = vi.fn().mockResolvedValue('feat: generated');
     renderBox({ onGenerate, aiEligible: true });
     fireEvent.change(textarea(), { target: { value: 'my draft' } });
-    fireEvent.click(screen.getByRole('button', { name: '✨ Generate' }));
+    fireEvent.click(generateBtn());
     const dialog = await screen.findByRole('dialog', { name: 'Replace the current message?' });
     expect(dialog).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onGenerate).not.toHaveBeenCalled();
     expect(textarea()).toHaveValue('my draft');
     // Confirming does replace.
-    fireEvent.click(screen.getByRole('button', { name: '✨ Generate' }));
+    fireEvent.click(generateBtn());
     fireEvent.click(await screen.findByRole('button', { name: 'Replace' }));
     await waitFor(() => expect(textarea()).toHaveValue('feat: generated'));
   });
@@ -181,7 +205,7 @@ describe('CommitBox', () => {
   it('generate rejection surfaces the error without crashing or committing', async () => {
     const onGenerate = vi.fn().mockRejectedValue({ kind: 'other', message: 'CLI missing' });
     const { onCommit } = renderBox({ onGenerate, aiEligible: true });
-    fireEvent.click(screen.getByRole('button', { name: '✨ Generate' }));
+    fireEvent.click(generateBtn());
     await screen.findByRole('alert');
     expect(screen.getByText('CLI missing')).toBeInTheDocument();
     expect(onCommit).not.toHaveBeenCalled();

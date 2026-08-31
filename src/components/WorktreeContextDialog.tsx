@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ipc } from '../ipc';
 import type { ProfileActivation, ProfileStore, WorktreeContextStatus } from '../ipc';
 import { errorMessage } from '../utils/errors';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 import { ProfileActivateDialog } from './ProfileActivateDialog';
 
 export interface WorktreeContextDialogProps {
@@ -54,6 +55,11 @@ export function WorktreeContextDialog({
   // Monotonic request id: a fetch whose id no longer matches the latest issued
   // one is stale (repoId change / newer Refresh) and must NOT write state.
   const fetchIdRef = useRef(0);
+
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Modal focus: move focus into the card on open, trap Tab, restore on close.
+  // The trap no-ops while the nested ProfileActivateDialog holds focus.
+  useDialogFocus(open, cardRef, true);
 
   const refresh = useCallback(async (): Promise<void> => {
     const id = (fetchIdRef.current += 1);
@@ -122,7 +128,14 @@ export function WorktreeContextDialog({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="dialog-card ai-assets-card" role="dialog" aria-label="Worktree AI contexts">
+      <div
+        ref={cardRef}
+        className="dialog-card ai-assets-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Worktree AI contexts"
+        tabIndex={-1}
+      >
         <div className="shortcut-header">
           <h2 className="dialog-title shortcut-title">Worktree AI contexts</h2>
           <div className="asset-header-actions">

@@ -217,7 +217,14 @@ where
         // (canonical-path match, `same_repo_path`), reuse its exact key so we
         // FOCUS it instead of inserting a duplicate. Only compute the callback
         // once we know the final id.
-        {
+        //
+        // Audit §3.4: `same_repo_path` canonicalizes (blocking fs I/O), so the
+        // scan must not run under the map lock on the async executor. Snapshot
+        // the keys under the lock, release it, then compare in
+        // `spawn_blocking`. TOCTOU: a tab closed between snapshot and use just
+        // means we insert a fresh entry under that (still-canonical) key below
+        // — same behaviour as opening it anew, nothing to guard.
+        let keys: Vec<String> = {
             // Poison recovery (audit §3.8): the guarded map is structurally
             // valid at every point (plain insert/remove), so recover instead
             // of bricking every later command.
@@ -225,13 +232,16 @@ where
                 .repos
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if let Some(existing) = repos
-                .keys()
-                .find(|k| same_repo_path(k, &repo_id))
-                .cloned()
-            {
-                repo_id = existing;
-            }
+            repos.keys().cloned().collect()
+        };
+        let candidate = repo_id.clone();
+        let existing = tauri::async_runtime::spawn_blocking(move || {
+            keys.into_iter().find(|k| same_repo_path(k, &candidate))
+        })
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?;
+        if let Some(existing) = existing {
+            repo_id = existing;
         }
 
         let on_change = make_on_change(repo_id.clone());
@@ -261,12 +271,21 @@ where
                 RepoEntry {
                     path: workdir,
                     watcher,
+                    // Fresh empty layout cache (P86 B1): a re-arm of an open repo
+                    // must start `None` — topology may have changed while closed.
+                    graph_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
                 },
             )
         };
         // Drop the replaced entry (its watcher's debounce thread joins) off the
         // map lock.
         drop(previous);
+
+        // P88b/B2b: bump the handle-cache generation so any blocking-pool thread
+        // still holding a `git2::Repository` from a PRIOR arm of this id (e.g. a
+        // re-open after close, or a self-healing re-arm) evicts + reopens on its
+        // next `with_repo` call rather than serving a handle from before.
+        bump_repo_generation(state, &repo_id);
     }
     // Non-usable open (non-repo or bare): insert nothing, touch no other entry.
 
@@ -299,6 +318,11 @@ pub(crate) async fn close_repo_inner(state: &AppState, repo_id: &str) -> Result<
         repos.remove(repo_id)
     };
     drop(entry); // watcher stops, debounce thread joins here
+
+    // P88b/B2b: bump the handle-cache generation so every blocking-pool thread's
+    // cached `git2::Repository` for this id is evicted on its next `with_repo`
+    // call — a closed repo must never keep an open handle around.
+    bump_repo_generation(state, repo_id);
     Ok(())
 }
 

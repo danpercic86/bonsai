@@ -9,12 +9,14 @@
 use serde::{Deserialize, Serialize};
 
 /// Which forge backs `origin`. Unit variants ⇒ plain camelCase string on the
-/// wire (`"gitHub"` | `"gitLab"` | `"unknown"`).
+/// wire (`"gitHub"` | `"gitLab"` | `"bitbucket"` | `"azureDevOps"` | `"unknown"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ForgeKind {
     GitHub,
     GitLab,
+    Bitbucket,
+    AzureDevOps,
     Unknown,
 }
 
@@ -35,12 +37,56 @@ pub struct ForgeRepoContext {
     pub host: String,
     pub owner: String,
     pub repo: String,
+    /// Azure DevOps needs a 3-part org/project/repo identity; `owner` carries the
+    /// org and this carries the project. `None` for GitHub/GitLab/Bitbucket.
+    pub project: Option<String>,
     pub remote_name: String,
     pub web_url: String,
     /// A token is present in the keychain for `host` (NO network check).
     pub authenticated: bool,
     /// `Some` only when a validated viewer is cache-warm (after set-token).
     pub viewer: Option<ForgeViewer>,
+    /// P80: the account resolved for this repo (`accountId`), or `None` when no
+    /// account exists on the host. Filled by the command layer's
+    /// `resolve_account`; the crate leaves it `None`.
+    pub resolved_account_id: Option<String>,
+    /// P80: HOW the resolved account was chosen (override / owner match / host
+    /// default / single / none). Filled by the command layer.
+    pub account_source: AccountSource,
+}
+
+/// P80: how the account backing a repo was resolved (see `resolve_account`).
+/// The crate always emits `None`; the command layer overwrites it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AccountSource {
+    Override,
+    OwnerMatch,
+    HostDefault,
+    Single,
+    None,
+}
+
+/// P79: one connected (or previously-connected) forge account for the global
+/// Accounts settings section. `login`/`avatar_url` are best-effort display hints
+/// from the process viewer cache + the persisted known-hosts index; this type
+/// NEVER carries a token.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForgeAccount {
+    /// P80: stable identity "kind:host:login" (or "kind:host" for a legacy
+    /// login-unknown account).
+    pub account_id: String,
+    pub host: String,
+    pub kind: ForgeKind,
+    /// Cache-warm or last-known login; `None` if never validated this install.
+    pub login: Option<String>,
+    /// Cache-warm avatar; `None` when the viewer isn't warm.
+    pub avatar_url: Option<String>,
+    /// A token is currently present in the keychain for `host` (no network).
+    pub connected: bool,
+    /// P80: whether this account is the host's default (repos inherit it).
+    pub is_host_default: bool,
 }
 
 /// PR lifecycle state. `Merged` is derived from GitHub's `merged`/`merged_at`.
@@ -99,6 +145,20 @@ pub struct PrDetail {
     pub labels: Vec<String>,
 }
 
+/// P89: the base/head tips of a PR plus a neutral fetch plan to bring each one
+/// reachable locally. `base_oid`/`head_oid` are the tip SHAs from the PR payload
+/// (also carried in the `FetchTarget.resolve` fields). Fork heads carry the fork
+/// clone URL in `head_fetch.url`. Not an IPC type itself — consumed by
+/// `bonsai_core::git::pr_diff::fetch_pr_endpoints`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrRefs {
+    pub base_oid: String,
+    pub head_oid: String,
+    pub base_fetch: bonsai_core::git::pr_diff::FetchTarget,
+    pub head_fetch: bonsai_core::git::pr_diff::FetchTarget,
+}
+
 /// PR list request. `per_page` is capped `<= 50` by the provider.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -127,6 +187,58 @@ pub struct CreatePrInput {
     pub target_branch: String,
     pub draft: bool,
     pub maintainer_can_modify: bool,
+}
+
+/// Neutral merge strategy. Not every variant is valid on every forge — the UI
+/// filters via [`MergeMethod::supported_for`]; the provider maps the chosen
+/// variant to its wire value and rejects an unsupported one with `ForgeApi`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MergeMethod {
+    /// Standard merge commit.
+    Merge,
+    /// Squash then merge.
+    Squash,
+    /// Rebase then merge (fast-forward-ish).
+    Rebase,
+    /// Bitbucket-only fast-forward.
+    FastForward,
+}
+
+impl MergeMethod {
+    /// The merge methods a given forge supports, in UI display order. The first
+    /// entry is the forge default. `Unknown` returns an empty slice (merge
+    /// unsupported ⇒ the UI hides the Merge affordance).
+    pub fn supported_for(kind: ForgeKind) -> &'static [MergeMethod] {
+        use MergeMethod::*;
+        match kind {
+            ForgeKind::GitHub => &[Merge, Squash, Rebase],
+            ForgeKind::GitLab => &[Merge, Squash],
+            ForgeKind::Bitbucket => &[Merge, Squash, FastForward],
+            ForgeKind::AzureDevOps => &[Merge, Squash, Rebase],
+            ForgeKind::Unknown => &[],
+        }
+    }
+}
+
+/// Inputs for merging a PR. Fields map per forge (see the P83 contract §3);
+/// unsupported combinations are rejected by the provider with `ForgeApi`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergePrInput {
+    /// Chosen strategy. UI defaults to the forge's default.
+    pub method: MergeMethod,
+    /// Optional override commit title. `None` ⇒ forge default.
+    pub commit_title: Option<String>,
+    /// Optional override commit message. `None` ⇒ forge default.
+    pub commit_message: Option<String>,
+    /// Delete the source branch after a successful merge (GitHub ignores it on
+    /// merge; other forges map it to their own flag). Default false.
+    pub delete_source_branch: bool,
+    /// Azure ONLY: the head commit id required by its completion call. The
+    /// command layer fills this from the PR's `head_sha`; other forges ignore
+    /// it. `None` for non-Azure.
+    pub head_sha: Option<String>,
 }
 
 /// Whether a comment is a diff-line review comment or a PR conversation comment.
@@ -190,264 +302,4 @@ pub struct CommitStatus {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::{json, Value};
-
-    fn value_of<T: Serialize>(v: &T) -> Value {
-        serde_json::to_value(v).expect("serialize")
-    }
-
-    fn assert_keys(v: &Value, keys: &[&str]) {
-        let obj = v.as_object().expect("object");
-        for k in keys {
-            assert!(obj.contains_key(*k), "missing camelCase key `{k}` in {v}");
-        }
-    }
-
-    #[test]
-    fn forge_kind_wire_shape_is_camel_case() {
-        assert_eq!(value_of(&ForgeKind::GitHub), json!("gitHub"));
-        assert_eq!(value_of(&ForgeKind::GitLab), json!("gitLab"));
-        assert_eq!(value_of(&ForgeKind::Unknown), json!("unknown"));
-        // Round-trips from the wire string the TS union sends.
-        let got: ForgeKind = serde_json::from_value(json!("gitLab")).unwrap();
-        assert_eq!(got, ForgeKind::GitLab);
-    }
-
-    #[test]
-    fn pr_state_wire_shape_is_camel_case() {
-        assert_eq!(value_of(&PrState::Open), json!("open"));
-        assert_eq!(value_of(&PrState::Closed), json!("closed"));
-        assert_eq!(value_of(&PrState::Merged), json!("merged"));
-    }
-
-    #[test]
-    fn pr_state_filter_wire_shape_is_camel_case() {
-        assert_eq!(value_of(&PrStateFilter::Open), json!("open"));
-        assert_eq!(value_of(&PrStateFilter::Closed), json!("closed"));
-        assert_eq!(value_of(&PrStateFilter::All), json!("all"));
-        // Round-trips from the wire (TS sends these strings).
-        let got: PrStateFilter = serde_json::from_value(json!("all")).unwrap();
-        assert_eq!(got, PrStateFilter::All);
-    }
-
-    #[test]
-    fn check_rollup_wire_shape_is_camel_case() {
-        assert_eq!(value_of(&CheckRollup::Success), json!("success"));
-        assert_eq!(value_of(&CheckRollup::Pending), json!("pending"));
-        assert_eq!(value_of(&CheckRollup::Failure), json!("failure"));
-        assert_eq!(value_of(&CheckRollup::Error), json!("error"));
-        assert_eq!(value_of(&CheckRollup::Neutral), json!("neutral"));
-        assert_eq!(value_of(&CheckRollup::None), json!("none"));
-    }
-
-    #[test]
-    fn comment_kind_wire_shape_is_camel_case() {
-        assert_eq!(value_of(&CommentKind::Review), json!("review"));
-        assert_eq!(value_of(&CommentKind::Conversation), json!("conversation"));
-    }
-
-    #[test]
-    fn forge_viewer_wire_shape_is_camel_case() {
-        let v = value_of(&ForgeViewer {
-            login: "octocat".into(),
-            avatar_url: Some("https://x/y.png".into()),
-        });
-        assert_keys(&v, &["login", "avatarUrl"]);
-    }
-
-    #[test]
-    fn forge_repo_context_wire_shape_is_camel_case() {
-        let v = value_of(&ForgeRepoContext {
-            provider: ForgeKind::GitHub,
-            host: "github.com".into(),
-            owner: "o".into(),
-            repo: "r".into(),
-            remote_name: "origin".into(),
-            web_url: "https://github.com/o/r".into(),
-            authenticated: true,
-            viewer: None,
-        });
-        assert_keys(
-            &v,
-            &[
-                "provider",
-                "host",
-                "owner",
-                "repo",
-                "remoteName",
-                "webUrl",
-                "authenticated",
-                "viewer",
-            ],
-        );
-    }
-
-    fn sample_summary() -> PrSummary {
-        PrSummary {
-            number: 7,
-            title: "t".into(),
-            state: PrState::Open,
-            is_draft: true,
-            author: "a".into(),
-            author_avatar_url: None,
-            source_branch: "feature".into(),
-            target_branch: "main".into(),
-            comments: 3,
-            created_at: "2026-01-01T00:00:00Z".into(),
-            updated_at: "2026-01-02T00:00:00Z".into(),
-            url: "https://github.com/o/r/pull/7".into(),
-            head_sha: "deadbeef".into(),
-        }
-    }
-
-    #[test]
-    fn pr_summary_wire_shape_is_camel_case() {
-        let v = value_of(&sample_summary());
-        assert_keys(
-            &v,
-            &[
-                "number",
-                "title",
-                "state",
-                "isDraft",
-                "author",
-                "authorAvatarUrl",
-                "sourceBranch",
-                "targetBranch",
-                "comments",
-                "createdAt",
-                "updatedAt",
-                "url",
-                "headSha",
-            ],
-        );
-    }
-
-    #[test]
-    fn pr_detail_wire_shape_is_camel_case() {
-        let v = value_of(&PrDetail {
-            summary: sample_summary(),
-            body: "".into(),
-            mergeable: None,
-            additions: 1,
-            deletions: 2,
-            changed_files: 3,
-            labels: vec!["bug".into()],
-        });
-        assert_keys(
-            &v,
-            &[
-                "summary",
-                "body",
-                "mergeable",
-                "additions",
-                "deletions",
-                "changedFiles",
-                "labels",
-            ],
-        );
-    }
-
-    #[test]
-    fn pr_list_query_wire_shape_is_camel_case() {
-        let v = value_of(&PrListQuery {
-            state: PrStateFilter::Open,
-            page: 1,
-            per_page: 30,
-        });
-        assert_keys(&v, &["state", "page", "perPage"]);
-        // And round-trips from a wire payload.
-        let got: PrListQuery =
-            serde_json::from_value(json!({ "state": "open", "page": 2, "perPage": 10 })).unwrap();
-        assert_eq!(got.page, 2);
-        assert_eq!(got.per_page, 10);
-    }
-
-    #[test]
-    fn pr_page_wire_shape_is_camel_case() {
-        let v = value_of(&PrPage {
-            items: vec![],
-            page: 1,
-            has_next: false,
-        });
-        assert_keys(&v, &["items", "page", "hasNext"]);
-    }
-
-    #[test]
-    fn create_pr_input_wire_shape_is_camel_case() {
-        let v = value_of(&CreatePrInput {
-            title: "t".into(),
-            body: "b".into(),
-            source_branch: "feature".into(),
-            target_branch: "main".into(),
-            draft: false,
-            maintainer_can_modify: true,
-        });
-        assert_keys(
-            &v,
-            &[
-                "title",
-                "body",
-                "sourceBranch",
-                "targetBranch",
-                "draft",
-                "maintainerCanModify",
-            ],
-        );
-    }
-
-    #[test]
-    fn review_comment_wire_shape_is_camel_case() {
-        let v = value_of(&ReviewComment {
-            id: 1,
-            author: "a".into(),
-            author_avatar_url: None,
-            body: "b".into(),
-            path: Some("src/x.rs".into()),
-            line: Some(42),
-            created_at: "2026-01-01T00:00:00Z".into(),
-            url: "https://x".into(),
-            kind: CommentKind::Review,
-        });
-        assert_keys(
-            &v,
-            &[
-                "id",
-                "author",
-                "authorAvatarUrl",
-                "body",
-                "path",
-                "line",
-                "createdAt",
-                "url",
-                "kind",
-            ],
-        );
-    }
-
-    #[test]
-    fn commit_status_wire_shape_is_camel_case() {
-        let v = value_of(&CommitStatus {
-            sha: "abc".into(),
-            state: CheckRollup::Success,
-            total: 2,
-            passed: 2,
-            failed: 0,
-            pending: 0,
-            contexts: vec![StatusContext {
-                name: "ci".into(),
-                state: CheckRollup::Success,
-                description: Some("ok".into()),
-                target_url: Some("https://x".into()),
-            }],
-        });
-        assert_keys(
-            &v,
-            &["sha", "state", "total", "passed", "failed", "pending", "contexts"],
-        );
-        let ctx = &v["contexts"][0];
-        assert_keys(ctx, &["name", "state", "description", "targetUrl"]);
-    }
-}
+mod tests;

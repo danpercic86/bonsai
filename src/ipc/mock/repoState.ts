@@ -2,7 +2,7 @@
 import { MOCK_ASSET_CONTENT, mockAgentAssets, mockInventory, mockProfiles } from '../fixtures/aiAssets';
 import { INITIAL_BRANCHES, MOCK_OID } from '../fixtures/branches';
 import { makeMockConfigStore } from '../fixtures/config';
-import type { MockConfigStore } from '../fixtures/config';
+import type { MockConfigStore, MockIdentityFixture } from '../fixtures/config';
 import { initialMainRs } from '../fixtures/diffs';
 import type { ThreeWay } from '../fixtures/diffs';
 import type { MockCommit } from '../fixtures/graph';
@@ -109,6 +109,12 @@ export interface MockRepoState {
    *  (unless skipHooks or `bonsai.runHooks` is false). Drives the push-side
    *  HookOutputDialog + "Push anyway (skip hooks)" retry in the harness. */
   hooksFailPush: boolean;
+  /** Hook-disclosure: the repo has runnable git hooks (`?hooks=present`). Drives
+   *  `getRepoHooksDisclosure.hasHooks`. Default false ⇒ fixtures never disclose. */
+  hasHooks: boolean;
+  /** Hook-disclosure: the user acknowledged the one-time disclosure this session
+   *  (set by `ackRepoHooks`). Backs `getRepoHooksDisclosure.acknowledged`. */
+  hooksAcked: boolean;
 
   status: StatusSnapshot;
   headOid: string;
@@ -227,6 +233,14 @@ export function repoKind(path: string, graphFixture: GraphFixture): RepoKind {
   if (graphFixture === 'detached') return 'detached';
   return 'default';
 }
+/** P69i: which identity seed `?fixture=` asks for (see `MockIdentityFixture`). */
+function identityFixture(): MockIdentityFixture {
+  const q = query('fixture');
+  if (q === 'noconfig') return 'none';
+  if (q === 'identitymatch') return 'localMatch';
+  return 'global';
+}
+
 /** Builds a fresh MockRepoState for a usable repo (default / detached / unborn). */
 export function createRepoState(path: string): MockRepoState {
   const graphFixture = repoGraphFixture(path);
@@ -236,11 +250,15 @@ export function createRepoState(path: string): MockRepoState {
     kind,
     graphFixture,
     // Seed a WORKING identity by default; `?fixture=noconfig` drops it so the
-    // commit-error / Set-identity flow is demoable (P40 §6.3).
-    config: makeMockConfigStore(query('fixture') !== 'noconfig'),
+    // commit-error / Set-identity flow is demoable (P40 §6.3), and
+    // `?fixture=identitymatch` adds a LOCAL one equal to the seeded Work profile
+    // (P69i — the only route to identity state 1 and to the §4.5 confirm).
+    config: makeMockConfigStore(identityFixture()),
     remoteTrigger: query('remote'),
     hooksFail: query('hooks') === 'fail',
     hooksFailPush: query('hooks') === 'failpush',
+    hasHooks: query('hooks') === 'present',
+    hooksAcked: false,
     status: structuredClone(INITIAL_STATUS),
     headOid: MOCK_OID,
     branches: structuredClone(INITIAL_BRANCHES),
@@ -322,6 +340,18 @@ export function requireRepo(repoId: string): MockRepoState {
     throw err;
   }
   return state;
+}
+
+/**
+ * Flip a mock repo to a DETACHED HEAD at `oid`: clears every local branch's
+ * `isHead`, sets the discriminant + `headOid`, and rewrites the head snapshot so
+ * the next `listBranches`/`buildInfo` reports detached. Used by `checkoutCommit`.
+ */
+export function setDetached(state: MockRepoState, oid: string): void {
+  for (const b of state.branches.local) b.isHead = false;
+  state.kind = 'detached';
+  state.headOid = oid;
+  state.branches.head = { branchName: null, oid, detached: true, unborn: false };
 }
 
 /**

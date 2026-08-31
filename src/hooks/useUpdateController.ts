@@ -111,9 +111,28 @@ export function useUpdateController(): UpdateController {
       .catch((e) => setState({ status: 'error', message: errorMessage(e) }));
   }, []);
 
+  /**
+   * P71 §11 — DO NOT DELETE THIS, OR `UpdateUiState.readyToRestart`,
+   * `ipc.relaunchApp()`, `@tauri-apps/plugin-process`, or the dialog's Restart
+   * button. It looks dead from a Windows-only reading, and it is not.
+   *
+   * On **Windows** this state is unreachable: `tauri-plugin-updater` calls
+   * `std::process::exit(0)` immediately after handing the installer to
+   * `ShellExecuteW`, so `downloadAndInstall()` never returns and the machine
+   * never advances past `downloading`. The NSIS installer performs the relaunch.
+   *
+   * On **macOS and Linux** this is the ONLY relaunch path: the plugin replaces
+   * the bundle/AppImage in place, returns normally, and the app must call
+   * `relaunch()` itself.
+   *
+   * A cleanup pass that greps only the Windows behaviour will conclude this is
+   * dead code and remove a live path on two platforms. See
+   * docs/contracts/P71-updater-relaunch-env.md §11 (acceptance criterion C-5).
+   */
   const restart = useCallback((): void => {
     void ipc.relaunchApp().catch(() => {
-      // Never resolves in practice (the process exits); a rejection is non-fatal.
+      // Never resolves in practice on macOS/Linux (the process is replaced);
+      // a rejection is non-fatal.
     });
   }, []);
 

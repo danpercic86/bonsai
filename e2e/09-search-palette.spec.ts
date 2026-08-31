@@ -1,11 +1,28 @@
 /**
- * T4 spec 09 — commit search bar, Ctrl/Cmd-K command palette, sidebar list
+ * T4 spec 09 — commit search bar, Mod-K command palette, sidebar list
  * filtering (contract §5.09) @smoke. Search live-runs on cheap fields and
  * auto-reveals the first match; the palette dispatches pre-bound handlers
  * (options run on click / Enter on the highlighted row).
  */
 import { test, expect } from './fixtures';
-import { openPalette, openRepo } from './helpers';
+import { expectedShortcutLabel, graphScrollHeight, openPalette, openRepo } from './helpers';
+import type { Page } from '@playwright/test';
+
+/** Two consecutive identical scroll extents = the P65 graph stream has finished. */
+async function settleGraph(page: Page): Promise<void> {
+  let previous = -1;
+  await expect
+    .poll(
+      async () => {
+        const current = await graphScrollHeight(page);
+        const stable = current === previous;
+        previous = current;
+        return stable;
+      },
+      { intervals: [200, 200, 200, 200, 200, 200] },
+    )
+    .toBe(true);
+}
 
 test.describe('09 search & palette @smoke', () => {
   test('search finds a fixture commit and reveals it; results list renders', async ({ page }) => {
@@ -35,16 +52,26 @@ test.describe('09 search & palette @smoke', () => {
     page,
   }) => {
     await openRepo(page);
-    // Boot-settle: the palette's action list is disabled/enabled off the same
-    // refreshing/statusLoading/graphLoading flags as the toolbar Refresh button
-    // (WorkspaceToolbar). Opening the palette while those are still settling
-    // races the highlight-reset effect against the arrow-key nav below (the
-    // registry identity changes mid-navigation and snaps the highlight back to
-    // row 0) — wait for Refresh to go enabled first, same signal, no flake.
-    await expect(page.getByRole('button', { name: 'Refresh' })).toBeEnabled();
+    // PRE-EXISTING FLAKE, root cause: `CommandPalette` re-lands the highlight on the
+    // first enabled row whenever the `actions` ARRAY IDENTITY changes, and
+    // `RepoWorkspace.paletteActions` depends on `graph` — whose identity P65 bumps
+    // once per streamed batch. Under parallel load a batch can land between the
+    // ArrowDown and the assertion, silently resetting the highlight. Let the stream
+    // settle first (two identical extents) so the test measures the keyboard, not
+    // the streamer.
+    await settleGraph(page);
     const dialog = await openPalette(page);
     // Empty query → full registry; the highlight starts on the first enabled row.
     const selected = dialog.getByRole('option', { selected: true });
+    // The row hint is an INLINE one-string label ('Ctrl+Shift+F' / '⌘⇧F') —
+    // derived from the app's own renderer so it holds on every platform.
+    await expect(
+      dialog
+        .getByRole('option')
+        .filter({ hasText: 'Fetch' })
+        .first()
+        .locator('.command-palette-option-hint'),
+    ).toHaveText(expectedShortcutLabel('Mod+Shift+F'));
     const first = await selected.textContent();
     await page.keyboard.press('ArrowDown');
     await expect(selected).not.toHaveText(first ?? '');
@@ -86,7 +113,7 @@ test.describe('09 search & palette @smoke', () => {
     await openRepo(page);
     // The Tags section is collapsed by default — expand it first; with 7 seeded
     // tags (≥ threshold) the inline filter box renders.
-    await page.getByRole('button', { name: 'Tags' }).click();
+    await page.getByRole('treeitem', { name: 'Tags' }).click();
     const filter = page.getByLabel('Filter tags');
     await expect(filter).toBeVisible();
     await filter.fill('v1');

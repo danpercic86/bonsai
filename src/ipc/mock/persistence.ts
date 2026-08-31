@@ -1,6 +1,22 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
 import { AUTO_FETCH_INTERVAL_MAX, AUTO_FETCH_INTERVAL_MIN, AVATAR_RADIUS_MAX, AVATAR_RADIUS_MIN, HEALTH_REFRESH_INTERVAL_MAX, HEALTH_REFRESH_INTERVAL_MIN, LANE_WIDTH_MAX, LANE_WIDTH_MIN, ROW_HEIGHT_MAX, ROW_HEIGHT_MIN } from '../../settings/ranges';
-import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, RecentRepo, SessionState, Theme, UiSettings } from '../types';
+import { DEFAULT_UI_SETTINGS as PRODUCTION_DEFAULT_UI_SETTINGS } from '../../settings/defaults';
+import { parseAiRunSettings } from './aiRunSettings';
+import type { AiAutonomy, AutoFetchSettings, GraphDateBasis, GraphPrefs, HealthRefreshSettings, IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction, ProfileColor, RecentRepo, SessionState, Theme, UiSettings } from '../types';
+
+/** P82: the closed palette (mirrors Rust `ProfileColor`). Used to validate a
+ *  persisted profile's `color` field — an invalid value normalizes to neutral. */
+const PROFILE_COLOR_SET: ReadonlySet<string> = new Set<ProfileColor>([
+  'neutral',
+  'slate',
+  'blue',
+  'teal',
+  'green',
+  'amber',
+  'orange',
+  'purple',
+  'pink',
+]);
 
 // Recents persistence (P1 contract §3.4): localStorage-backed so the harness
 // reopen-on-launch story is verifiable — open once, reload, auto-reopen.
@@ -73,43 +89,23 @@ const SIDEBAR_MAX = 480;
 const RIGHT_PANEL_MIN = 280;
 const RIGHT_PANEL_MAX = 640;
 
+/**
+ * The MOCK's default seed = the PRODUCTION defaults (`src/settings/defaults.ts`,
+ * pinned to the Rust oracle) + harness-only fixture data.
+ *
+ * P69 §3.3: this composes rather than re-exports because the two genuinely
+ * differ, and the divergence list must stay short, explicit and reviewed:
+ *
+ *   - `profiles` — production (and Rust) default to an EMPTY list; the harness
+ *     seeds two fixed-id profiles so the identity list is populated and both
+ *     the header identity menu (P69i) and the pane's "Use in this repository"
+ *     action are exercisable in the browser.
+ *
+ * That is the ONLY permitted divergence; `src/settings/defaults.test.ts` iterates
+ * every other key and asserts equality, so adding a second one fails there.
+ */
 export const DEFAULT_UI_SETTINGS: UiSettings = {
-  theme: 'dark',
-  paneWidths: { sidebar: 240, rightPanel: 380 },
-  listView: 'tree',
-  autoFetch: { enabled: false, intervalMinutes: 5 },
-  // P30: backend-scheduler healthRefresh signal; disabled by default.
-  healthRefresh: { enabled: false, intervalMinutes: 30 },
-  // P51: geometry knobs + per-row detail toggles (defaults mirror settings.rs
-  // GraphPrefs::default — compact off, SHA/date/ahead-behind on).
-  graph: {
-    avatarRadius: 10,
-    rowHeight: 32,
-    laneWidth: 16,
-    showSha: true,
-    showAuthor: false,
-    showDate: true,
-    dateBasis: 'author',
-    showAheadBehind: true,
-    compact: false,
-    // P58c: signature badge on by default (mirrors GraphPrefs::default).
-    showSignatureBadge: true,
-    // P63: forge signal badges off by default (mirrors GraphPrefs::default).
-    showPrBadge: false,
-    showCiStatus: false,
-  },
-  // AI assistance (P13): enabled by default, but consent gates the feature.
-  aiEnabled: true,
-  aiConflictAutonomy: 'proposeReview',
-  aiConsented: false,
-  // Embedded MCP server (P16): consent gates the enable toggle.
-  mcpConsented: false,
-  // MCP write consent (P16c): a separate, stronger gate for the write toggle.
-  mcpWriteConsented: false,
-  // P43: onboarding unseen by default so a fresh browser harness shows it.
-  onboardingSeen: false,
-  // P42: auto-check-updates-on-launch OFF by default (privacy / opt-in).
-  autoCheckUpdates: false,
+  ...structuredClone(PRODUCTION_DEFAULT_UI_SETTINGS),
   // P44: two seeded identity profiles so the harness shows a populated list
   // and Apply is exercisable (fixed string ids).
   profiles: [
@@ -119,6 +115,8 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
       userName: 'Mock Fixture User',
       userEmail: 'work@bonsai.dev',
       signingKey: null,
+      // P82: distinct seeded colors so the harness demonstrates the feature.
+      color: 'blue',
     },
     {
       id: 'mock-personal',
@@ -126,11 +124,9 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
       userName: 'Mock Personal',
       userEmail: 'me@personal.dev',
       signingKey: 'ABC123',
+      color: 'green',
     },
   ],
-  // P49: external-tool templates default to "" ⇒ per-OS auto-detect.
-  terminalCommand: '',
-  editorCommand: '',
 };
 
 export function clampPaneWidths(w: PaneWidths): PaneWidths {
@@ -193,7 +189,15 @@ export function sanitizeProfiles(raw: unknown): IdentityProfile[] | null {
       ((p as IdentityProfile).signingKey === null ||
         typeof (p as IdentityProfile).signingKey === 'string'),
   );
-  return valid.length > 0 ? valid : null;
+  if (valid.length === 0) return null;
+  // P82: `color` is non-essential — normalize (never reject) a per-element value.
+  // Missing color stays undefined (read as neutral); an invalid color coerces to
+  // 'neutral' rather than dropping the whole profile.
+  return valid.map((p) => {
+    const raw = p.color;
+    if (raw === undefined) return p;
+    return PROFILE_COLOR_SET.has(raw) ? p : { ...p, color: 'neutral' as ProfileColor };
+  });
 }
 
 /** Corrupt/missing storage degrades to the default — mirrors load_from. */
@@ -214,6 +218,10 @@ export function readUiSettings(): UiSettings {
           : DEFAULT_UI_SETTINGS.paneWidths.rightPanel,
     });
     const listView: ListView = parsed.listView === 'flat' ? 'flat' : 'tree';
+    const panelDensity: PanelDensity = parsed.panelDensity === 'compact' ? 'compact' : 'cozy';
+    // P80 D1: primary commit action (additive); fall back to default ('commit').
+    const primaryCommitAction: PrimaryCommitAction =
+      parsed.primaryCommitAction === 'commitPush' ? 'commitPush' : 'commit';
     const autoFetch = clampAutoFetch({
       enabled:
         typeof parsed.autoFetch?.enabled === 'boolean'
@@ -314,10 +322,15 @@ export function readUiSettings(): UiSettings {
       typeof parsed.editorCommand === 'string'
         ? parsed.editorCommand
         : DEFAULT_UI_SETTINGS.editorCommand;
+    // P68 §8.3 (additive, like the P13 AI fields): per-field tolerant parse +
+    // the clamp mirror; a pre-P68 blob loads every default.
+    const aiRun = parseAiRunSettings(parsed);
     return {
       theme,
       paneWidths,
       listView,
+      panelDensity,
+      primaryCommitAction,
       autoFetch,
       healthRefresh,
       graph,
@@ -331,6 +344,7 @@ export function readUiSettings(): UiSettings {
       profiles,
       terminalCommand,
       editorCommand,
+      ...aiRun,
     };
   } catch {
     return structuredClone(DEFAULT_UI_SETTINGS);

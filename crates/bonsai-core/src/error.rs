@@ -6,8 +6,8 @@
 /// | "unmergedBranch" | "branchNotFound"
 /// | "noRemote" | "noUpstream" | "authFailed" | "networkError"
 /// | "pushRejected" | "operationInProgress" | "noOperationInProgress"
-/// | "unresolvedConflicts" | "aiUnavailable" | "aiFailed"
-/// | "externalToolFailed" | "hookRejected"
+/// | "unresolvedConflicts" | "aiUnavailable" | "aiFailed" | "aiNeedsReview"
+/// | "externalToolFailed" | "hookRejected" | "gitNotFound"
 /// | "forgeUnsupported" | "forgeAuthRequired" | "forgeRateLimited" | "forgeApi",
 /// "message": "..." }`.
 #[derive(Debug, thiserror::Error)]
@@ -59,6 +59,16 @@ pub enum AppError {
     AiUnavailable(String),
     #[error("{0}")]
     AiFailed(String),
+    /// P68 #7 / H1: a body the novel-content gate refused to auto-stage — it has ≥1
+    /// line present in NO version of base/ours/theirs. Distinct from `AiFailed` so the
+    /// frontend routes it to review instead of showing a raw "failed" error toast.
+    #[error("{0}")]
+    AiNeedsReview(String),
+    /// The user cancelled a streaming AI run via `ai_cancel_run` (P68 §B). NOT a
+    /// failure — the frontend shows no error toast, only a `cancelled` run state.
+    /// Distinct from `AiFailed` so the single catch path can tell them apart.
+    #[error("{0}")]
+    AiCancelled(String),
     /// External-tool launch failed (P49): no terminal/file-manager/editor
     /// candidate could be spawned. Carries a message naming the last program
     /// tried; the frontend adds a "set a command in Settings" hint.
@@ -70,6 +80,14 @@ pub enum AppError {
     /// blocking hook is NEVER a silent success — the operation aborts with this.
     #[error("{0}")]
     HookRejected(String),
+    /// P70: no runnable `git` executable could be resolved (PATH inherited from
+    /// an installer, Git not installed, override pointing nowhere). Distinct
+    /// from `Git` so the frontend can show ONE persistent banner instead of N
+    /// toasts, and distinct from `AuthFailed` so a launch failure is NEVER
+    /// reported as a credential problem. Carries
+    /// `gitbin::git_not_found_message()`.
+    #[error("{0}")]
+    GitNotFound(String),
     // Forge / PR integration (P62). Provider-abstracted; GitHub first.
     /// The `origin` host is not a known forge provider (non-`github.com` or an
     /// unparseable remote URL). A DATA command was invoked against it; the
@@ -118,8 +136,11 @@ impl AppError {
             AppError::UnresolvedConflicts(_) => "unresolvedConflicts",
             AppError::AiUnavailable(_) => "aiUnavailable",
             AppError::AiFailed(_) => "aiFailed",
+            AppError::AiNeedsReview(_) => "aiNeedsReview",
+            AppError::AiCancelled(_) => "aiCancelled",
             AppError::ExternalToolFailed(_) => "externalToolFailed",
             AppError::HookRejected(_) => "hookRejected",
+            AppError::GitNotFound(_) => "gitNotFound",
             AppError::ForgeUnsupported(_) => "forgeUnsupported",
             AppError::ForgeAuthRequired(_) => "forgeAuthRequired",
             AppError::ForgeRateLimited(_) => "forgeRateLimited",
@@ -149,8 +170,11 @@ impl AppError {
             | AppError::UnresolvedConflicts(m)
             | AppError::AiUnavailable(m)
             | AppError::AiFailed(m)
+            | AppError::AiNeedsReview(m)
+            | AppError::AiCancelled(m)
             | AppError::ExternalToolFailed(m)
             | AppError::HookRejected(m)
+            | AppError::GitNotFound(m)
             | AppError::ForgeUnsupported(m)
             | AppError::ForgeAuthRequired(m)
             | AppError::ForgeRateLimited(m)

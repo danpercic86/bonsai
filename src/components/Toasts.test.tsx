@@ -14,9 +14,12 @@ const toast = (id: number, tone: Toast['tone'], text: string): Toast => ({
 });
 
 describe('Toasts', () => {
-  it('renders nothing for an empty stack', () => {
+  it('always renders the (empty) polite live region so first toasts are announced', () => {
     const { container } = render(<Toasts toasts={[]} onDismiss={vi.fn()} />);
-    expect(container).toBeEmptyDOMElement();
+    const region = container.querySelector('.toast-stack');
+    expect(region).toBeInTheDocument();
+    expect(region).toHaveAttribute('aria-live', 'polite');
+    expect(region?.querySelectorAll('.toast')).toHaveLength(0);
   });
 
   it('renders every pushed toast, newest (highest id) on top', () => {
@@ -67,5 +70,36 @@ describe('Toasts', () => {
     fireEvent.click(buttons[1]);
     expect(onDismiss).toHaveBeenCalledTimes(1);
     expect(onDismiss).toHaveBeenCalledWith(7);
+  });
+
+  // P74 §1.2: shape, not colour, carries the tone (WCAG 1.4.1).
+  it('gives every tone its exact aria-hidden glyph from AC-4', () => {
+    // Pinned vocabulary: a regression to a different glyph set must fail here,
+    // not merely a collision between two tones.
+    const expected = {
+      error: '⊘',
+      warning: '⚠',
+      success: '✓',
+      info: '●',
+    } as const;
+    const tones = ['error', 'warning', 'success', 'info'] as const;
+    const { container } = render(
+      <Toasts
+        toasts={tones.map((t, i) => toast(i + 1, t, `${t} body copy`))}
+        onDismiss={vi.fn()}
+      />,
+    );
+    const glyphs = [...container.querySelectorAll('.toast-glyph')];
+    expect(glyphs).toHaveLength(4);
+    for (const g of glyphs) expect(g).toHaveAttribute('aria-hidden', 'true');
+    for (const tone of tones) {
+      expect(container.querySelector(`.toast-${tone} .toast-glyph`)?.textContent).toBe(
+        expected[tone],
+      );
+      // The glyph must never leak into the announced text.
+      expect(container.querySelector(`.toast-${tone} .toast-text`)?.textContent).toBe(
+        `${tone} body copy`,
+      );
+    }
   });
 });

@@ -1,4 +1,10 @@
-/** T3.2a — useMergeActions: merge, conflict resolution, AI resolve, merge commit. */
+/** T3.2a — useMergeActions: merge, conflict resolution, merge commit, and P68d's
+ *  `openAiProposal`.
+ *
+ *  The old `handleAiResolveConflict` tests moved to `useAiRuns.test.tsx` together with
+ *  the logic (P68d §5.3). What is asserted here is the ONE thing that stayed: the
+ *  `fileDiffReqId` guard now wraps only the fast local `getConflict`, so losing that
+ *  race costs the diff SLOT and never a proposal. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { mockIpc } from '../../ipc/mock';
@@ -26,7 +32,13 @@ const CONFLICT_FILE: ConflictFile = {
   ours: 'ours\n',
   theirs: 'theirs\n',
 };
-const COMMIT_RES: CommitResult = { oid: 'c'.repeat(40), summary: 'merge', branch: 'main' };
+const MARKERFUL = CONFLICT_FILE.text;
+const COMMIT_RES: CommitResult = {
+  oid: 'c'.repeat(40),
+  summary: 'merge',
+  branch: 'main',
+  hookWarning: null,
+};
 
 type Deps = Parameters<typeof useMergeActions>[0];
 
@@ -34,8 +46,6 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
   return {
     ...base(),
     refreshAll: asyncFn(),
-    aiConflictAutonomy: 'proposeReview',
-    setAiResolvingPath: vi.fn(),
     setDiffSlot: vi.fn(),
     fileDiffReqId: { current: 0 },
     runWithHookGate: passthroughGate(),
@@ -88,6 +98,24 @@ describe('resolve conflict', () => {
     await useMergeActions(deps).handleResolveConflict('a.ts', 'ours');
     expect(resolve).toHaveBeenCalledWith(REPO, 'a.ts', 'ours');
     expect(deps.refreshAll).toHaveBeenCalledTimes(1);
+    expect(deps.refreshAll).toHaveBeenCalledWith('worktree'); // P88a row 10
+  });
+
+  it('handleResolveConflictText takes an optional success message (the AI copy)', async () => {
+    vi.spyOn(mockIpc, 'resolveConflictText').mockResolvedValue(undefined);
+    const deps = makeDeps();
+    await useMergeActions(deps).handleResolveConflictText('a.ts', 'body', 'Resolved a.ts with AI');
+    expect(deps.pushToast).toHaveBeenCalledWith('success', 'Resolved a.ts with AI');
+    expect(deps.refreshAll).toHaveBeenCalledWith('worktree'); // P88a row 11
+  });
+
+  it('handleResolveConflictText deferRefresh:true stages WITHOUT refreshing (bulk refreshes once)', async () => {
+    vi.spyOn(mockIpc, 'resolveConflictText').mockResolvedValue(undefined);
+    const deps = makeDeps();
+    // P88a row 11 (deferred branch): a bulk caller passes deferRefresh=true so it can
+    // run ONE refreshAll after the whole loop instead of one per file.
+    await useMergeActions(deps).handleResolveConflictText('a.ts', 'body', null, true);
+    expect(deps.refreshAll).not.toHaveBeenCalled();
   });
 
   it('handleResolveConflictText toasts AND rethrows on error (editor stays open)', async () => {
@@ -101,54 +129,11 @@ describe('resolve conflict', () => {
   });
 });
 
-describe('handleAiResolveConflict', () => {
-  it('autoResolve + clean proposal → stages the AI text directly', async () => {
-    vi.spyOn(mockIpc, 'aiResolveConflict').mockResolvedValue({
-      path: 'a.ts',
-      proposedText: 'merged body\n',
-      costUsd: null,
-    });
-    const stageText = vi.spyOn(mockIpc, 'resolveConflictText').mockResolvedValue(undefined);
-    const deps = makeDeps({ aiConflictAutonomy: 'autoResolve' });
-    await useMergeActions(deps).handleAiResolveConflict('a.ts');
-    expect(stageText).toHaveBeenCalledWith(REPO, 'a.ts', 'merged body\n');
-    expect(deps.pushToast).toHaveBeenCalledWith('success', expect.stringContaining('Resolved a.ts'));
-    expect(deps.setAiResolvingPath).toHaveBeenLastCalledWith(null);
-  });
-
-  it('autoResolve + markerful proposal → NEVER auto-stages; falls back to review editor', async () => {
-    const markerful = '<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> feat\n';
-    vi.spyOn(mockIpc, 'aiResolveConflict').mockResolvedValue({
-      path: 'a.ts',
-      proposedText: markerful,
-      costUsd: null,
-    });
-    const stageText = vi.spyOn(mockIpc, 'resolveConflictText');
-    vi.spyOn(mockIpc, 'getConflict').mockResolvedValue(CONFLICT_FILE);
-    const deps = makeDeps({ aiConflictAutonomy: 'autoResolve' });
-    await useMergeActions(deps).handleAiResolveConflict('a.ts');
-    expect(stageText).not.toHaveBeenCalled();
-    expect(deps.pushToast).toHaveBeenCalledWith(
-      'error',
-      expect.stringContaining('unresolved markers'),
-    );
-    expect(deps.setDiffSlot).toHaveBeenCalledWith(
-      expect.objectContaining({
-        key: 'ai-proposal:a.ts',
-        conflict: expect.objectContaining({ text: markerful }),
-      }),
-    );
-  });
-
-  it('proposeReview opens the synthesized proposal in the conflict editor', async () => {
-    vi.spyOn(mockIpc, 'aiResolveConflict').mockResolvedValue({
-      path: 'a.ts',
-      proposedText: 'clean\n',
-      costUsd: null,
-    });
+describe('openAiProposal (P68d §5.3)', () => {
+  it('opens the proposed body in the ai-proposal slot, keeping ours/theirs', async () => {
     vi.spyOn(mockIpc, 'getConflict').mockResolvedValue(CONFLICT_FILE);
     const deps = makeDeps();
-    await useMergeActions(deps).handleAiResolveConflict('a.ts');
+    await useMergeActions(deps).openAiProposal('a.ts', 'clean\n');
     expect(deps.setDiffSlot).toHaveBeenCalledWith(
       expect.objectContaining({
         key: 'ai-proposal:a.ts',
@@ -156,34 +141,50 @@ describe('handleAiResolveConflict', () => {
         conflict: expect.objectContaining({ text: 'clean\n', ours: 'ours\n' }),
       }),
     );
-    expect(deps.setAiResolvingPath).toHaveBeenNthCalledWith(1, 'a.ts');
-    expect(deps.setAiResolvingPath).toHaveBeenLastCalledWith(null);
   });
 
-  it('proposal fetch error → toast, spinner cleared, no further IPC', async () => {
-    vi.spyOn(mockIpc, 'aiResolveConflict').mockRejectedValue(appErr('other', 'ai down'));
-    const getConflict = vi.spyOn(mockIpc, 'getConflict');
+  it('a markerful body is still shown VERBATIM for review — the editor is the gate', async () => {
+    // The safety gate that refuses to STAGE a markerful body lives in `useAiRuns`
+    // (§5.2). This function's job is the opposite: show the user exactly what came
+    // back, markers and all, so they can finish it by hand.
+    vi.spyOn(mockIpc, 'getConflict').mockResolvedValue(CONFLICT_FILE);
     const deps = makeDeps();
-    await useMergeActions(deps).handleAiResolveConflict('a.ts');
-    expect(deps.pushToast).toHaveBeenCalledWith('error', 'ai down');
-    expect(deps.setAiResolvingPath).toHaveBeenLastCalledWith(null);
-    expect(getConflict).not.toHaveBeenCalled();
+    await useMergeActions(deps).openAiProposal('a.ts', MARKERFUL);
+    expect(deps.setDiffSlot).toHaveBeenCalledWith(
+      expect.objectContaining({ conflict: expect.objectContaining({ text: MARKERFUL }) }),
+    );
   });
 
-  it('stale request guard: a reqId bump during getConflict drops the slot write', async () => {
-    vi.spyOn(mockIpc, 'aiResolveConflict').mockResolvedValue({
-      path: 'a.ts',
-      proposedText: 'clean\n',
-      costUsd: null,
-    });
+  it('a reqId bump during the LOCAL getConflict drops only the slot write', async () => {
     const deps = makeDeps();
     vi.spyOn(mockIpc, 'getConflict').mockImplementation(async () => {
       deps.fileDiffReqId.current += 1; // user opened another diff mid-flight
       return CONFLICT_FILE;
     });
-    await useMergeActions(deps).handleAiResolveConflict('a.ts');
+    await useMergeActions(deps).openAiProposal('a.ts', 'clean\n');
     expect(deps.setDiffSlot).not.toHaveBeenCalled();
-    expect(deps.setAiResolvingPath).toHaveBeenLastCalledWith(null);
+  });
+
+  it('never bumps fileDiffReqId before an AI CLI call (§5.1, the item-5 rule)', async () => {
+    // The function touches fileDiffReqId exactly ONCE, immediately before a fast
+    // LOCAL read, and calls no `ipc.ai*` at all. That is the structural guarantee
+    // that a file switch can no longer destroy a computed proposal.
+    const ai = vi.spyOn(mockIpc, 'aiResolveConflict');
+    const stream = vi.spyOn(mockIpc, 'aiResolveConflictStream');
+    vi.spyOn(mockIpc, 'getConflict').mockResolvedValue(CONFLICT_FILE);
+    const deps = makeDeps();
+    await useMergeActions(deps).openAiProposal('a.ts', 'clean\n');
+    expect(deps.fileDiffReqId.current).toBe(1);
+    expect(ai).not.toHaveBeenCalled();
+    expect(stream).not.toHaveBeenCalled();
+  });
+
+  it('getConflict failure toasts and writes no slot', async () => {
+    vi.spyOn(mockIpc, 'getConflict').mockRejectedValue(appErr('other', 'gone'));
+    const deps = makeDeps();
+    await useMergeActions(deps).openAiProposal('a.ts', 'clean\n');
+    expect(deps.pushToast).toHaveBeenCalledWith('error', 'gone');
+    expect(deps.setDiffSlot).not.toHaveBeenCalled();
   });
 });
 

@@ -15,28 +15,40 @@ import {
 } from './helpers';
 import type { Page } from '@playwright/test';
 
+/** The P68d deep i18n conflict path (fixtures/conflicts.ts MERGE_DEEP_PATH). */
+const DEEP =
+  'src/features/internationalization/locales/de-DE/components/settings/advanced/notifications/messages.json';
+
 const FLAT = { uiSettings: { onboardingSeen: true, listView: 'flat' } };
 
 async function openPausedMerge(page: Page): Promise<void> {
   await openRepo(page, { flags: { op: 'merge' } });
-  await expect(page.getByRole('status').getByText('Merging feature/login')).toBeVisible();
+  await expect(banner(page).getByText('Merging feature/login')).toBeVisible();
 }
 
-/** The op banner (role=status) — scopes its action buttons (the CommitBox also
- *  renders a "Commit merge" button in merge mode). */
+/** The op banner — scopes its action buttons (the CommitBox also renders a
+ *  "Commit merge" button in merge mode). Class + role, NOT `getByRole('status')`
+ *  alone: P70 added an always-mounted git-availability live region, so a bare
+ *  role query is no longer unique (and `toHaveCount(0)` below would never pass).
+ *  The role stays in the selector so the a11y contract is still asserted. */
 function banner(page: Page) {
-  return page.getByRole('status');
+  return page.locator('.op-banner[role="status"]');
 }
 
 test.describe('06 merge & conflicts @destructive', () => {
-  test('seeded paused merge shows the banner and both conflicted rows', async ({ page }) => {
+  // P68d seeded a THIRD conflicted path (the deep i18n JSON) so the AI dock/bulk
+  // paths have two text-mergeable files; the counts below follow it.
+  test('seeded paused merge shows the banner and all three conflicted rows', async ({ page }) => {
     await openPausedMerge(page);
-    await expect(banner(page).getByText('2 conflict(s) remaining')).toBeVisible();
+    await expect(banner(page).getByText('3 conflict(s) remaining')).toBeVisible();
     await expect(
       page.getByRole('button', { name: 'Take our version of README.md' }),
     ).toBeVisible();
     await expect(
       page.getByRole('button', { name: 'Take our version of src/auth.ts' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: `Take our version of ${DEEP}` }),
     ).toBeVisible();
     // Commit merge is gated while conflicts remain.
     await expect(banner(page).getByRole('button', { name: 'Commit merge' })).toBeDisabled();
@@ -63,7 +75,7 @@ test.describe('06 merge & conflicts @destructive', () => {
     await expect(
       page.locator('.toast-stack').getByText('Staged resolution for src/auth.ts'),
     ).toBeVisible();
-    await expect(banner(page).getByText('1 conflict(s) remaining')).toBeVisible();
+    await expect(banner(page).getByText('2 conflict(s) remaining')).toBeVisible();
     await expect(
       page.getByRole('button', { name: 'Take our version of src/auth.ts' }),
     ).toHaveCount(0);
@@ -77,7 +89,7 @@ test.describe('06 merge & conflicts @destructive', () => {
     await expect(
       page.getByRole('button', { name: 'Take their version of README.md' }),
     ).toHaveCount(0);
-    await expect(banner(page).getByText('1 conflict(s) remaining')).toBeVisible();
+    await expect(banner(page).getByText('2 conflict(s) remaining')).toBeVisible();
   });
 
   test('commit merge: prefilled message, banner clears, graph gains the merge commit', async ({
@@ -85,9 +97,10 @@ test.describe('06 merge & conflicts @destructive', () => {
   }) => {
     await openPausedMerge(page);
     const before = await graphScrollHeight(page);
-    // Resolve both conflicts via quick actions.
+    // Resolve all three conflicts via quick actions.
     await page.getByRole('button', { name: 'Take our version of src/auth.ts' }).click();
     await page.getByRole('button', { name: 'Take our version of README.md' }).click();
+    await page.getByRole('button', { name: `Take our version of ${DEEP}` }).click();
     await expect(banner(page).getByText('All conflicts resolved')).toBeVisible();
     // Message prefilled from opState into the merge commit box.
     await expect(page.getByPlaceholder('Merge commit message')).toHaveValue(
@@ -145,7 +158,7 @@ test.describe('06 merge & conflicts @destructive', () => {
     const menu = await openBranchContextMenu(page, 'demo-conflict');
     await menu.getByRole('menuitem', { name: 'Merge demo-conflict into main' }).click();
     await expect(
-      page.locator('.toast-stack').getByText(/Merge paused: 2 conflict\(s\) to resolve/),
+      page.locator('.toast-stack').getByText(/Merge paused: 3 conflict\(s\) to resolve/),
     ).toBeVisible();
     // App stays usable.
     await expect(page.getByTestId('graph-canvas')).toBeVisible();

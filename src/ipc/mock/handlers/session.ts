@@ -1,10 +1,11 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
 import type { IpcApi } from '../../types';
-import { jobStatusListeners, mockMcp, repoChangedListeners } from '../events';
+import { clampAiRunSettings } from '../aiRunSettings';
+import { jobStatusListeners, mockMcp, repoChangedListeners, tagAutoSyncListeners } from '../events';
 import { clampAutoFetch, clampGraphPrefs, clampHealthRefresh, clampPaneWidths, readRecents, readSession, readUiSettings, writeRecents, writeSession, writeUiSettings } from '../persistence';
 import { delay, requireRepo } from '../repoState';
 import { applyMockJobTimers, completeMockJobRun, seedJobStatuses } from '../scheduler';
-import type { JobKind, JobStatus, JobStatusChangedPayload, RecentRepo, RepoChangedPayload, SessionState, UiSettings, UiSettingsPatch, Unsubscribe } from '../../types';
+import type { JobKind, JobStatus, JobStatusChangedPayload, RecentRepo, RepoChangedPayload, SessionState, TagAutoSyncEvent, UiSettings, UiSettingsPatch, Unsubscribe } from '../../types';
 
 export const sessionHandlers = {
   async getRecentRepos(): Promise<RecentRepo[]> {
@@ -25,6 +26,15 @@ export const sessionHandlers = {
     repoChangedListeners.add(cb);
     return () => {
       repoChangedListeners.delete(cb);
+    };
+  },
+
+  // P85 A3: the fire-and-forget fetch tag auto-sync completion event. The mock's
+  // `fetch` handler dispatches through this registry (see remotesSync.ts).
+  async onTagAutoSync(cb: (e: TagAutoSyncEvent) => void): Promise<Unsubscribe> {
+    tagAutoSyncListeners.add(cb);
+    return () => {
+      tagAutoSyncListeners.delete(cb);
     };
   },
 
@@ -74,6 +84,10 @@ export const sessionHandlers = {
       paneWidths:
         patch.paneWidths !== undefined ? clampPaneWidths(patch.paneWidths) : current.paneWidths,
       listView: patch.listView ?? current.listView,
+      // P67 §4: patches independently of listView/graph.
+      panelDensity: patch.panelDensity ?? current.panelDensity,
+      // P80 D1: patches independently of listView/graph/panelDensity.
+      primaryCommitAction: patch.primaryCommitAction ?? current.primaryCommitAction,
       autoFetch:
         patch.autoFetch !== undefined ? clampAutoFetch(patch.autoFetch) : current.autoFetch,
       healthRefresh:
@@ -91,6 +105,22 @@ export const sessionHandlers = {
       profiles: patch.profiles ?? current.profiles,
       terminalCommand: patch.terminalCommand ?? current.terminalCommand,
       editorCommand: patch.editorCommand ?? current.editorCommand,
+      // P68 §8.3: each of the ten AI-run knobs patches independently of
+      // graph/listView/panelDensity, then the whole slice is clamped on write
+      // (mirrors apply_patch → clamp_ai_settings).
+      ...clampAiRunSettings({
+        aiIdleTimeoutSecs: patch.aiIdleTimeoutSecs ?? current.aiIdleTimeoutSecs,
+        aiHardCapSecs: patch.aiHardCapSecs ?? current.aiHardCapSecs,
+        aiMaxTurns: patch.aiMaxTurns ?? current.aiMaxTurns,
+        aiStreamLog: patch.aiStreamLog ?? current.aiStreamLog,
+        aiIncludePartialMessages:
+          patch.aiIncludePartialMessages ?? current.aiIncludePartialMessages,
+        aiConflictTools: patch.aiConflictTools ?? current.aiConflictTools,
+        aiBulkMaxBytes: patch.aiBulkMaxBytes ?? current.aiBulkMaxBytes,
+        aiMaxBudgetUsd: patch.aiMaxBudgetUsd ?? current.aiMaxBudgetUsd,
+        aiDockHeight: patch.aiDockHeight ?? current.aiDockHeight,
+        aiDockCollapsed: patch.aiDockCollapsed ?? current.aiDockCollapsed,
+      }),
     };
     writeUiSettings(next);
     // P30 §7: config round-trip re-arms the synthetic job tick timers.

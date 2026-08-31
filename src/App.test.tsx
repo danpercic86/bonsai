@@ -70,7 +70,11 @@ describe('App shell', () => {
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: 'Welcome to Bonsai' })).not.toBeInTheDocument(),
     );
-    expect(setUi).toHaveBeenCalledWith(expect.objectContaining({ onboardingSeen: true }));
+    // P69b: `onboardingSeen` no longer writes inline — it rides the shared 300 ms
+    // coalescing window in useUiSettings, so the write lands just after dismissal.
+    await waitFor(() =>
+      expect(setUi).toHaveBeenCalledWith(expect.objectContaining({ onboardingSeen: true })),
+    );
   });
 
   it('the theme toggle flips the document theme', async () => {
@@ -99,5 +103,44 @@ describe('App shell', () => {
     await waitFor(() => expect(document.querySelector('.workspace-host')).not.toBeNull());
     expect(screen.getByRole('button', { name: 'AI Assets' })).toBeInTheDocument();
     expect(screen.queryByText('A tidy Git client')).not.toBeInTheDocument();
+  });
+
+  // P69b MUST-FIX 1: PaneDivider's Arrow-key path calls onResize AND onResizeEnd
+  // in ONE keydown handler, before React re-renders. The persisted width must
+  // therefore come from a ref updated eagerly by the resize handler — reading a
+  // ref that only refreshes during render persists the PRE-nudge width, so the
+  // pane silently sits one 8px nudge behind after a reload.
+  it('an Arrow-key pane nudge persists the POST-nudge width', async () => {
+    // jsdom's default 1024px window collapses clampLive's dynamic max onto
+    // SIDEBAR_MIN, which would mask the off-by-one-nudge bug.
+    const realWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { value: 1600, configurable: true });
+    try {
+      // PERSISTED widths must differ from DEFAULT_PANE_WIDTHS (App.tsx:64), or the
+      // test passes vacuously: with sidebar = 240 either way, a bare
+      // `setPaneWidths(s.paneWidths)` at boot (i.e. a ref never seeded from disk)
+      // still nudges to 248 and hides the very path the deleted render-time ref
+      // assignment used to cover.
+      const { setUi } = stubBoot({
+        settings: ui({ onboardingSeen: true, paneWidths: { sidebar: 300, rightPanel: 380 } }),
+        session: { openRepos: ['/mock/repo'], activeRepo: '/mock/repo' },
+      });
+      render(<App />);
+      await waitFor(() => expect(document.querySelector('.workspace-host')).not.toBeNull());
+      const divider = document.querySelector('.pane-divider-sidebar');
+      expect(divider).not.toBeNull();
+
+      fireEvent.keyDown(divider as Element, { key: 'ArrowRight' });
+
+      // 300 (persisted) + 8 (KEYBOARD_NUDGE_PX) — neither 300 (stale ref) nor 248
+      // (ref stuck on the 240 default because boot never seeded it).
+      await waitFor(() =>
+        expect(setUi).toHaveBeenCalledWith(
+          expect.objectContaining({ paneWidths: { sidebar: 308, rightPanel: 380 } }),
+        ),
+      );
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { value: realWidth, configurable: true });
+    }
   });
 });

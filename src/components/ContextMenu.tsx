@@ -11,6 +11,22 @@ export interface ContextMenuItem {
   children?: ContextMenuItem[];
   /** 'danger' ⇒ red icon + label (destructive action). */
   tone?: 'default' | 'danger';
+  /**
+   * P69i (UI §4.4). Present ⇒ the row renders `role="menuitemradio"` with
+   * `aria-checked`, and the whole list reserves a 16px leading check column
+   * (a ✓ glyph in `--text-1`, never a background tint — so a checked row stays
+   * legible in both themes and in forced-colours mode).
+   *
+   * Absent ⇒ `role="menuitem"` and no column: byte-identical to pre-P69i.
+   * `menuitemradio` rather than `menuitemcheckbox` because these lists are
+   * "at most one in effect" (the identity menu), not multi-select.
+   */
+  checked?: boolean;
+  /**
+   * P69i (UI §4.4). One secondary line under the label — 12px `--text-2`,
+   * ellipsised, never focusable. The row grows 32 → 46px when present.
+   */
+  detail?: string;
 }
 
 export interface ContextMenuProps {
@@ -21,6 +37,17 @@ export interface ContextMenuProps {
   items: ContextMenuItem[];
   /** Fired by every dismiss path AND after an enabled item activates. */
   onClose(): void;
+  /**
+   * P69i (UI §4.4). Non-interactive block rendered above the list inside
+   * `.context-menu`, `role="presentation"`. Excluded from keyboard navigation
+   * for free: the focus queries scope to the row buttons.
+   */
+  header?: React.ReactNode;
+  /**
+   * P69i. `aria-busy` on the menu root, for a menu that deliberately stays open
+   * while an activated row's write settles (UI §4.5). Additive and generic.
+   */
+  busy?: boolean;
 }
 
 const HOVER_OPEN_MS = 120;
@@ -39,6 +66,10 @@ interface MenuListProps {
   style?: React.CSSProperties;
   /** Root only: the container ref the parent uses for clamp/dismiss. */
   containerRef?: React.RefObject<HTMLDivElement | null>;
+  /** Root only: the §4.4 header block. */
+  header?: React.ReactNode;
+  /** Root only: `aria-busy` while an activated row is settling. */
+  busy?: boolean;
 }
 
 /** Recursive menu list: renders one `.context-menu` (or `.context-menu--sub`)
@@ -53,9 +84,15 @@ function MenuList({
   onCloseRequest,
   style,
   containerRef,
+  header,
+  busy,
 }: MenuListProps) {
   const ownRef = useRef<HTMLDivElement>(null);
   const localRef = containerRef ?? ownRef;
+  // The 16px check column belongs to the LIST: if only the rows that declare
+  // `checked` reserved it, every plain row in the same menu (`Manage
+  // identities…`) would hang 24px to the left of the labelled ones.
+  const hasChecks = items.some((it) => it.checked !== undefined);
 
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [focusSub, setFocusSub] = useState(false);
@@ -101,7 +138,8 @@ function MenuList({
     if (el === null) return [];
     return Array.from(
       el.querySelectorAll<HTMLButtonElement>(
-        ':scope > .context-menu-row > button[role="menuitem"]',
+        ':scope > .context-menu-row > button[role="menuitem"],' +
+          ':scope > .context-menu-row > button[role="menuitemradio"]',
       ),
     );
   };
@@ -200,21 +238,34 @@ function MenuList({
       ref={localRef}
       className={isSub ? 'context-menu context-menu--sub' : 'context-menu'}
       role="menu"
+      aria-busy={busy === true ? true : undefined}
       style={isSub ? subStyle : style}
     >
+      {header !== undefined && (
+        <div className="context-menu-header" role="presentation">
+          {header}
+        </div>
+      )}
       {items.map((item, i) => {
         const hasChildren = item.children !== undefined;
         const isOpen = openIndex === i;
+        const isRadio = item.checked !== undefined;
         return (
           <div
-            key={item.label}
+            /* Index key, deliberately. Two identity profiles may share a label
+               (both blank ⇒ both "Unnamed identity"), and — the reason it is not
+               the label — a row whose label mutates in place (`… — Applying…`)
+               must NOT remount: it holds keyboard focus in a menu that stays
+               open for the whole write. These lists never reorder in place. */
+            key={i}
             className="context-menu-row"
             onMouseEnter={() => onRowEnter(i, item)}
             onMouseLeave={() => onRowLeave(i, item)}
           >
             <button
               type="button"
-              role="menuitem"
+              role={isRadio ? 'menuitemradio' : 'menuitem'}
+              aria-checked={isRadio ? item.checked === true : undefined}
               className="context-menu-item"
               data-tone={item.tone === 'danger' ? 'danger' : undefined}
               disabled={item.disabled === true}
@@ -225,12 +276,26 @@ function MenuList({
               onClick={() => activate(item, i)}
               onKeyDown={(e) => onItemKeyDown(e, i, item)}
             >
+              {hasChecks && (
+                <span className="context-menu-check" aria-hidden="true">
+                  {item.checked === true ? '✓' : ''}
+                </span>
+              )}
               {item.icon !== undefined && (
                 <span className="context-menu-icon" aria-hidden="true">
                   {item.icon}
                 </span>
               )}
-              <span className="context-menu-label">{item.label}</span>
+              {item.detail === undefined ? (
+                <span className="context-menu-label">{item.label}</span>
+              ) : (
+                <span className="context-menu-lines">
+                  <span className="context-menu-label">{item.label}</span>
+                  <span className="context-menu-detail" title={item.detail}>
+                    {item.detail}
+                  </span>
+                </span>
+              )}
               {hasChildren && (
                 <span className="context-menu-chevron" aria-hidden="true">
                   ▶
@@ -260,7 +325,7 @@ function MenuList({
  *  clamped into the viewport. Dismisses on outside pointerdown, Escape, scroll
  *  (capture), resize, and window blur. Rows with `children` open a hover/keyboard
  *  flyout submenu. All colors come from CSS variables so both themes work. */
-export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, items, onClose, header, busy }: ContextMenuProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x, y });
 
@@ -290,6 +355,10 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
       if (e.key === 'Escape') {
         e.preventDefault();
         onClose();
+      } else if (e.key === 'Tab') {
+        // Tab would move focus to an element behind the menu, orphaning it open.
+        // Close it and let focus proceed normally to the next control.
+        onClose();
       }
     };
     const onScroll = () => onClose();
@@ -315,6 +384,8 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
       items={items}
       onClose={onClose}
       autoFocus
+      header={header}
+      busy={busy}
       style={{ left: pos.x, top: pos.y }}
     />
   );

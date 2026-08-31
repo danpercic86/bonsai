@@ -241,17 +241,76 @@ fn unborn_empty_repo_builds_empty_index() {
 
 // -------------------------------------------------- repo_key unicode/case
 
-/// `repo_key` is a stable digest for unicode paths and (on Windows) case- and
-/// separator-insensitive for the same physical dir.
+/// `repo_key` is a stable digest for unicode paths, and separator-insensitive
+/// everywhere. The CASE half is driven by the injected `ignorecase` flag rather
+/// than by `cfg!(windows)`, so BOTH filesystem behaviours are asserted on every
+/// host — the previous `#[cfg(windows)]` gate gave macOS (APFS, case-insensitive
+/// by default) zero coverage of the folding it actually needs.
 #[test]
 fn repo_key_unicode_and_case() {
-    let uni = store::repo_key(Path::new("/tmp/reposé/日本語-project"));
-    assert_eq!(uni.len(), 16, "16 hex chars");
-    assert_eq!(uni, store::repo_key(Path::new("/tmp/reposé/日本語-project")), "stable");
-    assert_ne!(uni, store::repo_key(Path::new("/tmp/reposé/other")), "distinct paths differ");
-    #[cfg(windows)]
-    {
-        let w = store::repo_key(Path::new("D:\\Repos\\Café"));
-        assert_eq!(w, store::repo_key(Path::new("d:/repos/café")), "case+separator normalized");
+    let uni_path = Path::new("/tmp/reposé/日本語-project");
+    for ignorecase in [true, false] {
+        let uni = store::repo_key(uni_path, ignorecase);
+        assert_eq!(uni.len(), 16, "16 hex chars");
+        assert_eq!(uni, store::repo_key(uni_path, ignorecase), "stable");
+        assert_ne!(
+            uni,
+            store::repo_key(Path::new("/tmp/reposé/other"), ignorecase),
+            "distinct paths differ"
+        );
+        // Separators normalize regardless of case sensitivity.
+        assert_eq!(
+            store::repo_key(Path::new("D:\\Repos\\Café"), ignorecase),
+            store::repo_key(Path::new("D:/Repos/Café"), ignorecase),
+            "separator normalized"
+        );
+    }
+    // Case-insensitive FS (Windows, macOS APFS by default): one key for both
+    // casings, non-ASCII included. Case-sensitive FS (ext4): distinct dirs.
+    assert_eq!(
+        store::repo_key(Path::new("D:\\Repos\\Café"), true),
+        store::repo_key(Path::new("d:/repos/café"), true),
+        "case folded when ignorecase"
+    );
+    assert_ne!(
+        store::repo_key(Path::new("D:\\Repos\\Café"), false),
+        store::repo_key(Path::new("d:/repos/café"), false),
+        "case preserved when the FS is case-sensitive"
+    );
+}
+
+/// End-to-end: the index dir a REAL repo resolves to is keyed off git's own
+/// `core.ignorecase`, not the build target — the bug that split the history-index
+/// cache per path-casing on macOS APFS. Runs on EVERY host because the
+/// expectation is derived from the injected/detected flag, not from `cfg!`.
+#[test]
+fn index_dir_follows_git_ignorecase_not_build_target() {
+    require_git!();
+    let dir = init_repo();
+    let workdir = dir.path();
+    let base = workdir.join("appdata");
+
+    // The production helper resolves exactly the detected `core.ignorecase`.
+    let detected = bonsai_core::git::repo::path_ignorecase(workdir);
+    assert_eq!(
+        history_index::index_dir_for_repo(&base, workdir),
+        history_index::index_dir_for(&base, workdir, detected),
+        "index_dir_for_repo == index_dir_for(detected ignorecase)"
+    );
+
+    for ignorecase in [true, false] {
+        let value = if ignorecase { "true" } else { "false" };
+        git(workdir, &["config", "core.ignorecase", value]);
+        assert_eq!(
+            bonsai_core::git::repo::path_ignorecase(workdir),
+            ignorecase,
+            "path_ignorecase reads core.ignorecase = {value}"
+        );
+
+        // Case variants of one workdir share an index dir IFF the filesystem
+        // is case-insensitive (otherwise they are genuinely different repos).
+        let shared = history_index::index_dir_for(&base, Path::new("/repos/Bonsai"), ignorecase)
+            == history_index::index_dir_for(&base, Path::new("/repos/bonsai"), ignorecase);
+        assert_eq!(shared, ignorecase, "case-variant index dirs (ignorecase={value})");
     }
 }

@@ -29,9 +29,13 @@ test.describe('08 stash @destructive', () => {
     ).toBeVisible();
   });
 
+  // P80 §2b folded the stash scopes into the commit box's `⋯ Commit options`
+  // overflow menu (CommitOptionsMenu.tsx); the old top-level 'Stash all' /
+  // 'Stash options' buttons no longer exist.
   test('save all: tracked changes clear and a new stash@{0} appears', async ({ page }) => {
     await openWithStatus(page);
-    await page.getByRole('button', { name: 'Stash all', exact: true }).click();
+    await page.getByRole('button', { name: 'Commit options' }).click();
+    await page.getByRole('menuitem', { name: 'Stash all', exact: true }).click();
     await expect(page.locator('.toast-stack').getByText('Changes stashed')).toBeVisible();
     // New entry pushed on top; old entries re-indexed (+1) → stash@{3} exists.
     await expect(
@@ -45,7 +49,7 @@ test.describe('08 stash @destructive', () => {
 
   test('save staged-only via the split-button menu keeps unstaged rows', async ({ page }) => {
     await openWithStatus(page);
-    await page.getByRole('button', { name: 'Stash options' }).click();
+    await page.getByRole('button', { name: 'Commit options' }).click();
     await page.getByRole('menuitem', { name: 'Stash staged only' }).click();
     await expect(page.locator('.toast-stack').getByText('Stashed staged changes')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Unstage src/app.rs' })).toHaveCount(0);

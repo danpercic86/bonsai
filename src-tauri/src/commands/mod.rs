@@ -6,6 +6,7 @@
 //! registered in `lib.rs`'s `generate_handler!` keep resolving unchanged.
 
 mod shared;
+mod debug;
 mod repo;
 mod ui_settings;
 mod mcp;
@@ -18,8 +19,11 @@ mod reset;
 mod branches;
 mod remotes;
 mod merge;
+mod activity;
+mod hooks;
 mod scheduler;
 mod ai;
+mod ai_stream;
 mod rebase;
 mod bisect;
 mod history;
@@ -38,12 +42,29 @@ mod ai_assets;
 mod profiles;
 mod external;
 mod forge;
+mod forge_accounts;
+mod git_env;
 
 #[cfg(test)]
 mod tests_support;
 
 #[cfg(test)]
-mod tests;
+mod tests_open_repo_guards;
+
+#[cfg(test)]
+mod tests_branch_merge_guards;
+
+#[cfg(test)]
+mod tests_repo_isolation;
+
+#[cfg(test)]
+mod tests_ui_settings_patch;
+
+#[cfg(test)]
+mod tests_ui_settings_patch_flags;
+
+#[cfg(test)]
+mod tests_ai_consent_gate;
 
 #[cfg(test)]
 mod tests_staging;
@@ -76,6 +97,9 @@ mod tests_remotes;
 mod tests_ai;
 
 #[cfg(test)]
+mod tests_ai_stream;
+
+#[cfg(test)]
 mod registration_tests;
 
 // `shared` re-exports the cross-cutting imports and `repo_path`; only the test
@@ -83,6 +107,7 @@ mod registration_tests;
 // re-export to test builds to avoid an unused-import warning in normal builds.
 #[cfg(test)]
 pub(crate) use shared::*;
+pub use debug::*;
 pub use repo::*;
 pub use ui_settings::*;
 pub use mcp::*;
@@ -95,8 +120,11 @@ pub use reset::*;
 pub use branches::*;
 pub use remotes::*;
 pub use merge::*;
+pub use activity::*;
+pub use hooks::*;
 pub use scheduler::*;
 pub use ai::*;
+pub use ai_stream::*;
 pub use rebase::*;
 pub use bisect::*;
 pub use history::*;
@@ -115,3 +143,5 @@ pub use ai_assets::*;
 pub use profiles::*;
 pub use external::*;
 pub use forge::*;
+pub use forge_accounts::*;
+pub use git_env::*;

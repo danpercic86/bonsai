@@ -20,21 +20,37 @@ use super::shared::*;
 /// than an error. Errors: `noRepo` | `noRemote` | `git` | `other`.
 #[tauri::command]
 pub async fn forge_repo_context(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     repo_id: String,
 ) -> Result<ForgeRepoContext, AppError> {
-    forge_repo_context_inner(state.inner(), &repo_id).await
+    let file = settings::settings_file(&app)?;
+    forge_repo_context_inner(state.inner(), &file, &repo_id).await
 }
 
 /// Runtime-free core of `forge_repo_context` (unit-testable without a Tauri app).
+///
+/// P80: resolves the repo's account (per-repo override → owner match → host
+/// default → single → first) and opens the provider with THAT account's keychain
+/// key, so `authenticated`/`viewer` reflect the resolved account. Surfaces the
+/// resolved `accountId` + `accountSource`.
 pub(crate) async fn forge_repo_context_inner(
     state: &AppState,
+    settings_file: &std::path::Path,
     repo_id: &str,
 ) -> Result<ForgeRepoContext, AppError> {
     let workdir = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || Ok(bonsai_forge::open(&workdir)?.repo_context()))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let file = settings_file.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let resolved = crate::commands::resolve_forge_blocking(&workdir, &file)?;
+        let mut ctx =
+            bonsai_forge::open_with_key(&workdir, resolved.keychain_key.as_deref())?.repo_context();
+        ctx.resolved_account_id = resolved.account_id;
+        ctx.account_source = resolved.source;
+        Ok(ctx)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// One page of PR summaries for the requested state filter (`per_page` capped
@@ -42,23 +58,30 @@ pub(crate) async fn forge_repo_context_inner(
 /// `forgeRateLimited` | `forgeApi` | `networkError` | `git`.
 #[tauri::command]
 pub async fn forge_list_prs(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     repo_id: String,
     query: PrListQuery,
 ) -> Result<PrPage, AppError> {
-    forge_list_prs_inner(state.inner(), &repo_id, query).await
+    let file = settings::settings_file(&app)?;
+    forge_list_prs_inner(state.inner(), &file, &repo_id, query).await
 }
 
 /// Runtime-free core of `forge_list_prs`.
 pub(crate) async fn forge_list_prs_inner(
     state: &AppState,
+    settings_file: &std::path::Path,
     repo_id: &str,
     query: PrListQuery,
 ) -> Result<PrPage, AppError> {
     let workdir = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || bonsai_forge::open(&workdir)?.list_prs(&query))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let file = settings_file.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = crate::commands::resolved_key(&workdir, &file)?;
+        bonsai_forge::open_with_key(&workdir, key.as_deref())?.list_prs(&query)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// A single PR with body, diff stats, mergeability, and labels. Errors:
@@ -66,23 +89,30 @@ pub(crate) async fn forge_list_prs_inner(
 /// | `networkError` | `git`.
 #[tauri::command]
 pub async fn forge_get_pr(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     repo_id: String,
     number: u64,
 ) -> Result<PrDetail, AppError> {
-    forge_get_pr_inner(state.inner(), &repo_id, number).await
+    let file = settings::settings_file(&app)?;
+    forge_get_pr_inner(state.inner(), &file, &repo_id, number).await
 }
 
 /// Runtime-free core of `forge_get_pr`.
 pub(crate) async fn forge_get_pr_inner(
     state: &AppState,
+    settings_file: &std::path::Path,
     repo_id: &str,
     number: u64,
 ) -> Result<PrDetail, AppError> {
     let workdir = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || bonsai_forge::open(&workdir)?.get_pr(number))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let file = settings_file.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = crate::commands::resolved_key(&workdir, &file)?;
+        bonsai_forge::open_with_key(&workdir, key.as_deref())?.get_pr(number)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Open a new PR from the given input; REQUIRES a stored token. Errors:
@@ -90,23 +120,107 @@ pub(crate) async fn forge_get_pr_inner(
 /// `forgeApi` | `forgeRateLimited` | `networkError` | `git`.
 #[tauri::command]
 pub async fn forge_create_pr(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     repo_id: String,
     input: CreatePrInput,
 ) -> Result<PrDetail, AppError> {
-    forge_create_pr_inner(state.inner(), &repo_id, input).await
+    let file = settings::settings_file(&app)?;
+    forge_create_pr_inner(state.inner(), &file, &repo_id, input).await
 }
 
 /// Runtime-free core of `forge_create_pr`.
 pub(crate) async fn forge_create_pr_inner(
     state: &AppState,
+    settings_file: &std::path::Path,
     repo_id: &str,
     input: CreatePrInput,
 ) -> Result<PrDetail, AppError> {
     let workdir = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || bonsai_forge::open(&workdir)?.create_pr(&input))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let file = settings_file.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = crate::commands::resolved_key(&workdir, &file)?;
+        bonsai_forge::open_with_key(&workdir, key.as_deref())?.create_pr(&input)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Merge PR `number` with the given method; REQUIRES a stored token. Never
+/// force-merges or resolves conflicts — a not-mergeable PR surfaces a clear
+/// `forgeApi` message and changes nothing. Errors: `noRepo` |
+/// `forgeAuthRequired` | `forgeUnsupported` | `noRemote` | `forgeApi` |
+/// `forgeRateLimited` | `authFailed` | `networkError` | `git`.
+#[tauri::command]
+pub async fn forge_merge_pr(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    number: u64,
+    input: MergePrInput,
+) -> Result<PrDetail, AppError> {
+    let file = settings::settings_file(&app)?;
+    forge_merge_pr_inner(state.inner(), &file, &repo_id, number, input).await
+}
+
+/// Runtime-free core of `forge_merge_pr`. When `input.head_sha` is `None`, the
+/// head sha is filled from the PR summary (Azure requires it; other forges
+/// ignore it) inside the same `spawn_blocking`, so the UI need not know the sha.
+pub(crate) async fn forge_merge_pr_inner(
+    state: &AppState,
+    settings_file: &std::path::Path,
+    repo_id: &str,
+    number: u64,
+    input: MergePrInput,
+) -> Result<PrDetail, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    let file = settings_file.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = crate::commands::resolved_key(&workdir, &file)?;
+        let provider = bonsai_forge::open_with_key(&workdir, key.as_deref())?;
+        let mut input = input;
+        // Only Azure DevOps needs the head sha in its completion call; other
+        // forges ignore it, so skip the extra `get_pr` round-trip for them.
+        if input.head_sha.is_none()
+            && provider.repo_context().provider == bonsai_forge::ForgeKind::AzureDevOps
+        {
+            input.head_sha = Some(provider.get_pr(number)?.summary.head_sha);
+        }
+        provider.merge_pr(number, &input)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Close/decline/abandon PR `number` WITHOUT merging; REQUIRES a stored token.
+/// Errors: `noRepo` | `forgeAuthRequired` | `forgeUnsupported` | `noRemote` |
+/// `forgeApi` | `forgeRateLimited` | `authFailed` | `networkError` | `git`.
+#[tauri::command]
+pub async fn forge_close_pr(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    number: u64,
+) -> Result<PrDetail, AppError> {
+    let file = settings::settings_file(&app)?;
+    forge_close_pr_inner(state.inner(), &file, &repo_id, number).await
+}
+
+/// Runtime-free core of `forge_close_pr`.
+pub(crate) async fn forge_close_pr_inner(
+    state: &AppState,
+    settings_file: &std::path::Path,
+    repo_id: &str,
+    number: u64,
+) -> Result<PrDetail, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    let file = settings_file.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = crate::commands::resolved_key(&workdir, &file)?;
+        bonsai_forge::open_with_key(&workdir, key.as_deref())?.close_pr(number)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Merged review (diff-line) + conversation comments for a PR, sorted by
@@ -114,22 +228,27 @@ pub(crate) async fn forge_create_pr_inner(
 /// `forgeApi` | `forgeRateLimited` | `networkError` | `git`.
 #[tauri::command]
 pub async fn forge_list_review_comments(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     repo_id: String,
     number: u64,
 ) -> Result<Vec<ReviewComment>, AppError> {
-    forge_list_review_comments_inner(state.inner(), &repo_id, number).await
+    let file = settings::settings_file(&app)?;
+    forge_list_review_comments_inner(state.inner(), &file, &repo_id, number).await
 }
 
 /// Runtime-free core of `forge_list_review_comments`.
 pub(crate) async fn forge_list_review_comments_inner(
     state: &AppState,
+    settings_file: &std::path::Path,
     repo_id: &str,
     number: u64,
 ) -> Result<Vec<ReviewComment>, AppError> {
     let workdir = repo_path(state, repo_id)?;
+    let file = settings_file.to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {
-        bonsai_forge::open(&workdir)?.list_review_comments(number)
+        let key = crate::commands::resolved_key(&workdir, &file)?;
+        bonsai_forge::open_with_key(&workdir, key.as_deref())?.list_review_comments(number)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -143,44 +262,186 @@ pub(crate) async fn forge_list_review_comments_inner(
 /// `git` | `other`.
 #[tauri::command]
 pub async fn forge_set_token(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     repo_id: String,
     token: String,
 ) -> Result<ForgeViewer, AppError> {
-    forge_set_token_inner(state.inner(), &repo_id, token).await
+    let file = settings::settings_file(&app)?;
+    forge_set_token_inner(state.inner(), &file, &repo_id, token).await
 }
 
 /// Runtime-free core of `forge_set_token`.
+///
+/// P80 (OD-3): validate the pasted PAT for the origin host, learn the login,
+/// store the token under a three-part keychain key, upsert the account (setting
+/// it as the host default if none exists), AND pin it as this repo's override so
+/// the newly-connected account is what the repo uses. The legacy known-hosts
+/// index is kept mirrored (OD-5). Done inside the SAME `spawn_blocking`.
 pub(crate) async fn forge_set_token_inner(
     state: &AppState,
+    settings_file: &std::path::Path,
     repo_id: &str,
     token: String,
 ) -> Result<ForgeViewer, AppError> {
     let workdir = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || bonsai_forge::set_token(&workdir, &token))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let file = settings_file.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (viewer, host, kind) = bonsai_forge::validate_repo_token(&workdir, &token)?;
+        if host.is_empty() {
+            // Unparseable origin: no host to key an account by; token can't be
+            // stored under an account. Return the validated viewer unchanged.
+            return Ok(viewer);
+        }
+        let login = viewer.login.clone();
+        let aid = settings::account_id(kind, &host, Some(&login));
+        // Store ONLY after successful validation (never persist a rejected token).
+        bonsai_forge::store_token(&aid, &token)?;
+        let workdir_str = workdir.to_string_lossy().to_string();
+        let rec = settings::ForgeAccountRecord {
+            account_id: aid.clone(),
+            keychain_key: aid.clone(),
+            host: host.clone(),
+            kind,
+            login: Some(login.clone()),
+            avatar_url: viewer.avatar_url.clone(),
+        };
+        let _ = settings::update(&file, |s| {
+            settings::upsert_forge_account(s, rec.clone());
+            if !s.forge_host_defaults.iter().any(|d| d.host == host) {
+                settings::set_host_default(s, &host, &aid);
+            }
+            settings::set_repo_override(s, &workdir_str, &aid);
+            // OD-5: keep the legacy known-hosts index mirrored for one release.
+            settings::upsert_forge_host(s, &host, kind, Some(login.clone()));
+        });
+        Ok(viewer)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
-/// Sign out: delete the origin host's PAT from the keychain and evict the
-/// cached viewer. Idempotent. Errors: `noRepo` | `noRemote` | `git` | `other`.
+/// P80 (OD-2): clear this repo's account OVERRIDE only — the repo falls back to
+/// inheriting (owner match → host default). The account itself stays connected
+/// (deletion is `forge_remove_account`). Idempotent. Errors: `noRepo` | `other`.
 #[tauri::command]
 pub async fn forge_clear_token(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     repo_id: String,
 ) -> Result<(), AppError> {
-    forge_clear_token_inner(state.inner(), &repo_id).await
+    let file = settings::settings_file(&app)?;
+    forge_clear_token_inner(state.inner(), &file, &repo_id).await
 }
 
 /// Runtime-free core of `forge_clear_token`.
 pub(crate) async fn forge_clear_token_inner(
     state: &AppState,
+    settings_file: &std::path::Path,
     repo_id: &str,
 ) -> Result<(), AppError> {
     let workdir = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || bonsai_forge::clear_token(&workdir))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let file = settings_file.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let workdir_str = workdir.to_string_lossy().to_string();
+        let _ = settings::update(&file, |s| settings::clear_repo_override(s, &workdir_str));
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// P89: auto-fetch a PR's base+head endpoints into local refs, then compute the
+/// base…head (three-dot) diff LOCALLY (counts + changed-files headers). Does NOT
+/// emit `repo-changed` — only fetches objects, never touches user refs/worktree.
+/// Errors: `noRepo` | `forgeUnsupported` | `noRemote` | `forgeApi` |
+/// `forgeRateLimited` | `networkError` | `authFailed` | `git`.
+#[tauri::command]
+pub async fn forge_pr_diff(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    number: u64,
+) -> Result<PrDiffStats, AppError> {
+    let file = settings::settings_file(&app)?;
+    forge_pr_diff_inner(state.inner(), &file, &repo_id, number).await
+}
+
+/// Runtime-free core of `forge_pr_diff`. The provider call (`pr_refs`) + the git2
+/// fetch + local diff all run inside ONE `spawn_blocking`.
+pub(crate) async fn forge_pr_diff_inner(
+    state: &AppState,
+    settings_file: &std::path::Path,
+    repo_id: &str,
+    number: u64,
+) -> Result<PrDiffStats, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    let file = settings_file.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = crate::commands::resolved_key(&workdir, &file)?;
+        let provider = bonsai_forge::open_with_key(&workdir, key.as_deref())?;
+        let refs = provider.pr_refs(number)?;
+        let ep = pr_diff::fetch_pr_endpoints(&workdir, &refs.base_fetch, &refs.head_fetch)?;
+        pr_diff::pr_diff_headers(&workdir, &ep.base_oid, &ep.head_oid)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// P89: hunks for ONE file of a PR diff. The oids come from a prior
+/// `forge_pr_diff` (no network, no refetch) — pure local git2. Errors:
+/// `noRepo` | `git`.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn forge_pr_file_diff(
+    state: tauri::State<'_, AppState>,
+    repo_id: String,
+    merge_base_oid: String,
+    head_oid: String,
+    path: String,
+    orig_path: Option<String>,
+    full_context: bool,
+    intraline: bool,
+) -> Result<FileDiff, AppError> {
+    forge_pr_file_diff_inner(
+        state.inner(),
+        &repo_id,
+        merge_base_oid,
+        head_oid,
+        path,
+        orig_path,
+        full_context,
+        intraline,
+    )
+    .await
+}
+
+/// Runtime-free core of `forge_pr_file_diff`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn forge_pr_file_diff_inner(
+    state: &AppState,
+    repo_id: &str,
+    merge_base_oid: String,
+    head_oid: String,
+    path: String,
+    orig_path: Option<String>,
+    full_context: bool,
+    intraline: bool,
+) -> Result<FileDiff, AppError> {
+    let workdir = repo_path(state, repo_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        pr_diff::pr_file_diff(
+            &workdir,
+            &merge_base_oid,
+            &head_oid,
+            &path,
+            orig_path.as_deref(),
+            full_context,
+            intraline,
+        )
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Batch commit/CI statuses (P63): one [`CommitStatus`] per requested sha, in
@@ -190,21 +451,28 @@ pub(crate) async fn forge_clear_token_inner(
 /// | `authFailed` | `networkError` | `git`.
 #[tauri::command]
 pub async fn forge_commit_statuses(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     repo_id: String,
     shas: Vec<String>,
 ) -> Result<Vec<CommitStatus>, AppError> {
-    forge_commit_statuses_inner(state.inner(), &repo_id, shas).await
+    let file = settings::settings_file(&app)?;
+    forge_commit_statuses_inner(state.inner(), &file, &repo_id, shas).await
 }
 
 /// Runtime-free core of `forge_commit_statuses`.
 pub(crate) async fn forge_commit_statuses_inner(
     state: &AppState,
+    settings_file: &std::path::Path,
     repo_id: &str,
     shas: Vec<String>,
 ) -> Result<Vec<CommitStatus>, AppError> {
     let workdir = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || bonsai_forge::open(&workdir)?.commit_statuses(&shas))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let file = settings_file.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = crate::commands::resolved_key(&workdir, &file)?;
+        bonsai_forge::open_with_key(&workdir, key.as_deref())?.commit_statuses(&shas)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

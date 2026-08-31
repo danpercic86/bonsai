@@ -1,4 +1,5 @@
 import type { BranchesSnapshot, GraphLayout } from '../ipc';
+import { shortcutLabel } from '../utils/platform';
 
 /** P50c: command-palette entry taxonomy. `action` = an app/repo command,
  *  `branch`/`tag`/`commit` = a navigation jump (reveal in the graph), `search` =
@@ -103,7 +104,7 @@ export function buildPaletteActions(deps: BuildPaletteDeps): PaletteAction[] {
   out.push({
     id: 'repo.fetch',
     title: 'Fetch',
-    hint: 'Ctrl+Shift+F',
+    hint: shortcutLabel('Mod+Shift+F'),
     group: 'action',
     keywords: 'remote sync download',
     disabled: busy,
@@ -112,7 +113,7 @@ export function buildPaletteActions(deps: BuildPaletteDeps): PaletteAction[] {
   out.push({
     id: 'repo.pull',
     title: 'Pull (fast-forward)',
-    hint: 'Ctrl+Shift+P',
+    hint: shortcutLabel('Mod+Shift+P'),
     group: 'action',
     keywords: 'remote sync merge',
     disabled: busy || !canPullPush,
@@ -121,7 +122,7 @@ export function buildPaletteActions(deps: BuildPaletteDeps): PaletteAction[] {
   out.push({
     id: 'repo.push',
     title: 'Push',
-    hint: 'Ctrl+Shift+U',
+    hint: shortcutLabel('Mod+Shift+U'),
     group: 'action',
     keywords: 'remote sync upload',
     disabled: busy || !canPullPush,
@@ -130,7 +131,7 @@ export function buildPaletteActions(deps: BuildPaletteDeps): PaletteAction[] {
   out.push({
     id: 'repo.refresh',
     title: 'Refresh',
-    hint: 'Ctrl+R',
+    hint: shortcutLabel('Mod+R'),
     group: 'action',
     keywords: 'reload rescan',
     disabled: refreshing || statusLoading || graphLoading || mutating,
@@ -155,7 +156,7 @@ export function buildPaletteActions(deps: BuildPaletteDeps): PaletteAction[] {
   out.push({
     id: 'repo.search',
     title: 'Search commits…',
-    hint: 'Ctrl+F',
+    hint: shortcutLabel('Mod+F'),
     group: 'action',
     keywords: 'find grep message author',
     run: onOpenSearch,
@@ -257,4 +258,93 @@ export function filterActions(actions: PaletteAction[], query: string): PaletteA
   });
   scored.sort((x, y) => y.s - x.s || x.i - y.i);
   return scored.map((e) => e.a);
+}
+
+/** The AI palette rows, split out of `RepoWorkspace.tsx` (P68e) so the container
+ *  keeps one call instead of two inline registries.
+ *
+ *  `lead` is unshifted so the two P55c/P56b entries head the Action group; `trail`
+ *  is pushed and holds the P68e dock entries, both gated on there BEING a run —
+ *  an empty dock is never advertised. */
+export interface AiPaletteDeps {
+  /** P13 §8.2: enabled + consented + CLI installed. */
+  aiEligible: boolean;
+  onAskBonsai(): void;
+  onChangelog(): void;
+  /** P68e: `runs.length > 0`. */
+  hasAiRuns: boolean;
+  /** P68e: some run is `awaitingInput`. */
+  aiAwaitingInput: boolean;
+  onAiActivity(): void;
+}
+
+export function aiPaletteEntries(deps: AiPaletteDeps): {
+  lead: PaletteAction[];
+  trail: PaletteAction[];
+} {
+  const lead: PaletteAction[] = deps.aiEligible
+    ? [
+        {
+          id: 'ai.ask',
+          title: 'Ask Bonsai to…',
+          hint: '✨',
+          group: 'action',
+          keywords: 'ai natural language nl request undo revert switch stash discard merge branch',
+          run: deps.onAskBonsai,
+        },
+        {
+          id: 'ai.changelog',
+          title: 'Release notes…',
+          hint: '✨',
+          group: 'action',
+          keywords: 'ai changelog release notes tag range markdown between refs since last tag',
+          run: deps.onChangelog,
+        },
+      ]
+    : [];
+  const trail: PaletteAction[] = [];
+  if (deps.hasAiRuns) {
+    trail.push({
+      id: 'ai.activity',
+      title: 'AI activity',
+      hint: shortcutLabel('Mod+Shift+A'),
+      group: 'action',
+      keywords: 'ai dock log output run streaming cancel claude progress',
+      run: deps.onAiActivity,
+    });
+    if (deps.aiAwaitingInput) {
+      trail.push({
+        id: 'ai.answer',
+        title: 'Answer Claude…',
+        hint: '✨',
+        group: 'action',
+        keywords: 'ai question reply input awaiting blocked claude',
+        run: deps.onAiActivity,
+      });
+    }
+  }
+  return { lead, trail };
+}
+
+/** P87b §5 — the "Git activity" palette row. One entry, gated on there being a
+ *  git op this session (mirrors the AI dock's `hasAiRuns` gate — an empty log is
+ *  never advertised). Selecting it expands the git dock and focuses the list. */
+export interface GitPaletteDeps {
+  /** `runs.length > 0`. */
+  hasGitRuns: boolean;
+  onGitActivity(): void;
+}
+
+export function gitPaletteEntries(deps: GitPaletteDeps): PaletteAction[] {
+  if (!deps.hasGitRuns) return [];
+  return [
+    {
+      id: 'git.activity',
+      title: 'Git activity',
+      hint: shortcutLabel('Mod+Shift+L'),
+      group: 'action',
+      keywords: 'log output hooks push pull fetch history commit',
+      run: deps.onGitActivity,
+    },
+  ];
 }

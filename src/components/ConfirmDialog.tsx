@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 
 export interface ConfirmDialogProps {
   open: boolean;
@@ -11,6 +12,10 @@ export interface ConfirmDialogProps {
    * (destructive) call sites are unchanged; use 'primary' for non-destructive
    * confirmations (e.g. set-upstream & push). */
   confirmVariant?: 'danger' | 'primary';
+  /** P68g OQ-1: extra class on `.dialog-card`, for a body that needs more than the
+   *  default 360px (e.g. `ai-consent-card` = 420px). Width only — the focus/Esc
+   *  behaviour is unchanged. */
+  cardClass?: string;
   busy: boolean;
   onConfirm(): void;
   onCancel(): void;
@@ -27,11 +32,18 @@ export function ConfirmDialog({
   children,
   confirmLabel,
   confirmVariant = 'danger',
+  cardClass,
   busy,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // Restore focus to the trigger on close + trap Tab within the card. Called
+  // before the Cancel-focus effect below so it captures the real trigger, not
+  // Cancel. Initial focus stays on Cancel (a stray Enter must never confirm).
+  useDialogFocus(open, cardRef);
 
   useEffect(() => {
     if (open) cancelRef.current?.focus();
@@ -55,7 +67,8 @@ export function ConfirmDialog({
   return (
     <div className="dialog-overlay" onClick={onCancel}>
       <div
-        className="dialog-card"
+        ref={cardRef}
+        className={cardClass === undefined ? 'dialog-card' : `dialog-card ${cardClass}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}

@@ -4,7 +4,7 @@
  *  drifted-row compare, New/edit editor entry points, Refresh, whole-fetch error,
  *  and Close. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { AiAssetsPanel } from './AiAssetsPanel';
 import { ToastContext } from '../ToastContext';
 import { mockIpc } from '../ipc/mock';
@@ -14,7 +14,13 @@ import type {
   AiAsset,
   AiAssetInventory,
   ProfileStore,
+  RepoChangedPayload,
 } from '../ipc';
+import {
+  __resetEchoSuppression,
+  armEcho,
+  clearEchoSuppression,
+} from './repoWorkspace/echoSuppression';
 
 function aiAsset(over: Partial<AiAsset> = {}): AiAsset {
   return {
@@ -109,9 +115,40 @@ function renderPanel(props: Partial<React.ComponentProps<typeof AiAssetsPanel>> 
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  __resetEchoSuppression();
 });
 
 describe('AiAssetsPanel', () => {
+  it('P81 (AC8): drops the self-echo repo-changed within the window, refetches after it', async () => {
+    const inv = vi.spyOn(mockIpc, 'listAiAssets').mockResolvedValue(inventory());
+    vi.spyOn(mockIpc, 'listProfiles').mockResolvedValue(store);
+    vi.spyOn(mockIpc, 'listAgentAssets').mockResolvedValue(agentInventory);
+    let handler: ((p: RepoChangedPayload) => void) | null = null;
+    vi.spyOn(mockIpc, 'onRepoChanged').mockImplementation((cb) => {
+      handler = cb;
+      return Promise.resolve(() => {});
+    });
+    renderPanel();
+    await screen.findByText('1 file drifted');
+    expect(inv).toHaveBeenCalledTimes(1);
+    expect(handler).toBeTruthy();
+
+    // Armed window active → the self-caused echo is a no-op.
+    armEcho('/mock/repo');
+    await act(async () => {
+      handler?.({ repoId: '/mock/repo', reason: 'test' });
+    });
+    expect(inv).toHaveBeenCalledTimes(1);
+
+    // Span closed (P85 A2: the round settled + tail elapsed) → a genuine
+    // external change refetches. clearEchoSuppression models "no longer suppressed".
+    clearEchoSuppression('/mock/repo');
+    await act(async () => {
+      handler?.({ repoId: '/mock/repo', reason: 'test' });
+    });
+    await waitFor(() => expect(inv).toHaveBeenCalledTimes(2));
+  });
+
   it('renders nothing and never fetches while closed', () => {
     const inv = stubAll();
     const { container } = render(

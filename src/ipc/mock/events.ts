@@ -1,9 +1,11 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
-import type { JobStatusChangedPayload, McpStatus, RepoChangedPayload } from '../types';
+import type { JobStatusChangedPayload, McpStatus, RepoChangedPayload, TagAutoSyncEvent } from '../types';
 
 /** Listener registries: the mock's stand-in for the Tauri event system. */
 export const repoChangedListeners = new Set<(p: RepoChangedPayload) => void>();
 export const jobStatusListeners = new Set<(p: JobStatusChangedPayload) => void>();
+// P85 A3: the fire-and-forget fetch tag auto-sync's completion event.
+export const tagAutoSyncListeners = new Set<(e: TagAutoSyncEvent) => void>();
 // Embedded MCP server (P16). In-memory module state — no real socket; the
 // harness only verifies the Settings UI wiring. Fake but plausible port/token.
 export const MOCK_MCP_PORT = 8765;

@@ -5,7 +5,7 @@
 //! `index.write()` (stage) / single libgit2 reset (unstage). Any error before
 //! the write aborts the whole call with no index change.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
 
@@ -17,12 +17,22 @@ pub(crate) fn open_workdir_repo(workdir: &Path) -> Result<git2::Repository, AppE
         git2::RepositoryOpenFlags::NO_SEARCH,
         std::iter::empty::<&std::ffi::OsStr>(),
     )?;
+    ensure_not_bare(&repo)?;
+    Ok(repo)
+}
+
+/// Rejects a bare repository for index/worktree mutations. Extracted from
+/// `open_workdir_repo` (P88b/B2a) so a composite mutation that reuses ONE
+/// already-open handle can reproduce the exact bare-repo guard at the same
+/// point a per-`&Path` sub-call would have hit it — keeping behaviour
+/// byte-identical while opening the repo only once.
+pub(crate) fn ensure_not_bare(repo: &git2::Repository) -> Result<(), AppError> {
     if repo.is_bare() {
         return Err(AppError::Git(
             "cannot modify index: repository is bare".to_string(),
         ));
     }
-    Ok(repo)
+    Ok(())
 }
 
 /// Validates a wire path (worktree-relative, forward slashes). Rejects empty
@@ -39,6 +49,60 @@ pub(crate) fn validate_rel_path(p: &str) -> Result<(), AppError> {
         return Err(AppError::Other(format!("invalid path: {p}")));
     }
     Ok(())
+}
+
+/// Symlink-escape guard layered on top of the lexical [`validate_rel_path`]
+/// (defense in depth). Returns the joined path `workdir.join(rel)` —
+/// deliberately NON-canonicalized, so a *leaf* symlink is later operated on AS a
+/// link (not followed) — but only after proving `rel` cannot escape `workdir`
+/// through a symlinked ANCESTOR directory.
+///
+/// `validate_rel_path` is purely lexical: it rejects `..`, absolute, and
+/// backslash paths, but `workdir.join(rel)` still transparently follows a
+/// symlinked intermediate component when a raw `std::fs` op runs on the result —
+/// which could read, write, or DELETE a file outside the repository. This closes
+/// that hole: canonicalize `workdir` as the trusted `base`, find the DEEPEST
+/// EXISTING proper ancestor of the joined path (walk up parents; `workdir`
+/// itself always exists), canonicalize it — resolving every symlink in that
+/// existing prefix — and require it to stay within `base`. Canonicalizing the
+/// ancestor rather than the full joined path is what preserves the
+/// leaf-as-a-link semantics.
+///
+/// Conservative by construction: a legitimate file under real directories always
+/// has a real parent inside `base`, so it always passes; only a genuinely
+/// escaping path is ever rejected. Callers still call `validate_rel_path` first
+/// (the cheap lexical fast-path) and map the returned error to their house kind
+/// (escape -> [`AppError::Other`]; a genuine canonicalize failure -> [`AppError::Io`]).
+pub(crate) fn ensure_within_workdir(workdir: &Path, rel: &str) -> Result<PathBuf, AppError> {
+    let joined = workdir.join(rel);
+    let base = std::fs::canonicalize(workdir).map_err(|e| AppError::Io(e.to_string()))?;
+
+    // Walk up from the joined path's PARENT to the deepest ancestor that exists,
+    // then canonicalize that. Starting at the parent (not `joined`) leaves a leaf
+    // symlink unresolved, so the caller's op acts on the link itself.
+    let mut ancestor = joined.parent();
+    while let Some(dir) = ancestor {
+        match std::fs::canonicalize(dir) {
+            Ok(real) => {
+                if real.starts_with(&base) {
+                    return Ok(joined);
+                }
+                return Err(AppError::Other(format!(
+                    "path '{rel}' resolves outside the working directory"
+                )));
+            }
+            // This ancestor does not exist yet (e.g. staging into a not-yet-created
+            // nested directory); try its parent. `workdir` always exists, so the
+            // loop terminates at `base` at the latest.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => ancestor = dir.parent(),
+            Err(e) => return Err(AppError::Io(e.to_string())),
+        }
+    }
+
+    // Unreachable in practice: `joined` is always under `workdir`, which exists.
+    Err(AppError::Other(format!(
+        "path '{rel}' resolves outside the working directory"
+    )))
 }
 
 /// Blocking. Stages each path into the index (`git add` / `git rm --cached`
@@ -143,13 +207,9 @@ pub(crate) fn ensure_no_untracked_collision(
     // On a case-insensitive filesystem the worktree path `README.md` and the
     // tree path `readme.md` are the same physical file, so an exact-case tree
     // lookup would MISS the collision and let `.force()` clobber the untracked
-    // file (finding F-A3-6). Key off git's own `core.ignorecase`: git sets it
-    // true at init/clone on a case-insensitive FS. Unset falls back to the
-    // build target (`cfg!(windows)`), matching git's default probe.
-    let ignorecase = repo
-        .config()
-        .and_then(|c| c.get_bool("core.ignorecase"))
-        .unwrap_or(cfg!(windows));
+    // file (finding F-A3-6). Key off git's own `core.ignorecase` (shared helper
+    // so every case-folding decision in the app uses one rule).
+    let ignorecase = super::repo::repo_ignorecase(repo);
 
     let statuses = repo.statuses(Some(&mut sopts))?;
     for entry in statuses.iter() {

@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { chipTextFor, formatAheadBehind, layoutRefLabels } from './refLabels';
 import type { LaidRefLabel, RefEntity } from './refLabels';
-import { prBadgeWidth } from './forgeBadges';
-import type { CiBadge, PrBadge } from './forgeBadges';
 import type { GraphNode } from '../ipc';
 import type { Theme } from './colors';
 import { METRICS } from './metrics';
@@ -264,107 +262,23 @@ describe('layoutRefLabels — chip reservation + "+n" overflow (P51c)', () => {
   });
 });
 
-// ---- layoutRefLabels: P63 forge-signal reservation + overflow ---------------
-// The signal advance (CI dot + PR pill after the chip) rides the same
-// reservation + pop-rewind machinery as the ahead/behind chip: a pill and its
-// badges must overflow into "+n" atomically and never overlap the next pill.
-// PURE layout — the fake ctx measures without a canvas. CI keys off node.id
-// (so both branches on ONE node share the dot); PR keys off the branch name.
-const NODE_ID = { lane: 0, id: 'tip' } as unknown as GraphNode;
-const PR: PrBadge = { number: 7, title: 't', state: 'open', isDraft: false, url: 'u' };
-const CI: CiBadge = { rollup: 'success', passed: 1, failed: 0, pending: 0, total: 1 };
-function layN(
-  entities: RefEntity[],
-  display: GraphDisplayOptions,
-  budget: number,
-  startX = 0,
-): LaidRefLabel[] {
-  return layoutRefLabels(makeCtx(), entities, NODE_ID, THEME, startX, budget, display);
-}
-
-describe('layoutRefLabels — P63 forge-signal reservation + overflow', () => {
-  it('a PR badge reserves signalGap+prBadgeWidth; the trailing pill shifts by exactly that', () => {
+// PR-badge-placement: forge signals no longer live in the LEFT ref band — the
+// CI dot + PR pill moved to the dedicated FORGE column. The band layout is now
+// signal-agnostic (its geometry is unaffected by the forge toggles/maps). The
+// forge-cell geometry + selection are covered in forgeBadges.test.ts; the
+// column reservation in rightColumns.test.ts; the hit-test in hitTest.test.ts.
+describe('layoutRefLabels — signal-agnostic band (PR-badge-placement)', () => {
+  it('forge toggles/maps do not affect band pill geometry', () => {
     const entities = [localBranch('feat'), localBranch('other')];
-    const prByBranch = new Map([['feat', PR]]);
-    const on = layN(entities, disp({ showPrBadge: true, prByBranch }), 100000);
-    const off = layN(entities, disp({ showPrBadge: false, prByBranch }), 100000);
-    // feat carries the PR (matched by name); other does not; no CI either.
-    expect(on[0].signals?.pr).not.toBeNull();
-    expect(on[0].signals?.ci ?? null).toBeNull();
-    expect(on[1].signals).toBeNull();
-    // feat itself does not move; other shifts right by the reserved signal width.
-    expect(on[0].x).toBe(off[0].x);
-    const prW = prBadgeWidth(makeCtx(), PR);
-    expect(on[1].x - off[1].x).toBe(METRICS.signalGap + prW);
-    // the PR pill sits AFTER feat's body (clear of it), at the measured width.
-    expect(on[0].signals!.pr!.x).toBe(on[0].x + on[0].w + METRICS.signalGap);
-    expect(on[0].signals!.pr!.w).toBe(prW);
-  });
-
-  it('a CI dot reserves signalGap+ciBadgeSize and is centered after the pill', () => {
-    const entities = [localBranch('feat'), localBranch('other')];
-    const ciBySha = new Map([['tip', CI]]);
-    const on = layN(entities, disp({ showCiStatus: true, ciBySha }), 100000);
-    const off = layN(entities, disp({ showCiStatus: false, ciBySha }), 100000);
-    expect(on[0].signals?.ci).not.toBeNull();
-    expect(on[0].x).toBe(off[0].x);
-    expect(on[1].x - off[1].x).toBe(METRICS.signalGap + METRICS.ciBadgeSize);
-    expect(on[0].signals!.ci!.cx).toBe(
-      on[0].x + on[0].w + METRICS.signalGap + METRICS.ciBadgeSize / 2,
-    );
-  });
-
-  it('PR + CI both present render in order [pill] [ci] [pr]', () => {
-    const on = layN(
-      [localBranch('feat')],
-      disp({
-        showPrBadge: true,
-        showCiStatus: true,
-        prByBranch: new Map([['feat', PR]]),
-        ciBySha: new Map([['tip', CI]]),
-      }),
-      100000,
-    );
-    const s = on[0].signals!;
-    expect(s.ci).not.toBeNull();
-    expect(s.pr).not.toBeNull();
-    expect(s.ci!.cx).toBeLessThan(s.pr!.x); // CI dot precedes the PR pill
-    expect(s.pr!.x).toBe(
-      on[0].x + on[0].w + (METRICS.signalGap + METRICS.ciBadgeSize) + METRICS.signalGap,
-    );
-  });
-
-  it('a signal-bearing pill pops ATOMICALLY into "+n" — conservation + chip fits at every budget', () => {
-    const entities = [
-      localBranch('feat'),
-      localBranch('a'),
-      localBranch('b'),
-      localBranch('c'),
-      localBranch('d'),
-    ];
-    const d = disp({
+    const withMaps = disp({
       showPrBadge: true,
       showCiStatus: true,
-      prByBranch: new Map([['feat', PR]]),
-      ciBySha: new Map([['tip', CI]]),
+      prByBranch: new Map([['feat', { number: 7, title: 't', state: 'open', isDraft: false, url: 'u' }]]),
+      ciBySha: new Map([['tip', { rollup: 'success', passed: 1, failed: 0, pending: 0, total: 1 }]]),
     });
-    for (let b = 10; b <= 400; b += 5) {
-      const r = layN(entities, d, b);
-      // Conservation holds at EVERY budget — no signal-bearing pill is lost.
-      expect(shownPills(r).length + hiddenCount(r)).toBe(entities.length);
-      // Chip-fit only once the band can hold the "+n" chip itself (a budget
-      // smaller than the chip can't fit it — same caveat as the P51c test).
-      const chip = overflowChip(r);
-      if (chip !== undefined && b >= 60) expect(chip.x + chip.w).toBeLessThanOrEqual(b);
-    }
-  });
-
-  it('toggles OFF reserve zero — byte-identical to a no-signal layout, every signals=null', () => {
-    const entities = [localBranch('feat'), localBranch('other')];
-    const maps = { prByBranch: new Map([['feat', PR]]), ciBySha: new Map([['tip', CI]]) };
-    const off = layN(entities, disp({ showPrBadge: false, showCiStatus: false, ...maps }), 100000);
-    const none = layN(entities, disp(), 100000);
-    expect(off.map((l) => ({ x: l.x, w: l.w }))).toEqual(none.map((l) => ({ x: l.x, w: l.w })));
-    for (const l of off) expect(l.signals).toBeNull();
+    const on = layoutRefLabels(makeCtx(), entities, { lane: 0, id: 'tip' } as unknown as GraphNode, THEME, 0, 100000, withMaps);
+    const off = layoutRefLabels(makeCtx(), entities, { lane: 0, id: 'tip' } as unknown as GraphNode, THEME, 0, 100000, disp());
+    expect(on.map((l) => ({ x: l.x, w: l.w }))).toEqual(off.map((l) => ({ x: l.x, w: l.w })));
+    expect(on.every((l) => !('signals' in l))).toBe(true);
   });
 });

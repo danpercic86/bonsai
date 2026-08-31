@@ -12,6 +12,9 @@ unit, integration, component, end-to-end, property-based, and adversarial/corrup
 including deliberately redundant "impossible-case" tests. 31 commits, `main` green at every step.
 (`crates/bonsai-forge` + the forge PR UI were excluded — a separate session owns that uncommitted
 work; the forge e2e spec and a few UI wirings are parked until it lands and `ipc/types.ts` unfreezes.)
+*Update 2026-08-19: the parked forge e2e spec was written as `e2e/11-forge.spec.ts` (9 tests,
+commit `83a9b2f`); the two remaining parked UI wirings (stash `expectedOid`, F-A7-7) are now
+unblocked and tracked on `TODO.md`'s spun-out list.*
 
 ## Final gate (all green, 2026-08-10)
 
@@ -64,18 +67,24 @@ Highlights by severity:
 
 ## ⚠️ Needs your decision (open items)
 
-1. **F-T5-4 (HIGH, documented, NOT fixed)** — a **truncated HEAD loose commit object hangs the app
-   forever** (libgit2 spins inflating truncated zlib in graph/status/commit). No bounded libgit2 probe
-   detects it without also hanging, and a thread-kill hack was deliberately avoided. The real fix is a
-   command-layer `spawn_blocking` + timeout that returns a clean error and abandons the spun worker
-   (leaks one CPU-spinning thread until the repo/app closes) — an architecture decision for you. Only
-   reachable via on-disk `.git` corruption / an untrusted repo. Pinned by `corrupt_repo_cli.rs` C1.
+1. **F-T5-4 — RESOLVED for read surfaces (2026-08-19, commit `7edd23e`, audit #2 §3.2).** The
+   recommended command-layer timeout was implemented as `run_with_git_timeout`
+   (`bonsai-core/src/git/timeout.rs`: dedicated worker thread, 30 s inactivity deadline,
+   `BONSAI_GIT_TIMEOUT_MS` override; on timeout the wedged worker is detached and the caller gets a
+   clean `AppError::Git`). Wraps `get_status`, `get_graph`, `stream_graph` (channel now always
+   terminates) and the history-index build. `corrupt_repo_cli.rs` C1 now pins **Err-not-Hung** for
+   those read surfaces. `create_commit` is deliberately left UNWRAPPED — aborting a mutation on a
+   false timeout could race a late commit; rationale recorded at the C1 cell.
+   *(Original finding, kept for the record: a truncated HEAD loose commit object hung the app
+   forever — libgit2 spins inflating truncated zlib; no bounded libgit2 probe detects it without
+   also hanging.)*
 2. **FOR USER REVIEW behavior changes** — see the top of FINDINGS.md. Each is strictly safer/more
    git-accurate and lists its one-line revert. Notably: AI planner rejects non-hash commit refs;
    clean merges now run the commit-msg hook; status shows worktree rename-to-untracked as
    delete+untracked (git parity); stale-cleanup is more conservative.
 3. **Deferred (blocked, not bugs)** — submodule dirty-deinit force flag (F-A7-7) and any stash
-   `expectedOid` UI wiring wait on `ipc/types.ts` unfreezing (the paused forge session owns it);
+   `expectedOid` UI wiring wait on `ipc/types.ts` unfreezing (the paused forge session owns it) —
+   *the freeze lifted when forge landed; both are now tracked as OPEN on `TODO.md` (2026-08-19)*;
    `tag.gpgSign` (F-A7-8) documented as a known v1 limitation; F-A3-6 (Windows case-collision in the
    clobber guard) and F-A3-7 (bisect adjacent good/bad vs git) are NITs left as documented.
 

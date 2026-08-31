@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
-import type { PrDetail, PrState } from '../ipc';
+import type { MouseEvent, ReactNode } from 'react';
+import type { ForgeKind, MergeMethod, PrDetail, PrState } from '../ipc';
+import { PrActionsBar } from './PrActionsBar';
 
 // P62c: presentational PR detail — header, meta, labels, mergeable, +/- stat,
 // and the (markdown-ish) body, plus a slot for the comments component. No IPC.
@@ -22,18 +23,76 @@ function mergeableLabel(mergeable: boolean | null): { text: string; cls: string 
     : { text: 'Has conflicts', cls: 'conflict' };
 }
 
+/** A modified/auxiliary click (ctrl/cmd/shift/alt, middle button) must reach the
+ *  platform untouched, so open-in-new-tab keeps working in the browser harness;
+ *  in the Tauri webview it is a no-op. `true` ⇒ do NOT intercept. */
+function isPlatformClick(e: MouseEvent): boolean {
+  return e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0;
+}
+
+/** Tooltip text for the destination (P72 security audit LOW-4). Showing the URL
+ *  is the right link affordance — it is how a user spots a link that does not go
+ *  where the label implies — but `summary.url` comes from a forge API response,
+ *  so it is neither length- nor content-bounded. Native tooltips render embedded
+ *  newlines, so a crafted URL could push the real host out of view behind a
+ *  plausible-looking first line. Collapse whitespace/control characters and
+ *  truncate, so the tooltip always shows the BEGINNING of one single line. */
+function destinationTitle(url: string): string {
+  // Collapse every whitespace and C0/DEL control run to ONE space. The escapes
+  // must stay as escapes: writing the class with literal control bytes puts a
+  // raw NUL in the source, and writing it as `[\s -]` would read as
+  // "whitespace, space or hyphen" and silently strip hyphens from real hosts.
+  // eslint-disable-next-line no-control-regex -- flattening C0/DEL is the point
+  const oneLine = url.replace(/[\s\u0000-\u001f\u007f]+/g, ' ').trim();
+  return oneLine.length > 120 ? `${oneLine.slice(0, 119)}…` : oneLine;
+}
+
 export interface PrDetailViewProps {
   detail: PrDetail;
   onBack(): void;
+  /** P72: route "Open in browser ↗" through the openUrl IPC — a bare
+   *  `target="_blank"` is a silent no-op in the native webview. The URL comes
+   *  from the forge API response, which is why the Rust side validates it.
+   *  REQUIRED so a future call site cannot regress to a dead link. */
+  onOpenUrl(url: string): void;
   /** Comments component (or its loading/error state) rendered under the body. */
   children?: ReactNode;
+  /** P89: the changed-files section, rendered between the comments and the
+   *  actions bar (contract §1). */
+  changesSlot?: ReactNode;
+  /** P89: effective diff counts for the header stats row — locally computed
+   *  (`PrDiffStats`) once ready, else the forge-reported `detail` fallback.
+   *  The container decides which to pass (contract §2). */
+  stats: { additions: number; deletions: number; changedFiles: number };
+  /** P83: forge kind (drives the per-forge close label + method filter). */
+  kind: ForgeKind;
+  /** P83: merge methods this forge supports (already filtered). */
+  supportedMethods: MergeMethod[];
+  /** P83: an action is in flight (both buttons disabled; panel locked). */
+  busy: boolean;
+  /** P83: open the merge dialog. */
+  onMerge(): void;
+  /** P83: open the close/decline/abandon confirm. */
+  onClose(): void;
 }
 
-export function PrDetailView({ detail, onBack, children }: PrDetailViewProps) {
+export function PrDetailView({
+  detail,
+  onBack,
+  onOpenUrl,
+  children,
+  changesSlot,
+  stats,
+  kind,
+  supportedMethods,
+  busy,
+  onMerge,
+  onClose,
+}: PrDetailViewProps) {
   const { summary } = detail;
   const merge = mergeableLabel(detail.mergeable);
   return (
-    <div className="pr-detail">
+    <div className="pr-detail" aria-busy={busy || undefined}>
       <div className="pr-detail-header">
         <div className="pr-detail-title-row">
           <button
@@ -48,8 +107,16 @@ export function PrDetailView({ detail, onBack, children }: PrDetailViewProps) {
             href={summary.url}
             target="_blank"
             rel="noreferrer noopener"
+            title={destinationTitle(summary.url)}
+            onClick={(e) => {
+              if (isPlatformClick(e)) return; // let ctrl/middle-click through
+              e.preventDefault();
+              onOpenUrl(summary.url);
+            }}
           >
-            Open on GitHub ↗
+            {/* aria-hidden keeps the accessible name exactly "Open in browser". */}
+            {'Open in browser '}
+            <span aria-hidden="true">↗</span>
           </a>
         </div>
         <div className="pr-detail-title">
@@ -71,10 +138,10 @@ export function PrDetailView({ detail, onBack, children }: PrDetailViewProps) {
           {summary.state === 'open' && (
             <span className={`pr-mergeable pr-mergeable-${merge.cls}`}>{merge.text}</span>
           )}
-          <span className="pr-stat-add">{`+${detail.additions}`}</span>
-          <span className="pr-stat-del">{`−${detail.deletions}`}</span>
+          <span className="pr-stat-add">{`+${stats.additions}`}</span>
+          <span className="pr-stat-del">{`−${stats.deletions}`}</span>
           <span className="pr-stat-files">
-            {`${detail.changedFiles} file${detail.changedFiles === 1 ? '' : 's'}`}
+            {`${stats.changedFiles} file${stats.changedFiles === 1 ? '' : 's'}`}
           </span>
         </div>
         {detail.labels.length > 0 && (
@@ -95,6 +162,18 @@ export function PrDetailView({ detail, onBack, children }: PrDetailViewProps) {
       )}
 
       {children}
+
+      {changesSlot}
+
+      <PrActionsBar
+        state={summary.state}
+        kind={kind}
+        mergeable={detail.mergeable}
+        supportedMethods={supportedMethods}
+        busy={busy}
+        onMerge={onMerge}
+        onClose={onClose}
+      />
     </div>
   );
 }

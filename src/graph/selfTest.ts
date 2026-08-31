@@ -11,6 +11,7 @@ import type { P7SelfTestResult } from './frameStats';
 import { METRICS } from './metrics';
 import { groupRefs, layoutRefLabels } from './refLabels';
 import type { GraphDisplayOptions } from './rightColumns';
+import { HEAD_GUIDE_PAD, headGuide } from './viewport';
 
 export function runP7SelfTest(canvas: HTMLCanvasElement | null): P7SelfTestResult {
   let pass = 0;
@@ -133,6 +134,106 @@ export function runP7SelfTest(canvas: HTMLCanvasElement | null): P7SelfTestResul
   check('relativeDate 2m', relativeDate(now - 120, now) === '2m');
   check('relativeDate 2h', relativeDate(now - 7200, now) === '2h');
   check('relativeDate 2d', relativeDate(now - 172800, now) === '2d');
+
+  // P67 §1: head guideline. Known answers over the pure geometry — the headless
+  // harness pane produces no canvas pixel, so this is the only assertable seam.
+  const RH = METRICS.rowHeight;
+  const HALO = METRICS.avatarRadius + METRICS.avatarBgRingExtra;
+  const guideArgs = {
+    headIndex: 10 as number | null,
+    layoutScrollTop: -RH, // raw scrollTop 0 with a WIP row
+    wipOffset: 1,
+    rowHeight: RH,
+    avatarRadius: METRICS.avatarRadius,
+    ringExtra: METRICS.avatarBgRingExtra,
+    viewportHeight: 640,
+  };
+  check('headGuide null head → null', headGuide({ ...guideArgs, headIndex: null }) === null);
+  const gTop = headGuide(guideArgs);
+  check('headGuide at top anchors on the WIP dot', gTop !== null && gTop.y0 === RH / 2);
+  check(
+    'headGuide stops at the HEAD halo',
+    gTop !== null && gTop.y1 === 10 * RH + RH / 2 + RH - HALO,
+  );
+  check(
+    'headGuide at top: dashOffset 0, no edge, real segment',
+    gTop !== null && gTop.dashOffset === 0 && gTop.edge === null && gTop.segment === true,
+  );
+  check('headGuide echoes headIndex', gTop !== null && gTop.headIndex === 10);
+  // The user's bug: far past the WIP row the segment must STILL exist, bounded.
+  const gDeep = headGuide({ ...guideArgs, headIndex: 2000, layoutScrollTop: 50_000 });
+  check('headGuide survives deep scroll', gDeep !== null);
+  check(
+    'headGuide clamps BOTH ends at deep scroll',
+    gDeep !== null &&
+      gDeep.y0 >= -HEAD_GUIDE_PAD &&
+      gDeep.y0 <= 640 + HEAD_GUIDE_PAD &&
+      gDeep.y1 >= -HEAD_GUIDE_PAD &&
+      gDeep.y1 <= 640 + HEAD_GUIDE_PAD,
+  );
+  // §6 acceptance (3) known answer at rowHeight 32 / viewportHeight 640, recomputed
+  // by hand under A6.1 (§1.1b — the dashOffset sign was inverted in the first cut):
+  //   anchor = 16 - (50_000 + 32) = -50_016, headCenter = 2000*32 + 16 - 50_000 = 14_016
+  //   y0 = clamp(-50_016) = -8, y1 = clamp(14_016 - 12) = 648
+  //   dashOffset = (y0 - anchor) mod 6 = 50_008 mod 6 = 4   (the inverted form gave 2)
+  // ⇒ { y0: -8, y1: 648, dashOffset: 4, edge: 'bottom', segment: true }.
+  check(
+    'headGuide points down when HEAD is below',
+    gDeep !== null && gDeep.edge === 'bottom' && gDeep.segment === true,
+  );
+  check(
+    'headGuide deep-scroll known answer (y0 -8, y1 648, dashOffset 4)',
+    gDeep !== null && gDeep.y0 === -8 && gDeep.y1 === 648 && gDeep.dashOffset === 4,
+  );
+  // HEAD just above the top edge (clean tree) → the marker points up.
+  const gAbove = headGuide({ ...guideArgs, wipOffset: 0, headIndex: 0, layoutScrollTop: RH / 2 + 10 });
+  check('headGuide points up when HEAD is above', gAbove !== null && gAbove.edge === 'top');
+  // A5 (§1.1a): with a WIP row, scrolling PAST HEAD collapses the segment (both
+  // ends clamp to -PAD) — the up-marker must survive, or the guide would vanish.
+  const gPast = headGuide({ ...guideArgs, headIndex: 0, layoutScrollTop: 50_000 });
+  check(
+    'headGuide A5: past HEAD with a WIP row → marker-only',
+    gPast !== null && gPast.segment === false && gPast.edge === 'top',
+  );
+  // …and returns null only when the collapse happens with HEAD on screen.
+  check(
+    'headGuide A5: collapsed with HEAD on screen → null',
+    // rowHeight === halo ⇒ the WIP dot sits exactly one halo above HEAD's centre.
+    headGuide({ ...guideArgs, headIndex: 0, rowHeight: HALO, layoutScrollTop: -HALO }) === null,
+  );
+  // Crawl guard: one dash period of scroll must reproduce the same phase.
+  const gPhase = headGuide({ ...guideArgs, headIndex: 2000, layoutScrollTop: 50_006 });
+  check(
+    'headGuide dash phase is content-stable',
+    gDeep !== null && gPhase !== null && gDeep.dashOffset === gPhase.dashOffset,
+  );
+  // A6.2: periodicity alone passes under EITHER sign — pin the phase. The stroke
+  // starts at y0 and `lineDashOffset` shifts the pattern, so the on-screen dash
+  // grid sits at y ≡ y0 - dashOffset; it must coincide with the anchor's grid.
+  const mod6 = (v: number): number => ((v % 6) + 6) % 6;
+  const anchorAt = (layoutScrollTop: number): number => RH / 2 - (layoutScrollTop + RH);
+  check(
+    'headGuide dash grid is pinned to the content (phase, not just period)',
+    gDeep !== null &&
+      gPhase !== null &&
+      mod6(gDeep.y0 - gDeep.dashOffset) === mod6(anchorAt(50_000)) &&
+      mod6(gPhase.y0 - gPhase.dashOffset) === mod6(anchorAt(50_006)),
+  );
+  // A6.3: HEAD's centre exactly ON the -PAD anchor (clean tree, layoutScrollTop
+  // RH/2 + PAD) ⇒ dir === 0. The removed early return suppressed this marker.
+  const gDirZero = headGuide({
+    ...guideArgs,
+    wipOffset: 0,
+    headIndex: 0,
+    layoutScrollTop: RH / 2 + HEAD_GUIDE_PAD,
+  });
+  check(
+    'headGuide A6.3: dir === 0 still yields the top marker',
+    gDirZero !== null && gDirZero.edge === 'top' && gDirZero.segment === false,
+  );
+  // Clean tree (no WIP row): the guide still runs from just above the top edge.
+  const gClean = headGuide({ ...guideArgs, wipOffset: 0, layoutScrollTop: 0 });
+  check('headGuide clean tree anchors at -PAD', gClean !== null && gClean.y0 === -HEAD_GUIDE_PAD);
 
   // layoutRefLabels overflow — needs a ctx + theme.
   const ctx = canvas?.getContext('2d') ?? null;

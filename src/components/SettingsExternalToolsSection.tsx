@@ -4,7 +4,17 @@
 // auto-detects a per-OS default (VS Code family for the editor). Controlled by the
 // App's UiSettings state: every edit fires `onChange` (App updates state live +
 // debounces the persist, exactly like the other sections).
+//
+// P69g: re-skinned onto the canonical stacked row (UI §5.1). The dedicated
+// "Reset to auto-detect" button is gone — one reset idiom app-wide is the row `↺`,
+// which is ABSENT (not disabled) at the default. The section keeps its own props
+// (§2.3 leaf boundary), so it also passes its own reset source: with no provider
+// above it in its unit suite, the catalog descriptor has no values to read.
 
+import { DEFAULT_UI_SETTINGS } from '../settings/defaults';
+import { SettingsGroup } from './settings/SettingsGroup';
+import { SettingsRow } from './settings/SettingsRow';
+import { settingsRowHelpId } from './settings/settingsCatalog';
 import type { UiSettingsPatch } from '../ipc';
 
 export interface SettingsExternalToolsSectionProps {
@@ -16,50 +26,42 @@ export interface SettingsExternalToolsSectionProps {
   onChange(patch: UiSettingsPatch): void;
 }
 
-/** One labeled command-template input + "Reset to auto-detect". Controlled by the
- *  parent value; edits and the reset both fire `onChange`. */
-function CommandInput({
+/** One labeled command-template row. Controlled by the parent value; edits and the
+ *  row `↺` both fire `onChange`. */
+function CommandRow({
+  rowId,
   id,
-  label,
   value,
-  placeholder,
+  defaultValue,
   onValue,
-  onReset,
 }: {
+  rowId: string;
   id: string;
-  label: string;
   value: string;
-  placeholder: string;
+  /** The production default for this key — the ↺ target AND the "is default" test. */
+  defaultValue: string;
   onValue(next: string): void;
-  onReset(): void;
 }) {
   return (
-    <div className="settings-control">
-      <label className="settings-control-label" htmlFor={id}>
-        {label}
-      </label>
-      <div className="settings-control-inputs">
-        <input
-          id={id}
-          className="settings-number settings-config-field"
-          type="text"
-          spellCheck={false}
-          autoComplete="off"
-          value={value}
-          placeholder={placeholder}
-          onChange={(e) => onValue(e.target.value)}
-        />
-        <button
-          type="button"
-          className="btn-secondary settings-toggle-btn"
-          disabled={value === ''}
-          onClick={onReset}
-          title="Clear the template and use the per-OS default"
-        >
-          Reset to auto-detect
-        </button>
-      </div>
-    </div>
+    <SettingsRow
+      id={rowId}
+      controlId={id}
+      stacked
+      reset={{ isDefault: value === defaultValue, onReset: () => onValue(defaultValue) }}
+    >
+      <input
+        id={id}
+        className="settings-text"
+        type="text"
+        spellCheck={false}
+        autoComplete="off"
+        value={value}
+        placeholder="Auto-detect"
+        title={value === '' ? undefined : value}
+        aria-describedby={settingsRowHelpId(rowId)}
+        onChange={(e) => onValue(e.target.value)}
+      />
+    </SettingsRow>
   );
 }
 
@@ -69,32 +71,25 @@ export function SettingsExternalToolsSection({
   onChange,
 }: SettingsExternalToolsSectionProps) {
   return (
-    <section className="settings-section">
-      <h3 className="settings-section-title">External tools</h3>
-      <p className="settings-section-desc">
-        Commands used to open a repository, worktree, or submodule in your terminal or editor.
-        Leave a field blank to auto-detect a sensible default for this operating system.
-      </p>
-      <CommandInput
+    <SettingsGroup id="general-external-tools" title="External tools">
+      <CommandRow
+        rowId="general.terminal-command"
         id="settings-terminal-command"
-        label="Terminal command"
         value={terminalCommand}
-        placeholder="Leave blank to auto-detect"
+        defaultValue={DEFAULT_UI_SETTINGS.terminalCommand}
         onValue={(v) => onChange({ terminalCommand: v })}
-        onReset={() => onChange({ terminalCommand: '' })}
       />
-      <CommandInput
+      <CommandRow
+        rowId="general.editor-command"
         id="settings-editor-command"
-        label="Editor command"
         value={editorCommand}
-        placeholder="Leave blank to auto-detect"
+        defaultValue={DEFAULT_UI_SETTINGS.editorCommand}
         onValue={(v) => onChange({ editorCommand: v })}
-        onReset={() => onChange({ editorCommand: '' })}
       />
-      <p className="settings-section-desc">
+      <p className="settings-group-note">
         Use <code>{'{path}'}</code> for the folder — it is passed as a separate argument, never
         through a shell.
       </p>
-    </section>
+    </SettingsGroup>
   );
 }

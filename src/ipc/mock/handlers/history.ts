@@ -40,6 +40,10 @@ let mockBuilt = false;
  *  module init. */
 const HISTORY_FAIL = query('historyFail') !== null;
 
+/** `?historySkip=N` makes the mock build report N unreadable commits skipped
+ *  (audit #2 §3.3 warning path). Read once at module init; 0 when absent. */
+const HISTORY_SKIP = Number(query('historySkip') ?? '0') || 0;
+
 function nowSecs(): number {
   return Math.floor(Date.now() / 1000);
 }
@@ -79,6 +83,9 @@ export const historyHandlers = {
       newCommits: 0,
       schema: 1,
       builtAt: nowSecs(),
+      // `?historySkip=N` simulates unreadable commits skipped by the build so
+      // the harness can drive the warning toast (audit #2 §3.3).
+      skippedCommits: HISTORY_SKIP,
     };
   },
 
@@ -94,6 +101,7 @@ export const historyHandlers = {
       newCommits: 0,
       schema: 1,
       builtAt: mockBuilt ? nowSecs() : null,
+      skippedCommits: 0,
     };
   },
 

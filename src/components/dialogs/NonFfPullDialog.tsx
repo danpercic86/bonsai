@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { useDialogFocus } from '../../hooks/useDialogFocus';
 
 export interface NonFfPullDialogProps {
   open: boolean;
@@ -35,6 +36,10 @@ export function NonFfPullDialog({
   onRebase,
   onCancel,
 }: NonFfPullDialogProps) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Modal focus: move focus into the card on open, trap Tab, restore on close.
+  useDialogFocus(open, cardRef, true);
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -55,10 +60,12 @@ export function NonFfPullDialog({
   return (
     <div className="dialog-overlay" onClick={onCancel}>
       <div
+        ref={cardRef}
         className="dialog-card"
         role="dialog"
         aria-modal="true"
         aria-label="Fast-forward not possible"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="dialog-title">Fast-forward isn&apos;t possible</h2>

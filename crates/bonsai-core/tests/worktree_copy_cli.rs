@@ -418,3 +418,75 @@ fn list_rename_new_path_delete_excluded() {
     assert!(!paths.contains(&"oldname.txt"), "rename old path absent");
     assert!(!paths.contains(&"todelete.txt"), "deleted file must be excluded");
 }
+
+/// Audit §3.1: the branch being checked out into the new worktree may carry a
+/// SYMLINK where a copy selection lands - at the leaf (`config -> <outside>`) or at
+/// a directory component (`dir -> <outside dir>`). `fs::write`/`create_dir_all`
+/// follow symlinks, so without the guard the copy would clobber a file OUTSIDE the
+/// worktree ("user picks Overwrite, ~/.gitconfig is destroyed"). Both must be
+/// refused with `AppError::Git` and the outside file left byte-identical.
+///
+/// Unix-only: creating a symlink on Windows needs privilege, and git only checks
+/// one out there with `core.symlinks=true` (house pattern: stash.rs's
+/// `#[cfg(not(windows))]` reserved-name tests).
+#[cfg(unix)]
+#[test]
+fn add_refuses_symlink_write_through() {
+    require_git!();
+    let fx = setup_with_feature();
+    // A precious file OUTSIDE the repo and outside the .worktrees container.
+    let precious = fx.root.join("precious.txt");
+    std::fs::write(&precious, "precious\n").expect("write precious");
+
+    // Commit the two symlinks on `feature` (+ a twin branch: the failed call still
+    // creates the worktree, and a branch can only be checked out once).
+    git(&fx.main, &["checkout", "feature"]);
+    std::os::unix::fs::symlink(&precious, fx.main.join("config")).expect("symlink leaf");
+    std::os::unix::fs::symlink(&fx.root, fx.main.join("dir")).expect("symlink dir");
+    git(&fx.main, &["add", "-A"]);
+    commit_fixed(&fx.main, "plant symlinks");
+    git(&fx.main, &["branch", "feature-twin"]);
+    git(&fx.main, &["checkout", "main"]);
+
+    // The main workdir holds the payload the user would be copying over.
+    write(&fx.main, "config", "pwned\n");
+    write(&fx.main, "dir/precious.txt", "pwned\n");
+
+    // Case 1: the destination leaf itself is a symlink.
+    match add_worktree_with_changes(
+        &fx.main,
+        "feature",
+        "wt-sym-leaf",
+        &[CopySelection {
+            path: s("config"),
+            action: CopyAction::Copy,
+        }],
+    ) {
+        Err(AppError::Git(msg)) => assert!(msg.contains("symlink"), "unexpected msg: {msg}"),
+        other => panic!("expected a Git refusal for the symlinked leaf, got {other:?}"),
+    }
+    assert_eq!(
+        read(&precious),
+        "precious\n",
+        "symlinked leaf must NOT be written through"
+    );
+
+    // Case 2: a DIRECTORY component of the destination is a symlink.
+    match add_worktree_with_changes(
+        &fx.main,
+        "feature-twin",
+        "wt-sym-dir",
+        &[CopySelection {
+            path: s("dir/precious.txt"),
+            action: CopyAction::Copy,
+        }],
+    ) {
+        Err(AppError::Git(msg)) => assert!(msg.contains("symlink"), "unexpected msg: {msg}"),
+        other => panic!("expected a Git refusal for the symlinked dir, got {other:?}"),
+    }
+    assert_eq!(
+        read(&precious),
+        "precious\n",
+        "symlinked directory component must NOT be written through"
+    );
+}

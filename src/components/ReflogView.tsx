@@ -3,6 +3,7 @@ import type { ReflogEntry, ResetMode } from '../ipc';
 import { relativeDate } from '../graph/draw';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
+import { MoreIcon } from './appIcons';
 import { BranchIcon, RebaseIcon } from './menuIcons';
 
 function shortOid(oid: string): string {
@@ -154,7 +155,7 @@ export function ReflogView({
                       disabled={busy}
                       onClick={(e) => openMenu(e, entry.index, entry.newOid)}
                     >
-                      {'⋯'}
+                      <MoreIcon />
                     </button>
                   </li>
                 );

@@ -30,18 +30,17 @@ function renderPanel(over: Partial<StatusPanelProps> = {}) {
     listView: 'flat',
     conflicts: [],
     aiEligible: false,
-    aiResolvingPath: null,
-    aiAnalyzing: false,
+    aiRows: {},
+    aiAtCapacity: false,
     onStage: vi.fn(),
     onUnstage: vi.fn(),
     onDiscard: vi.fn(),
     onDiscardForce: vi.fn(),
-    onReviewStaged: vi.fn(),
-    onReviewWorktree: vi.fn(),
     onToggleDiff: vi.fn(),
     onResolveConflict: vi.fn(),
     onToggleConflictView: vi.fn(),
     onAiResolve: vi.fn(),
+    onAiReview: vi.fn(),
     onBlame: vi.fn(),
     onFileHistory: vi.fn(),
     ...over,
@@ -113,11 +112,53 @@ describe('StatusPanel', () => {
     expect(props.onDiscardForce).toHaveBeenCalledWith(['src/b.ts', 'notes.md']);
   });
 
+  it('delete: offered on new (untracked) rows only, wired to force-discard', () => {
+    const { props } = renderPanel();
+    // untracked row deletes just itself (nothing to revert to)
+    fireEvent.click(screen.getByRole('button', { name: 'Delete notes.md' }));
+    expect(props.onDiscardForce).toHaveBeenCalledWith(['notes.md']);
+    // tracked unstaged + staged rows get discard/nothing, never delete
+    expect(screen.queryByRole('button', { name: 'Delete src/b.ts' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete src/a.ts' })).not.toBeInTheDocument();
+  });
+
+  it('row actions put the destructive control before stage/unstage', () => {
+    renderPanel();
+    const names = (path: string) => {
+      const row = screen.getByRole('button', { name: `Stage ${path}` }).closest('li');
+      return [...(row as HTMLElement).querySelectorAll('.row-action')].map((b) =>
+        b.getAttribute('aria-label'),
+      );
+    };
+    // tracked: … discard, then stage
+    expect(names('src/b.ts')).toEqual([
+      'Show history of src/b.ts',
+      'Blame src/b.ts',
+      'Discard changes to src/b.ts',
+      'Stage src/b.ts',
+    ]);
+    // untracked: delete, then stage
+    expect(names('notes.md')).toEqual(['Delete notes.md', 'Stage notes.md']);
+  });
+
+  it('tree view: folder actions use the same order as the file rows', () => {
+    renderPanel({ listView: 'tree' });
+    const changes = document.querySelector('.status-section--changes') as HTMLElement;
+    const dirActions = [...changes.querySelectorAll('.tree-dir-actions .row-action')].map((b) =>
+      b.getAttribute('aria-label'),
+    );
+    expect(dirActions).toEqual([
+      'Discard all changes in this folder',
+      'Stage all files in this folder',
+    ]);
+  });
+
   it('busy disables the action buttons', () => {
     renderPanel({ busy: true });
     expect(screen.getByRole('button', { name: 'Stage src/b.ts' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Stage all' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Discard all' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Delete notes.md' })).toBeDisabled();
   });
 
   it('blame/history controls appear on tracked rows only', () => {
@@ -192,7 +233,16 @@ describe('StatusPanel', () => {
     expect(screen.getByRole('button', { name: 'Resolve b.ts with AI' })).toBeDisabled();
   });
 
-  it('an in-flight AI resolution shows … on its row and disables the other rows', () => {
+  /**
+   * P68d — THE ITEM-5 REGRESSION GUARD (part a), inverted from the test that used to
+   * live here.
+   *
+   * Until P68d this test asserted `expect(y.ts button).toBeDisabled()`, i.e. it
+   * ENCODED the reported bug: one `aiResolvingPath` scalar plus
+   * `aiDisabled={aiResolvingPath !== null}` froze every conflict row during any
+   * single run. A run on x.ts must now leave y.ts fully clickable.
+   */
+  it('a run on one path shows its elapsed timer and does NOT disable other rows', () => {
     const conflicted = [entry('x.ts', 'conflicted'), entry('y.ts', 'conflicted')];
     const conflicts = [
       { path: 'x.ts', kind: 'bothModified', hasBase: true, hasOurs: true, hasTheirs: true },
@@ -202,25 +252,131 @@ describe('StatusPanel', () => {
       snapshot: snap({ conflicted }),
       conflicts,
       aiEligible: true,
-      aiResolvingPath: 'x.ts',
+      aiRows: {
+        'x.ts': { status: 'running' as const, elapsedSecs: 4, key: 'conflict:x.ts', error: null },
+      },
     });
     const xBtn = screen.getByRole('button', { name: 'Resolve x.ts with AI' });
-    expect(xBtn).toHaveTextContent('…');
-    expect(screen.getByRole('button', { name: 'Resolve y.ts with AI' })).toBeDisabled();
+    expect(xBtn).toHaveTextContent('…4s');
+    expect(screen.getByRole('button', { name: 'Resolve y.ts with AI' })).toBeEnabled();
   });
 
-  it('✨ Review buttons render only when aiEligible and disable while analyzing', () => {
-    const { props } = renderPanel({ aiEligible: true });
-    const reviews = screen.getAllByRole('button', { name: '✨ Review' });
-    expect(reviews).toHaveLength(2); // staged + changes
-    fireEvent.click(reviews[0]);
-    expect(props.onReviewStaged).toHaveBeenCalled();
-    fireEvent.click(reviews[1]);
-    expect(props.onReviewWorktree).toHaveBeenCalled();
-    renderPanel({ aiEligible: true, aiAnalyzing: true });
-    for (const b of screen.getAllByRole('button', { name: '✨ Reviewing…' })) {
-      expect(b).toBeDisabled();
-    }
+  it('the concurrency cap — and only the cap — disables an idle row', () => {
+    const conflicted = [entry('x.ts', 'conflicted')];
+    const conflicts = [
+      { path: 'x.ts', kind: 'bothModified', hasBase: true, hasOurs: true, hasTheirs: true },
+    ] as StatusPanelProps['conflicts'];
+    renderPanel({
+      snapshot: snap({ conflicted }),
+      conflicts,
+      aiEligible: true,
+      aiRows: {},
+      aiAtCapacity: true,
+    });
+    expect(screen.getByRole('button', { name: 'Resolve x.ts with AI' })).toBeDisabled();
+  });
+
+  it('a ready proposal offers ✓ review and calls onAiReview, never a new run', () => {
+    const conflicted = [entry('x.ts', 'conflicted')];
+    const conflicts = [
+      { path: 'x.ts', kind: 'bothModified', hasBase: true, hasOurs: true, hasTheirs: true },
+    ] as StatusPanelProps['conflicts'];
+    const { props } = renderPanel({
+      snapshot: snap({ conflicted }),
+      conflicts,
+      aiEligible: true,
+      // At capacity on purpose: a finished proposal must stay re-openable even when
+      // no new run could start — re-opening costs nothing.
+      aiAtCapacity: true,
+      aiRows: {
+        'x.ts': { status: 'ready' as const, elapsedSecs: 9, key: 'conflict:x.ts', error: null },
+      },
+    });
+    const btn = screen.getByRole('button', { name: 'Resolve x.ts with AI' });
+    expect(btn).toHaveTextContent('✓ review');
+    expect(btn).toBeEnabled();
+    fireEvent.click(btn);
+    expect(props.onAiReview).toHaveBeenCalledWith('x.ts');
+    expect(props.onAiResolve).not.toHaveBeenCalled();
+  });
+
+  it('failed shows ⚠ with the error in the title and retries on click', () => {
+    const conflicted = [entry('x.ts', 'conflicted')];
+    const conflicts = [
+      { path: 'x.ts', kind: 'bothModified', hasBase: true, hasOurs: true, hasTheirs: true },
+    ] as StatusPanelProps['conflicts'];
+    const { props } = renderPanel({
+      snapshot: snap({ conflicted }),
+      conflicts,
+      aiEligible: true,
+      aiRows: {
+        'x.ts': {
+          status: 'failed' as const,
+          elapsedSecs: 3,
+          key: 'conflict:x.ts',
+          error: 'Claude exited without a result',
+        },
+      },
+    });
+    const btn = screen.getByRole('button', { name: 'Resolve x.ts with AI' });
+    expect(btn).toHaveTextContent('⚠');
+    expect(btn.getAttribute('title')).toContain('Claude exited without a result');
+    fireEvent.click(btn);
+    expect(props.onAiResolve).toHaveBeenCalledWith('x.ts');
+  });
+
+  it('awaitingInput shows ? and reveals the dock when a reveal handler exists', () => {
+    const conflicted = [entry('x.ts', 'conflicted')];
+    const conflicts = [
+      { path: 'x.ts', kind: 'bothModified', hasBase: true, hasOurs: true, hasTheirs: true },
+    ] as StatusPanelProps['conflicts'];
+    const onAiReveal = vi.fn();
+    const { props } = renderPanel({
+      snapshot: snap({ conflicted }),
+      conflicts,
+      aiEligible: true,
+      onAiReveal,
+      aiRows: {
+        'x.ts': {
+          status: 'awaitingInput' as const,
+          elapsedSecs: 12,
+          key: 'conflict:x.ts',
+          error: null,
+        },
+      },
+    });
+    const btn = screen.getByRole('button', { name: 'Resolve x.ts with AI' });
+    expect(btn).toHaveTextContent('?');
+    fireEvent.click(btn);
+    expect(onAiReveal).toHaveBeenCalledWith('x.ts');
+    expect(props.onAiResolve).not.toHaveBeenCalled();
+  });
+
+  it('AI affordances stay hidden for kinds the editor cannot merge (aiShown gate)', () => {
+    const conflicted = [entry('gone.md', 'conflicted')];
+    const conflicts = [
+      { path: 'gone.md', kind: 'deletedByThem', hasBase: true, hasOurs: true, hasTheirs: false },
+    ] as StatusPanelProps['conflicts'];
+    renderPanel({
+      snapshot: snap({ conflicted }),
+      conflicts,
+      aiEligible: true,
+      aiRows: {
+        'gone.md': {
+          status: 'ready' as const,
+          elapsedSecs: 1,
+          key: 'conflict:gone.md',
+          error: null,
+        },
+      },
+    });
+    expect(screen.queryByRole('button', { name: 'Resolve gone.md with AI' })).toBeNull();
+  });
+
+  it('P80 E1: no ✨ Review buttons in the section headers (moved to the commit ⋯ menu)', () => {
+    renderPanel({ aiEligible: true });
+    expect(screen.queryByRole('button', { name: '✨ Review' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '✨ Reviewing…' })).toBeNull();
   });
 
   it('error banner: dismiss hides it; a NEW error id re-surfaces the banner', () => {
@@ -252,18 +408,17 @@ function StatusPanelHarness({ error }: { error: { id: number; message: string } 
       listView="flat"
       conflicts={[]}
       aiEligible={false}
-      aiResolvingPath={null}
-      aiAnalyzing={false}
+      aiRows={{}}
+      aiAtCapacity={false}
       onStage={noop}
       onUnstage={noop}
       onDiscard={noop}
       onDiscardForce={noop}
-      onReviewStaged={noop}
-      onReviewWorktree={noop}
       onToggleDiff={noop}
       onResolveConflict={noop}
       onToggleConflictView={noop}
       onAiResolve={noop}
+      onAiReview={noop}
       onBlame={noop}
       onFileHistory={noop}
     />

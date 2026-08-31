@@ -1,14 +1,13 @@
 import { ipc } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
 import type { BranchesSnapshot } from '../../ipc';
+import type { RefreshScope } from './refreshScope';
 import type { BaseActionDeps, Setter } from './types';
 
 /** Local/remote branch create, checkout, delete (P6/P11/P33). */
 export function useBranchActions(
   deps: BaseActionDeps & {
-    refreshAll: () => Promise<void>;
-    refetchBranches: () => Promise<void>;
-    refetchGraph: () => Promise<void>;
+    refreshAll: (scope?: RefreshScope) => Promise<void>;
     branches: BranchesSnapshot | null;
     setBranchesError: Setter<string | null>;
     setPendingCreateBranch: Setter<{ oid: string } | null>;
@@ -20,21 +19,27 @@ export function useBranchActions(
     pushToast,
     setMutating,
     refreshAll,
-    refetchBranches,
-    refetchGraph,
     branches,
     setBranchesError,
     setPendingCreateBranch,
     setPendingRenameBranch,
   } = deps;
 
+  // P85 A1: every branch/ref mutation routes its post-op refresh through the
+  // ECHO-ARMED `refreshAll` (the canonical coalesced round), NOT raw
+  // refetchGraph/refetchBranches. Arming suppresses the handler's own
+  // `.git/refs/**` watcher echo → exactly ONE refresh round per mutation, not
+  // two. `refreshAll()` never throws (P81) and keeps each handler's own
+  // try/catch/finally + toasts intact. P86a scopes each round to what its change
+  // touched: a create/rename-at-existing-commit is `refsOnly` (no worktree scan,
+  // no HEAD move); a delete or HEAD-moving op stays `full`.
   async function handleCreateBranch(name: string) {
     setBranchesError(null);
     setMutating(true);
     try {
       await ipc.createBranch(repoId, name);
-      await refetchBranches();
-      void refetchGraph();
+      // A create at an existing commit only adds a ref pill — refsOnly.
+      await refreshAll('refsOnly');
     } finally {
       setMutating(false);
     }
@@ -102,7 +107,11 @@ export function useBranchActions(
     setMutating(true);
     try {
       await ipc.deleteBranch(repoId, name);
-      await Promise.all([refetchBranches(), refetchGraph()]);
+      // P88a row 13: a local delete moves no HEAD and touches no worktree, so match
+      // handleDeleteRemoteTracking on `refsOnly` (skips status/remotes/stashes/etc).
+      // The graph slice still re-walks: a tip removal is a B1 cache Miss (correct —
+      // commits only reachable via the deleted branch drop out).
+      await refreshAll('refsOnly');
     } catch (e) {
       setBranchesError(errorMessage(e));
     } finally {
@@ -110,10 +119,10 @@ export function useBranchActions(
     }
   }
 
-  // P60a: rename a local branch (git branch -m). Preserves upstream + reflog. On
-  // wasHead the HEAD symref moved, so refreshAll (HEAD/status); otherwise refetch
-  // branches + graph (the graph ref pills carry branch names). Errors toast (this
-  // is a PromptDialog action, mirroring handleCreateBranchHere).
+  // P60a: rename a local branch (git branch -m). Preserves upstream + reflog.
+  // P85 A1: routes through the echo-armed refreshAll (whether or not HEAD moved)
+  // so the ref-write watcher echo is dropped → one round. Errors toast (this is a
+  // PromptDialog action, mirroring handleCreateBranchHere).
   async function handleRenameBranch(oldName: string, newName: string) {
     // P60a: renaming to the unchanged name is a no-op. The dialog intentionally
     // permits submitting the prefilled name, but the backend would reject the
@@ -126,11 +135,9 @@ export function useBranchActions(
     setMutating(true);
     try {
       const res = await ipc.renameBranch(repoId, oldName, newName);
-      if (res.wasHead) {
-        await refreshAll();
-      } else {
-        await Promise.all([refetchBranches(), refetchGraph()]);
-      }
+      // A1: route through refreshAll whether or not HEAD moved. P86a: a rename of
+      // HEAD moves the current-branch label (full); a non-head rename is refsOnly.
+      await refreshAll(res.wasHead ? 'full' : 'refsOnly');
       pushToast(
         'success',
         `Renamed ${oldName} → ${newName}` +
@@ -141,6 +148,31 @@ export function useBranchActions(
     } finally {
       setMutating(false);
       setPendingRenameBranch(null);
+    }
+  }
+
+  // Checkout arbitrary commit → detached HEAD. Non-destructive (no confirm),
+  // dirty-safe (auto-stash/re-apply). HEAD moves → refreshAll full.
+  async function handleCheckoutCommit(oid: string) {
+    const short = oid.slice(0, 7);
+    setMutating(true);
+    try {
+      const res = await ipc.checkoutCommit(repoId, oid);
+      await refreshAll();
+      if (res.apply?.kind === 'conflicts') {
+        pushToast(
+          'warning',
+          `Detached HEAD at ${short}; your changes were carried over with conflicts and kept safe at stash@{0} — resolve them in the status panel`,
+        );
+      } else if (res.stashed) {
+        pushToast('success', `Detached HEAD at ${short} (stashed & re-applied)`);
+      } else {
+        pushToast('success', `Detached HEAD at ${short} — commit or create a branch to keep new work`);
+      }
+    } catch (e) {
+      pushToast('error', errorMessage(e));
+    } finally {
+      setMutating(false);
     }
   }
 
@@ -160,13 +192,14 @@ export function useBranchActions(
   }
 
   // P6 §4.4: delete the LOCAL remote-tracking ref only (does not touch the
-  // server); refetch branches + graph like handleDeleteBranch.
+  // server). P86a: removing a remote-tracking ref only drops a pill (no local
+  // HEAD move, no worktree change) — refsOnly.
   async function handleDeleteRemoteTracking(name: string) {
     setBranchesError(null);
     setMutating(true);
     try {
       await ipc.deleteRemoteBranch(repoId, name);
-      await Promise.all([refetchBranches(), refetchGraph()]);
+      await refreshAll('refsOnly');
     } catch (e) {
       setBranchesError(errorMessage(e));
     } finally {
@@ -177,6 +210,7 @@ export function useBranchActions(
   return {
     handleCreateBranch,
     handleCheckoutBranch,
+    handleCheckoutCommit,
     handleCreateBranchHere,
     handleDeleteBranch,
     handleRenameBranch,

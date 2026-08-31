@@ -1,0 +1,162 @@
+/* Bonsai — Tab strip (P3e §5.6) and the per-tab workspace.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- Tab strip (P3e §5.6) ---------- */
+
+.tab-strip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tab-scroll {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  flex: none;
+  max-width: 200px;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.tab-active {
+  background: var(--bg-2);
+}
+
+/* Drag-over insertion marker (issue 4): accent bar on the left edge of the
+   tab the pointer is hovering during a reorder drag. */
+.tab-drop-target {
+  box-shadow: inset 2px 0 0 0 var(--accent);
+}
+
+.tab-label {
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 4px 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+  /* Non-form-control label (see TabStrip.tsx): keep it from being text-selected
+     while dragging the tab to reorder. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tab-active .tab-label {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.tab-label[aria-disabled='true'] {
+  cursor: default;
+}
+
+.tab-close {
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 8px 2px 4px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.tab-close:hover {
+  color: var(--text-1);
+}
+
+.tab-add-wrap {
+  position: relative;
+  flex: none;
+}
+
+.tab-add {
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 18px;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tab-add:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+
+.tab-add:disabled {
+  cursor: default;
+  color: var(--text-3);
+}
+
+/* ---------- Per-tab workspace (P3e §5.3) ---------- */
+
+.workspace-host {
+  flex: 1;
+  min-height: 0;
+  /* display (flex | none) is inline-styled per tab: only the active tab shows;
+     the others stay mounted at display:none to preserve scroll/selection. */
+  flex-direction: column;
+}
+
+.workspace-toolbar {
+  flex: none;
+  height: 40px;
+  /* 3-column grid: empty | centered remote-op group | right-pinned Refresh.
+     The 1fr side columns keep the auto center column horizontally centered
+     regardless of the Refresh button's width. */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 0 12px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar-center {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* P49b: right-side icon cluster (Open-externally + Refresh) pinned to col 3. */
+.toolbar-right {
+  grid-column: 3;
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.toolbar-right .btn-icon {
+  margin-left: 0; /* the flex group owns spacing (btn-icon's auto margin off) */
+}
+
+.toolbar-external-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+

@@ -1,13 +1,18 @@
 # Bonsai — CI gate (audit 2026-08-07 §4.4).
 #
 # Runs the full AI gate on every push/PR to main: Rust tests, clippy
-# (warnings = errors), frontend unit tests, and the tsc + vite build.
-# Rust steps run SEQUENTIALLY in one job — cargo test and clippy sharing
+# (warnings = errors), frontend lint + unit tests, the tsc + vite build,
+# the file-size ratchet, and supply-chain scanning.
+# Rust steps run SEQUENTIALLY within each job — cargo test and clippy sharing
 # a target dir concurrently causes spurious failures (known race).
 #
-# Ubuntu only: the suite is platform-independent logic (Windows/macOS
-# specifics are covered by unit tests with mocked runners); the 3-OS
-# matrix stays in release.yml where the native bundles are built.
+# The `rust` job runs on all three target OSes (Linux/Windows/macOS): Bonsai
+# shells out to `git`, touches paths, and spawns CLI helpers, so path
+# separators, line endings and process spawning are genuinely OS-dependent.
+# `frontend` also runs on macOS: the TypeScript jobs used to be Linux-only, and
+# that blind spot is what let a batch of macOS-only UI defects through. `e2e` and
+# `audit` stay on Linux only — Playwright drives the mock harness in a bundled
+# chromium, and dependency graphs are OS-independent for our targets.
 
 name: CI
 
@@ -27,15 +32,23 @@ concurrency:
 
 jobs:
   rust:
-    name: Rust — cargo test + clippy
-    runs-on: ubuntu-22.04
+    name: Rust — nextest + clippy (${{ matrix.platform }})
+    strategy:
+      # One OS failing must not hide the result on the other two.
+      fail-fast: false
+      matrix:
+        # Same OS set as release.yml; ubuntu-22.04 for the glibc/webkit baseline.
+        platform: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Same native deps as release.yml — src-tauri (tauri v2 + webkit2gtk)
-      # must compile for --workspace test/clippy runs.
+      # must compile for --workspace test/clippy runs. Linux only: macOS uses
+      # system WebKit and Windows uses WebView2, both preinstalled.
       - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -56,10 +69,14 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
-          key: ci-${{ runner.os }}
+          # The key MUST include the OS: the three runners produce
+          # incompatible target dirs and would poison each other's cache.
+          key: ci-${{ matrix.platform }}
 
       # git identity for the fixture/scratch repos the test suites create.
+      # Required on every platform — the suites commit.
       - name: Configure git identity for tests
+        shell: bash
         run: |
           git config --global user.name "CI"
           git config --global user.email "ci@bonsai.test"
@@ -67,37 +84,70 @@ jobs:
       # BONSAI_REQUIRE_GIT_STRICT=1: a missing `git` CLI turns every would-be
       # runtime skip into a loud failure — CI can never silently skip
       # git-dependent tests (T1 contract §4).
-      - name: cargo test
+      #
+      # `shell: bash` + a workspace-relative log path so the same script runs on
+      # the Windows runner (default shell there is PowerShell, which has no
+      # `pipefail`/`tee -a` semantics; /tmp does not exist either).
+      # Prebuilt binary — installing from source would cost minutes per job.
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      # nextest runs the 77+ test binaries in PARALLEL (vs `cargo test`'s serial
+      # default) — the biggest CI-time win for a suite this large. The `ci`
+      # profile (.config/nextest.toml) sets fail-fast=false (one failure must not
+      # hide the rest) + retries=1 (absorb a flake) + a per-test hang cap. Runs
+      # BEFORE clippy, never concurrently: the two sharing a target dir at once
+      # causes spurious failures (known race).
+      - name: cargo nextest (parallel test binaries)
+        shell: bash
         env:
           BONSAI_REQUIRE_GIT_STRICT: '1'
         run: |
           set -o pipefail
-          cargo test --workspace 2>&1 | tee /tmp/cargo-test.log
+          cargo nextest run --workspace --profile ci 2>&1 | tee nextest.log
+
+      # nextest does NOT run doctests — run them separately so they stay covered.
+      - name: cargo test --doc (doctests)
+        env:
+          BONSAI_REQUIRE_GIT_STRICT: '1'
+        run: cargo test --workspace --doc
 
       # Known baseline: 3 #[ignore]d perf gates (large-fixture benchmarks) —
       # visible in the summary, not failed on. No other ignores.
-      - name: Surface ignored/skipped test counts
+      - name: Surface test summary
+        if: always()
+        shell: bash
         run: |
-          echo '## cargo test summary' >> "$GITHUB_STEP_SUMMARY"
-          grep -E '^test result:' /tmp/cargo-test.log >> "$GITHUB_STEP_SUMMARY"
-          grep -c 'skipping:' /tmp/cargo-test.log | xargs -I{} echo 'runtime skips: {}' >> "$GITHUB_STEP_SUMMARY" || true
+          echo "## nextest summary — ${{ matrix.platform }}" >> "$GITHUB_STEP_SUMMARY"
+          grep -E 'Summary|tests run' nextest.log >> "$GITHUB_STEP_SUMMARY" || true
+          grep -c 'skipping:' nextest.log | xargs -I{} echo 'runtime skips: {}' >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
   frontend:
-    name: Frontend — vitest + build
-    runs-on: ubuntu-22.04
+    name: Frontend — vitest + build (${{ matrix.platform }})
+    strategy:
+      # A macOS leg exists deliberately: this job and `e2e` were ubuntu-only,
+      # which is exactly how a batch of macOS-only UI defects (Cmd+Enter, font
+      # fallback, shortcut labels) reached a release branch unnoticed. Windows
+      # is already covered for the parts that are OS-sensitive by the `rust` job.
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-22.04, macos-latest]
+    runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         # Version is read from package.json "packageManager".
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -105,15 +155,24 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      # ESLint (flat config, src/ + e2e/). Errors fail the build; warnings are a
+      # tracked cleanup backlog capped by --max-warnings (see eslint.config.js).
+      - name: pnpm lint (eslint)
+        run: pnpm lint:ci
+
+      # File-size ratchet: no new file over 500 lines, no baselined file grows.
+      - name: pnpm lint:size (file-size ratchet)
+        run: pnpm lint:size
+
       # Runs BOTH vitest projects (node + dom) and writes coverage/.
       - name: pnpm test:coverage
         run: pnpm test:coverage
 
       - name: Upload coverage summary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: coverage-summary
+          name: coverage-summary-${{ matrix.platform }}
           path: coverage/coverage-summary.json
 
       - name: pnpm build (tsc + vite)
@@ -124,13 +183,13 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -146,8 +205,65 @@ jobs:
         run: pnpm test:e2e
 
       - name: Upload Playwright report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report
           path: playwright-report/
+
+      # Trace zips (trace: 'on-first-retry' in playwright.config.ts) — the only
+      # way to diagnose a failure that doesn't reproduce locally.
+      - name: Upload Playwright traces
+        uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Supply-chain scanning: Rust advisories/licenses/bans via cargo-deny, npm
+  # advisories via `pnpm audit`. Both are configured to be GREEN today (see
+  # deny.toml and pnpm-workspace.yaml -> auditConfig.ignoreGhsas) so a new
+  # finding is what turns the job red. Linux only — dependency graphs are
+  # OS-independent for our targets.
+  # ---------------------------------------------------------------------------
+  audit:
+    name: Audit — cargo-deny + pnpm audit
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          # No compilation happens here (cargo-deny reads Cargo.lock), so no
+          # rust-cache step and no clippy component.
+          cache: false
+
+      # Prebuilt binary — building cargo-deny from source costs several minutes.
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      # advisories + bans + licenses + sources, all four configured in deny.toml.
+      - name: cargo deny check
+        run: cargo deny --all-features check
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Ignored advisories are listed (with a reason) in pnpm-workspace.yaml.
+      - name: pnpm audit
+        run: pnpm audit --audit-level high

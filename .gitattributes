@@ -9,6 +9,11 @@
 *.yml text eol=lf
 *.html text eol=lf
 *.css text eol=lf
+# Batch files MUST stay CRLF: cmd.exe's `goto :label` lookup drifts on LF-only
+# .cmd files and starts reporting "cannot find the batch label" once the byte
+# offsets shift (hit for real when editing tests/fixtures/claude_stub.cmd).
+*.cmd text eol=crlf
+*.bat text eol=crlf
 *.png binary
 *.ico binary
 *.icns binary

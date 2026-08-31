@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { IndexProgress } from '../ipc';
 import type { UseHistorySearch } from './repoWorkspace/useHistorySearch';
 import { HistoryResultsList } from './HistoryResultsList';
+import { SummarizeIcon } from './menuIcons';
 
 export interface HistorySearchPanelProps {
   historySearch: UseHistorySearch;
@@ -121,7 +122,7 @@ export function HistorySearchPanel({ historySearch, revealCommitByOid }: History
 
       <div className="commit-search-bar history-search-bar">
         <span className="commit-search-icon" aria-hidden="true">
-          ✨
+          <SummarizeIcon />
         </span>
         <input
           ref={inputRef}
@@ -151,7 +152,8 @@ export function HistorySearchPanel({ historySearch, revealCommitByOid }: History
           disabled={!canAsk || emptyQuery}
           onClick={() => askAi()}
         >
-          ✨ Ask AI
+          <SummarizeIcon />
+          <span>Ask AI</span>
         </button>
         <button type="button" className="search-close" title="Close (Esc)" onClick={() => close()}>
           ✕

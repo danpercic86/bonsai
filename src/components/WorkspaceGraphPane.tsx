@@ -10,10 +10,12 @@ import type { DiffOverlayMeta } from './DiffOverlay';
 import { ErrorBoundary } from './ErrorBoundary';
 import { FileHistoryView } from './FileHistoryView';
 import { ReflogView } from './ReflogView';
+import { shortcutLabel } from '../utils/platform';
 import type { DiffSlot } from './StatusPanel';
 import type { UseCommitSearch } from './repoWorkspace/useCommitSearch';
 import type { UseHistorySearch } from './repoWorkspace/useHistorySearch';
 import { GraphCanvas } from '../graph/GraphCanvas';
+import { GraphSelectionAnnouncer } from './GraphSelectionAnnouncer';
 import type { GraphCanvasHandle } from '../graph/GraphCanvas';
 import type {
   BlameLine,
@@ -52,6 +54,14 @@ export interface WorkspaceGraphPaneProps {
   onVisibleRangeChange: GraphCanvasProps['onVisibleRangeChange'];
   /** P63: a graph PR-badge click → open that PR in the right-pane PR panel. */
   onOpenPr: GraphCanvasProps['onOpenPr'];
+  /** P65b: the stream assembler's incremental edge index — forwarded to
+   *  GraphCanvas so it skips the O(n)-per-batch one-shot rebuild. */
+  edgeIndex: GraphCanvasProps['edgeIndex'];
+  /** P65b: total row count for the scroll extent while rows are still arriving. */
+  totalRows: GraphCanvasProps['totalRows'];
+  /** P84: nonce-driven reveal flash + reduced-motion flag, forwarded to GraphCanvas. */
+  revealFlash: GraphCanvasProps['revealFlash'];
+  reducedMotion: GraphCanvasProps['reducedMotion'];
 
   /** P50b: commit-search state (bar + graph highlight + next/prev jump). */
   search: UseCommitSearch;
@@ -152,6 +162,10 @@ export function WorkspaceGraphPane({
   verifyStatus,
   onVisibleRangeChange,
   onOpenPr,
+  edgeIndex,
+  totalRows,
+  revealFlash,
+  reducedMotion,
   search,
   searchScopeOptions,
   historySearch,
@@ -205,6 +219,9 @@ export function WorkspaceGraphPane({
     diffBrowserView !== null;
   return (
     <main className="graph-pane">
+      {/* M1: polite live region announcing the settled graph-grid selection
+          (canvas is opaque to SR). Permanently mounted for reliable pickup. */}
+      <GraphSelectionAnnouncer graph={graph} selectedIndex={selectedIndex} display={display} />
       {/* P50b: search bar at the top of the pane while open; a floating affordance
           otherwise (Ctrl/Cmd-F also opens it — the webview may steal that in the
           browser harness, so the button is the always-reachable entry point). */}
@@ -233,7 +250,7 @@ export function WorkspaceGraphPane({
           <button
             type="button"
             className="graph-search-fab"
-            title="Search commits (Ctrl+F)"
+            title={`Search commits (${shortcutLabel('Mod+F')})`}
             aria-label="Search commits"
             onClick={() => search.openSearch()}
           >
@@ -302,6 +319,10 @@ export function WorkspaceGraphPane({
             verifyStatus={verifyStatus}
             onVisibleRangeChange={onVisibleRangeChange}
             onOpenPr={onOpenPr}
+            edgeIndex={edgeIndex}
+            totalRows={totalRows}
+            revealFlash={revealFlash}
+            reducedMotion={reducedMotion}
           />
         </ErrorBoundary>
       ) : null}

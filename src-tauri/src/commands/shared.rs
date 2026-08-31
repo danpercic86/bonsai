@@ -3,13 +3,22 @@
 
 pub(crate) use tauri::Emitter;
 
-pub(crate) use bonsai_core::ai::{self, AiAvailability, RunOpts};
+// P68b streaming conflict resolve. Only the names the command layer NAMES are
+// re-exported (the `compose_apply` convention — avoids an unused-import warning
+// under -D warnings): `RunLimits`/`ToolPolicy`/`RunControl` travel inside
+// `StreamResolveOpts` / the registry and are reached through `ai::` there.
+pub(crate) use bonsai_core::ai::{self, AiAvailability, AiRunEvent, AiRunRegistry, RunOpts};
 pub(crate) use bonsai_core::assets::{
     self, AgentAsset, AgentAssetInput, AgentAssetInventory, AgentAssetKind, AiAssetInventory,
     AiGeneratedAsset, AssetContent, ContextProfile, ProfileActivation, ProfilePreviewEntry,
     ProfileStore, WorktreeContextStatus,
 };
 pub(crate) use bonsai_core::error::AppError;
+// P87 git-activity observability. `with_activity` (the command bracket) + the
+// activity types the op inners name; the emitter is derived to
+// `&dyn GitActivityRecorder` inside each `spawn_blocking`.
+pub(crate) use super::activity::with_activity;
+pub(crate) use bonsai_core::git::activity::{GitActivityCategory, GitActivityRecorder};
 // P62b/P63 forge command layer. Only the DTOs the command signatures NAME are
 // re-exported (mirrors the `compose_apply` / `ai_operation` convention below —
 // avoids an unused-import warning under -D warnings); the still-nested DTOs
@@ -17,8 +26,8 @@ pub(crate) use bonsai_core::error::AppError;
 // `CheckRollup`) travel inside these and are never named here. `CommitStatus`
 // is named directly by P63's `forge_commit_statuses`.
 pub(crate) use bonsai_forge::{
-    CommitStatus, CreatePrInput, ForgeRepoContext, ForgeViewer, PrDetail, PrListQuery, PrPage,
-    ReviewComment,
+    AccountSource, CommitStatus, CreatePrInput, ForgeAccount, ForgeKind, ForgeRepoContext,
+    ForgeViewer, MergePrInput, PrDetail, PrListQuery, PrPage, ReviewComment,
 };
 pub(crate) use bonsai_core::git::ai_branch_name::{self, BranchNameProposal, BranchNameSource};
 pub(crate) use bonsai_core::git::ai_changelog::{self, AiChangelog, ChangelogRange};
@@ -38,6 +47,9 @@ pub(crate) use bonsai_core::git::ai_line;
 pub(crate) use bonsai_core::git::ai_operation::{self, PlanOutcome};
 pub(crate) use bonsai_core::git::ai_pr_description::{self, PrDescription};
 pub(crate) use bonsai_core::git::ai_resolve::{self, AiResolveProposal};
+// P68b. Only the names the command signatures NAME (the `compose_apply`
+// convention): `AiResolveFailure` travels nested inside `AiResolveBatch.failed`.
+pub(crate) use bonsai_core::git::ai_resolve_stream::{self, AiResolveBatch, StreamResolveOpts};
 pub(crate) use bonsai_core::git::ai_summary::{self, AiSummary};
 pub(crate) use bonsai_core::git::bisect::{self, BisectOutcome};
 pub(crate) use bonsai_core::git::blame::{self, BlameLine, FileHistoryEntry};
@@ -54,13 +66,16 @@ pub(crate) use bonsai_core::git::branches::{
 };
 pub(crate) use bonsai_core::git::cherrypick::{self, CherrypickOutcome};
 pub(crate) use bonsai_core::git::clone::{clone_repo as clone_repo_core, init_repo as init_repo_core, CloneProgress};
-pub(crate) use bonsai_core::git::commit::{amend_commit, create_commit, CommitResult};
+pub(crate) use bonsai_core::git::commit::{
+    amend_commit_with_activity, create_commit_with_activity, CommitResult,
+};
 pub(crate) use bonsai_core::git::config::{self, ConfigLevelArg, ConfigView};
 pub(crate) use bonsai_core::git::conflict::{self, ConflictEntry, ConflictFile, ConflictResolution};
 pub(crate) use bonsai_core::git::diff::{
     commit_diff, commit_file_diff, compare_head_diff, compare_head_file_diff, workdir_file_diff,
     CommitDiff, CompareDiff, FileDiff,
 };
+pub(crate) use bonsai_core::git::pr_diff::{self, PrDiffStats};
 pub(crate) use bonsai_core::git::image_diff::{self, ImageDiff, ImageDiffRequest};
 pub(crate) use bonsai_core::git::merge::{self, MergeOutcome};
 pub(crate) use bonsai_core::git::opstate::{read_op_state, RepoOpState};
@@ -71,8 +86,8 @@ pub(crate) use bonsai_core::git::discard::{
 };
 pub(crate) use bonsai_core::git::discard_partial::discard_partial as discard_partial_core;
 pub(crate) use bonsai_core::git::remote::{
-    add_remote as add_remote_core, fetch_all, force_push_with_lease,
-    list_remotes as list_remotes_core, pull_ff, push_current,
+    add_remote as add_remote_core, fetch_all_with_activity, force_push_with_lease_with_activity,
+    list_remotes as list_remotes_core, pull_ff_with_activity, push_current_with_activity,
     remove_remote as remove_remote_core, rename_remote as rename_remote_core,
     set_remote_url as set_remote_url_core, FetchResult, PullResult, PushResult, RemoteInfo,
 };
@@ -85,18 +100,24 @@ pub(crate) use bonsai_core::git::stage_partial::{
     stage_partial as stage_partial_core, unstage_partial as unstage_partial_core, LineSelection,
 };
 pub(crate) use bonsai_core::git::stash::{self, ApplyStashOutcome, CreateStashResult, StashEntry, StashScope};
-pub(crate) use bonsai_core::git::status::{read_status, StatusSnapshot};
-pub(crate) use bonsai_core::git::submodule::{self, SubmoduleInfo};
+pub(crate) use bonsai_core::git::status::{read_status_with, StatusSnapshot};
+pub(crate) use bonsai_core::git::submodule::{
+    self, SubmoduleDeinitOutcome, SubmoduleInfo, SubmoduleRemoveOutcome,
+};
 pub(crate) use bonsai_core::git::worktree::{self, WorktreeInfo};
 pub(crate) use bonsai_core::git::worktree_copy::{self, CopyCandidate, CopyPlanEntry, CopySelection};
 pub(crate) use bonsai_core::git::tags;
-pub(crate) use bonsai_core::graph::{compute_graph, GraphLayout};
+pub(crate) use bonsai_core::git::tag_sync;
+// `stream_graph_core` is reached directly by `graph_cache.rs` (the cache-aware
+// stream path), so it is intentionally NOT re-exported here.
+pub(crate) use bonsai_core::graph::{compute_graph, GraphChunk, GraphLayout};
 pub(crate) use bonsai_core::health::{collect_repo_health, RepoHealth};
 pub(crate) use crate::scheduler::{self, JobKind, JobOutcome, SchedulerState};
 pub(crate) use crate::settings::{
-    self, clamp_auto_fetch, clamp_graph_prefs, clamp_health_refresh, clamp_pane_widths,
-    AiAutonomy, AutoFetch, GraphPrefs, HealthRefresh, IdentityProfile, ListView, PaneWidths,
-    RecentRepo, ThemeChoice,
+    self, clamp_ai_settings, clamp_auto_fetch, clamp_graph_prefs, clamp_health_refresh,
+    clamp_pane_widths, AiAutonomy, AiConflictTools, AutoFetch, GraphPrefs, HealthRefresh,
+    IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction, RecentRepo,
+    ThemeChoice,
 };
 pub(crate) use crate::state::{AppState, RepoEntry};
 pub(crate) use crate::watcher::spawn_watcher;
@@ -126,4 +147,61 @@ pub(crate) fn repo_path(state: &AppState, repo_id: &str) -> Result<std::path::Pa
         .get(repo_id)
         .map(|e| e.path.clone())
         .ok_or(AppError::NoRepo)
+}
+
+/// Canonical workdir path AND the per-repo graph-layout cache handle (P86 B1),
+/// cloned out together under ONE brief map-lock acquisition (same pattern as
+/// `repo_path`, so the pair can never straddle a concurrent close/re-open).
+/// `NoRepo` if the id isn't open.
+pub(crate) fn repo_path_and_graph_cache(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<(std::path::PathBuf, std::sync::Arc<crate::graph_cache::GraphCache>), AppError> {
+    let repos = state
+        .repos
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    repos
+        .get(repo_id)
+        .map(|e| (e.path.clone(), e.graph_cache.clone()))
+        .ok_or(AppError::NoRepo)
+}
+
+/// Canonical workdir path AND the current handle-cache generation for `repo_id`
+/// (P88b/B2b), for routing a READ command through `repo_handle::with_repo`.
+/// `NoRepo` if the id isn't open. Two brief, independent map locks (path, then
+/// generation), each released before any git work — same lock-and-clone
+/// discipline as `repo_path`.
+pub(crate) fn repo_path_and_gen(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<(std::path::PathBuf, u64), AppError> {
+    let path = repo_path(state, repo_id)?;
+    let generation = repo_generation(state, repo_id);
+    Ok((path, generation))
+}
+
+/// Current handle-cache generation for `repo_id` (P88b/B2b); 0 when the id has
+/// never been armed (an open repo always bumps to ≥ 1 on open). Poison-recovered
+/// like `repo_path`.
+pub(crate) fn repo_generation(state: &AppState, repo_id: &str) -> u64 {
+    let gens = state
+        .repo_generations
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    gens.get(repo_id).copied().unwrap_or(0)
+}
+
+/// Bumps `repo_id`'s handle-cache generation (P88b/B2b) so every blocking-pool
+/// thread's cached `git2::Repository` for the id is evicted on its next
+/// `with_repo` call. Called on the `open_repo` re-arm and on `close_repo`.
+/// `wrapping_add` avoids a theoretical overflow panic — the generation only ever
+/// needs to DIFFER from the previous value to force eviction.
+pub(crate) fn bump_repo_generation(state: &AppState, repo_id: &str) {
+    let mut gens = state
+        .repo_generations
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let g = gens.entry(repo_id.to_string()).or_insert(0);
+    *g = g.wrapping_add(1);
 }

@@ -6,6 +6,7 @@
  */
 import type { Locator, Page } from '@playwright/test';
 import { expect } from './fixtures';
+import { shortcutKeys, shortcutLabel } from '../src/utils/platform';
 
 export const FIXTURE_REPO = 'C:\\mock\\bonsai-fixture';
 export const DEFAULT_ROW_HEIGHT = 32; // GraphPrefs default (persistence.ts)
@@ -54,12 +55,41 @@ export async function gotoHarness(page: Page, opts?: HarnessOptions): Promise<vo
   await page.goto(qs === '' ? '/' : `/?${qs}`);
 }
 
-/** Clicks Skip on the Welcome dialog once visible (only spec 01 needs it). */
+/** Clicks Skip on the Welcome dialog, then waits for `onboardingSeen: true` to
+ *  have actually LANDED in the mock's persisted UiSettings blob.
+ *
+ *  Why the extra wait: App.tsx's `closeOnboarding` hides the dialog
+ *  synchronously but only QUEUES the flag (P69b: `queueSettingsWrite` — the
+ *  shared ~300 ms coalescing window in useUiSettings, then the mock handler
+ *  sleeps ~150 ms before `writeUiSettings`). So the dialog being hidden proves
+ *  nothing about storage — a `page.reload()` right after can beat the write and boot with
+ *  onboarding unseen again (flaky only under full-suite worker contention).
+ *  Polling storage is the deterministic signal; never a fixed sleep.
+ *
+ *  Safe for every caller: all of them reach here by clicking Skip, which is
+ *  exactly what fires the write. Specs that boot with onboarding already seen
+ *  don't call this helper at all, so nothing can hang waiting on a write that
+ *  never happens. */
 export async function skipOnboarding(page: Page): Promise<void> {
   const welcome = page.getByRole('dialog', { name: 'Welcome to Bonsai' });
   await expect(welcome).toBeVisible();
   await welcome.getByRole('button', { name: 'Skip' }).click();
   await expect(welcome).toBeHidden();
+  await page.waitForFunction(
+    () => {
+      const raw = window.localStorage.getItem('bonsai.mockUiSettings');
+      if (raw === null) return false;
+      try {
+        return (JSON.parse(raw) as { onboardingSeen?: unknown }).onboardingSeen === true;
+      } catch {
+        return false;
+      }
+    },
+    undefined,
+    // rAF-independent polling (headless panes can stall rAF) + an explicit
+    // timeout so a genuinely lost write fails here with a clear cause.
+    { polling: 50, timeout: 10_000 },
+  );
 }
 
 /** gotoHarness with the fixture repo seeded into bonsai.mockSession →
@@ -140,7 +170,41 @@ export async function scrollGraphTo(page: Page, px: number): Promise<number> {
   }, px);
 }
 
-/** Ctrl+K (the app binds Ctrl on win32 UA; 'ControlOrMeta+K'). */
+/* ── Shortcut LABELS ───────────────────────────────────────────────────────
+ * Key PRESSES are platform-neutral already ('ControlOrMeta+K'). The TEXT the
+ * app renders is not: src/utils/platform.ts prints '⌘⇧F' on macOS and
+ * 'Ctrl+Shift+F' elsewhere, so specs must never hardcode either spelling.
+ * We reuse the app's own renderer (imported across the e2e/src boundary — the
+ * same precedent as 18-ai-bulk-resolve.spec.ts importing src/ipc/fixtures) and
+ * feed it the platform explicitly.
+ *
+ * CAVEAT: `process.platform` is the NODE process's platform (the machine
+ * running Playwright), whereas the app's `isMac` comes from the BROWSER's
+ * navigator. They agree only because this repo always drives a local
+ * chromium/Edge on the same machine. A remote grid / BrowserStack / a mac-UA
+ * emulation run would break that assumption — such a setup would have to pass
+ * the browser's platform in instead. (We pass the platform explicitly rather than
+ * relying on platform.ts's default `isMac`: that default is resolved from
+ * whichever navigator the *importing* process has. Node does expose a
+ * browser-shaped one — `navigator.platform` is 'Win32'/'MacIntel' — so it would
+ * happen to be right here, but only by coincidence of running the tests on the
+ * same machine as the browser. Being explicit makes the coupling visible.)
+ */
+export const E2E_IS_MAC = process.platform === 'darwin';
+
+/** Inline one-string label for a spec: 'Mod+F' -> 'Ctrl+F' | '⌘F'. */
+export function expectedShortcutLabel(spec: string): string {
+  return shortcutLabel(spec, E2E_IS_MAC);
+}
+
+/** ShortcutOverlay caps text: one <kbd> per token, always '+'-joined by the
+ *  component (`.shortcut-plus`) on every platform — so this is NOT the same as
+ *  `expectedShortcutLabel`, which drops the separator on macOS. */
+export function expectedOverlayCaps(spec: string): string {
+  return shortcutKeys(spec, E2E_IS_MAC).join('+');
+}
+
+/** Open the command palette (Mod+K — bound as ctrlKey||metaKey by the app). */
 export async function openPalette(page: Page): Promise<Locator> {
   await page.keyboard.press('ControlOrMeta+K');
   const dialog = page.getByRole('dialog', { name: 'Command palette' });

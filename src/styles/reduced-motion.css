@@ -1,0 +1,60 @@
+/* Bonsai — The app-wide prefers-reduced-motion block (P68e §7).
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* §7 — the app's FIRST prefers-reduced-motion block. All four dock animations are
+   opacity/colour only, so switching them off costs nothing. P73 §6.3 added
+   `header-progress`; `skeleton-pulse` is still out of scope (§12-F3). */
+@media (prefers-reduced-motion: reduce) {
+  /* P73 §6.3: the sweep now covers multi-second submodule fetches (P68e §12-F3). */
+  .header-progress::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.6;
+  }
+
+  .ai-dock-progress::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.6;
+  }
+
+  /* P87b §7: the git dock's sweep + the determinate fill snap under reduced
+     motion (the determinate fill keeps its scaleX but drops the transition). */
+  .git-dock-progress::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.6;
+  }
+
+  .header-progress[data-determinate]::after {
+    transition: none;
+  }
+
+  .ai-dock-ask,
+  .ai-log-jump {
+    animation: none;
+  }
+
+  .ai-dock-status {
+    transition: none;
+  }
+
+  /* P70 (UI §7, ratified decision 8): the notice bar's ONLY transition is the
+     shared disclosure chevron. Transform-only and app-wide — this milestone is
+     simply the first to need it switched off. */
+  .file-chevron {
+    transition: none;
+  }
+
+  /* P69g (UI §6.4): the settings surface animates exactly three things — the
+     switch knob/track, the segment background/border, and the reset glyph's
+     colour. Nothing else moves, so switching these off costs no information. */
+  .settings-switch-track,
+  .settings-switch-knob,
+  .settings-segment,
+  .settings-reset {
+    transition: none;
+  }
+}
+

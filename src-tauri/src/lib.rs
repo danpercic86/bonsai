@@ -1,5 +1,19 @@
 pub mod commands;
 pub mod mcp;
+/// P71 guards on `tauri.conf.json` (strict JSON, so it cannot carry comments).
+#[cfg(test)]
+#[path = "bundle_config_tests.rs"]
+mod bundle_config_tests;
+/// P69 §3.2 (OQ-2) guard: Rust `Settings::default()` ⟷ the TS-owned
+/// `src/settings/uiSettingsDefaults.json` oracle. Declared here rather than as a
+/// child of `settings` only because `settings.rs` is over the file-size ratchet's
+/// limit and may not grow; it reaches into `settings` + `commands` by path.
+#[cfg(test)]
+#[path = "settings_defaults_parity_tests.rs"]
+mod settings_defaults_parity_tests;
+pub mod graph_cache;
+pub mod perf;
+pub mod repo_handle;
 pub mod scheduler;
 pub mod settings;
 pub mod state;
@@ -8,6 +22,26 @@ pub mod watcher;
 use tauri::Manager;
 
 pub fn run() {
+    // P71 R2 (BACKSTOP, not the fix — the fix is shipping NSIS only): repair a
+    // PATH inherited from an installer before anything spawns a child or caches
+    // a resolution. MUST be the first statement — it calls `std::env::set_var`,
+    // which is only sound while the process is still single-threaded, so it has
+    // to precede every thread spawn, the async runtime, and the Tauri builder.
+    // It must also precede `gitbin`'s process-lifetime cache so the P70 ladder
+    // sees the repaired PATH (and reports `source: "path"`, the C-1 oracle).
+    // Silent no-op on non-Windows and on any registry read failure.
+    //
+    // The one debug line the contract permits (§5.4 constraint 5): it is the
+    // only oracle acceptance criterion C-2 has for "R2 repaired this client in
+    // place". COUNTS ONLY — the recovered directory names are user paths and
+    // must never reach a log.
+    let rehydration = bonsai_core::winenv::rehydrate_path_once();
+    if rehydration.applied {
+        eprintln!(
+            "bonsai: rehydrated PATH from the registry ({} entries appended)",
+            rehydration.added.len()
+        );
+    }
     bonsai_core::git::relax_odb_hash_verification();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -18,6 +52,11 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(state::AppState::default())
         .manage(mcp::McpServerState::default())
+        // P68 §B/D7: the streaming-AI run registry (run id -> cancel/reply
+        // handles). Managed state because `ai_cancel_run` / `ai_reply_run` are
+        // SEPARATE commands from the run they control — a Tauri command cannot be
+        // aborted from JS. Cleared on exit below.
+        .manage(bonsai_core::ai::AiRunRegistry::default())
         .manage(scheduler::SchedulerState::default())
         .setup(|app| {
             // P30: seed the scheduler config from persisted settings, then
@@ -73,6 +112,7 @@ pub fn run() {
             commands::close_repo,
             commands::get_status,
             commands::get_graph,
+            commands::stream_graph,
             commands::stage,
             commands::unstage,
             commands::stage_partial,
@@ -88,6 +128,7 @@ pub fn run() {
             commands::create_branch,
             commands::create_branch_here,
             commands::checkout_branch,
+            commands::checkout_commit,
             commands::delete_branch,
             commands::rename_branch,
             commands::checkout_remote,
@@ -98,6 +139,7 @@ pub fn run() {
             commands::pull,
             commands::push,
             commands::force_push,
+            commands::git_activity_subscribe,
             commands::get_recent_repos,
             commands::remove_recent_repo,
             commands::get_ui_settings,
@@ -114,8 +156,12 @@ pub fn run() {
             commands::get_conflict,
             commands::resolve_conflict,
             commands::resolve_conflict_text,
+            commands::ai_apply_resolution,
             commands::check_ai_availability,
             commands::ai_resolve_conflict,
+            commands::ai_resolve_conflict_stream,
+            commands::ai_cancel_run,
+            commands::ai_reply_run,
             commands::generate_commit_message,
             commands::ai_analyze_diff,
             commands::ai_summarize_range,
@@ -194,6 +240,10 @@ pub fn run() {
             commands::create_tag,
             commands::delete_tag,
             commands::push_tag,
+            commands::list_tag_sync,
+            commands::auto_sync_tags,
+            commands::force_refresh_tag,
+            commands::delete_remote_tag,
             commands::list_remotes,
             commands::add_remote,
             commands::remove_remote,
@@ -217,14 +267,32 @@ pub fn run() {
             commands::open_in_terminal,
             commands::reveal_in_file_manager,
             commands::open_in_editor,
+            commands::open_url,
+            commands::check_git_availability,
             commands::forge_repo_context,
             commands::forge_list_prs,
             commands::forge_get_pr,
+            commands::forge_pr_diff,
+            commands::forge_pr_file_diff,
             commands::forge_create_pr,
+            commands::forge_merge_pr,
+            commands::forge_close_pr,
             commands::forge_list_review_comments,
             commands::forge_set_token,
             commands::forge_clear_token,
-            commands::forge_commit_statuses
+            commands::forge_commit_statuses,
+            commands::forge_list_accounts,
+            commands::forge_set_token_for_host,
+            commands::forge_add_account,
+            commands::forge_remove_account,
+            commands::forge_set_host_default,
+            commands::forge_set_repo_account,
+            commands::forge_clear_token_for_host,
+            commands::forge_invalidate_viewer,
+            commands::get_repo_hooks_disclosure,
+            commands::ack_repo_hooks,
+            commands::debug_perf_counters,
+            commands::debug_reset_perf_counters
         ])
         .build(tauri::generate_context!())
         .expect("error while running Bonsai")
@@ -233,6 +301,11 @@ pub fn run() {
             // before the app process goes away.
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 mcp::shutdown(&app.state::<mcp::McpServerState>());
+                // P68 §B/D7: flip every cancel flag AND kill the recorded child
+                // TREES. A streaming run has NO wall-clock deadline by design, so
+                // without this a `claude` child (and the node process behind the
+                // npm shim) could outlive the window indefinitely.
+                app.state::<bonsai_core::ai::AiRunRegistry>().cancel_all();
             }
         });
 }

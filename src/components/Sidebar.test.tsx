@@ -41,11 +41,17 @@ function renderSidebar(over: Partial<SidebarProps> = {}) {
     onStashContextMenu: vi.fn(),
     submodules: [],
     onSubmoduleContextMenu: vi.fn(),
+    submoduleBusy: null,
     onNewSubmodule: vi.fn(),
     worktrees: [],
     onWorktreeContextMenu: vi.fn(),
     onNewWorktree: vi.fn(),
     onTagContextMenu: vi.fn(),
+    tagSyncReport: null,
+    tagSyncState: 'idle',
+    tagSyncRemote: null,
+    tagSyncCheckedAt: null,
+    onTagsExpand: vi.fn(),
     remotes: [{ name: 'origin', url: 'https://example.com/r.git' }],
     onRemoteContextMenu: vi.fn(),
     onAddRemote: vi.fn(),
@@ -63,7 +69,7 @@ describe('Sidebar sections', () => {
     expect(screen.getByText('origin/main')).toBeInTheDocument();
     // Tags start collapsed by default; expanding shows the tag.
     expect(screen.queryByText('v1.0')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Tags/ }));
+    fireEvent.click(screen.getByRole('treeitem', { name: /Tags/ }));
     expect(screen.getByText('v1.0')).toBeInTheDocument();
     expect(screen.getByText('No stashes')).toBeInTheDocument();
     expect(screen.getByText('No submodules')).toBeInTheDocument();
@@ -113,7 +119,7 @@ describe('Sidebar sections', () => {
     expect(props.onContextMenu).toHaveBeenCalledWith('origin/main', 'remoteBranch', 1, 2);
     fireEvent.contextMenu(screen.getByText('origin').closest('li')!, { clientX: 3, clientY: 4 });
     expect(props.onRemoteContextMenu).toHaveBeenCalledWith('origin', 3, 4);
-    fireEvent.click(screen.getByRole('button', { name: /Tags/ }));
+    fireEvent.click(screen.getByRole('treeitem', { name: /Tags/ }));
     fireEvent.contextMenu(screen.getByText('v1.0').closest('li')!, { clientX: 5, clientY: 6 });
     expect(props.onTagContextMenu).toHaveBeenCalledWith('v1.0', 5, 6);
   });
@@ -217,7 +223,8 @@ describe('Sidebar sections', () => {
     expect(screen.getByText('stash@{0}')).toBeInTheDocument();
     expect(screen.getByText('WIP on main')).toBeInTheDocument();
     fireEvent.contextMenu(screen.getByText('stash@{0}').closest('li')!, { clientX: 7, clientY: 8 });
-    expect(props.onStashContextMenu).toHaveBeenCalledWith(0, 7, 8);
+    // F-A6-B: the row forwards the oid it rendered alongside index + coords.
+    expect(props.onStashContextMenu).toHaveBeenCalledWith(0, 'a'.repeat(40), 7, 8);
   });
 
   it('submodule rows render the status badge; worktree rows render their badge pills', () => {
@@ -260,7 +267,7 @@ describe('Sidebar sections', () => {
 
   it('collapsing a section hides its rows', () => {
     renderSidebar();
-    const toggle = screen.getByRole('button', { name: /Branches/ });
+    const toggle = screen.getByRole('treeitem', { name: /Branches/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'false');

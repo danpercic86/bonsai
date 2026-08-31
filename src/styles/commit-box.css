@@ -1,0 +1,431 @@
+/* Bonsai — Status actions and the commit box (M3).
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- Status actions + commit box (M3) ---------- */
+
+.section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.section-action {
+  border: none;
+  background: transparent;
+  padding: 0 2px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-2);
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 500;
+}
+
+.section-action:hover:not(:disabled) {
+  color: var(--text-1);
+}
+
+.section-action:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Bulk "Discard all" header button: resting destructive treatment (A2). Label
+   stays --text-2 (AA-safe); the leading ↺ glyph carries the danger hue, and an
+   extra 8px margin detaches it from the safe "Stage all" (16px total gap). */
+.section-action-discard {
+  margin-left: 8px;
+}
+
+.section-action-discard .section-action-glyph {
+  color: var(--danger, #e5534b);
+}
+
+.section-action-discard:hover:not(:disabled) {
+  color: var(--danger, #e5534b);
+}
+
+/* P68f: "Resolve all with AI" in the conflicts header. It is a LOAD-BEARING action
+   (one AI run over every conflict), not an incidental one, so it does not inherit
+   `.section-action`'s `--text-3` — that measures 2.96:1 on light, below AA for text
+   (P68e U9). While the run is live the same button reads `Cancel all` and takes the
+   danger hue, matching the dock's own Cancel. */
+.section-action-ai-bulk {
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+.section-action-ai-bulk:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.section-action-ai-bulk[data-state='cancel'] {
+  color: var(--danger, #e5534b);
+}
+
+/* Hover-revealed row buttons (M3 §4.2): invisible until the row is hovered or
+   the button itself is keyboard-focused. */
+.row-action {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  padding: 0;
+  /* Icon-system §3: centre the single SVG in icon rows (history/blame/discard/
+     delete) and space icon+label on the conflict AI button. Text-only row
+     actions (+/−, ours/theirs) render identically under flex-centering. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+/* Icon-system §3: file-row action icons — 16px inside the 20px hover box. */
+.row-action svg {
+  width: 16px;
+  height: 16px;
+}
+
+.file-row:hover .row-action,
+.row-action:focus-visible {
+  opacity: 1;
+}
+
+.row-action:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
+.row-action:disabled {
+  cursor: default;
+  color: var(--text-3);
+}
+
+/* A1: the primary stage/unstage toggle is persistently visible (not hover-only),
+   so the panel's main action is legible at rest. Secondary + destructive actions
+   (history/blame/discard) keep the hover-reveal base above. */
+.row-action-primary {
+  opacity: 0.6;
+  color: var(--text-2);
+}
+
+.file-row:hover .row-action-primary,
+.row-action-primary:hover,
+.row-action-primary:focus-visible {
+  opacity: 1;
+  color: var(--text-1);
+}
+
+/* Disabled floor: no .6 lift while disabled (existing .row-action:disabled). */
+.row-action-primary:disabled {
+  opacity: 1;
+}
+
+/* P20 §4.3: discard control sits beside the stage (+) button on tracked rows. */
+.row-action-discard:hover:not(:disabled) {
+  color: var(--danger, #e5534b);
+}
+
+/* P80 §2b: the `⋯` overflow trigger + menu. Reused verbatim inside the commit
+   message toolbar (`.commit-msg-toolbar`); the deleted `.rp-actions` row is
+   gone. */
+.rp-overflow {
+  position: relative;
+  flex: none;
+}
+
+.rp-overflow-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: var(--rp-ctl-h, 22px);
+  min-height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-2);
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.rp-overflow-btn:hover:not(:disabled) {
+  color: var(--text-1);
+  background: var(--bg-3);
+}
+
+.rp-overflow-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Opens UPWARD (the row sits just above the commit box at the pane bottom) —
+   geometry carried over from the deleted `.stash-split-menu`. */
+.rp-overflow-menu {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  bottom: calc(100% - 4px);
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  padding: 4px;
+  gap: 2px;
+}
+
+.rp-overflow-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.rp-overflow-item:hover:not(:disabled) {
+  background: var(--bg-1);
+}
+
+.rp-overflow-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* P80 §2b: reserved 16px check column for every menu item (ContextMenu §12.6
+   precedent — the checked column belongs to the whole list). */
+.rp-overflow-check {
+  flex: none;
+  width: 16px;
+  text-align: center;
+  color: var(--accent);
+}
+
+.rp-overflow-item-label {
+  flex: 1 1 auto;
+}
+
+/* Icon-system §2.7: AI menu items (Review/Compose) lead with a 16px SummarizeIcon
+   in place of the check column, so their labels align with the checkable items
+   below. Colour inherits from .rp-overflow-item (--text-1). */
+.rp-overflow-item-ai svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.rp-overflow-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 6px;
+}
+
+/* P80 2c F1/F2: single shared note line below the toolbar. Glyph carries the
+   warning/positive meaning so hue is not the sole signal. */
+.commit-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-2);
+}
+.commit-note-glyph {
+  color: var(--warning);
+  flex: none;
+}
+.commit-note-glyph-ok {
+  color: var(--success);
+}
+
+.commit-box {
+  flex: none;
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+  padding: var(--rp-box-pad, 12px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--rp-box-gap, 8px);
+}
+
+/* P67 §2 item 4 (D9): auto-grow between the two vars instead of a fixed 60 px
+   band. `field-sizing` is Chromium-only for now (WebView2 is evergreen, so the
+   native app has it); engines without it are handled by the `@supports not`
+   block below — progressive enhancement, no JS measuring. */
+.commit-message {
+  width: 100%;
+  resize: vertical;
+  field-sizing: content;
+  min-height: var(--rp-msg-min, 60px);
+  max-height: var(--rp-msg-max, 120px);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 6px 8px;
+}
+
+/* P67b review FIX 1 (D9 cross-platform): `field-sizing` is Chromium-only.
+   macOS WKWebView and Linux webkit2gtk do NOT support it, so there the textarea
+   can't grow and would sit at the 48px `--rp-msg-min` floor — SHORTER than
+   pre-P67. Restore the pre-P67 declared 60px floor for those engines. A plain
+   literal (not an 18th `--rp-*` var) on purpose: this is the D8 "fallback =
+   pre-P67 value" path, and a density var here would only resize a box that
+   cannot grow anyway. Must stay AFTER the base rule — `@supports` adds no
+   specificity, so source order is what wins.
+
+   The floor is 70px, NOT the pre-P67 declared 60px: that 60px was inert, because
+   the rendered height came from `rows={3}` — 3 x 13px x 1.45 line-height = 56.5,
+   + 12px padding + 2px border (border-box) = ~70.5px. So 70px reproduces what
+   these engines actually showed before P67, while 60px would have been a ~10px
+   regression. Chosen over setting `rows={3}` in the TSX because that risks
+   Chromium honouring `rows` for the INITIAL height, which would give back ~22px
+   of the measured 115px reclaim on the platform that does support field-sizing.
+   Orchestrator decision, 2026-08-17. */
+@supports not (field-sizing: content) {
+  .commit-message {
+    min-height: 70px;
+  }
+}
+
+.commit-message::placeholder {
+  color: var(--text-3);
+}
+
+.commit-message:disabled {
+  opacity: 0.6;
+}
+
+/* P80 §2b D2: the single compact message toolbar under the textarea — generate
+   icon (left), char/line counter + `⋯` menu (right). Replaces the deleted
+   `.commit-box-header` and `.commit-options-row`. */
+.commit-msg-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--rp-ctl-gap, 8px);
+  min-height: var(--rp-ctl-h, 22px);
+  font-size: var(--rp-ctl-font, 12px);
+}
+
+/* The counter (when present) takes the free space, pushing itself + `⋯` right;
+   when the counter is absent, the `⋯` wrapper claims the auto margin instead. */
+.commit-msg-toolbar .commit-counter {
+  margin-left: auto;
+  align-self: center;
+}
+.commit-msg-toolbar .commit-options-overflow {
+  margin-left: auto;
+}
+.commit-msg-toolbar .commit-counter + .commit-options-overflow {
+  margin-left: 0;
+}
+
+/* P1 §8 item 7: neutral until the first line exceeds the limit, then --warning. */
+.commit-counter {
+  font-size: 11px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+}
+
+.commit-counter-over {
+  color: var(--warning);
+}
+
+.commit-sign-fix {
+  border: none;
+  background: none;
+  padding: 0;
+  margin-left: 6px;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.commit-error {
+  margin-bottom: 0;
+}
+
+.commit-button {
+  width: 100%;
+}
+
+/* Commit & Push split control: primary grows, secondary hugs its label. */
+.commit-button-row {
+  display: flex;
+  gap: 8px;
+}
+
+.commit-button-row .commit-button {
+  flex: 1 1 auto;
+}
+
+.commit-button-secondary {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* P80 §2b D2: the `✨` generate icon button in the message toolbar (was the
+   text `.commit-generate-button` in the deleted header). Icon-only, 24px hit
+   box, transparent until hover. */
+.commit-msg-tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: var(--rp-ctl-h, 22px);
+  min-height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.commit-msg-tool:hover:not(:disabled) {
+  color: var(--text-1);
+  background: var(--bg-2);
+}
+
+.commit-msg-tool:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+/* Icon-system §2.7: the "Generate commit message" icon button — 14px SVG in the
+   24px commit-toolbar tool box. */
+.commit-msg-tool svg {
+  width: 14px;
+  height: 14px;
+}
+

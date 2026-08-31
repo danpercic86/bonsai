@@ -78,4 +78,41 @@ describe('constants sanity', () => {
     expect(FONT_UI.endsWith('sans-serif')).toBe(true);
     expect(FONT_MONO.endsWith('monospace')).toBe(true);
   });
+
+  it('leads with the platform-native families so macOS never falls back to Courier', () => {
+    expect(FONT_MONO.startsWith('ui-monospace')).toBe(true);
+    expect(FONT_MONO).toContain('SF Mono');
+    expect(FONT_UI).toContain('system-ui');
+  });
+
+  // Canvas rows and DOM rows show the same summaries and SHAs, so these two
+  // constants must stay token-for-token identical to `--font-ui` / `--font-mono`
+  // in src/styles.css (see the INVARIANT note there). That file cannot be
+  // asserted from here — vitest stubs every CSS import, `?raw` included, and the
+  // app tsconfig has no node types — so pin the exact expected token lists
+  // instead: changing either side without the other now fails loudly.
+  it('pins the exact stacks mirrored by --font-ui / --font-mono in styles.css', () => {
+    const tokens = (stack: string) =>
+      stack
+        .split(',')
+        .map((t) => t.trim().replace(/^['"]|['"]$/g, ''))
+        .filter((t) => t.length > 0);
+    expect(tokens(FONT_UI)).toEqual([
+      'Segoe UI Variable',
+      'Segoe UI',
+      'system-ui',
+      '-apple-system',
+      'sans-serif',
+    ]);
+    expect(tokens(FONT_MONO)).toEqual([
+      'ui-monospace',
+      'SF Mono',
+      'Menlo',
+      'Cascadia Code',
+      'Cascadia Mono',
+      'Consolas',
+      'JetBrains Mono',
+      'monospace',
+    ]);
+  });
 });

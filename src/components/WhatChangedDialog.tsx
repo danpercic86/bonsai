@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { AiDigestRange } from '../ipc';
 import { Combobox, type ComboboxOption } from './Combobox';
+import { SummarizeIcon } from './menuIcons';
 
 export interface WhatChangedDialogProps {
   open: boolean;
@@ -137,7 +138,10 @@ export function WhatChangedDialog({
         aria-label="What changed"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="dialog-title">✨ What changed</h2>
+        <h2 className="dialog-title dialog-title-ai">
+          <SummarizeIcon />
+          <span>What changed</span>
+        </h2>
         <form
           onSubmit={(e) => {
             e.preventDefault();

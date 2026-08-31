@@ -6,10 +6,8 @@
  *  right-click / hover hit-tests. */
 
 import type { GraphNode, RefLabel } from '../ipc';
-import { STASH_BG, STASH_COLOR, TAG_BG, TAG_COLOR } from './colors';
+import { adaptivePillText, DETACHED_HEAD_BG, STASH_BG, STASH_COLOR, TAG_BG, TAG_COLOR } from './colors';
 import type { Theme } from './colors';
-import { branchSignals, drawCiBadge, drawPrBadge, prBadgeWidth } from './forgeBadges';
-import type { CiBadge, PrBadge } from './forgeBadges';
 import { FONT_UI, METRICS } from './metrics';
 import type { GraphDisplayOptions } from './rightColumns';
 import { measure, truncateToWidth } from './textMeasure';
@@ -99,7 +97,9 @@ export function entityStyle(e: RefEntity, node: GraphNode, theme: Theme): PillSt
   switch (e.kind) {
     case 'branch':
       if (e.isHead) {
-        return { fill: laneColor, text: theme.accentText, border: null, label: e.name };
+        // Luminance-adaptive label: the pill sits on a lane color, so pick
+        // near-black or white for max contrast (ui-reference §6, M4).
+        return { fill: laneColor, text: adaptivePillText(laneColor), border: null, label: e.name };
       }
       if (e.hasLocal) {
         return { fill: laneAlpha, text: laneColor, border: laneColor, label: e.name };
@@ -108,7 +108,9 @@ export function entityStyle(e: RefEntity, node: GraphNode, theme: Theme): PillSt
     case 'tag':
       return { fill: TAG_BG, text: TAG_COLOR, border: TAG_COLOR, label: `# ${e.name}` };
     case 'head':
-      return { fill: theme.danger, text: '#ffffff', border: null, label: e.name };
+      // Detached HEAD: fixed dark-red bg (both themes) + white text = 6.54:1
+      // (ui-reference §6, M4). --danger gave white only 3.70:1 in dark.
+      return { fill: DETACHED_HEAD_BG, text: '#ffffff', border: null, label: e.name };
     case 'stash':
       return { fill: STASH_BG, text: STASH_COLOR, border: STASH_COLOR, label: e.name };
   }
@@ -200,15 +202,6 @@ export interface LaidRefLabel {
    *  diverged branches only), or `null`. Its width is reserved during layout so
    *  later pills / the "+n" chip never overlap it. */
   chip: AheadBehindChip | null;
-  /** P63: laid-out forge-signal geometry trailing the pill (after the chip), for
-   *  both draw AND hit-test — or `null` when neither badge applies (off,
-   *  compact-suppressed, not a branch, or nothing cached). The CI dot is centered
-   *  at `cx`; the PR pill is `[x, x+w]`. Widths were reserved into the pill's
-   *  advance, so a pill + its signals overflow ATOMICALLY into the "+n" chip. */
-  signals: {
-    ci: { badge: CiBadge; cx: number } | null;
-    pr: { badge: PrBadge; x: number; w: number } | null;
-  } | null;
 }
 
 /** P51c: a laid-out ahead/behind chip. `text` is the compact "↑a ↓b" string
@@ -313,18 +306,6 @@ function chipAdvance(chip: AheadBehindChip | null): number {
   return chip === null ? 0 : METRICS.chipGap + chip.width;
 }
 
-/** P63: extra horizontal advance a pill's forge signals add after it (each is
- *  `signalGap + width`), or 0 when it has none. Used for both forward layout and
- *  pop-rewind so the "+n" overflow count stays exact — signals overflow with
- *  their branch, never orphaned. */
-function signalAdvance(signals: LaidRefLabel['signals']): number {
-  if (signals === null) return 0;
-  let adv = 0;
-  if (signals.ci !== null) adv += METRICS.signalGap + METRICS.ciBadgeSize;
-  if (signals.pr !== null) adv += METRICS.signalGap + signals.pr.w;
-  return adv;
-}
-
 /** P7 §4: lay entities L→R in the fixed band `[startX, startX+budget]`; break
  *  before an entity that would exceed the budget (except the first); append a
  *  "+n" chip counting HIDDEN ENTITIES. Mirrors the old `layoutRowPills` overflow
@@ -353,23 +334,12 @@ export function layoutRefLabels(
     const w = refPillWidth(ctx, style, icons);
     // P51c: reserve the ahead/behind chip's width (gap + chip) so it never
     // overlaps the next pill; the reservation counts toward the band budget.
+    // (Forge signals no longer live in the band — they moved to the FORGE column,
+    // see forgeBadges.ts / drawRowText.ts.)
     const chip = chipFor(ctx, e, theme, display);
-    // P63: forge signals ride AFTER the chip; their width is reserved into the
-    // advance too, so a pill and its badges overflow into "+n" atomically.
-    const sig = branchSignals(e, node, display);
-    const ciW = sig.ci !== null ? METRICS.signalGap + METRICS.ciBadgeSize : 0;
-    const prW = sig.pr !== null ? METRICS.signalGap + prBadgeWidth(ctx, sig.pr) : 0;
-    const advance = w + chipAdvance(chip) + ciW + prW;
+    const advance = w + chipAdvance(chip);
     if (shown > 0 && x + advance > startX + budget) break;
-    const afterChip = x + w + chipAdvance(chip);
-    const signals: LaidRefLabel['signals'] =
-      sig.ci === null && sig.pr === null
-        ? null
-        : {
-            ci: sig.ci !== null ? { badge: sig.ci, cx: afterChip + METRICS.signalGap + METRICS.ciBadgeSize / 2 } : null,
-            pr: sig.pr !== null ? { badge: sig.pr, x: afterChip + ciW + METRICS.signalGap, w: prW - METRICS.signalGap } : null,
-          };
-    result.push({ entity: e, style, x, w, icons, chip, signals });
+    result.push({ entity: e, style, x, w, icons, chip });
     x += advance + METRICS.pillGap;
     shown++;
   }
@@ -392,15 +362,14 @@ export function layoutRefLabels(
       const popped = result.pop();
       if (popped === undefined) break;
       // Rewind by the SAME advance the forward pass added (pill + any reserved
-      // ahead/behind chip + P63 forge signals + gap) so the "+n" count and
-      // cursor stay exact.
-      x -= popped.w + chipAdvance(popped.chip) + signalAdvance(popped.signals) + METRICS.pillGap;
+      // ahead/behind chip + gap) so the "+n" count and cursor stay exact.
+      x -= popped.w + chipAdvance(popped.chip) + METRICS.pillGap;
       hidden++;
       chipStyle = chipStyleFor(hidden);
       chipW = refPillWidth(ctx, chipStyle, noIcons);
     }
     // If every pill got popped the chip sits alone at startX (x === startX).
-    result.push({ entity: null, style: chipStyle, x, w: chipW, icons: noIcons, chip: null, signals: null });
+    result.push({ entity: null, style: chipStyle, x, w: chipW, icons: noIcons, chip: null });
   }
   return result;
 }
@@ -415,9 +384,8 @@ export function drawRefLabelAt(
   ctx: CanvasRenderingContext2D,
   laid: LaidRefLabel,
   cy: number,
-  theme: Theme,
 ): void {
-  const { style, x, w, icons, chip, signals } = laid;
+  const { style, x, w, icons, chip } = laid;
   const h = METRICS.pillHeight;
   const y = cy - h / 2;
   const r = h / 2;
@@ -469,13 +437,5 @@ export function drawRefLabelAt(
     ctx.fillStyle = chip.color;
     ctx.textAlign = 'left';
     ctx.fillText(chip.text, x + w + METRICS.chipGap, cy);
-  }
-
-  // P63: forge signals — the CI dot then the PR pill, at the positions reserved
-  // by layoutRefLabels (after the chip). Both are compact-suppressed upstream
-  // (their toggles arrive false), so nothing draws in compact mode.
-  if (signals !== null) {
-    if (signals.ci !== null) drawCiBadge(ctx, signals.ci.cx, cy, signals.ci.badge, theme);
-    if (signals.pr !== null) drawPrBadge(ctx, signals.pr.x, cy, signals.pr.w, signals.pr.badge, theme);
   }
 }

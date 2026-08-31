@@ -33,7 +33,12 @@ export interface HookGate {
   onHookCancel(): void;
 }
 
-export function useHookGate(): HookGate {
+export function useHookGate(
+  /** First-time per-repo hook-execution disclosure, run BEFORE `attempt` so every
+   *  hook-bearing op discloses once with zero per-call-site change. Resolves
+   *  `false` when the user declines ⇒ the op cancels silently. */
+  ensureHooksDisclosed: (skipHooks: boolean) => Promise<boolean>,
+): HookGate {
   const [pendingHook, setPendingHook] = useState<string | null>(null);
   const [hookRetrying, setHookRetrying] = useState(false);
   const gateRef = useRef<{
@@ -44,6 +49,10 @@ export function useHookGate(): HookGate {
 
   const runWithHookGate = useCallback(
     async (attempt: (skipHooks: boolean) => Promise<void>, skipHooks: boolean): Promise<void> => {
+      // Disclose BEFORE any hook could run. A decline cancels the op via the
+      // existing sentinel (silent cancel, no error banner). skipHooks bypasses
+      // this (no hook runs ⇒ nothing to disclose).
+      if (!(await ensureHooksDisclosed(skipHooks))) throw COMMIT_HOOK_CANCELED;
       try {
         await attempt(skipHooks);
       } catch (e) {
@@ -60,7 +69,7 @@ export function useHookGate(): HookGate {
         throw e;
       }
     },
-    [],
+    [ensureHooksDisclosed],
   );
 
   const onHookSkipRetry = useCallback(() => {

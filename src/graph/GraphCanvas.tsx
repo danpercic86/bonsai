@@ -9,35 +9,35 @@ import {
   useState,
 } from 'react';
 import type { GraphLayout, RefLabel, VerifyStatus } from '../ipc';
-import { resolveTheme } from './colors';
+import { isDarkBg, resolveTheme } from './colors';
 import type { Theme } from './colors';
 import {
   avatarColor,
   avatarHit,
   drawGraph,
+  drawHeadEdgeMarker,
+  drawHeadGuide,
   drawWipRow,
   initials,
-  laneX,
   refColArea,
   relativeDate,
 } from './draw';
 import type { WipSummary } from './draw';
-import { entityStyle, groupRefs, layoutRefLabels } from './refLabels';
-import { formatAbsolute } from './dates';
+import { groupRefs, layoutRefLabels } from './refLabels';
 import {
-  chipHitAt,
   fallbackBranchRef,
+  forgeHitAt,
   hitTestRow,
   pillHitAt,
-  prBadgeHitAt,
   sameTarget,
-  signalHitAt,
   targetRefOf,
 } from './hitTest';
 import type { TooltipState } from './hitTest';
+import { layoutForgeCell, rowForgeSignal } from './forgeBadges';
 import {
   backingStoreSize,
   clampTooltipPos,
+  headGuide,
   scrollRowIntoView,
   spacerHeight,
   visibleRowCount,
@@ -48,9 +48,14 @@ import { computeRightColumns } from './rightColumns';
 import type { GraphDisplayOptions } from './rightColumns';
 import type { P7SelfTestResult } from './frameStats';
 import { buildEdgeIndex, edgesInRange } from './edgeIndex';
+import type { IncrementalEdgeIndex } from './incrementalEdgeIndex';
 import { createFrameRecorder } from './frameStats';
 import type { FrameStats } from './frameStats';
 import type { EffectiveMetrics } from './metrics';
+import type { RevealFlash } from './reveal';
+import { flashAlpha, flashRingRadius } from './revealFlash';
+import { startRevealFlash } from './revealFlashRunner';
+import { resolveHoverTarget } from './hoverTarget';
 
 export type { WipSummary };
 
@@ -104,6 +109,22 @@ export interface GraphCanvasProps {
    *  right-pane PR panel. When absent, PR-badge clicks fall through to the
    *  normal row-select. */
   onOpenPr?(number: number): void;
+  /** P65b (streamed path): the incremental edge index owned by the stream
+   *  assembler. When present it REPLACES the internal `buildEdgeIndex(layout)`
+   *  memo (which would be O(n) per streamed batch). Absent ⇒ one-shot path,
+   *  byte-for-byte unchanged. */
+  edgeIndex?: IncrementalEdgeIndex;
+  /** P65b (streamed path): total row count for the scroll extent while rows are
+   *  still arriving. Absent ⇒ the spacer uses `layout.nodes.length` (one-shot /
+   *  grow-as-you-go). */
+  totalRows?: number;
+  /** P84: nonce-driven reveal flash. A NEW `nonce` (re)starts the row-pulse +
+   *  dot-halo highlight on `index`; `null`/absent means no flash. Nonce-driven so
+   *  re-revealing the already-selected row re-flashes. */
+  revealFlash?: RevealFlash | null;
+  /** P84: `prefers-reduced-motion` (read once in the container). When true the
+   *  flash is a static hold, not an animated pulse (revealFlash.ts §3.1). */
+  reducedMotion?: boolean;
 }
 
 /** P2c §5.2: imperative escape hatch — App needs the DOM-measured visible row
@@ -146,6 +167,10 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     verifyStatus,
     onVisibleRangeChange,
     onOpenPr,
+    edgeIndex,
+    totalRows,
+    revealFlash,
+    reducedMotion = false,
   },
   ref,
 ) {
@@ -157,9 +182,17 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   // paths (mirror of themeRef) so they never close over a stale knob set.
   const metricsRef = useRef(metrics);
   metricsRef.current = metrics;
+  // P84: latest reduced-motion flag, read by the paint + flash rAF loop.
+  const reducedMotionRef = useRef(reducedMotion);
+  reducedMotionRef.current = reducedMotion;
   /** Row index, `null` (none), or `-1` sentinel for the synthetic WIP row. */
   const hoverRowRef = useRef<number | null>(null);
   const rafRef = useRef(0);
+  // P84: active reveal flash — the target row + animation start timestamp; null
+  // when no flash is running. Its own rAF handle (separate from the scroll rAF).
+  const flashStateRef = useRef<{ row: number; start: number } | null>(null);
+  const flashRafRef = useRef(0);
+  const flashTimeoutRef = useRef(0);
   const scrollTopRef = useRef(0);
   const cssSizeRef = useRef({ w: 0, h: 0 });
   /** Cursor y relative to the scroller top; null while the pointer is outside. */
@@ -195,8 +228,14 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     [],
   );
 
-  // Edge culling index, built once per layout object (§4.4).
-  const edgeIndex = useMemo(() => buildEdgeIndex(layout), [layout]);
+  // Edge culling index, built once per layout object (§4.4). P65b: on the
+  // streamed path the assembler supplies `edgeIndex` (its own incremental index),
+  // so we skip the internal build entirely — otherwise it would be an O(n)
+  // rebuild on every streamed batch (layout identity bumps per batch).
+  const memoIndex = useMemo(
+    () => (edgeIndex !== undefined ? null : buildEdgeIndex(layout)),
+    [layout, edgeIndex],
+  );
 
   // P50b: search-match set, rebuilt once per matchRows prop change (not per
   // frame). null when there are no matches so the draw pass skips the ring.
@@ -205,11 +244,14 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     [matchRows],
   );
 
-  // Latest props for the stable paint callback.
+  // Latest props for the stable paint callback. `edgeIndex` is the streamed
+  // incremental index (or undefined); `memoIndex` is the one-shot index (or null
+  // when streamed) — paintNow picks whichever is present (§4.3).
   const propsRef = useRef({
     layout,
     selectedIndex,
     edgeIndex,
+    memoIndex,
     wip,
     matchSet,
     display,
@@ -220,6 +262,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     layout,
     selectedIndex,
     edgeIndex,
+    memoIndex,
     wip,
     matchSet,
     display,
@@ -265,7 +308,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     const {
       layout: lay,
       selectedIndex: sel,
-      edgeIndex: ix,
+      edgeIndex: incIx,
+      memoIndex: memoIx,
       wip,
       matchSet,
       display,
@@ -301,16 +345,60 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     const rightInset = scrollerRef.current
       ? scrollerRef.current.offsetWidth - scrollerRef.current.clientWidth
       : 0;
+    // §4.3: streamed path queries the assembler's incremental index; one-shot
+    // path uses the (from,to)-sorted memo. When both are absent (empty layout
+    // guard) nothing is drawn — identical to the prior one-shot behavior.
+    const visibleEdges = incIx
+      ? incIx.edgesInRange(firstRow, lastRow)
+      : memoIx !== null
+        ? edgesInRange(lay, memoIx, firstRow, lastRow)
+        : [];
+    // P84: compute the reveal flash (row-bg pulse + dot halo) for this frame from
+    // the animation start timestamp; the rAF loop below drives repaints.
+    let flash: { row: number; alpha: number; ringRadius: number } | null = null;
+    const fs = flashStateRef.current;
+    if (fs !== null) {
+      const elapsed = performance.now() - fs.start;
+      const dark = isDarkBg(themeRef.current.bg0);
+      const alpha = flashAlpha(elapsed, dark, reducedMotionRef.current);
+      if (alpha > 0) {
+        flash = {
+          row: fs.row,
+          alpha,
+          ringRadius: flashRingRadius(elapsed, m.avatarSelRingRadius, reducedMotionRef.current),
+        };
+      }
+    }
     drawGraph(
       ctx,
       lay,
-      edgesInRange(lay, ix, firstRow, lastRow),
+      visibleEdges,
       { firstRow, lastRow, scrollTop: layoutScrollTop, width: w, height: h, rightInset },
       themeRef.current,
-      { hoverRow, selectedIndex: sel, matchRows: matchSet, verifyStatus: verifyStatus ?? null },
+      { hoverRow, selectedIndex: sel, matchRows: matchSet, verifyStatus: verifyStatus ?? null, flash },
       display,
       m,
     );
+    // P67 §1: the dashed HEAD guideline is INDEPENDENT of the WIP row's near-top
+    // gate — it must point at the checked-out commit at every scroll position.
+    // Drawn before drawWipRow so the dashed WIP marker circle paints on top.
+    const guide = headGuide({
+      headIndex: lay.headIndex,
+      layoutScrollTop,
+      wipOffset,
+      rowHeight,
+      avatarRadius: m.avatarRadius,
+      ringExtra: m.avatarBgRingExtra,
+      viewportHeight: h,
+    });
+    if (guide !== null) {
+      // A5 (§1.1a): a collapsed segment still carries an edge — the marker is
+      // drawn alone so the guide never vanishes once the user scrolls past HEAD.
+      // §1.3 calls the guide unconditionally; `drawHeadGuide` itself no-ops when
+      // `segment === false` (single owner of that check — no duplicate here).
+      drawHeadGuide(ctx, lay, guide, themeRef.current, m);
+      if (guide.edge !== null) drawHeadEdgeMarker(ctx, lay, guide, h, themeRef.current, m);
+    }
     if (wip !== null && scrollTop < rowHeight + 56) {
       drawWipRow(
         ctx,
@@ -475,6 +563,20 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     if (next !== null) scroller.scrollTop = next;
   }, [selectedIndex, wip]);
 
+  // P84: nonce-driven reveal flash. A new `revealFlash.nonce` (re)starts the
+  // flash on `revealFlash.index`; the runner handles both motion modes and
+  // returns the cleanup. See `revealFlashRunner.ts`.
+  const flashNonce = revealFlash?.nonce ?? null;
+  const flashRow = revealFlash?.index ?? null;
+  useEffect(() => {
+    if (flashNonce === null || flashRow === null) return;
+    return startRevealFlash(flashRow, reducedMotionRef.current, paintNow, {
+      state: flashStateRef,
+      raf: flashRafRef,
+      timeout: flashTimeoutRef,
+    });
+  }, [flashNonce, flashRow, paintNow]);
+
   // P7 §6.2: clamp the tooltip inside the host. Runs synchronously after the
   // tooltip renders (at its un-clamped anchor point) but before paint, so the
   // correction is flicker-free. Default below the anchor; flip above / pull left
@@ -531,7 +633,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     // P7 §10 item 2: expose the pure helpers + a self-test (mock only, mirroring
     // scrollSweep). The orchestrator reads `window.__bonsai.p7SelfTest()`.
     // T3.6: the self-test body lives in selfTest.ts now (moved verbatim).
-    const p7 = { initials, avatarColor, groupRefs, layoutRefLabels, refColArea, avatarHit, relativeDate };
+    // P67 §1.5: `headGuide` joins the bag — the only way to assert the guideline
+    // geometry from a headless pane (no canvas pixel is ever produced there).
+    const p7 = { initials, avatarColor, groupRefs, layoutRefLabels, refColArea, avatarHit, relativeDate, headGuide };
     const p7SelfTest = (): P7SelfTestResult => runP7SelfTest(canvasRef.current);
 
     window.__bonsai = { scrollSweep, p7, p7SelfTest };
@@ -549,99 +653,25 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   };
 
   // P7 §6.1: resolve the hover tooltip target from a cursor position (scroller/
-  // host CSS coords). Avatar disc → author-name tooltip; a "+n" chip in the LEFT
-  // ref column → the hidden-entity list. Pure over current props/refs; returns
-  // null for empty area, the WIP row, or when no ctx/theme is available.
-  const computeHoverTarget = (x: number, y: number, scrollTop: number): TooltipState | null => {
-    const { layout: lay, wip, display } = propsRef.current;
-    const row = hitTestAtMouseY(y, scrollTop);
-    if (row === null || row < 0) return null; // none, or the WIP row (-1)
-    const node = lay.nodes[row];
-    const ctx = canvasRef.current?.getContext('2d') ?? null;
-    const theme = themeRef.current;
-    if (ctx === null || theme === null) return null;
-    const m = metricsRef.current;
-    const wipOffset = wip !== null ? 1 : 0;
-    const cy = (row + wipOffset) * m.rowHeight + m.rowHeight / 2 - scrollTop;
-    const cx = laneX(node.lane, m);
-    if (avatarHit(x, y, cx, cy, m)) {
-      const r = m.avatarRadius + m.avatarBgRingExtra;
-      return {
-        kind: 'avatar',
-        text: node.author,
-        anchor: { left: cx - r, top: cy - r, width: 2 * r, height: 2 * r },
-      };
-    }
-    if (node.refs !== undefined && node.refs.length > 0 && x < m.refColWidth) {
-      const { startX, budget } = refColArea(m);
-      const entities = groupRefs(node.refs);
-      const laid = layoutRefLabels(ctx, entities, node, theme, startX, budget, display);
-      const chip = chipHitAt(laid, x);
-      if (chip !== undefined) {
-        const shown = laid.filter((l) => l.entity !== null).length;
-        const lines = entities.slice(shown).map((e) => entityStyle(e, node, theme).label);
-        return {
-          kind: 'overflow',
-          lines,
-          anchor: { left: chip.x, top: cy - m.pillHeight / 2, width: chip.w, height: m.pillHeight },
-        };
-      }
-      // §14.2: hovering a SHOWN branch pill → full branch-name tooltip.
-      // Precedence: avatar (earlier) → chip (above) → shown pill.
-      const hitLabel = pillHitAt(laid, x);
-      if (hitLabel !== undefined && hitLabel.entity !== null && hitLabel.entity.kind === 'branch') {
-        return {
-          kind: 'ref',
-          text: hitLabel.entity.name,
-          anchor: { left: hitLabel.x, top: cy - m.pillHeight / 2, width: hitLabel.w, height: m.pillHeight },
-        };
-      }
-      // P63: forge-signal badges — precedence AFTER the shown pill (the signal
-      // rects sit to the right of the pill body, so they never overlap it).
-      const sig = signalHitAt(laid, x, m.ciBadgeSize);
-      if (sig !== null && sig.kind === 'pr') {
-        const pr = sig.pr;
-        const state = pr.badge.isDraft ? 'draft' : pr.badge.state;
-        return {
-          kind: 'pr',
-          lines: [`PR #${pr.badge.number} (${state})`, pr.badge.title],
-          anchor: { left: pr.x, top: cy - m.pillHeight / 2, width: pr.w, height: m.pillHeight },
-        };
-      }
-      if (sig !== null && sig.kind === 'ci') {
-        const ci = sig.ci;
-        const half = m.ciBadgeSize / 2;
-        const b = ci.badge;
-        return {
-          kind: 'ci',
-          lines: [`Checks: ${b.passed} passed, ${b.failed} failed, ${b.pending} pending`],
-          anchor: { left: ci.cx - half, top: cy - half, width: m.ciBadgeSize, height: m.ciBadgeSize },
-        };
-      }
-    }
-    // P51b: hovering the date column → FULL absolute timestamps (authored +
-    // committed), one per line; the inline date stays relative. Recompute the
-    // column geometry with the SAME pure helper the draw pass uses so the hit
-    // box matches the drawn column exactly. (`display` is read at the top.)
-    const rightInset = scrollerRef.current
-      ? scrollerRef.current.offsetWidth - scrollerRef.current.clientWidth
-      : 0;
-    const effRight = cssSizeRef.current.w - rightInset;
-    const cols = computeRightColumns(effRight, display, m);
-    if (cols.date !== null && x >= cols.date.leftX && x <= cols.date.rightX) {
-      return {
-        kind: 'date',
-        lines: [`Authored  ${formatAbsolute(node.ts)}`, `Committed ${formatAbsolute(node.committerTs)}`],
-        anchor: {
-          left: cols.date.leftX,
-          top: cy - m.pillHeight / 2,
-          width: cols.date.width,
-          height: m.pillHeight,
-        },
-      };
-    }
-    return null;
-  };
+  // host CSS coords). Pure resolution lives in `hoverTarget.ts`; this wrapper
+  // just gathers the container's live props/refs/measurements for it.
+  const computeHoverTarget = (x: number, y: number, scrollTop: number): TooltipState | null =>
+    resolveHoverTarget({
+      x,
+      y,
+      scrollTop,
+      row: hitTestAtMouseY(y, scrollTop),
+      layout: propsRef.current.layout,
+      wip: propsRef.current.wip,
+      display: propsRef.current.display,
+      m: metricsRef.current,
+      ctx: canvasRef.current?.getContext('2d') ?? null,
+      theme: themeRef.current,
+      rightInset: scrollerRef.current
+        ? scrollerRef.current.offsetWidth - scrollerRef.current.clientWidth
+        : 0,
+      cssWidth: cssSizeRef.current.w,
+    });
 
   // Scroll handler ONLY records scrollTop and schedules one rAF paint (§4.1).
   const handleScroll = () => {
@@ -703,20 +733,26 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       onSelect(null);
       return;
     }
-    // P63: a PR badge in the LEFT ref band → open that PR (do NOT select the
-    // row). Recompute the row's laid labels with the SAME pure helper the draw
-    // pass + ref hit-tests use, so the signal rects match the pixels exactly.
+    // PR-badge-placement §6: a PR pill in the FORGE column → open that PR (do
+    // NOT select the row). Recompute the column geometry + the row's forge cell
+    // with the SAME pure helpers the draw pass uses, so the pill rect matches the
+    // pixels exactly.
     const node = layout.nodes[hit];
-    if (onOpenPr !== undefined && x < m.refColWidth && node.refs !== undefined && node.refs.length > 0) {
+    if (onOpenPr !== undefined && node.refs !== undefined && node.refs.length > 0) {
       const ctx = canvasRef.current?.getContext('2d') ?? null;
-      const theme = themeRef.current;
-      if (ctx !== null && theme !== null) {
-        const { startX, budget } = refColArea(m);
-        const laid = layoutRefLabels(ctx, groupRefs(node.refs), node, theme, startX, budget, display);
-        const prHit = prBadgeHitAt(laid, x);
-        if (prHit !== null) {
-          onOpenPr(prHit.badge.number);
-          return;
+      if (ctx !== null) {
+        const rightInset = scroller.offsetWidth - scroller.clientWidth;
+        const cols = computeRightColumns(cssSizeRef.current.w - rightInset, display, m);
+        if (cols.forge !== null && x >= cols.forge.leftX && x <= cols.forge.rightX) {
+          const signal = rowForgeSignal(node.refs, node, display);
+          if (signal !== null) {
+            const cell = layoutForgeCell(ctx, cols.forge.leftX, signal);
+            const forgeHit = forgeHitAt(cell, x, m.ciBadgeSize);
+            if (forgeHit !== null && forgeHit.kind === 'pr') {
+              onOpenPr(forgeHit.pr.badge.number);
+              return;
+            }
+          }
         }
       }
     }
@@ -780,8 +816,14 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   };
 
   // P11d §4.3: spacer (total scroll extent) tracks the live rowHeight knob so
-  // the scrollbar range re-maps on every graph-metric change.
-  const spacerH = spacerHeight(layout.nodes.length, wip !== null ? 1 : 0, metrics.rowHeight);
+  // the scrollbar range re-maps on every graph-metric change. P65b: on the
+  // streamed path `totalRows` extends the extent to the full repo while rows are
+  // still arriving (grow-as-you-go); absent ⇒ layout.nodes.length (unchanged).
+  const spacerH = spacerHeight(
+    Math.max(layout.nodes.length, totalRows ?? 0),
+    wip !== null ? 1 : 0,
+    metrics.rowHeight,
+  );
 
   return (
     <div ref={hostRef} className="graph-canvas-host">
@@ -790,6 +832,11 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         ref={scrollerRef}
         className="graph-scroll"
         data-testid="graph-scroller"
+        tabIndex={0}
+        role="grid"
+        aria-label="Commit graph"
+        aria-rowcount={totalRows ?? layout.nodes.length}
+        aria-activedescendant={selectedIndex !== null ? `graph-row-${selectedIndex}` : undefined}
         onScroll={handleScroll}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}

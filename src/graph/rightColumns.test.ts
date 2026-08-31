@@ -100,4 +100,46 @@ describe('computeRightColumns', () => {
     expect(c.sha?.width).toBe(compact.badgeSlotWidth + compact.badgeGap + compact.shaColWidth);
     expect(c.date?.rightX).toBe(EFF_RIGHT - compact.colGap);
   });
+
+  // PR-badge-placement §2.2: the forge column.
+  const PR = { number: 7, title: 't', state: 'open' as const, isDraft: false, url: 'u' };
+  const CI = { rollup: 'success' as const, passed: 1, failed: 0, pending: 0, total: 1 };
+
+  it('forge is null when the toggles are off, even with data present', () => {
+    const c = computeRightColumns(
+      EFF_RIGHT,
+      disp({ showPrBadge: false, showCiStatus: false, prByBranch: new Map([['f', PR]]), ciBySha: new Map([['s', CI]]) }),
+      M,
+    );
+    expect(c.forge).toBeNull();
+  });
+
+  it('forge is null when enabled but the maps are empty (width handed back)', () => {
+    const c = computeRightColumns(EFF_RIGHT, disp({ showPrBadge: true, showCiStatus: true }), M);
+    expect(c.forge).toBeNull();
+  });
+
+  it('forge reserved when PR data is present + enabled; leftmost of the pack', () => {
+    const c = computeRightColumns(
+      EFF_RIGHT,
+      disp({ showDate: true, showPrBadge: true, prByBranch: new Map([['f', PR]]) }),
+      M,
+    );
+    expect(c.forge?.width).toBe(M.forgeColWidth);
+    // forge sits one colGap left of the date column (leftmost placed = leftmost).
+    expect(c.forge?.rightX).toBe(c.date!.leftX - M.colGap);
+    // summary ends one colGap left of the forge column.
+    expect(c.summaryEndX).toBe(c.forge!.leftX - M.colGap);
+  });
+
+  it('CI-only (no PR) still reserves the forge column', () => {
+    const c = computeRightColumns(EFF_RIGHT, disp({ showCiStatus: true, ciBySha: new Map([['s', CI]]) }), M);
+    expect(c.forge?.width).toBe(M.forgeColWidth);
+  });
+
+  it('reserving forge hands the summary back exactly forgeColWidth + one colGap', () => {
+    const withForge = computeRightColumns(EFF_RIGHT, disp({ showPrBadge: true, prByBranch: new Map([['f', PR]]) }), M);
+    const noForge = computeRightColumns(EFF_RIGHT, disp(), M);
+    expect(noForge.summaryEndX - withForge.summaryEndX).toBe(M.forgeColWidth + M.colGap);
+  });
 });

@@ -1,9 +1,14 @@
 import type { JSX } from 'react';
+import { RevertIcon } from './menuIcons';
 
 /** Folder-level bulk action buttons rendered inside a `.tree-dir-row` (via
  *  Tree's `renderDirActions` render prop). Revealed on row hover / focus-within
  *  (see `.tree-dir-actions` in styles.css). Each handler already closes over the
- *  folder's flattened leaf paths — this component just renders the affordances. */
+ *  folder's flattened leaf paths — this component just renders the affordances.
+ *
+ *  Button order mirrors the file rows in `StatusFileRow.tsx`: secondary and
+ *  destructive controls first, the primary stage/unstage toggle last (rightmost).
+ *  Keep the two in sync — a folder and its children sit in the same column. */
 export function DirRowActions({
   disabled,
   onStage,
@@ -20,10 +25,22 @@ export function DirRowActions({
 }): JSX.Element {
   return (
     <span className="tree-dir-actions">
+      {onDiscard !== undefined && (
+        <button
+          type="button"
+          className="row-action row-action-discard"
+          title="Discard all changes in this folder (reverts modified files and deletes new files)"
+          aria-label="Discard all changes in this folder"
+          disabled={disabled}
+          onClick={onDiscard}
+        >
+          <RevertIcon />
+        </button>
+      )}
       {onStage !== undefined && (
         <button
           type="button"
-          className="row-action"
+          className="row-action row-action-primary"
           title="Stage all files in this folder"
           aria-label="Stage all files in this folder"
           disabled={disabled}
@@ -35,25 +52,13 @@ export function DirRowActions({
       {onUnstage !== undefined && (
         <button
           type="button"
-          className="row-action"
+          className="row-action row-action-primary"
           title="Unstage all files in this folder"
           aria-label="Unstage all files in this folder"
           disabled={disabled}
           onClick={onUnstage}
         >
           {'−'}
-        </button>
-      )}
-      {onDiscard !== undefined && (
-        <button
-          type="button"
-          className="row-action row-action-discard"
-          title="Discard all changes in this folder (reverts modified files and deletes new files)"
-          aria-label="Discard all changes in this folder"
-          disabled={disabled}
-          onClick={onDiscard}
-        >
-          {'↺'}
         </button>
       )}
     </span>

@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import type { RefLabel } from '../ipc';
-import type { CiBadge, PrBadge } from './forgeBadges';
+import type { CiBadge, ForgeCellLayout, PrBadge } from './forgeBadges';
 import {
   chipHitAt,
   fallbackBranchRef,
+  forgeHitAt,
   hitTestRow,
   pillHitAt,
-  prBadgeHitAt,
   sameTarget,
-  signalHitAt,
   targetRefOf,
 } from './hitTest';
 import type { TooltipState } from './hitTest';
@@ -144,7 +143,6 @@ const laidPill = (x: number, w: number, entity: RefEntity | null = branchEntity(
   w,
   icons,
   chip: null,
-  signals: null,
 });
 
 const pr: PrBadge = { number: 42, title: 'T', state: 'open', isDraft: false, url: 'u' };
@@ -184,55 +182,40 @@ describe('chipHitAt / pillHitAt', () => {
   });
 });
 
-describe('prBadgeHitAt / signalHitAt', () => {
-  const withSignals: LaidRefLabel = {
-    ...laidPill(10, 40),
-    signals: { pr: { badge: pr, x: 56, w: 30 }, ci: { badge: ci, cx: 95 } },
-  };
-  const laid = [withSignals, laidPill(120, 30)];
+describe('forgeHitAt (FORGE column)', () => {
   const CI_SIZE = 11;
+  const cell: ForgeCellLayout = { pr: { badge: pr, x: 56, w: 30 }, ci: { badge: ci, cx: 95 } };
 
   it('PR rect edges are inclusive', () => {
-    expect(prBadgeHitAt(laid, 56)?.badge.number).toBe(42);
-    expect(prBadgeHitAt(laid, 86)?.badge.number).toBe(42);
-    expect(prBadgeHitAt(laid, 86.5)).toBeNull();
-    expect(prBadgeHitAt(laid, 55.5)).toBeNull();
+    expect(forgeHitAt(cell, 56, CI_SIZE)).toEqual({ kind: 'pr', pr: cell.pr });
+    expect(forgeHitAt(cell, 86, CI_SIZE)?.kind).toBe('pr');
+    expect(forgeHitAt(cell, 86.5, CI_SIZE)?.kind).not.toBe('pr');
+    expect(forgeHitAt({ pr: cell.pr, ci: null }, 55.5, CI_SIZE)).toBeNull();
   });
 
-  it('no signals anywhere → null', () => {
-    expect(prBadgeHitAt([laidPill(10, 40)], 20)).toBeNull();
-    expect(signalHitAt([laidPill(10, 40)], 20, CI_SIZE)).toBeNull();
-    expect(signalHitAt([], 20, CI_SIZE)).toBeNull();
+  it('empty cell → null', () => {
+    expect(forgeHitAt({ pr: null, ci: null }, 20, CI_SIZE)).toBeNull();
   });
 
-  it('signalHitAt: PR hit', () => {
-    const hit = signalHitAt(laid, 60, CI_SIZE);
-    expect(hit).not.toBeNull();
-    expect(hit?.kind).toBe('pr');
-  });
-
-  it('signalHitAt: CI dot is a half-size box around cx, edges inclusive', () => {
+  it('CI dot is a half-size box around cx, edges inclusive', () => {
+    const ciOnly: ForgeCellLayout = { pr: null, ci: { badge: ci, cx: 95 } };
     const half = CI_SIZE / 2;
-    expect(signalHitAt(laid, 95, CI_SIZE)?.kind).toBe('ci');
-    expect(signalHitAt(laid, 95 - half, CI_SIZE)?.kind).toBe('ci');
-    expect(signalHitAt(laid, 95 + half, CI_SIZE)?.kind).toBe('ci');
-    expect(signalHitAt(laid, 95 + half + 0.01, CI_SIZE)).toBeNull();
-    expect(signalHitAt(laid, 95 - half - 0.01, CI_SIZE)).toBeNull();
+    expect(forgeHitAt(ciOnly, 95, CI_SIZE)?.kind).toBe('ci');
+    expect(forgeHitAt(ciOnly, 95 - half, CI_SIZE)?.kind).toBe('ci');
+    expect(forgeHitAt(ciOnly, 95 + half, CI_SIZE)?.kind).toBe('ci');
+    expect(forgeHitAt(ciOnly, 95 + half + 0.01, CI_SIZE)).toBeNull();
+    expect(forgeHitAt(ciOnly, 95 - half - 0.01, CI_SIZE)).toBeNull();
   });
 
-  it('per-label precedence: PR is checked before CI when boxes touch', () => {
-    const overlapping: LaidRefLabel = {
-      ...laidPill(10, 40),
-      signals: { pr: { badge: pr, x: 56, w: 30 }, ci: { badge: ci, cx: 86 } },
-    };
-    // x=84 is inside BOTH the PR rect (56..86) and the CI box (80.5..91.5).
-    expect(signalHitAt([overlapping], 84, CI_SIZE)?.kind).toBe('pr');
+  it('PR is checked before CI when boxes touch', () => {
+    // x=84 is inside BOTH the PR rect (56..86) and a CI box centered at 86.
+    const overlap: ForgeCellLayout = { pr: { badge: pr, x: 56, w: 30 }, ci: { badge: ci, cx: 86 } };
+    expect(forgeHitAt(overlap, 84, CI_SIZE)?.kind).toBe('pr');
   });
 
-  it('ci-only signals (pr null) resolve', () => {
-    const ciOnly: LaidRefLabel = { ...laidPill(10, 40), signals: { pr: null, ci: { badge: ci, cx: 60 } } };
-    expect(signalHitAt([ciOnly], 60, CI_SIZE)?.kind).toBe('ci');
-    expect(prBadgeHitAt([ciOnly], 60)).toBeNull();
+  it('ci-only cell resolves the dot, never a PR', () => {
+    const ciOnly: ForgeCellLayout = { pr: null, ci: { badge: ci, cx: 60 } };
+    expect(forgeHitAt(ciOnly, 60, CI_SIZE)?.kind).toBe('ci');
   });
 });
 

@@ -172,7 +172,7 @@ export function RebasePlanEditor({
             const dropped = r.action === 'drop';
             const showMessage = r.action === 'reword' || r.action === 'squash';
             return (
-              <div className="rebase-plan-row" key={`${r.oid}:${i}`}>
+              <div className="rebase-plan-row" key={r.oid}>
                 <div className="rebase-plan-reorder">
                   <button
                     type="button"

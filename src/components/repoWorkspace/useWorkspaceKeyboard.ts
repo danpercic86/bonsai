@@ -60,6 +60,14 @@ export function useWorkspaceKeyboard(deps: {
   selectedIndex: number | null;
   graph: GraphLayout | null;
   graphRef: { current: GraphCanvasHandle | null };
+  /** P68e §4.4: `Ctrl/Cmd+Shift+A` — expand the AI activity dock and focus the reply
+   *  box if a run is blocked, else the log. Bound BEFORE the typing guard on purpose:
+   *  Claude's question can arrive while the user is mid-commit-message, and this is
+   *  the DELIBERATE way in that never steals the caret by itself. */
+  onAiActivity: () => void;
+  /** P87b §5: `Ctrl/Cmd+Shift+L` — toggle the git activity dock. Bound BEFORE the
+   *  typing guard (the `+Shift+A` precedent) so it works from the commit box. */
+  onGitActivity: () => void;
   handleRefresh: () => Promise<void> | void;
   handleFetch: () => Promise<void> | void;
   handlePull: () => Promise<void> | void;
@@ -107,6 +115,8 @@ export function useWorkspaceKeyboard(deps: {
     selectedIndex,
     graph,
     graphRef,
+    onAiActivity,
+    onGitActivity,
     handleRefresh,
     handleFetch,
     handlePull,
@@ -249,6 +259,23 @@ export function useWorkspaceKeyboard(deps: {
         return;
       }
 
+      // P68e §4.4: also before the typing guard (the Ctrl+F / Ctrl+K precedent
+      // above), so a user with a half-typed commit message can reach the reply box.
+      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        if (!dialogOpen && !abortConfirmOpen) onAiActivity();
+        return;
+      }
+
+      // P87b §5: Ctrl/Cmd+Shift+L toggles the git activity dock. Free in the map
+      // (F/P/U remote ops, R refresh, K palette, F find, A AI dock); before the
+      // typing guard so it toggles from the commit box too.
+      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        if (!dialogOpen && !abortConfirmOpen) onGitActivity();
+        return;
+      }
+
       const target = e.target as HTMLElement | null;
       const typing =
         target !== null &&
@@ -287,6 +314,27 @@ export function useWorkspaceKeyboard(deps: {
         e.preventDefault();
         if (!refreshing && !mutating && canPullPush) void handlePush();
         return;
+      }
+
+      // M2 (graph review): the first Arrow/Page/Home/End with no prior selection
+      // seeds an anchor so keyboard nav works without a mouse click. Down/PageDown/
+      // Home anchor at headIndex (in range) else 0; Up/End anchor at the last row;
+      // PageUp anchors at 0 (contract M2, line 43).
+      if (graph !== null && graph.nodes.length > 0 && selectedIndex === null) {
+        const lastRow = graph.nodes.length - 1;
+        const headAnchor =
+          graph.headIndex !== null && graph.headIndex >= 0 && graph.headIndex <= lastRow
+            ? graph.headIndex
+            : 0;
+        let seed: number | null = null;
+        if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === 'Home') seed = headAnchor;
+        else if (e.key === 'ArrowUp' || e.key === 'End') seed = lastRow;
+        else if (e.key === 'PageUp') seed = 0; // contract M2: PageUp with none → 0
+        if (seed !== null) {
+          e.preventDefault();
+          setSelectedIndex(seed);
+          return;
+        }
       }
 
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -338,6 +386,8 @@ export function useWorkspaceKeyboard(deps: {
     paletteOpen,
     togglePalette,
     composerOpen,
+    onAiActivity,
+    onGitActivity,
     selectedIndex,
     graph,
   ]);

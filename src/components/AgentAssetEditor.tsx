@@ -17,6 +17,7 @@ import type {
 } from '../ipc';
 import { usePushToast } from '../ToastContext';
 import { errorMessage, isAppError } from '../utils/errors';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 import { ConfirmDialog } from './ConfirmDialog';
 
 export interface AgentAssetEditorProps {
@@ -169,6 +170,9 @@ export function AgentAssetEditor({ repoId, kind, name, onSaved, onClose }: Agent
 
   const readOnly = loadedAsset !== null && isComplex(loadedAsset);
 
+  const cardRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(true, cardRef, true); // modal focus: focus in, trap Tab, restore
+
   // Load the existing asset (edit mode). Request id guards a stale resolve.
   const loadIdRef = useRef(0);
   useEffect(() => {
@@ -320,7 +324,7 @@ export function AgentAssetEditor({ repoId, kind, name, onSaved, onClose }: Agent
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="dialog-card agent-editor-card" role="dialog" aria-label={title}>
+      <div ref={cardRef} className="dialog-card agent-editor-card" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}>
         <div className="shortcut-header">
           <h2 className="dialog-title shortcut-title">{title}</h2>
           <button

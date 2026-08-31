@@ -1,6 +1,7 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
 import type { IpcApi } from '../../types';
 import { AI_OFF, delay, requireRepo, stripConflictMarkers } from '../repoState';
+import { resolutionIsNovel } from '../aiNovel';
 import { MAIN_RS_PATH, linesEqual } from '../statusHelpers';
 import type { AiAnalysis, AiAnalysisMode, AiAvailability, AiChangelog, AiDiffTarget, AiDigestRange, AiResolveProposal, AiSummary, AppError, BranchNameProposal, BranchNameSource, ChangelogRange, CommitMessageProposal, ComposeGroup, ComposeProposal, OperationPlan } from '../../types';
 
@@ -39,7 +40,11 @@ export const aiHandlers = {
     // mutate state: the proposal is only applied when the caller feeds it to
     // resolveConflictText (ProposeReview accept / AutoResolve).
     const proposedText = file !== undefined ? stripConflictMarkers(file.text) : '';
-    return { path, proposedText, costUsd: 0.012 };
+    // P68 #7 / H1: the P13 fallback computes needsReview for consistency (it is
+    // proposeReview-only in practice, so informational here). Same twin as the stream.
+    const needsReview =
+      file === undefined ? false : resolutionIsNovel([file.ours, file.theirs], proposedText);
+    return { path, proposedText, costUsd: 0.012, needsReview };
   },
 
   // P15a: propose a commit message from the staged diff. Writes NOTHING — the

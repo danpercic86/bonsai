@@ -1,0 +1,406 @@
+/* Bonsai — Multi-field dialog forms: tag/remote, changelog, worktree, combobox, rebase, clone.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* P22: TagCreateDialog / RemoteEditDialog — multi-field forms reuse
+   .dialog-label / .dialog-input, plus a checkbox row + a textarea variant. */
+.dialog-body > .dialog-label + .dialog-label,
+.dialog-body > .dialog-label + .dialog-checkbox-label,
+.dialog-body > .dialog-checkbox-label + .dialog-label {
+  margin-top: 12px;
+}
+
+.dialog-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+/* P56b: ChangelogDialog — a touch wider than the default card so the ref
+   comboboxes (tag/branch names) aren't cramped. Reuses the shared radio/field
+   idioms otherwise. */
+.changelog-dialog {
+  width: 400px;
+}
+
+/* P28: WhatChangedDialog — horizontal radio mode picker above the fields. */
+.dialog-radio-group {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.dialog-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.dialog-body > .dialog-radio-group + .dialog-label {
+  margin-top: 0;
+}
+
+.dialog-textarea {
+  height: auto;
+  padding: 8px 10px;
+  resize: vertical;
+  line-height: 1.4;
+}
+
+/* P32 Part B: copy-uncommitted-files list inside the new-worktree dialog. */
+.wt-copy-list {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.wt-copy-group {
+  margin-top: 8px;
+}
+
+.wt-copy-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+
+/* Per-group Check all ⇄ Uncheck all toggle (Staged/Unstaged/Untracked). */
+.wt-copy-selectall {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.wt-copy-selectall:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.wt-copy-selectall:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.wt-copy-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+}
+
+.wt-copy-check {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wt-copy-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wt-copy-conflict {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.wt-copy-chip {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.wt-copy-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.wt-copy-toggle button {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: none;
+  background: var(--bg-2);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.wt-copy-toggle button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.wt-copy-toggle-on {
+  background: var(--accent) !important;
+  color: #fff !important;
+}
+
+.wt-copy-warn {
+  color: var(--warning, var(--danger));
+}
+
+/* New-worktree dialog: wider card so long copy-candidate paths stay readable
+   (mirrors .rebase-plan-card). Keeps the .dialog-card responsive max-width cap. */
+.dialog-card.worktree-create-card {
+  width: 520px;
+}
+
+/* Reusable searchable combobox (branch picker + WhatChanged ref fields). The
+   input reuses .dialog-input; only the popover + option rows are new. */
+.combobox {
+  position: relative;
+}
+
+.combobox-popover {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 120;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.combobox-option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-1);
+  cursor: pointer;
+}
+
+.combobox-option--active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.combobox-option--disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+.combobox-option--disabled.combobox-option--active {
+  background: transparent;
+  color: var(--text-3);
+}
+
+.combobox-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combobox-option-hint {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.combobox-option--active .combobox-option-hint {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* P23b: interactive-rebase plan editor — wider card, a reorderable row list. */
+.rebase-plan-card {
+  width: 560px;
+}
+
+.rebase-plan-hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.rebase-plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.rebase-plan-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+}
+
+.rebase-plan-reorder {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rebase-plan-icon-btn {
+  width: 22px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-1);
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.rebase-plan-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.rebase-plan-action {
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-1);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.rebase-plan-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rebase-plan-commit {
+  font-size: 12px;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+
+.rebase-plan-commit.dropped {
+  text-decoration: line-through;
+  color: var(--text-3);
+}
+
+.rebase-plan-msg {
+  width: 100%;
+  font-size: 12px;
+}
+
+/* P22: configured-remote row — the fetch URL shown small + truncated. */
+.branch-name.remote-url {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+}
+
+/* P21: CloneDialog — destination row + determinate progress region. */
+.clone-dest-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.clone-dest-path {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clone-dest-btn {
+  flex: none;
+}
+
+.clone-progress {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.clone-progress-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.clone-progress-bar {
+  width: 100%;
+  height: 6px;
+  appearance: none;
+  border: none;
+  border-radius: 3px;
+  background: var(--bg-2);
+  overflow: hidden;
+}
+
+.clone-progress-bar::-webkit-progress-bar {
+  background: var(--bg-2);
+  border-radius: 3px;
+}
+
+.clone-progress-bar::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: 3px;
+}
+
+.clone-progress-bar::-moz-progress-bar {
+  background: var(--accent);
+  border-radius: 3px;
+}
+
+.clone-progress-detail {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-3);
+}
+

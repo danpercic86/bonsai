@@ -2,10 +2,15 @@
  *  from fixture health data, ≥-capped values, warn/ok chips, per-section error
  *  isolation, and Refresh wiring. IPC is stubbed via vi.spyOn(mockIpc, …). */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { RepoHealthPanel } from './RepoHealthPanel';
 import { mockIpc } from '../ipc/mock';
-import type { RepoHealth, Section } from '../ipc';
+import type { RepoChangedPayload, RepoHealth, Section } from '../ipc';
+import {
+  __resetEchoSuppression,
+  armEcho,
+  clearEchoSuppression,
+} from './repoWorkspace/echoSuppression';
 
 function sec<T>(data: T, elapsedMs = 5): Section<T> {
   return { data, error: null, elapsedMs };
@@ -71,6 +76,7 @@ function health(over: Partial<RepoHealth> = {}): RepoHealth {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  __resetEchoSuppression();
   vi.spyOn(mockIpc, 'onRepoChanged').mockResolvedValue(() => {});
 });
 
@@ -137,6 +143,40 @@ describe('RepoHealthPanel', () => {
     expect(screen.getByRole('button', { name: 'Refreshing…' })).toBeDisabled();
     settle(health());
     expect(await screen.findByRole('button', { name: 'Refresh' })).toBeEnabled();
+  });
+
+  it('P81 (AC8): drops the self-echo repo-changed within the window, refetches after it', async () => {
+    const spy = vi.spyOn(mockIpc, 'getRepoHealth').mockResolvedValue(health());
+    let handler: ((p: RepoChangedPayload) => void) | null = null;
+    vi.spyOn(mockIpc, 'onRepoChanged').mockImplementation((cb) => {
+      handler = cb;
+      return Promise.resolve(() => {});
+    });
+    render(<RepoHealthPanel open onClose={vi.fn()} repoId="/mock/repo" />);
+    await screen.findByText('Commits (HEAD)');
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(handler).toBeTruthy();
+
+    // Armed window active → the self-caused echo is a no-op.
+    armEcho('/mock/repo');
+    await act(async () => {
+      handler?.({ repoId: '/mock/repo', reason: 'test' });
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // A different repo's echo is never our concern regardless.
+    await act(async () => {
+      handler?.({ repoId: '/other', reason: 'test' });
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // Span closed (P85 A2: the round settled + tail elapsed) → a genuine
+    // external change refetches. clearEchoSuppression models "no longer suppressed".
+    clearEchoSuppression('/mock/repo');
+    await act(async () => {
+      handler?.({ repoId: '/mock/repo', reason: 'test' });
+    });
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
   });
 
   it('close button and backdrop call onClose', async () => {

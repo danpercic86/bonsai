@@ -1,3 +1,5 @@
+import { BulkAiConfirmDialog } from './dialogs/BulkAiConfirmDialog';
+import { ConfirmDialog } from './ConfirmDialog';
 import { DestructiveDialogs } from './dialogs/DestructiveDialogs';
 import { HookOutputDialog } from './HookOutputDialog';
 import { StashDialogs } from './dialogs/StashDialogs';
@@ -6,6 +8,7 @@ import { RemoteDialogs } from './dialogs/RemoteDialogs';
 import { WorktreeDialogs } from './dialogs/WorktreeDialogs';
 import { CleanupDialogs } from './dialogs/CleanupDialogs';
 import type { ContextMenuItem } from './ContextMenu';
+import type { BulkAiConfirmState } from './repoWorkspace/useBulkAiResolve';
 import type {
   AiDigestRange,
   BranchInfo,
@@ -50,16 +53,16 @@ export interface WorkspaceDialogsProps {
   setPendingDeleteRemote: (v: string | null) => void;
   handleDeleteRemoteTracking(name: string): void;
 
-  pendingDropStash: number | null;
-  setPendingDropStash: (v: number | null) => void;
-  handleDropStash(index: number): void;
+  pendingDropStash: { index: number; oid?: string } | null;
+  setPendingDropStash: (v: { index: number; oid?: string } | null) => void;
+  handleDropStash(index: number, oid?: string): void;
 
-  pendingReservedStash: { index: number; op: 'apply' | 'pop'; paths: string[] } | null;
+  pendingReservedStash: { index: number; op: 'apply' | 'pop'; paths: string[]; oid?: string } | null;
   setPendingReservedStash: (
-    v: { index: number; op: 'apply' | 'pop'; paths: string[] } | null,
+    v: { index: number; op: 'apply' | 'pop'; paths: string[]; oid?: string } | null,
   ) => void;
-  handleApplyStashSkipping(index: number): void;
-  handlePopStashSkipping(index: number): void;
+  handleApplyStashSkipping(index: number, oid?: string): void;
+  handlePopStashSkipping(index: number, oid?: string): void;
 
   pendingReset: { oid: string; mode: ResetMode } | null;
   setPendingReset: (v: { oid: string; mode: ResetMode } | null) => void;
@@ -100,6 +103,13 @@ export interface WorkspaceDialogsProps {
   hookRetrying: boolean;
   onHookSkipRetry(): void;
   onHookCancel(): void;
+
+  /** First-time per-repo git-hook execution disclosure (block-until-acknowledged).
+   *  `pendingHookDisclosure` drives the ConfirmDialog; confirm ⇒ proceed + persist
+   *  the ack, cancel ⇒ the op is silently canceled. */
+  pendingHookDisclosure: boolean;
+  onHookDiscloseConfirm(): void;
+  onHookDiscloseCancel(): void;
 
   pendingHunkDiscard: { path: string; origPath: string | null; hunkIndex: number } | null;
   setPendingHunkDiscard: (v: { path: string; origPath: string | null; hunkIndex: number } | null) => void;
@@ -193,6 +203,10 @@ export interface WorkspaceDialogsProps {
 
   menu: { x: number; y: number; items: ContextMenuItem[] } | null;
   closeMenu(): void;
+
+  /** P68f: the confirm gate in front of "Resolve all with AI" (one run, N files,
+   *  real spend). State lives in `useBulkAiResolve`. */
+  bulkAiConfirm: BulkAiConfirmState;
 }
 
 /** P3e: the full trailing dialog/modal cluster + graph context menu for a
@@ -210,6 +224,24 @@ export function WorkspaceDialogs(props: WorkspaceDialogsProps) {
         onSkipRetry={props.onHookSkipRetry}
         onCancel={props.onHookCancel}
       />
+
+      <ConfirmDialog
+        open={props.pendingHookDisclosure}
+        title="This repository defines git hooks"
+        confirmLabel="Run hooks"
+        confirmVariant="primary"
+        busy={false}
+        onConfirm={props.onHookDiscloseConfirm}
+        onCancel={props.onHookDiscloseCancel}
+      >
+        <div>
+          Committing, merging, or pushing in this repository will run its git hooks
+          (<span className="mono">.git/hooks</span>). This is standard git behavior, but the
+          scripts can run arbitrary code on your machine. Bonsai shows this once per repository.
+          To disable hooks, set <span className="mono">bonsai.runHooks=false</span> in this
+          repo&apos;s git config, or use the <strong>Skip hooks</strong> toggle per operation.
+        </div>
+      </ConfirmDialog>
 
       <DestructiveDialogs
         mutating={props.mutating}
@@ -341,6 +373,8 @@ export function WorkspaceDialogs(props: WorkspaceDialogsProps) {
         menu={props.menu}
         closeMenu={props.closeMenu}
       />
+
+      <BulkAiConfirmDialog {...props.bulkAiConfirm} />
     </>
   );
 }

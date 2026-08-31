@@ -67,10 +67,13 @@ fn worktree_is_bad(d: &Path) -> bool {
     d.join("bug.txt").exists()
 }
 
-/// Parses `<40hex> is the first bad commit` out of `git bisect good/bad` output.
+/// Parses `<40hex> is the first bad commit` out of `git bisect good/bad`
+/// output. Git >= ~2.5x quotes the verdict (`is the first 'bad' commit`);
+/// older git omits the quotes (`is the first bad commit`) — match both so
+/// this oracle isn't pinned to one git version's exact wording.
 fn parse_first_bad(out: &str) -> Option<String> {
     for line in out.lines() {
-        if line.contains("is the first bad commit") {
+        if line.contains("is the first bad commit") || line.contains("is the first 'bad' commit") {
             let oid = line.split_whitespace().next()?;
             if oid.len() == 40 && oid.chars().all(|c| c.is_ascii_hexdigit()) {
                 return Some(oid.to_string());

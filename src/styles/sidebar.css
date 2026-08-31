@@ -1,0 +1,316 @@
+/* Bonsai — Sidebar: branches / remotes / tags (M5).
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- Sidebar: branches / remotes / tags (M5) ---------- */
+
+.sidebar-error {
+  margin-bottom: 12px;
+}
+
+.sidebar-section {
+  margin-bottom: 16px;
+}
+
+/* P74 §2.2: the header row sets the 24px hit-target floor (WCAG 2.2 2.5.8) and
+   normalises all six section headers onto one 24px module (Tags was 16px). */
+.sidebar-section-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+}
+
+.sidebar-section-toggle {
+  flex: 1;
+  min-width: 0;
+  /* Fills the 24px header instead of hardcoding a height. */
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  /* P74 OPEN-1: the 4px inline padding gives the hover wash the same left edge
+     as `.branch-row` (12px = the sidebar gutter) and puts the chevron on the
+     shared 16px content column. Deliberately NO negative margin — bleeding into
+     the gutter would make this the only element in the pane doing so. */
+  padding: 0 4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sidebar-section-toggle:hover {
+  background: var(--bg-2);
+  border-radius: 4px;
+}
+
+/* P74 §2.2: the transparent box grows to 24px; the painted glyph stays 14px
+   (see `.sidebar-add-icon svg`) — same relationship as `.btn-icon`. */
+.sidebar-add {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* Variant carrying an inline SVG glyph (14×14) instead of a text glyph. */
+.sidebar-add-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-add-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sidebar-add:hover:not(:disabled) {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.sidebar-add:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+.branch-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.branch-row {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  border-radius: 4px;
+  padding: 0 4px;
+  /* P6 §4.7: right-click opens the context menu — don't select the label text. */
+  user-select: none;
+}
+
+.branch-row:hover {
+  background: var(--bg-2);
+}
+
+.branch-glyph {
+  flex: none;
+  width: 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* Icon-system §3: sidebar node type glyphs. 14px fills the existing 14px-wide
+   .branch-glyph slot; colour still flows from .branch-glyph via currentColor. */
+.branch-glyph svg {
+  width: 14px;
+  height: 14px;
+}
+
+.branch-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-1);
+}
+
+.branch-name-muted {
+  color: var(--text-2);
+}
+
+/* P77 §2.6/§8: remote-only tag "ghost" rows — not in your repo yet. A single
+   opacity layer dims the whole row so it reads as absent-locally. */
+.branch-row-ghost {
+  opacity: 0.7;
+}
+
+/* B.2: the checked-out branch is conveyed by weight + the accent glyph +
+   aria-current — NOT by hue on the label (accent text fails AA on the hover
+   wash). Name text stays --text-1; the accent lives on the graphic glyph. */
+.branch-row-head .branch-name {
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.branch-row-head .branch-glyph {
+  color: var(--accent);
+}
+
+.branch-row-detached .branch-name,
+.branch-row-detached .branch-glyph {
+  color: color-mix(in srgb, var(--warning) 80%, var(--text-1));
+  font-size: 12px;
+}
+
+.branch-badge {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* P19 §6.2: submodule status pills — display-only, theme-aware intents.
+   Reuses .branch-badge sizing; adds a subtle tinted pill per status. */
+.submodule-badge-muted,
+.submodule-badge-busy,
+.submodule-badge-ok,
+.submodule-badge-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: inherit;
+  padding: 1px 6px;
+  /* All five states share one box: the ok/warn pills carry a 1px border
+     (OPT-1), so the borderless states declare a transparent one — otherwise
+     pills of different states in the same list differ in height by 2px and the
+     busy pill visibly shrinks the moment an op starts. */
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+/* P73 §7.2: "not checked out" is load-bearing text, so it may not sit on
+   --text-3 (decorative only, ui-reference §2). --text-2 on its own 12% tint
+   measures 5.79:1 dark / 6.22:1 light. Shared with the worktree `main` pill. */
+.submodule-badge-muted {
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--text-2) 12%, transparent);
+}
+
+/* P73 §6.1: in-flight submodule op. Word-only — no hue, because "busy" is not a
+   verdict; the verdict arrives as the toast + the settled badge. */
+.submodule-badge-busy {
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--text-2) 12%, transparent);
+}
+
+/* P73 OPT-1 / ui-reference §11: verdict pills use the house recipe — label on
+   --text-1, hue confined to a 40% border + the aria-hidden glyph over a 14%
+   tint. Hue as label colour over its own tint misses AA in light theme. */
+.submodule-badge-ok,
+.submodule-badge-warn {
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--h) 14%, var(--bg-1));
+  border: 1px solid color-mix(in srgb, var(--h) 40%, var(--bg-1));
+}
+
+.submodule-badge-ok {
+  --h: var(--success);
+}
+
+.submodule-badge-warn {
+  --h: var(--warning);
+}
+
+.submodule-badge-glyph {
+  color: var(--h, var(--text-2));
+}
+
+.branch-muted {
+  color: var(--text-3);
+  font-size: 12px;
+  margin: 4px 0 0;
+  padding: 0 4px;
+}
+
+.branch-create-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.branch-create-input {
+  height: 24px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 0 6px;
+}
+
+.branch-create-input::placeholder {
+  color: var(--text-3);
+}
+
+.branch-create-input:disabled {
+  opacity: 0.6;
+}
+
+.branch-create-error {
+  color: var(--danger);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+/* P50d — inline per-section list filter (Branches / Remotes / Tags). A flex row
+   mirroring the section header so the clear button sits beside the input like
+   the section "+" actions. */
+.list-filter {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.list-filter-input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 0 6px;
+}
+
+.list-filter-input::placeholder {
+  color: var(--text-3);
+}
+
+.list-filter-count {
+  flex: none;
+  font-size: 10px;
+  color: var(--text-3);
+  padding: 0 2px;
+}
+
+.list-filter-clear {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.list-filter-clear:hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+

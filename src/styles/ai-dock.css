@@ -1,0 +1,341 @@
+/* Bonsai — AI activity dock (P68e): shell, header row, run strip and body.
+   Extracted verbatim from src/styles.css. Cascade order is fixed by the
+   import list in src/styles.css — do not reorder these rules or files. */
+
+/* ---------- P68e: AI activity dock ---------- */
+
+/* U1 — a disclosure, not a pane: the THIRD element child of `.workspace-host`
+   (toolbar → .panes → dock), full width because P67b reclaimed ~115px in the right
+   panel and the dock must not eat it back.
+   §10 — every colour below aliases an existing themed custom property or is a
+   color-mix over one, so ONE rule set serves both themes and no
+   [data-theme='light'] block is needed. `--text-3` appears nowhere (U9: it measures
+   3.38:1 dark / 2.96:1 light on --bg-1, below AA for text). */
+.ai-dock {
+  /* geometry — cozy */
+  --ai-dock-header-h: 30px;
+  --ai-dock-pad-x: 12px;
+  --ai-dock-gap: 8px;
+  --ai-dock-ctl-h: 28px; /* AA floor is 24px; never go below it */
+  --ai-dock-log-font: 12px;
+  --ai-dock-log-line-h: 18px;
+  --ai-dock-log-pad: 6px 12px;
+  --ai-dock-queue-row-h: 26px;
+  --ai-dock-strip-h: 24px;
+  --ai-dock-ask-pad: 8px 12px;
+  --ai-dock-ask-min: 48px;
+  --ai-dock-ask-max: 120px;
+  --ai-dock-label-font: 12px;
+
+  /* colour aliases — theme-safe by construction */
+  --ai-dock-bg: var(--bg-1);
+  --ai-dock-log-bg: var(--bg-0);
+  --ai-dock-meta: var(--text-2);
+  --ai-dock-tool: var(--accent);
+  --ai-dock-attention: var(--warning);
+
+  flex: none;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--ai-dock-bg, var(--bg-1));
+  border-top: 1px solid var(--border);
+}
+
+.ai-dock[data-density='compact'] {
+  --ai-dock-header-h: 28px;
+  --ai-dock-pad-x: 8px;
+  --ai-dock-gap: 6px;
+  --ai-dock-ctl-h: 24px;
+  --ai-dock-log-font: 11px;
+  --ai-dock-log-line-h: 16px;
+  --ai-dock-log-pad: 4px 8px;
+  --ai-dock-queue-row-h: 24px;
+  --ai-dock-strip-h: 22px;
+  --ai-dock-ask-pad: 6px 8px;
+  --ai-dock-ask-min: 36px;
+  --ai-dock-ask-max: 96px;
+  --ai-dock-label-font: 11px;
+}
+
+/* §4.1: collapsed + a run awaiting input reads as "needs you" WITHOUT expanding.
+   No blinking, ever. */
+.ai-dock[data-attention='true'] .ai-dock-header {
+  background: color-mix(in srgb, var(--ai-dock-attention, #d29922) 14%, var(--bg-1));
+}
+
+/* §2 progress cue: 2px indeterminate sweep on the dock's top edge, reusing the
+   existing @keyframes header-progress-sweep. Absolutely positioned so it does not
+   steal the resizer's 4px hit strip. */
+.ai-dock-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ai-dock-progress::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: var(--accent);
+  animation: header-progress-sweep 1.1s ease-in-out infinite;
+}
+
+/* §8: horizontal resizer on the top edge, 4px visual / 8px pointer band. */
+.pane-divider-ai-dock {
+  height: 4px;
+  flex: none;
+  cursor: row-resize;
+}
+
+.pane-divider-ai-dock::after {
+  content: '';
+  position: absolute;
+  inset: -2px 0;
+}
+
+.pane-divider-ai-dock:hover {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.pane-divider-ai-dock:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* ---- header row (§2) */
+
+.ai-dock-header {
+  flex: none;
+  height: var(--ai-dock-header-h, 30px);
+  display: flex;
+  align-items: center;
+  gap: var(--ai-dock-gap, 8px);
+  padding: 0 var(--ai-dock-pad-x, 12px);
+  min-width: 0;
+}
+
+.ai-dock-toggle {
+  flex: none;
+  width: var(--ai-dock-ctl-h, 28px);
+  height: var(--ai-dock-ctl-h, 28px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ai-dock-meta, var(--text-2));
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-dock-toggle:hover {
+  background: var(--bg-2);
+}
+
+/* §10: the hue lives in the border and the glyph; the LABEL is always --text-1
+   (12.1:1 light / 9.1:1 dark over the tint) so no status word falls under AA. */
+.ai-dock-status {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--h, var(--accent)) 14%, var(--ai-dock-bg, var(--bg-1)));
+  border: 1px solid color-mix(in srgb, var(--h, var(--accent)) 40%, var(--ai-dock-bg, var(--bg-1)));
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out;
+}
+
+.ai-dock-status[data-status='running'] {
+  --h: var(--accent);
+}
+
+.ai-dock-status[data-status='awaiting'] {
+  --h: var(--warning);
+}
+
+.ai-dock-status[data-status='ready'] {
+  --h: var(--success);
+}
+
+.ai-dock-status[data-status='failed'] {
+  --h: var(--danger);
+}
+
+.ai-dock-status[data-status='stopping'],
+.ai-dock-status[data-status='cancelled'] {
+  --h: var(--ai-dock-meta, var(--text-2));
+}
+
+.ai-dock-status-glyph {
+  color: var(--h, var(--accent));
+}
+
+.ai-dock-subject {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  font-size: var(--ai-dock-label-font, 12px);
+  white-space: nowrap;
+  overflow: hidden;
+  color: var(--text-1);
+}
+
+.ai-dock-dir {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ai-dock-meta, var(--text-2));
+}
+
+.ai-dock-name {
+  flex: none;
+  color: var(--text-1);
+}
+
+/* §2 / U2: the latest output line, collapsed only — the "what is it doing" answer
+   that does not require opening anything. */
+.ai-dock-activity {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--ai-dock-meta, var(--text-2));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-dock-turn {
+  flex: none;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ai-dock-meta, var(--text-2));
+}
+
+.ai-dock-elapsed,
+.ai-dock-thinking,
+.ai-dock-cost {
+  flex: none;
+  font-size: var(--ai-dock-label-font, 12px);
+  color: var(--ai-dock-meta, var(--text-2));
+  font-variant-numeric: tabular-nums;
+}
+
+/* §12-B1: the live thinking-token estimate. Same muted meta role as elapsed/cost —
+   it is a signal that something is being spent, never a headline number. */
+.ai-dock-thinking {
+  white-space: nowrap;
+}
+
+/* The right-hand cluster is pushed over by whichever meta item comes first: the
+   activity line already takes the slack when it is present. */
+.ai-dock-header > .ai-dock-elapsed {
+  margin-left: auto;
+}
+
+.ai-dock-activity ~ .ai-dock-elapsed,
+.ai-dock-turn ~ .ai-dock-elapsed {
+  margin-left: 0;
+}
+
+.ai-dock-review,
+.ai-dock-answer,
+.ai-dock-cancel,
+.ai-dock-send,
+.ai-run-queue-action {
+  flex: none;
+  height: var(--ai-dock-ctl-h, 28px);
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.ai-dock-dismiss {
+  flex: none;
+  margin-left: 0;
+  width: var(--ai-dock-ctl-h, 28px);
+  height: var(--ai-dock-ctl-h, 28px);
+}
+
+/* ---- run strip (§1.6) */
+
+.ai-dock-runs {
+  flex: none;
+  height: var(--ai-dock-strip-h, 24px);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 var(--ai-dock-pad-x, 12px);
+  overflow-x: auto;
+}
+
+.ai-dock-run-chip {
+  flex: none;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 1px 6px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ai-dock-run-chip[aria-selected='true'] {
+  background: var(--bg-3);
+  border-color: var(--accent);
+}
+
+.ai-dock-capacity {
+  flex: none;
+  font-size: 11px;
+  color: var(--ai-dock-meta, var(--text-2));
+}
+
+/* ---- body */
+
+.ai-dock-body {
+  flex: none;
+  position: relative; /* the jump-to-latest button anchors to this */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+}
+
+.ai-dock-hint {
+  flex: none;
+  margin: 0;
+  padding: 4px var(--ai-dock-pad-x, 12px);
+  font-size: 11px;
+  color: var(--ai-dock-meta, var(--text-2));
+}
+
+.ai-dock-error-next {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ai-dock-meta, var(--text-2));
+}
+
