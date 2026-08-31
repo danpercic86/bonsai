@@ -2,6 +2,13 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 export interface ContextMenuItem {
   label: string;
+  /** P92: native `title` tooltip on the row (picker rows carry the FULL ref
+   *  name, since the label is the short/collapsed form and may ellipsise). */
+  title?: string;
+  /** P92: `true` ⇒ this entry renders as a non-interactive `role="separator"`
+   *  rule instead of a row. Keyboard navigation skips it for free (the focus
+   *  queries scope to `button[role="menuitem*"]`). `label` is ignored. */
+  separator?: true;
   /** Optional: a pure-submenu parent may omit a default action. */
   onSelect?(): void;
   disabled?: boolean;
@@ -29,6 +36,17 @@ export interface ContextMenuItem {
   detail?: string;
 }
 
+/** P92: the open-menu state a container holds (position + items + the optional
+ *  §4 header / accessible name). Shared so every ContextMenu owner spells it the
+ *  same way. */
+export interface ContextMenuState {
+  x: number;
+  y: number;
+  items: ContextMenuItem[];
+  header?: string;
+  ariaLabel?: string;
+}
+
 export interface ContextMenuProps {
   /** clientX anchor. */
   x: number;
@@ -43,6 +61,9 @@ export interface ContextMenuProps {
    * for free: the focus queries scope to the row buttons.
    */
   header?: React.ReactNode;
+  /** P92: accessible name for the menu root (e.g. `3 more refs on commit 4f2a91c`).
+   *  Absent ⇒ no `aria-label` (byte-identical to pre-P92). */
+  ariaLabel?: string;
   /**
    * P69i. `aria-busy` on the menu root, for a menu that deliberately stays open
    * while an activated row's write settles (UI §4.5). Additive and generic.
@@ -56,7 +77,7 @@ const HOVER_CLOSE_MS = 180;
 interface MenuListProps {
   items: ContextMenuItem[];
   onClose(): void;
-  /** true ⇒ render as an absolutely-positioned flyout (`.context-menu--sub`). */
+  /** true ⇒ render as a viewport-fixed flyout (`.context-menu--sub`, P92 §8.1). */
   isSub?: boolean;
   /** Focus the first enabled row once mounted (root mount / keyboard-opened sub). */
   autoFocus?: boolean;
@@ -68,6 +89,8 @@ interface MenuListProps {
   containerRef?: React.RefObject<HTMLDivElement | null>;
   /** Root only: the §4.4 header block. */
   header?: React.ReactNode;
+  /** Root only: P92 accessible name for the menu root. */
+  ariaLabel?: string;
   /** Root only: `aria-busy` while an activated row is settling. */
   busy?: boolean;
 }
@@ -85,6 +108,7 @@ function MenuList({
   style,
   containerRef,
   header,
+  ariaLabel,
   busy,
 }: MenuListProps) {
   const ownRef = useRef<HTMLDivElement>(null);
@@ -96,14 +120,25 @@ function MenuList({
 
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [focusSub, setFocusSub] = useState(false);
+  // P92 §8.1 / addendum A.1: the flyout is `position: fixed`, so the pre-measure
+  // pass must use viewport numbers (a `left: '100%'` would be 100% of the
+  // VIEWPORT, not of the row) and stay invisible until measured.
   const [subStyle, setSubStyle] = useState<React.CSSProperties>(
-    isSub ? { left: '100%', top: 0, visibility: 'hidden' } : {},
+    isSub ? { left: 0, top: 0, visibility: 'hidden' } : {},
   );
   const hoverTimer = useRef<number | undefined>(undefined);
   const closeTimer = useRef<number | undefined>(undefined);
 
   // Position + clamp the flyout (submenu only): open rightward by default, flip
   // leftward on right-edge overflow; raise it into view on bottom overflow.
+  //
+  // P92 addendum A.1: coordinates are VIEWPORT coordinates derived from the
+  // anchor row's `getBoundingClientRect()`, because the flyout is now
+  // `position: fixed`. The old `position: absolute` made it a descendant of the
+  // parent's scroll box (`.context-menu { overflow-y: auto }`, which computes
+  // `overflow-x` to `auto`), so every flyout was clipped and gave its parent a
+  // spurious horizontal scrollbar. The trade-off — a fixed flyout no longer
+  // tracks its row — is handled by closing it when the parent's box scrolls.
   useLayoutEffect(() => {
     if (!isSub) return;
     const el = localRef.current;
@@ -111,13 +146,13 @@ function MenuList({
     if (!el || !row) return;
     const rect = el.getBoundingClientRect();
     const rowRect = row.getBoundingClientRect();
-    const next: React.CSSProperties = { top: 0, visibility: 'visible' };
-    if (rowRect.right + rect.width > window.innerWidth - 4) next.right = '100%';
-    else next.left = '100%';
-    const overflowY = rowRect.top + rect.height - (window.innerHeight - 4);
-    if (overflowY > 0) next.top = -Math.min(overflowY, Math.max(0, rowRect.top - 4));
-    setSubStyle(next);
-  }, [isSub, items]);
+    const left =
+      rowRect.right + rect.width > window.innerWidth - 4
+        ? Math.max(4, rowRect.left - rect.width) // flip leftward
+        : rowRect.right;
+    const top = Math.max(4, Math.min(rowRect.top, window.innerHeight - 4 - rect.height));
+    setSubStyle({ left, top, visibility: 'visible' });
+  }, [isSub, items, localRef]);
 
   // Focus the first enabled row when requested (root mount / keyboard-opened sub).
   useEffect(() => {
@@ -144,22 +179,42 @@ function MenuList({
     );
   };
 
+  /** P92: focus + keep the row inside the (now scrollable, §1.3) menu box. */
+  const focusRow = (b: HTMLButtonElement) => {
+    b.focus();
+    b.scrollIntoView({ block: 'nearest' });
+  };
+
   const focusFirst = () => {
     const b = scopedButtons().find((x) => !x.disabled);
-    b?.focus();
+    if (b !== undefined) focusRow(b);
   };
 
   const moveFocus = (index: number, step: number) => {
     const buttons = scopedButtons();
     const n = buttons.length;
     if (n === 0) return;
+    // P92: `index` is the ITEMS index, which diverges from the button index once
+    // a `separator` entry is present — resolve from the focused button first.
+    const domIndex = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const from = domIndex >= 0 ? domIndex : Math.min(index, n - 1);
     for (let k = 1; k <= n; k++) {
-      const j = (((index + step * k) % n) + n) % n;
+      const j = (((from + step * k) % n) + n) % n;
       if (!buttons[j].disabled) {
-        buttons[j].focus();
+        focusRow(buttons[j]);
         break;
       }
     }
+  };
+
+  /** P92 addendum A.1: a `position: fixed` flyout does not move with its row, so
+   *  when THIS list's scroll box scrolls the open flyout would be left stranded
+   *  next to a row that has moved. Close it (hover or ArrowRight reopens it at
+   *  the row's new position). React's `onScroll` does not bubble, so this fires
+   *  only for this list's own box — scrolling a submenu never closes it. */
+  const onListScroll = () => {
+    window.clearTimeout(hoverTimer.current);
+    setOpenIndex(null);
   };
 
   const openSubmenu = (index: number, byKeyboard: boolean) => {
@@ -238,8 +293,10 @@ function MenuList({
       ref={localRef}
       className={isSub ? 'context-menu context-menu--sub' : 'context-menu'}
       role="menu"
+      aria-label={ariaLabel}
       aria-busy={busy === true ? true : undefined}
       style={isSub ? subStyle : style}
+      onScroll={onListScroll}
     >
       {header !== undefined && (
         <div className="context-menu-header" role="presentation">
@@ -247,6 +304,9 @@ function MenuList({
         </div>
       )}
       {items.map((item, i) => {
+        if (item.separator === true) {
+          return <div key={i} className="context-menu-sep" role="separator" />;
+        }
         const hasChildren = item.children !== undefined;
         const isOpen = openIndex === i;
         const isRadio = item.checked !== undefined;
@@ -272,6 +332,7 @@ function MenuList({
               aria-disabled={item.disabled === true}
               aria-haspopup={hasChildren ? 'menu' : undefined}
               aria-expanded={hasChildren ? isOpen : undefined}
+              title={item.title}
               tabIndex={-1}
               onClick={() => activate(item, i)}
               onKeyDown={(e) => onItemKeyDown(e, i, item)}
@@ -325,9 +386,30 @@ function MenuList({
  *  clamped into the viewport. Dismisses on outside pointerdown, Escape, scroll
  *  (capture), resize, and window blur. Rows with `children` open a hover/keyboard
  *  flyout submenu. All colors come from CSS variables so both themes work. */
-export function ContextMenu({ x, y, items, onClose, header, busy }: ContextMenuProps) {
+export function ContextMenu({ x, y, items, onClose, header, ariaLabel, busy }: ContextMenuProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x, y });
+
+  // P92 §1.5: focus returns to whatever had it when the menu opened (the graph
+  // scroller, a sidebar row, …). Captured during the FIRST RENDER, not in an
+  // effect: child effects run before parent effects, so MenuList's `autoFocus`
+  // would already have moved focus into the menu by then.
+  const [prevFocus] = useState<HTMLElement | null>(
+    () => (document.activeElement as HTMLElement | null) ?? null,
+  );
+  useEffect(
+    () => () => {
+      // Only restore if focus is still ours (or was dropped to <body>) —
+      // an outside click has already focused what the user aimed at.
+      const active = document.activeElement;
+      const ours =
+        active === null ||
+        active === document.body ||
+        (rootRef.current !== null && rootRef.current.contains(active));
+      if (ours && prevFocus !== null && prevFocus.isConnected) prevFocus.focus();
+    },
+    [prevFocus],
+  );
 
   // Clamp into the viewport once the menu has measured itself.
   useLayoutEffect(() => {
@@ -361,7 +443,18 @@ export function ContextMenu({ x, y, items, onClose, header, busy }: ContextMenuP
         onClose();
       }
     };
-    const onScroll = () => onClose();
+    // P92 addendum A.1: `scroll` does not bubble, but a CAPTURE listener still
+    // receives it from the menu's own (now height-clamped, scrollable) box — so
+    // an unguarded handler closed the menu on the first wheel tick and on
+    // `focusRow`'s `scrollIntoView` during arrow-key navigation. Ignore scrolls
+    // that originate inside the menu, mirroring the pointerdown guard above.
+    const onScroll = (e: Event) => {
+      // `target` is `document` for a page scroll and `window` for a synthetic
+      // one — neither is a Node the menu can contain, hence the instanceof.
+      const t = e.target;
+      if (rootRef.current !== null && t instanceof Node && rootRef.current.contains(t)) return;
+      onClose();
+    };
     const onResize = () => onClose();
     const onBlur = () => onClose();
     document.addEventListener('pointerdown', onPointerDown, true);
@@ -385,6 +478,7 @@ export function ContextMenu({ x, y, items, onClose, header, busy }: ContextMenuP
       onClose={onClose}
       autoFocus
       header={header}
+      ariaLabel={ariaLabel}
       busy={busy}
       style={{ left: pos.x, top: pos.y }}
     />

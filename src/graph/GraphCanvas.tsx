@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { GraphLayout, RefLabel, VerifyStatus } from '../ipc';
+import type { GraphLayout, VerifyStatus } from '../ipc';
 import { isDarkBg, resolveTheme } from './colors';
 import type { Theme } from './colors';
 import {
@@ -24,14 +24,9 @@ import {
 } from './draw';
 import type { WipSummary } from './draw';
 import { groupRefs, layoutRefLabels } from './refLabels';
-import {
-  fallbackBranchRef,
-  forgeHitAt,
-  hitTestRow,
-  pillHitAt,
-  sameTarget,
-  targetRefOf,
-} from './hitTest';
+import { chipHiddenEntitiesAt, resolveContextTarget, rowMenuAnchor } from './contextTarget';
+import type { GraphContextTarget } from './contextTarget';
+import { forgeHitAt, hitTestRow, sameTarget } from './hitTest';
 import type { TooltipState } from './hitTest';
 import { layoutForgeCell, rowForgeSignal } from './forgeBadges';
 import {
@@ -59,10 +54,7 @@ import { resolveHoverTarget } from './hoverTarget';
 
 export type { WipSummary };
 
-/** Right-click target on the graph: a ref pill, or a bare commit row. */
-export type GraphContextTarget =
-  | { kind: 'ref'; ref: RefLabel; oid: string }
-  | { kind: 'commit'; index: number; oid: string };
+export type { GraphContextTarget };
 
 export interface GraphCanvasProps {
   layout: GraphLayout;
@@ -644,6 +636,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     };
   }, []);
 
+  const ctx2d = (): CanvasRenderingContext2D | null => canvasRef.current?.getContext('2d') ?? null;
+
   /** Hover-ref encoding: row index, `-1` for the WIP row, or `null`. */
   const hitTestAtMouseY = (yCss: number, scrollTop: number): number | null => {
     const { layout: lay, wip } = propsRef.current;
@@ -707,10 +701,15 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     // P7 §6.1: recompute the hover tooltip target; setTooltip only fires on a
     // real target change (sameTarget), so this is not a per-frame React churn.
     const next = computeHoverTarget(x, y, scroller.scrollTop);
+    // P92 §1.4: the "+n" chip is clickable, so it — and only it — shows a pointer
+    // cursor. Driven by the already-computed hover target: no extra hit pass, no
+    // canvas repaint, no React state.
+    scroller.style.cursor = next?.kind === 'overflow' ? 'pointer' : '';
     setTooltip((prev) => (sameTarget(prev, next) ? prev : next));
   };
 
   const handleMouseLeave = () => {
+    if (scrollerRef.current !== null) scrollerRef.current.style.cursor = '';
     mouseYRef.current = null;
     mouseXRef.current = null;
     setTooltip(null); // P7 §6.2: dismiss on leave
@@ -756,63 +755,63 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         }
       }
     }
+    // P92 §1.1: left-click the "+n" chip → the same ref picker the right-click
+    // opens (hover = read, click = act), BEFORE the row-select toggle.
+    if (onContextMenu !== undefined) {
+      const chipEntities = chipHiddenEntitiesAt({ node, x, m, ctx: ctx2d(), theme: themeRef.current, display });
+      if (chipEntities !== null) {
+        onContextMenu({ kind: 'refPicker', entities: chipEntities, oid: node.id }, e.clientX, e.clientY);
+        return;
+      }
+    }
     onSelect(hit === selectedIndex ? null : hit);
   };
 
-  // P5 §4.2 / P7 §5: right-click hit-test. Always suppress the native menu over
-  // the graph; then resolve a ref label in the LEFT ref column (via the shared
-  // layoutRefLabels layout — single source of truth with the draw pass) or fall
-  // through to the commit row. Parity with P6 is preserved: the emitted
-  // GraphContextTarget shape is unchanged; only the ref RESOLUTION moved left.
+  // P5 §4.2 / P7 §5 / P92 §1.1: right-click hit-test. Always suppress the native
+  // menu over the graph; the pill / "+N" chip / whole-row RESOLUTION itself is
+  // pure and lives in contextTarget.ts (same layoutRefLabels layout as the draw
+  // pass), so this handler only gathers live measurements.
   const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     const scroller = scrollerRef.current;
     if (scroller === null) return;
     const rect = scroller.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const x = e.clientX - rect.left;
     const m = metricsRef.current;
-    const wipOffset = wip !== null ? 1 : 0;
-    const hit = hitTestRow(y, scroller.scrollTop, wipOffset, layout.nodes.length, m.rowHeight);
+    const hit = hitTestRow(
+      e.clientY - rect.top,
+      scroller.scrollTop,
+      wip !== null ? 1 : 0,
+      layout.nodes.length,
+      m.rowHeight,
+    );
     if (hit === null || hit === 'wip') return;
-    const node = layout.nodes[hit];
-    const ctx = canvasRef.current?.getContext('2d') ?? null;
-    const theme = themeRef.current;
-    if (
-      ctx !== null &&
-      theme !== null &&
-      x < m.refColWidth &&
-      node.refs !== undefined &&
-      node.refs.length > 0
-    ) {
-      const { startX, budget } = refColArea(m);
-      const laid = layoutRefLabels(ctx, groupRefs(node.refs), node, theme, startX, budget, display);
-      const hitLabel = pillHitAt(laid, x);
-      if (hitLabel !== undefined && hitLabel.entity !== null) {
-        const ref = targetRefOf(hitLabel.entity);
-        if (ref !== null) {
-          onContextMenu?.({ kind: 'ref', ref, oid: node.id }, e.clientX, e.clientY);
-          return;
-        }
-        // tag/head resolve to a ref whose branchMenuItems is [] → no menu opens;
-        // fall through to the whole-row / commit target (matches today's behavior).
-      }
-    }
-    // P18b: whole-row branch fallback. If no SPECIFIC pill was hit (e.g. the
-    // click landed on the dot/avatar/summary, or right of the ref band), but the
-    // row carries a branch/remoteBranch, open that branch's menu (the superset).
-    // Runs for ANY x — not gated on the ref band. Stash/tag/head-only rows and
-    // ref-less rows fall through to the commit target (the precise hit-test above
-    // already covered stash/tag pills inside the band).
-    if (node.refs !== undefined && node.refs.length > 0) {
-      const ref = fallbackBranchRef(groupRefs(node.refs));
-      if (ref !== null) {
-        onContextMenu?.({ kind: 'ref', ref, oid: node.id }, e.clientX, e.clientY);
-        return;
-      }
-    }
-    // Empty band OR the "+n" chip OR a non-branch entity → commit target.
-    onContextMenu?.({ kind: 'commit', index: hit, oid: node.id }, e.clientX, e.clientY);
+    const target = resolveContextTarget({
+      node: layout.nodes[hit],
+      x: e.clientX - rect.left,
+      m,
+      ctx: ctx2d(),
+      theme: themeRef.current,
+      display,
+      row: hit,
+    });
+    onContextMenu?.(target, e.clientX, e.clientY);
+  };
+
+  /** P92 §1.5: Menu key / Shift+F10 on the focused graph scroller opens the
+   *  SELECTED row's menu, anchored at that row — the keyboard route to every ref
+   *  on a multi-ref commit (the canvas-drawn "+N" chip is not a tab stop). */
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ContextMenu' && !(e.key === 'F10' && e.shiftKey)) return;
+    const scroller = scrollerRef.current;
+    const index = selectedIndex;
+    if (scroller === null || onContextMenu === undefined || index === null) return;
+    if (index < 0 || index >= layout.nodes.length) return;
+    e.preventDefault();
+    const node = layout.nodes[index];
+    const m = metricsRef.current;
+    const rect = scroller.getBoundingClientRect();
+    const at = rowMenuAnchor(rect, scroller.scrollTop, index, wip !== null ? 1 : 0, m);
+    onContextMenu({ kind: 'commit', index, oid: node.id, entities: groupRefs(node.refs) }, at.x, at.y);
   };
 
   // P11d §4.3: spacer (total scroll extent) tracks the live rowHeight knob so
@@ -841,6 +840,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         onClick={handleClick}
+        onKeyDown={handleKeyDown}
         onContextMenu={handleContextMenu}
       >
         <div className="graph-spacer" style={{ height: `${spacerH}px` }} />

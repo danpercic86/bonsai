@@ -24,6 +24,43 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
+## ⚡ P92 — Actionable multi-ref commits (branch picker + "+N" chip) — in-progress
+
+**Current step:** AI GATE GREEN — awaiting USER CHECKPOINT + commit approval.
+Round 2 approved by `reviewer` (no MUST-FIX). Evidence: vitest 2344/2344; `tsc` clean; `vite build`
+OK; file-size check OK; eslint clean. **Playwright e2e 160 passed / 1 skipped (serial, 8.6m).**
+NOTE: the parallel e2e run fails 6-10 specs with the mock repo never seeding (empty state, no
+`graph-canvas`) — reproduced as worker contention, NOT a P92 regression: spec 14 passes 8/8 isolated
+and the full suite is green at `--workers=1`. Same pattern as the recorded `07-rebase` flake (L203).
+Worth a separate look at e2e parallel-worker isolation.
+
+Open follow-ups spun out of P92 (do NOT block the increment):
+- `ui-reference.md` §6.2 still documents the defective clamp and §4.1 lacks the Menu/Shift+F10 entry
+  — needs a dedicated edit-capable `ui-designer` pass (addendum A.1/A.2). **Blocks milestone closure.**
+- Graph scroller has a dangling `aria-activedescendant` IDREF and `role="grid"` with no `role="row"`
+  children (pre-existing, not P92's doing) — own increment.
+- Window-level arrow-key row nav can select a row without focusing the scroller, so the keyboard
+  row-menu is unreachable that way.
+- USER CHECKPOINT (native): flyout hover-open/close timing + menu scroll feel; right-click a
+  multi-ref commit; confirm ≤1-ref menus are unchanged.
+
+Problem (user, 2026-08-31): a commit carrying several refs shows a dead "+N" chip whose hidden
+refs are hover-only and not actionable; and the commit context menu binds branch actions
+(Merge/Rebase/…) to a single ref with no way to pick which branch.
+
+- Contract: `docs/contracts/P92-multi-ref-commit-ui.md`; design system §6.2 in
+  `docs/contracts/ui-reference.md`. Frontend-only — no Rust/IPC change.
+- Design: "+N" chip becomes clickable and opens a `{n} more refs` menu, each row's flyout being
+  that ref's existing full `branchMenuItems` menu; the commit-row menu prepends the same per-ref
+  picker when ≥2 actionable refs. ≤1 ref ⇒ menu stays flat and identical to today.
+- **Orchestrator decision (2026-08-31):** right-clicking a *visible* pill stays direct (no picker)
+  — the contract §7 open question is resolved as "No".
+- Removes the `fallbackBranchRef` chip-right-click fallthrough in `GraphCanvas.tsx`; adds an
+  app-wide `max-height`/scroll clamp on `.context-menu`.
+- Acceptance: contract ACs + vitest coverage (picker at ≥2 refs, absent at ≤1, `groupRefs`
+  ordering, `main`+`origin/main` collapse, HEAD included) + browser-harness verification.
+  USER CHECKPOINT: native right-click on a multi-ref commit.
+
 ## ✅ DEP REFRESH — 2026-08-28 — DONE (AI gate + USER CHECKPOINT both green 2026-08-28)
 
 Goal: bring every frontend, Rust, and CI-action dependency to its current version, then

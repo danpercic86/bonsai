@@ -52,9 +52,32 @@ export function fallbackBranchRef(entities: readonly RefEntity[]): RefLabel | nu
 
 // ---------- laid-label hit resolution (LEFT ref band) ----------
 
-/** The "+n" overflow chip under `x`, if any (entity === null ⇒ the chip). */
+/** P92 §1.5: minimum comfortable pointer target for the (canvas-drawn) chip. A
+ *  narrow `+2` chip paints ~16px wide; the HIT box — not the paint — is widened
+ *  to this. Shared by hover (tooltip) and click (ref picker) for free. */
+const CHIP_MIN_HIT_W = 24;
+
+/** The "+n" overflow chip under `x`, if any (entity === null ⇒ the chip).
+ *  P92: the hit box is padded outward (up to {@link CHIP_MIN_HIT_W}) when the
+ *  painted chip is narrower; the paint is untouched. */
 export function chipHitAt(laid: readonly LaidRefLabel[], x: number): LaidRefLabel | undefined {
-  return laid.find((l) => l.entity === null && x >= l.x && x <= l.x + l.w);
+  return laid.find((l) => {
+    if (l.entity !== null) return false;
+    const pad = Math.max(0, (CHIP_MIN_HIT_W - l.w) / 2);
+    return x >= l.x - pad && x <= l.x + l.w + pad;
+  });
+}
+
+/** P92: the entities the row's ref band could NOT show — the ones the "+n" chip
+ *  stands for. `laid` is the output of `layoutRefLabels` for the same entities;
+ *  shown pills carry an `entity`, so the hidden slice starts at their count.
+ *  Shared by the hover tooltip and the chip's ref-picker menu. PURE. */
+export function hiddenEntities(
+  entities: readonly RefEntity[],
+  laid: readonly LaidRefLabel[],
+): RefEntity[] {
+  const shown = laid.filter((l) => l.entity !== null).length;
+  return entities.slice(shown);
 }
 
 /** The SHOWN entity pill under `x`, if any (first match in laid order). */

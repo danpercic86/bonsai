@@ -320,6 +320,35 @@ CI dot glyphs are unchanged: `✓` success · `✕` failure/error · pending dot
 **A11y:** the canvas is opaque, so the settled row live-region announcement (§4.1) appends the
 forge signal when present: `" PR #{n} {state}."` and `" Checks {rollup}."`.
 
+### 6.2 Overflow "+N" chip and the ref-picker menu (P92)
+
+Full contract: `docs/contracts/P92-multi-ref-commit-ui.md`. When a commit carries more refs than the
+180px band fits, the trailing `+N` chip is **interactive**, not a dead label.
+
+- **Chip styling is unchanged** — `--bg-2` fill, `--text-2` label, 1px `--border`, `pillHeight` tall.
+  No new token. Hovering keeps the existing tooltip (the hidden ref names, one per line).
+- **Hover reads, click acts.** Left-click and right-click both open a `ContextMenu` anchored to the
+  chip, headed `{n} more refs`, with one row per hidden ref entity; each row's flyout is that ref's
+  own menu (branch / tag / stash), identical to what its pill would open. Chip right-click no longer
+  falls through to the first branch on the row.
+- **Same pattern in the commit menu.** When a commit carries ≥2 actionable refs, the row's context
+  menu prepends the same one-row-per-ref picker above the commit actions, so a branch-scoped verb
+  (Merge, Rebase, Reset, Delete…) always names the branch the user chose. With ≤1 candidate the menu
+  stays flat and byte-identical to before — the picker level never appears for the common case.
+  Ordering is `groupRefs` order (HEAD, locals, remote-only, tags, stashes), so the menu and the pills
+  always agree; a local branch and its same-commit remote are one row, not two.
+- **Picker rows have no default action** — they omit `onSelect` (`ContextMenu.activate()` fires
+  `onSelect` and closes when one is present, and only otherwise toggles the flyout), so clicking one
+  opens its flyout and never mutates.
+- **Context menus are now height-clamped, app-wide:**
+  `.context-menu, .context-menu--sub { max-height: min(60vh, 480px); overflow-y: auto; overscroll-behavior: contain; }`
+  Previously an unclamped menu (12+ refs, or any long list) could run off-screen.
+- **Keyboard parity.** The canvas chip is not a tab stop; the keyboard path to every hidden ref is the
+  selected-row context menu (§4.1), which contains the picker. Menu roles/keys are the component's
+  existing `role="menu"` / `aria-haspopup` / Arrow-key behaviour.
+- **Density/theme:** menu chrome is density-invariant (§3); the chip follows the §6 pill metrics. All
+  colours are existing tokens in both themes.
+
 ## 7. File status colors (right panel, M1+)
 
 Added/staged `--success`, modified `--warning`, deleted `--danger`, untracked `--text-3` italic,

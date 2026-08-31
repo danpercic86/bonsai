@@ -88,6 +88,13 @@ export function groupRefs(refs: readonly RefLabel[] | undefined): RefEntity[] {
   return [...heads, ...branches.values(), ...tags, ...stashes];
 }
 
+/** P92 §8.3: the DISPLAY text of an entity — `# v1.5.0` for a tag, the bare name
+ *  otherwise. Single source of truth: the canvas pill ({@link entityStyle}) and
+ *  the ref-picker menu row both derive from this, so they cannot drift. */
+export function entityLabel(e: RefEntity): string {
+  return e.kind === 'tag' ? `# ${e.name}` : e.name;
+}
+
 /** P7 §3.3: resolve an entity's pill visuals (reuses {@link PillStyle}). Icons
  *  are computed separately (see {@link layoutRefLabels}); the old "⌂ " HEAD
  *  prefix is dropped (the laptop icon + solid fill convey local + head). */
@@ -99,20 +106,20 @@ export function entityStyle(e: RefEntity, node: GraphNode, theme: Theme): PillSt
       if (e.isHead) {
         // Luminance-adaptive label: the pill sits on a lane color, so pick
         // near-black or white for max contrast (ui-reference §6, M4).
-        return { fill: laneColor, text: adaptivePillText(laneColor), border: null, label: e.name };
+        return { fill: laneColor, text: adaptivePillText(laneColor), border: null, label: entityLabel(e) };
       }
       if (e.hasLocal) {
-        return { fill: laneAlpha, text: laneColor, border: laneColor, label: e.name };
+        return { fill: laneAlpha, text: laneColor, border: laneColor, label: entityLabel(e) };
       }
-      return { fill: theme.bg2, text: theme.text2, border: theme.border, label: e.name };
+      return { fill: theme.bg2, text: theme.text2, border: theme.border, label: entityLabel(e) };
     case 'tag':
-      return { fill: TAG_BG, text: TAG_COLOR, border: TAG_COLOR, label: `# ${e.name}` };
+      return { fill: TAG_BG, text: TAG_COLOR, border: TAG_COLOR, label: entityLabel(e) };
     case 'head':
       // Detached HEAD: fixed dark-red bg (both themes) + white text = 6.54:1
       // (ui-reference §6, M4). --danger gave white only 3.70:1 in dark.
-      return { fill: DETACHED_HEAD_BG, text: '#ffffff', border: null, label: e.name };
+      return { fill: DETACHED_HEAD_BG, text: '#ffffff', border: null, label: entityLabel(e) };
     case 'stash':
-      return { fill: STASH_BG, text: STASH_COLOR, border: STASH_COLOR, label: e.name };
+      return { fill: STASH_BG, text: STASH_COLOR, border: STASH_COLOR, label: entityLabel(e) };
   }
 }
 

@@ -2,7 +2,7 @@ import { RebasePlanEditor } from '../RebasePlanEditor';
 import { WhatChangedDialog } from '../WhatChangedDialog';
 import { StaleBranchesDialog } from '../StaleBranchesDialog';
 import { ContextMenu } from '../ContextMenu';
-import type { ContextMenuItem } from '../ContextMenu';
+import type { ContextMenuState } from '../ContextMenu';
 import type {
   AiDigestRange,
   BranchInfo,
@@ -43,7 +43,7 @@ export interface CleanupDialogsProps {
   setRebasePlanError: (v: string | null) => void;
   handleStartInteractiveRebase(ontoOid: string, ontoLabel: string, todos: RebaseTodoOp[]): void;
 
-  menu: { x: number; y: number; items: ContextMenuItem[] } | null;
+  menu: ContextMenuState | null;
   closeMenu(): void;
 }
 
@@ -117,7 +117,14 @@ export function CleanupDialogs({
       />
 
       {menu !== null && (
-        <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={closeMenu} />
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={menu.items}
+          header={menu.header}
+          ariaLabel={menu.ariaLabel}
+          onClose={closeMenu}
+        />
       )}
     </>
   );

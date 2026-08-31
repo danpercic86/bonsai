@@ -18,6 +18,27 @@
   flex-direction: column;
 }
 
+/* P92 §1.3: app-wide height clamp. Long menus (a 12-hidden-ref picker, a big
+   branch menu) previously ran off-screen with no way back; now they scroll
+   inside the surface and the wheel never leaks to the graph behind them. */
+.context-menu,
+.context-menu--sub {
+  max-height: min(60vh, 480px);
+  overflow-y: auto;
+  /* Explicit: `overflow-y: auto` alone computes `overflow-x` to `auto` too, which
+     gave menus a spurious horizontal scrollbar (P92 addendum A.1). */
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+/* P92: non-interactive rule between menu groups (ref picker vs commit actions). */
+.context-menu-sep {
+  flex: none;
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
 .context-menu-item {
   border: none;
   background: transparent;
@@ -97,9 +118,12 @@
   flex: 0 0 auto;
 }
 
-/* Flyout submenu: absolutely positioned relative to its .context-menu-row anchor;
-   left/right/top offsets are set inline by the component (with viewport clamping). */
+/* Flyout submenu (P92 addendum A.1): FIXED, not absolute. The height clamp above
+   turns every .context-menu into a clip box, which clipped an absolutely
+   positioned flyout and scrolled its parent sideways. left/top are viewport
+   coordinates set inline by the component from the anchor row's rect (with
+   right-flip / bottom-raise clamping); the parent closes it when it scrolls. */
 .context-menu--sub {
-  position: absolute;
+  position: fixed;
 }
 

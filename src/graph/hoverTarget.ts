@@ -4,7 +4,7 @@ import { avatarHit, laneX, refColArea } from './draw';
 import type { WipSummary } from './draw';
 import { entityStyle, groupRefs, layoutRefLabels } from './refLabels';
 import { formatAbsolute } from './dates';
-import { chipHitAt, forgeTooltipTarget, pillHitAt } from './hitTest';
+import { chipHitAt, forgeTooltipTarget, hiddenEntities, pillHitAt } from './hitTest';
 import type { TooltipState } from './hitTest';
 import { layoutForgeCell, rowForgeSignal } from './forgeBadges';
 import { computeRightColumns } from './rightColumns';
@@ -55,8 +55,7 @@ export function resolveHoverTarget(args: HoverTargetArgs): TooltipState | null {
     const laid = layoutRefLabels(ctx, entities, node, theme, startX, budget, display);
     const chip = chipHitAt(laid, x);
     if (chip !== undefined) {
-      const shown = laid.filter((l) => l.entity !== null).length;
-      const lines = entities.slice(shown).map((e) => entityStyle(e, node, theme).label);
+      const lines = hiddenEntities(entities, laid).map((e) => entityStyle(e, node, theme).label);
       return {
         kind: 'overflow',
         lines,

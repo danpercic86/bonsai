@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CommitBoxHandle } from './CommitBox';
-import type { ContextMenuItem } from './ContextMenu';
+import type { ContextMenuState } from './ContextMenu';
+import { graphMenuState } from './workspaceMenusRefPicker';
 import { WorkspaceToolbar } from './WorkspaceToolbar';
 import { WorkspaceDialogs } from './WorkspaceDialogs';
 import { WorkspaceOverlays } from './WorkspaceOverlays';
@@ -509,9 +510,7 @@ export function RepoWorkspace({
   const imageDiffPathRef = useRef<string | null>(null);
 
   // P5 §5.2: graph right-click context menu (position + prebuilt items).
-  const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(
-    null,
-  );
+  const [menu, setMenu] = useState<ContextMenuState | null>(null);
 
   // P5 §5.3: Compare right-panel mode (HEAD → right-clicked commit). Mirrors the
   // commitDiff cluster; `compare.oid` is a full oid so it survives refetches.
@@ -2123,7 +2122,7 @@ export function RepoWorkspace({
   function handleGraphContextMenu(target: GraphContextTarget, clientX: number, clientY: number) {
     const items = menus.buildContextItems(target);
     if (items.length === 0) return; // no valid actions → menu does not open
-    setMenu({ x: clientX, y: clientY, items });
+    setMenu(graphMenuState(target, items, clientX, clientY));
   }
 
   // P6 §4.3: right-click a sidebar branch/remote row → open the SAME shared menu

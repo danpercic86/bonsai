@@ -250,3 +250,136 @@ describe('ContextMenu — checked / detail / header (P69i)', () => {
     expect(screen.getAllByRole('menuitem')).toHaveLength(1);
   });
 });
+
+/** P92 — the ref-picker additions: a `separator` entry, the menu-root
+ *  `aria-label`, per-row `title`, and the "parent row with no onSelect only
+ *  toggles its flyout" rule the picker depends on. */
+describe('ContextMenu — P92 picker additions', () => {
+  const pickerItems: ContextMenuItem[] = [
+    { label: 'main', title: 'main', children: [{ label: 'Merge main into dev' }] },
+    { label: '# v1.5.0', title: 'v1.5.0', disabled: true },
+    { label: '', separator: true },
+    { label: 'Create branch here', onSelect: vi.fn() },
+  ];
+
+  it('a separator entry renders a non-interactive rule, not a menuitem', () => {
+    render(
+      <ContextMenu x={10} y={10} items={pickerItems} onClose={vi.fn()} header="2 more refs" />,
+    );
+    expect(screen.getAllByRole('menuitem')).toHaveLength(3);
+    expect(screen.getByRole('separator')).toBeInTheDocument();
+    expect(screen.getByText('2 more refs')).toBeInTheDocument();
+    cleanup();
+  });
+
+  it('names the menu root and titles rows with the full ref name', () => {
+    render(
+      <ContextMenu
+        x={10}
+        y={10}
+        items={pickerItems}
+        onClose={vi.fn()}
+        ariaLabel="2 more refs on commit 4f2a91c"
+      />,
+    );
+    expect(screen.getByRole('menu', { name: '2 more refs on commit 4f2a91c' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'main' })).toHaveAttribute('title', 'main');
+    expect(screen.getByRole('menuitem', { name: '# v1.5.0' })).toBeDisabled();
+    cleanup();
+  });
+
+  it('clicking a picker row opens its flyout and does NOT close the menu', () => {
+    const onClose = vi.fn();
+    render(<ContextMenu x={10} y={10} items={pickerItems} onClose={onClose} />);
+    const row = screen.getByRole('menuitem', { name: 'main' });
+    expect(row).toHaveAttribute('aria-haspopup', 'menu');
+    fireEvent.click(row);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(row).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('menuitem', { name: 'Merge main into dev' })).toBeInTheDocument();
+    cleanup();
+  });
+
+  it('ArrowDown skips the separator (focus lands on the next real row)', () => {
+    render(<ContextMenu x={10} y={10} items={pickerItems} onClose={vi.fn()} />);
+    const first = screen.getByRole('menuitem', { name: 'main' });
+    expect(first).toHaveFocus();
+    // '# v1.5.0' is disabled and the next entry is the separator → skip both.
+    fireEvent.keyDown(first, { key: 'ArrowDown' });
+    expect(screen.getByRole('menuitem', { name: 'Create branch here' })).toHaveFocus();
+    cleanup();
+  });
+});
+
+/** P92 round 2 (contract §8.1 + review addendum A.1) — the three defects the
+ *  app-wide height clamp introduced: a clipped flyout, a menu that dismissed
+ *  itself on its own scroll, and focus dropped to `<body>` on close. */
+describe('ContextMenu — height-clamp companion rules (P92 §8.1)', () => {
+  const items: ContextMenuItem[] = [
+    { label: 'main', children: [{ label: 'Merge main into dev', onSelect: vi.fn() }] },
+    { label: 'Create branch here', onSelect: vi.fn() },
+  ];
+
+  it('a scroll ORIGINATING INSIDE the menu does not close it', () => {
+    const onClose = vi.fn();
+    render(<ContextMenu x={10} y={10} items={items} onClose={onClose} />);
+    fireEvent.scroll(screen.getByRole('menu'));
+    expect(onClose).not.toHaveBeenCalled();
+    // …while a scroll outside still dismisses.
+    fireEvent.scroll(window);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    cleanup();
+  });
+
+  it('positions the flyout in VIEWPORT coordinates from the row rect (not left: 100%)', () => {
+    const rect = vi
+      .spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockReturnValue({
+        x: 100,
+        y: 200,
+        left: 100,
+        top: 200,
+        right: 300,
+        bottom: 240,
+        width: 200,
+        height: 40,
+        toJSON: () => ({}),
+      } as DOMRect);
+    render(<ContextMenu x={10} y={10} items={items} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'main' }));
+    const sub = document.querySelector<HTMLElement>('.context-menu--sub');
+    expect(sub).not.toBeNull();
+    // Anchored at the row's right edge / top — absolute px, never a percentage
+    // (a `position: fixed` flyout resolves percentages against the viewport).
+    expect(sub?.style.left).toBe('300px');
+    expect(sub?.style.top).toBe('200px');
+    expect(sub?.style.right).toBe('');
+    expect(sub?.style.visibility).toBe('visible');
+    rect.mockRestore();
+    cleanup();
+  });
+
+  it('scrolling the parent box closes its open flyout (a fixed flyout cannot track it)', () => {
+    render(<ContextMenu x={10} y={10} items={items} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'main' }));
+    expect(screen.getByRole('menuitem', { name: 'Merge main into dev' })).toBeInTheDocument();
+    const root = document.querySelector('.context-menu:not(.context-menu--sub)');
+    expect(root).not.toBeNull();
+    fireEvent.scroll(root as Element);
+    expect(screen.queryByRole('menuitem', { name: 'Merge main into dev' })).not.toBeInTheDocument();
+    cleanup();
+  });
+
+  it('restores focus to the previously-focused element when the menu closes (§1.5)', () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+    expect(opener).toHaveFocus();
+    const view = render(<ContextMenu x={10} y={10} items={items} onClose={vi.fn()} />);
+    expect(screen.getByRole('menuitem', { name: 'main' })).toHaveFocus();
+    view.unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
+    cleanup();
+  });
+});

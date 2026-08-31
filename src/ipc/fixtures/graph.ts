@@ -1,5 +1,7 @@
 import type { GraphEdge, GraphLayout, GraphNode, RefLabel, StashEntry } from '../types';
 
+import { MULTI_REF_ROW_REFS } from './multiRefRow';
+
 const HOUR = 3600;
 
 /** P51: rows whose committer time is 1h AFTER the author time (as after a
@@ -83,8 +85,10 @@ export function buildMockGraph(): GraphLayout {
   // stash@{1} and stash@{2}, which now render as their own offshoot nodes
   // (withStashNodes) rather than pills on this row.
   push('core work 2', 0, [7]);
-  // P7 §9: v0.9 moved to row 0 (collapse/overflow case); row 7 now ref-less.
-  push('core work 1', 0, [8]);
+  // P92 §5: the 12-hidden case — 14 refs on one row, so the "+N" chip reads
+  // "+12" and its picker menu exercises the §1.3 height clamp + scroll. Table
+  // lives in fixtures/multiRefRow.ts (with the matching branches entries).
+  push('core work 1', 0, [8], MULTI_REF_ROW_REFS);
 
   edges.push(
     { from: 0, to: 1, lane: 1 },

@@ -46,6 +46,7 @@ import {
   resetMenuItems as resetMenuItemsImpl,
 } from './workspaceMenusCommit';
 import { tagMenuItems as tagMenuItemsImpl } from './workspaceMenusTag';
+import { buildGraphTargetItems } from './workspaceMenusGraphTarget';
 
 /** P49: the three external-launch handlers a filesystem path is opened with.
  *  Each takes the target path so one handler set drives every entry point
@@ -431,56 +432,14 @@ export function createWorkspaceMenus(deps: WorkspaceMenuDeps): WorkspaceMenus {
     return commitMenuItemsImpl(deps, oid);
   }
 
-  // P5 §5.2 / P6 §4.2: build the right-click menu items for a graph target. Ref
-  // pills delegate to the shared branchMenuItems builder; commit rows offer
-  // "Compare with HEAD" (read-only; unavailable when HEAD is unborn).
+  // P92: the graph right-click dispatcher (ref pill / "+N" ref picker / commit
+  // row) is extracted to workspaceMenusGraphTarget.ts; this wrapper binds the
+  // per-ref builders it composes.
   function buildContextItems(target: GraphContextTarget): ContextMenuItem[] {
-    if (target.kind === 'ref') {
-      const r = target.ref;
-      // P10 §5: a stash pill → Apply/Pop/Drop menu (parse the index from the name).
-      if (r.kind === 'stash') {
-        const m = /^stash@\{(\d+)\}$/.exec(r.name);
-        if (m === null) return []; // malformed name → no menu (defensive)
-        return stashMenuItems(Number(m[1]));
-      }
-      if (r.kind === 'head') return [];
-      // P22 §7.2: the graph tag pill opens the same menu as the sidebar tag row.
-      // P47 (Fork-1): the graph tag pill carries the node oid → pass it so the
-      // shared commit actions are appended (sidebar tag rows pass null).
-      if (r.kind === 'tag') return tagMenuItems(r.name, target.oid);
-      const kind = r.kind === 'remoteBranch' ? 'remoteBranch' : 'localBranch';
-      const items = branchMenuItems(r.name, kind);
-      if (items.length > 0) return items;
-      // P18b: whole-row right-click resolved to a branch whose branch menu is
-      // empty — the current HEAD branch. Fall back to the commit menu (resolving
-      // the row's oid from the branch tip) so the row still opens a useful menu.
-      const snapshot = branches;
-      if (snapshot === null) return [];
-      const entry =
-        kind === 'localBranch'
-          ? snapshot.local.find((b) => b.name === r.name)
-          : snapshot.remote.find((b) => b.name === r.name);
-      if (entry === undefined) return [];
-      const commitItems = commitMenuItems(entry.tip);
-      // P60a: the current HEAD branch's own branch menu is empty (branchMenuItems
-      // returns [] for isHead), so its graph pill / whole-row lands on this commit
-      // fallback. PREPEND "Rename…" so the current branch — the most common rename
-      // target — is renamable from the graph HEAD pill (exercising the wasHead
-      // refresh path). Local branches only.
-      // TODO(P60): sidebar HEAD-row rename parity.
-      if (kind !== 'localBranch') return commitItems;
-      return [
-        {
-          label: 'Rename…',
-          icon: createElement(BranchIcon),
-          disabled: mutating || opActive,
-          onSelect: () => setPendingRenameBranch({ name: r.name }),
-        },
-        ...commitItems,
-      ];
-    }
-    // Commit row → Create branch here + Compare with HEAD.
-    return commitMenuItems(target.oid);
+    return buildGraphTargetItems(
+      { deps, branchMenuItems, stashMenuItems, tagMenuItems, commitMenuItems },
+      target,
+    );
   }
 
   return {
