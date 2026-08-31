@@ -68,6 +68,23 @@ persisted "last repo" key / a fixed port / a shared scratch dir) rather than a p
 runs, with no `--workers=1` pin and no test weakened or skipped to get there. The root cause is
 named in the commit message.
 
+## 🚧 P91 — observability — WIP ON BRANCH, NOT READY (do not merge)
+
+Lives only on `feat/p91-observability` (7 increments, 356 files, last commit 2026-08-28, now 20+
+commits behind `dev`). **The user confirmed 2026-08-31 that this branch is work in progress and not
+ready** — do NOT merge it, and do not treat its own commit messages ("all 7 increments +
+activation, harness evidence green; board final") as an authoritative status.
+
+Recorded here only so future sessions stop rediscovering it as a mystery: it is absent from `dev`
+entirely (no commits, no `docs/contracts/P91-*`, nothing in `docs/history/`), which is why the board
+reads P90 → P92.
+
+Known overlap to expect whenever it does land: `docs/contracts/ui-reference.md` (+159 lines, all
+*new* sections §4.2/§5.1/§5.2/§12.11 — it does not touch the §2/§4.1 text P95 rewrote, but its §4.2
+inserts immediately after, so expect one conflict hunk) and `src/styles/forge-pr.css` (+13 lines,
+same file P95 edits). It adds 18 lines to `tokens-and-base.css` but does **not** change
+`--text-2`/`--text-3`, so P95's contrast figures remain valid.
+
 ## 🚨 P99 — `repo` state never set in a production bundle — PENDING (HIGH)
 
 **Found by senior-dev while instrumenting P94 — a genuine product defect, not test infra.** Filed
