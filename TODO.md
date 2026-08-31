@@ -2273,6 +2273,21 @@ message when `credential.helper` is unset in config. This amends the locked M6 c
 fetch/pull/push against your actual remote via `pnpm tauri dev` on macOS, confirming Bonsai now
 succeeds without changing your existing `credential.helper` config.
 
+### macOS ad-hoc code signing — **DONE (config), release pending** (2026-08-30)
+- **Symptom:** installed release repeatedly triggers the macOS "Bonsai would like to access your
+  Downloads folder" TCC prompt, multiple at once, and re-prompts after Allow. Root cause: the release
+  `.app` was only linker-ad-hoc-signed — `Info.plist=not bound`, `Sealed Resources=none`, identifier
+  `bonsai-<hash>` not `com.bonsai.app`, `codesign --verify` → "not signed at all". TCC has no stable
+  identity to anchor the grant to.
+- **Fix applied:** `bundle.macOS.signingIdentity: "-"` added to `src-tauri/tauri.conf.json` → Tauri now
+  runs a proper sealed ad-hoc `codesign` on the bundle. Takes effect on the next tagged release.
+- **User's currently-installed app** was manually re-signed on 2026-08-30
+  (`codesign --force --deep --sign - --identifier com.bonsai.app`) + `tccutil reset` — prompt should
+  now stick after one Allow.
+- **Still not fixed by ad-hoc:** Gatekeeper "unidentified developer" warning; a new version re-prompts
+  once (cdhash changes). Full fix = Developer ID + notarization (needs Apple Developer Program) — the
+  `APPLE_*` env block in `.github/workflows/release.yml` is already scaffolded for it.
+
 ---
 
 ## Archive
