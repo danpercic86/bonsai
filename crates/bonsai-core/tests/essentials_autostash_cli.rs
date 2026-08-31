@@ -11,7 +11,7 @@
 //! (committer time = now() differs). Each test skips (passes with a note) if
 //! `git` is absent.
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (C: is full).
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (C: is full).
 
 mod common;
 

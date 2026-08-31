@@ -1,7 +1,7 @@
 //! M6 adversarial probes (tester gap-probing, beyond contract §6.1–§6.3).
 //!
 //! Same LOCAL-bare-remote machinery as `remote_cli.rs` — every "remote" is a
-//! `git init --bare` under `D:\Temp\bonsai-scratch`, reached by plain path
+//! `git init --bare` under `D:\Data\Temp\bonsai-scratch`, reached by plain path
 //! (no network, no credentials, ever). These tests PIN observed behavior for
 //! risky uncovered cases; where our behavior diverges from the plain `git`
 //! CLI the divergence is asserted explicitly and flagged in comments so it is

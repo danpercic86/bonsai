@@ -69,13 +69,13 @@ pub(super) fn have_git() -> bool {
     ok
 }
 
-/// Scratch dir under `D:\Temp\bonsai-scratch` on Windows (MEMORY rule —
+/// Scratch dir under `D:\Data\Temp\bonsai-scratch` on Windows (MEMORY rule —
 /// never C:, never the system temp). On macOS/Linux there is no such
 /// constraint, so scratch dirs fall back to
 /// `std::env::temp_dir()/bonsai-scratch`.
 #[cfg(windows)]
 pub(super) fn scratch_root() -> std::path::PathBuf {
-    std::path::PathBuf::from("D:\\Temp\\bonsai-scratch")
+    std::path::PathBuf::from("D:\\Data\\Temp\\bonsai-scratch")
 }
 
 #[cfg(not(windows))]

@@ -4,7 +4,7 @@
 //! mirroring the fixture/oracle conventions of `worktree_cli.rs`.
 //!
 //! Every test skips (passes with a note) if `git` is not on PATH. Scratch repos
-//! live under `D:\Temp\bonsai-scratch` (never the system temp).
+//! live under `D:\Data\Temp\bonsai-scratch` (never the system temp).
 
 mod common;
 

@@ -4,7 +4,7 @@
 //! the real `git config` CLI on the SAME scratch repo. Local-level ops touch
 //! only the repo (safe). Global-level ops are ISOLATED (contract §2/§9): both
 //! the `git` subprocess and libgit2 are redirected to a scratch global file
-//! under `D:\Temp\bonsai-scratch` — the developer's real `~/.gitconfig` is
+//! under `D:\Data\Temp\bonsai-scratch` — the developer's real `~/.gitconfig` is
 //! NEVER read or written.
 //!
 //! Isolation mechanics:

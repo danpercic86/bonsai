@@ -12,7 +12,7 @@
 //!
 //! The assets core is fs-only (no git repo needed), so most tests use a plain
 //! scratch dir; only test #1 shells out to `git` (skips gracefully if absent).
-//! Every scratch dir lives under `D:\Temp\bonsai-scratch` (C: is full) via
+//! Every scratch dir lives under `D:\Data\Temp\bonsai-scratch` (C: is full) via
 //! `common::scratch_dir`.
 
 mod common;

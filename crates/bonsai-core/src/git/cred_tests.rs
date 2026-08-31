@@ -229,7 +229,7 @@ fn map_other_to_git() {
 //
 // NOTE: unlike the rest of this suite, these fixtures use plain
 // `tempfile::tempdir()` rather than `crate::testutil::scratch_dir()` —
-// `scratch_dir()` is hardcoded to the Windows-only `D:\Temp\bonsai-scratch`
+// `scratch_dir()` is hardcoded to the Windows-only `D:\Data\Temp\bonsai-scratch`
 // path and panics on macOS/Linux. This substitution is scoped to this
 // block only; `scratch_dir()` itself is untouched.
 //

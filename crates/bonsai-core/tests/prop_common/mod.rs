@@ -4,7 +4,7 @@
 //! binaries do not share a crate root, so this is a `#[path]`-included module.
 //!
 //! Determinism + scratch discipline: repos are materialized under
-//! `common::scratch_dir()` (D:\Temp\bonsai-scratch on Windows). Each commit
+//! `common::scratch_dir()` (D:\Data\Temp\bonsai-scratch on Windows). Each commit
 //! gets a UNIQUE tree (`n.txt` = commit index) so two specs can never collide
 //! on the same oid; every commit is made reachable by an auto leaf branch so
 //! the node-bijection invariant (nodes == commits) holds.

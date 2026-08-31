@@ -9,7 +9,7 @@
 //! validation verdicts as they land through `save`/`scan`.
 //!
 //! The bundle core is fs-only (no git repo needed), so every fixture is a plain
-//! scratch dir under `D:\Temp\bonsai-scratch` (C: is full) via
+//! scratch dir under `D:\Data\Temp\bonsai-scratch` (C: is full) via
 //! `common::scratch_dir`.
 
 mod common;

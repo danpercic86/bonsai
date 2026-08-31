@@ -7,7 +7,7 @@
 //! the `git hook run` argv (git ≥ 2.36, same floor as the subcommand itself)
 //! plus a `core.hooksPath`-aware existence pre-check.
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (`common::scratch_dir`).
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (`common::scratch_dir`).
 //! Every test skips (passes with a note) when `git` is missing or < 2.36.
 
 mod common;

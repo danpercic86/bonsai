@@ -7,7 +7,7 @@
 //! Conflict-path cases + untracked-collision live in the sibling
 //! `stash_cli_conflicts.rs` (soft 500-line file discipline).
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (C: is full). Each test
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (C: is full). Each test
 //! skips (passes with a note) when `git` is not on PATH.
 
 mod common;

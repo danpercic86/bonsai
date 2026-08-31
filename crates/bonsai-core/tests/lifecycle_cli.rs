@@ -4,7 +4,7 @@
 //! plain path / `file://` URL — the local transport needs NO network and NO
 //! credentials (the credential callback is never invoked; that path is covered
 //! only by the USER CHECKPOINT, contract §5.2 coverage note). All scratch
-//! repos live under `D:\Temp\bonsai-scratch` via `common::scratch_dir()`.
+//! repos live under `D:\Data\Temp\bonsai-scratch` via `common::scratch_dir()`.
 //!
 //! Each test skips (passes with a note) if `git` is not on PATH.
 

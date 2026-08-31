@@ -8,7 +8,7 @@
 //!     `<local-ref> <local-oid> <remote-ref> <remote-oid>` — a baseline pin so a
 //!     future change to Bonsai's `--to-stdin` payload is caught.
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (`common::scratch_dir`).
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (`common::scratch_dir`).
 //! Every test skips (passes with a note) when `git` is missing or < 2.36.
 
 mod common;

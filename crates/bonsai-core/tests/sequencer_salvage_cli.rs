@@ -12,7 +12,7 @@
 //!
 //! Adversarial fixtures per the T2 contract: handcrafted/garbage state dirs
 //! are constructed directly on disk. Scratch repos live under
-//! `D:\Temp\bonsai-scratch`; tests skip with a note when `git` is absent.
+//! `D:\Data\Temp\bonsai-scratch`; tests skip with a note when `git` is absent.
 
 mod common;
 

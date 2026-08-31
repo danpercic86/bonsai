@@ -5,7 +5,7 @@
 //! Fixture pattern (contract §6): bare + a `seed` clone that publishes
 //! commits + a `work` clone that Bonsai operates on (clone configures
 //! `origin` and upstream tracking). All scratch repos live under
-//! `D:\Temp\bonsai-scratch`.
+//! `D:\Data\Temp\bonsai-scratch`.
 //!
 //! Honest coverage note (contract §6 preamble): the local transport never
 //! invokes the credentials callback and never produces Net/Http/Ssh errors —

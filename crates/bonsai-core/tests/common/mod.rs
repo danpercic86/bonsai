@@ -1,7 +1,7 @@
 //! Shared helpers for the M3 CLI-oracle integration tests.
 //!
 //! HARD RULE (M3 contract §6.0): on Windows, C: is critically full — every
-//! scratch repo lives under `D:\Temp\bonsai-scratch`, never the system temp.
+//! scratch repo lives under `D:\Data\Temp\bonsai-scratch`, never the system temp.
 //! On macOS/Linux there is no such constraint, so scratch dirs fall back to
 //! `std::env::temp_dir()/bonsai-scratch`. This mirrors `src/testutil.rs` (a
 //! `#[cfg(test)]` lib module cannot be linked from integration binaries, so
@@ -18,7 +18,7 @@ pub const FIXED_DATE: &str = "2026-01-02T03:04:05+0000";
 
 #[cfg(windows)]
 fn scratch_root() -> std::path::PathBuf {
-    Path::new("D:\\Temp\\bonsai-scratch").to_path_buf()
+    Path::new("D:\\Data\\Temp\\bonsai-scratch").to_path_buf()
 }
 
 #[cfg(not(windows))]

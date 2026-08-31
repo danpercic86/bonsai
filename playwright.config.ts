@@ -4,7 +4,7 @@
 // freshly-downloaded, low-prevalence executables, so a bundled-chromium install
 // is both unwanted and unreliable there — the `msedge` channel reuses the
 // system-installed Edge and downloads nothing. If a browser install is ever
-// needed on Windows anyway, set PLAYWRIGHT_BROWSERS_PATH=D:\Temp\ms-playwright
+// needed on Windows anyway, set PLAYWRIGHT_BROWSERS_PATH=D:\Data\Temp\ms-playwright
 // first.
 //
 // That workaround is Windows-specific, NOT a cross-platform default: macOS and

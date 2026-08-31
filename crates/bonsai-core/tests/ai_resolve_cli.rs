@@ -11,7 +11,7 @@
 //! deletion-kind conflicts short-circuit to `AiFailed` before any CLI call;
 //! (4) non-conflicted path → `git`, `../escape` → `invalidName`.
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (C: is full).
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (C: is full).
 //! Each test skips (passes with a note) if `git` is not on PATH.
 
 mod common;

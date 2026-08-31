@@ -9,7 +9,7 @@
 //! author identity (name/email AND author time — preserved), message, and
 //! parent topology; plus the final HEAD tree oid — NOT commit oids.
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (C: is full).
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (C: is full).
 //! Each test skips (passes with a note) if `git` is not on PATH.
 
 mod common;

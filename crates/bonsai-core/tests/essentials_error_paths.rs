@@ -13,7 +13,7 @@
 //! cherry-pick) — the assertions are on Bonsai's core return values / git2
 //! state, never on commit oids. Skips (passes with a note) when `git` is absent.
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (C: is full).
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (C: is full).
 
 mod common;
 

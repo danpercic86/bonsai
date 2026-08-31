@@ -15,7 +15,7 @@
 //! rather than `git bisect run <script>` — this is the identical authoritative
 //! result but avoids a shell-script dependency that is not hermetic on Windows.
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch`. Each test skips
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch`. Each test skips
 //! (passes with a note) if `git` is not on PATH.
 
 mod common;

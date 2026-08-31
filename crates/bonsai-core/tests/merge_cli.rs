@@ -5,7 +5,7 @@
 //! one; the real `git` CLI runs on the other; results are compared
 //! byte-exactly (tree oids, parents, messages, conflicted sets).
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (C: is full).
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (C: is full).
 //! Each test skips (passes with a note) if `git` is not on PATH.
 
 mod common;

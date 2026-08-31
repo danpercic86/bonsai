@@ -5,7 +5,7 @@
 //! proves the same guarantees hold on worktrees the git CLI itself created.
 //!
 //! Every test skips (passes with a note) if `git` is not on PATH. All scratch
-//! repos live under `D:\Temp\bonsai-scratch` (never the system temp).
+//! repos live under `D:\Data\Temp\bonsai-scratch` (never the system temp).
 
 mod common;
 

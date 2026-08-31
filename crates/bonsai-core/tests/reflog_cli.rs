@@ -10,7 +10,7 @@
 //! Oracle: `git log -g --format=%H%x1f%gd%x1f%gs HEAD` (newest-first) parsed to
 //! (index, new_oid, message).
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (C: is full). Each test
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (C: is full). Each test
 //! skips (passes with a note) if `git` is not on PATH.
 
 mod common;

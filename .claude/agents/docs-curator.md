@@ -52,7 +52,7 @@ Some of `TODO.md` is not history — it is operational instruction that future s
 Identify and preserve it near the top, even as milestones around it get archived:
 
 - The **USER MANDATE** blocks (e.g. the Windows scratch/temp-directory rule — C: is critically
-  full, use `D:\Temp`).
+  full, use `D:\Data\Temp`).
 - Environment facts that cost someone a debugging session to learn: toolchain versions, that
   cargo is not on the default PATH, the browser-harness port, the `tauri` "test" feature crash on
   this machine, harness quirks (headless preview pauses `requestAnimationFrame`).

@@ -8,7 +8,7 @@
 //! detached HEAD, `.git`-only workdir) and the READ-ONLY hard invariant
 //! (§6): running the collector must leave status/refs/stashes byte-identical.
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (C: is full). Each
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (C: is full). Each
 //! test skips (passes with a note) when `git` is not on PATH.
 
 mod common;

@@ -2,7 +2,7 @@
 //! fixtures. Remote-MANAGEMENT (list/add/remove/rename/set-url) is pure git2 and
 //! always runs; the NETWORK ops (fetch/pull/push/force-push) shell out to the
 //! `git` binary and skip cleanly when it is absent. All fixtures live under
-//! `%TMP%` (= `D:\Temp` on Windows) — never a real repo.
+//! `%TMP%` (= `D:\Data\Temp` on Windows) — never a real repo.
 
 use super::tests_support::*;
 use super::*;

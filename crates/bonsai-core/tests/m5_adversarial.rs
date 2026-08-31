@@ -5,7 +5,7 @@
 //! diverges from the plain `git` CLI, the divergence is asserted explicitly
 //! and flagged in comments so it is a conscious decision, not an accident.
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (common::scratch_dir).
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (common::scratch_dir).
 
 mod common;
 

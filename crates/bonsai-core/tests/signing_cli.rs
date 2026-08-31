@@ -8,7 +8,7 @@
 //!   * ORACLE (guarded by `have_git()` / `have_ssh_keygen()`): drives the real
 //!     `git` binary against a scratch repo — SSH signing is hermetic (an
 //!     ephemeral ed25519 key with an EMPTY passphrase needs no agent). GPG is
-//!     the USER CHECKPOINT. `TMP`/`TEMP=D:\Temp` via `common::scratch_dir`.
+//!     the USER CHECKPOINT. `TMP`/`TEMP=D:\Data\Temp` via `common::scratch_dir`.
 
 mod common;
 

@@ -9,7 +9,7 @@
 //!
 //! Lives in its OWN test binary so the process-global `BONSAI_CLAUDE_BIN` cannot
 //! race the lib unit tests (mirrors `ai_digest_cli.rs` / `ai_compose_cli.rs`).
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (C: is full). Each test
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (C: is full). Each test
 //! skips (passes with a note) if `git` is not on PATH.
 
 mod common;

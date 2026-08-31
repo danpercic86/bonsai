@@ -9,7 +9,7 @@
 //! per line -> trivially parsed to (finalLine -> sha, author, content)).
 //! History oracle: `git log --follow --format=%H -- <path>`.
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (C: is full). Each test
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (C: is full). Each test
 //! skips (passes with a note) if `git` is not on PATH.
 
 mod common;

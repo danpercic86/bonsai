@@ -864,7 +864,7 @@ mod tests {
 
     // ---------- P31: schema v2 migration + per-worktree activation ----------
 
-    /// Scratch git fixture under D:\Temp\bonsai-scratch: main repo with a
+    /// Scratch git fixture under D:\Data\Temp\bonsai-scratch: main repo with a
     /// committed CLAUDE.md + two branches and two linked worktrees
     /// ("feature-x", "feature-y").
     fn git_fixture() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {

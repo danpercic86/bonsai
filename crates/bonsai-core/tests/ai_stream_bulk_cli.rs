@@ -21,7 +21,7 @@
 //! `--include-partial-messages` shapes, and the native UI — those stay USER
 //! CHECKPOINT items.
 //!
-//! Scratch repos live under `D:\Temp\bonsai-scratch` (C: is full); each test skips
+//! Scratch repos live under `D:\Data\Temp\bonsai-scratch` (C: is full); each test skips
 //! with a note when `git` is not on PATH.
 
 mod common;

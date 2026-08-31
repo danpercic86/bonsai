@@ -4,7 +4,7 @@
 //! plain path — the local transport needs NO network and NO credentials, so
 //! git's atomic `git push --force-with-lease` (P59b, via `SpawnGitExec`) runs
 //! hermetically (no Git Credential Manager prompts; `credential.helper` is reset
-//! empty per repo). All scratch repos live under `D:\Temp\bonsai-scratch`.
+//! empty per repo). All scratch repos live under `D:\Data\Temp\bonsai-scratch`.
 //!
 //! Cross-check against the real `git` CLI: after each operation the origin's
 //! `main` tip is read with `git rev-parse` and compared to the expected oid.

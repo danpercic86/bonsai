@@ -3,7 +3,7 @@
 //! Fixtures built with the git CLI (repo-local identity, fixed dates where
 //! twin-repo oid identity matters); our git2 op runs on repo A, the
 //! equivalent CLI op on a twin repo B (or the CLI output is the direct
-//! oracle). All scratch repos live under `D:\Temp\bonsai-scratch`.
+//! oracle). All scratch repos live under `D:\Data\Temp\bonsai-scratch`.
 //!
 //! Each test skips (passes with a note) if `git` is not on PATH.
 

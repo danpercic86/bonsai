@@ -2,7 +2,7 @@
 //!
 //! Every "remote" is a LOCAL BARE repo (`git init --bare`) referenced by a
 //! plain path — the local transport needs NO network and NO credentials. All
-//! scratch repos live under `D:\Temp\bonsai-scratch`.
+//! scratch repos live under `D:\Data\Temp\bonsai-scratch`.
 //!
 //! Each test skips (passes with a note) if `git` is not on PATH.
 

@@ -6,7 +6,7 @@
 //! built entirely with the `git` binary. It pins the load-bearing safety
 //! guarantee: an UNMERGED branch handed to `delete_branches` survives.
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (C: is full). Each
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (C: is full). Each
 //! test skips (passes with a note) when `git` is not on PATH.
 
 mod common;

@@ -12,7 +12,7 @@
 //! differ from any twin. We compare TREE oids, author identity, messages, and
 //! parent topology — never replayed commit oids.
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch`. Each test skips
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch`. Each test skips
 //! (passes with a note) if `git` is not on PATH.
 
 mod common;

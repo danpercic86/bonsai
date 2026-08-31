@@ -6,7 +6,7 @@
 //! `dump_stdin` stub captures. §10.3 stub harness: the payload carries both a
 //! `COMMITS` block and a `DIFF` section; an empty range errors BEFORE spawning.
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (C: is full).
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (C: is full).
 //! Each test skips (passes with a note) if `git` is not on PATH.
 
 mod common;

@@ -7,7 +7,7 @@
 //! stage presence via `git ls-files -u`, stage-0 index via `git ls-files -s`,
 //! and worktree bytes directly.
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (C: is full).
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (C: is full).
 //! Each test skips (passes with a note) if `git` is not on PATH.
 
 mod common;

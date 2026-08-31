@@ -15,8 +15,8 @@
 //! (not commit equality) is the invariant — commit oids differ by author/time.
 //!
 //! Scratch discipline (MEMORY: C: is critically full — Windows only): on
-//! Windows, every scratch repo lives under `D:\Temp\bonsai-scratch`, and the
-//! spawned server's `TMP`/`TEMP` point at `D:\Temp`. On macOS/Linux, scratch
+//! Windows, every scratch repo lives under `D:\Data\Temp\bonsai-scratch`, and the
+//! spawned server's `TMP`/`TEMP` point at `D:\Data\Temp`. On macOS/Linux, scratch
 //! repos fall back to `std::env::temp_dir()/bonsai-scratch` and the spawned
 //! server's environment is left untouched. Tests skip (pass with a note)
 //! when `git` is not on PATH.
@@ -99,7 +99,7 @@ fn have_git() -> bool {
 
 #[cfg(windows)]
 fn scratch_root() -> std::path::PathBuf {
-    Path::new("D:\\Temp\\bonsai-scratch").to_path_buf()
+    Path::new("D:\\Data\\Temp\\bonsai-scratch").to_path_buf()
 }
 
 #[cfg(not(windows))]
@@ -221,7 +221,7 @@ impl McpClient {
         // (C: is critically full). No such constraint on macOS/Linux, so
         // leave TMP/TEMP untouched there.
         #[cfg(windows)]
-        cmd.env("TMP", "D:\\Temp").env("TEMP", "D:\\Temp");
+        cmd.env("TMP", "D:\\Data\\Temp").env("TEMP", "D:\\Data\\Temp");
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());

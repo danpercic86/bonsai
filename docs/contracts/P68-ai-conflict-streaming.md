@@ -1803,7 +1803,7 @@ stranded docs twice).
   (D3: set `idle_timeout = 1s`, drive `stream_ask`, sleep 3 s before replying, assert the run still
   completes), a **turn-budget** test, and a **no-surviving-child** assertion after cancel.
 - `cargo clippy --workspace --tests -- -D warnings` clean. **Never run `cargo test` and `clippy`
-  concurrently** (target-dir race); set `TMP`/`TEMP` to `D:\Temp`.
+  concurrently** (target-dir race); set `TMP`/`TEMP` to `D:\Data\Temp`.
 - `generate_handler!` recounted: **160**.
 - Known pre-existing flake, do NOT attribute to P68:
   `ai::tests::run_claude_slow_times_out_and_reaps_child` (see P68a acceptance (2)).

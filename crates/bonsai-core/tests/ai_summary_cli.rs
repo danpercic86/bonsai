@@ -13,7 +13,7 @@
 //! `AI_SUMMARY_MAX_COMMITS` truncation "(+N more commits)" note when exceeded,
 //! using a cheap git2 commit loop (NOT thousands of CLI commits).
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (C: is full).
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (C: is full).
 //! Each test skips (passes with a note) if `git` is not on PATH.
 
 mod common;

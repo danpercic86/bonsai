@@ -3,7 +3,7 @@
 //! All operations are LOCAL config ops — no network, no credentials. Remote
 //! URLs are local paths / `file://` / dummy URLs (git never connects for
 //! add/remove/rename/set-url). All scratch repos live under
-//! `D:\Temp\bonsai-scratch`.
+//! `D:\Data\Temp\bonsai-scratch`.
 //!
 //! Each test skips (passes with a note) if `git` is not on PATH.
 

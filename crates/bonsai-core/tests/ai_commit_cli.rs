@@ -11,7 +11,7 @@
 //! file's added/deleted lines actually reach the CLI's stdin payload (via the
 //! `dump_stdin` stub mode that captures its stdin to a file).
 //!
-//! All scratch repos live under `D:\Temp\bonsai-scratch` (C: is full).
+//! All scratch repos live under `D:\Data\Temp\bonsai-scratch` (C: is full).
 //! Each test skips (passes with a note) if `git` is not on PATH.
 
 mod common;
