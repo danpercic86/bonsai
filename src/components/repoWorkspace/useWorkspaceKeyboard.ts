@@ -316,6 +316,11 @@ export function useWorkspaceKeyboard(deps: {
         return;
       }
 
+      // P95 §2.1: another focused widget with its own arrow handling already consumed
+      // this key (it called preventDefault without stopPropagation). Do not move the
+      // graph selection, and above all do not yank focus out of that widget.
+      if (e.defaultPrevented) return;
+
       // M2 (graph review): the first Arrow/Page/Home/End with no prior selection
       // seeds an anchor so keyboard nav works without a mouse click. Down/PageDown/
       // Home anchor at headIndex (in range) else 0; Up/End anchor at the last row;
@@ -333,6 +338,7 @@ export function useWorkspaceKeyboard(deps: {
         if (seed !== null) {
           e.preventDefault();
           setSelectedIndex(seed);
+          graphRef.current?.focusScroller();
           return;
         }
       }
@@ -345,6 +351,7 @@ export function useWorkspaceKeyboard(deps: {
           const next = e.key === 'ArrowDown' ? cur + 1 : cur - 1;
           return Math.max(0, Math.min(next, graph.nodes.length - 1));
         });
+        graphRef.current?.focusScroller();
         return;
       }
 
@@ -357,6 +364,7 @@ export function useWorkspaceKeyboard(deps: {
           const next = e.key === 'PageDown' ? cur + n : cur - n;
           return Math.max(0, Math.min(next, graph.nodes.length - 1));
         });
+        graphRef.current?.focusScroller();
         return;
       }
 
@@ -364,6 +372,7 @@ export function useWorkspaceKeyboard(deps: {
         if (selectedIndex === null || graph === null) return;
         e.preventDefault();
         setSelectedIndex(e.key === 'Home' ? 0 : graph.nodes.length - 1);
+        graphRef.current?.focusScroller();
         return;
       }
     };

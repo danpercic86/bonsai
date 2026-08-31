@@ -96,11 +96,16 @@ There are no virtualized row IDs; the `graph-row-{i}` ID scheme is deleted, not 
 | Loading / streaming (`totalRows` > loaded rows) | Unchanged; the row count in the announcement comes from the announcer, which already handles the streamed path. |
 | `prefers-reduced-motion` | No motion added or removed by this milestone. |
 
-### 1.4 The hint span (new, tiny, no new file)
+### 1.4 The hint span (new, tiny, own file)
 
 Screen-reader users get no discoverability for the keyboard model once the widget is a plain group,
-so add one visually-hidden description **inside `GraphCanvas.tsx`**, as a sibling of the scroller
-inside `.graph-canvas-host`:
+so add one visually-hidden description as a sibling of the scroller inside `.graph-canvas-host`.
+It lives in **its own file, `src/graph/GraphKeyboardHint.tsx`** (exporting `GRAPH_KEYBOARD_HINT` and
+`GraphKeyboardHint({ id })`), which `GraphCanvas.tsx` imports, passing the `useId()` value as `id`.
+*(Errata, 2026-08-31 design review: this section originally said "no new file" and placed the span
+inside `GraphCanvas.tsx`. That was a contract fault, not an implementation one — `GraphCanvas.tsx`
+is already ~860 lines, past the ~500-line soft limit, and the house rule is that new UI gets its own
+file rather than being appended to an already-large one.)*
 
 ```
 <span id={hintId} className="sr-only">{HINT}</span>
@@ -317,7 +322,7 @@ Harness = verifiable in the mock browser harness (`pnpm dev:mock`, `VITE_MOCK_IP
 | AC7 | While a dialog, the command palette, the search bar, the commit composer, or the Ask-history overlay is open, an arrow key changes neither the selection nor `document.activeElement`. Same while focus is in an `input`/`textarea`. | Harness |
 | AC8 | **P93 non-regression:** with a PR overlay open, clicking a commit in the graph leaves `document.activeElement` on the graph scroller. | UC (real canvas click) |
 | AC9 | Every selector in the §3.2 table resolves to `color`/`border-color` = the computed `--text-2` value in **both** `data-theme` states; `getComputedStyle` on a rendered instance of each confirms it. No hardcoded hex is introduced. | Harness |
-| AC10 | No selector listed in §3.3 changed; a grep for `var(--text-3)` in `src/styles/` returns exactly the §3.3 exempt set plus the §3.4 deferred set plus non-colour uses. | Harness (grep) |
+| AC10 | All ten §3.2 selectors no longer reference `var(--text-3)`; every selector in the §3.3 exempt set and every selector in the §3.4 deferred set still does; and no **enabled interactive control** in `src/styles/` uses `var(--text-3)` as its label, glyph or border colour. Remaining `--text-3` occurrences on decorative text (uppercase section labels, dividers, placeholder/empty-state copy — ~140 in total) are permitted by ui-reference §2 and are out of scope. | Harness (grep) |
 | AC11 | `.tab-close` has an accessible name and a ≥24px hit target. | Harness |
 | AC12 | Nothing in §3 changed any size, padding, weight, radius, border-width, hover or active rule; the visual diff is colour-only. | Harness (one screenshot pair, dark + light) |
 | AC13 | `ui-reference.md` (already updated by `ui-designer` in the design pass) is consistent with the shipped code: no `role="grid"` mandate remains in §4.1, the old "known gap"/"known defect" paragraphs are gone, and §2 reads **7.99:1** for `--text-2` on light `--bg-0`. Verification only — senior-dev does not edit `docs/`. | Harness (file read) |

@@ -2,6 +2,7 @@ import {
   forwardRef,
   useCallback,
   useEffect,
+  useId,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -43,6 +44,8 @@ import { computeRightColumns } from './rightColumns';
 import type { GraphDisplayOptions } from './rightColumns';
 import type { P7SelfTestResult } from './frameStats';
 import { buildEdgeIndex, edgesInRange } from './edgeIndex';
+import { GraphKeyboardHint } from './GraphKeyboardHint';
+import { GraphTooltip } from './GraphTooltip';
 import type { IncrementalEdgeIndex } from './incrementalEdgeIndex';
 import { createFrameRecorder } from './frameStats';
 import type { FrameStats } from './frameStats';
@@ -125,6 +128,8 @@ export interface GraphCanvasProps {
  *  arithmetic downstream — no lane/edge math involved. */
 export interface GraphCanvasHandle {
   getVisibleRowCount(): number;
+  /** P95 §2: focus the scroller so the Menu key / Shift+F10 row menu is reachable. */
+  focusScroller(): void;
 }
 
 const MOCK_MODE = import.meta.env.VITE_MOCK_IPC === '1';
@@ -201,6 +206,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   const gapRecorderRef = useRef(createFrameRecorder());
   const gapCountRef = useRef(0);
   const firstDataPaintSkippedRef = useRef(false);
+  /** P95 §1.4: per-instance id — two graph panes can be mounted across tabs. */
+  const hintId = useId();
 
   // P7 §6: hover tooltip. State changes ONLY when the hover TARGET changes (the
   // sameTarget guard), so re-renders are rare and the per-frame canvas paint
@@ -216,6 +223,10 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     () => ({
       getVisibleRowCount: () =>
         visibleRowCount(cssSizeRef.current.h, metricsRef.current.rowHeight),
+      // P95 §2.2: `preventScroll` is required — without it the browser scrolls
+      // the scroller to its own idea of the focus target and fights
+      // `scrollRowIntoView`.
+      focusScroller: () => scrollerRef.current?.focus({ preventScroll: true }),
     }),
     [],
   );
@@ -832,10 +843,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         className="graph-scroll"
         data-testid="graph-scroller"
         tabIndex={0}
-        role="grid"
+        role="group"
         aria-label="Commit graph"
-        aria-rowcount={totalRows ?? layout.nodes.length}
-        aria-activedescendant={selectedIndex !== null ? `graph-row-${selectedIndex}` : undefined}
+        aria-describedby={hintId}
         onScroll={handleScroll}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
@@ -845,24 +855,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       >
         <div className="graph-spacer" style={{ height: `${spacerH}px` }} />
       </div>
-      {tooltip !== null && (
-        <div
-          ref={tipRef}
-          className="graph-tooltip"
-          role="tooltip"
-          style={{
-            left: `${tipPos?.left ?? tooltip.anchor.left}px`,
-            top: `${tipPos?.top ?? tooltip.anchor.top + tooltip.anchor.height + 4}px`,
-          }}
-        >
-          {tooltip.kind === 'overflow' ||
-          tooltip.kind === 'date' ||
-          tooltip.kind === 'pr' ||
-          tooltip.kind === 'ci'
-            ? tooltip.lines.map((l, i) => <div key={i}>{l}</div>)
-            : tooltip.text}
-        </div>
-      )}
+      <GraphKeyboardHint id={hintId} />
+      {tooltip !== null && <GraphTooltip tooltip={tooltip} pos={tipPos} tipRef={tipRef} />}
     </div>
   );
 });

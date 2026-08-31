@@ -5,100 +5,28 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, renderHook, screen } from '@testing-library/react';
 
 import { useWorkspaceKeyboard } from './useWorkspaceKeyboard';
+import {
+  graphOf as graph,
+  makeKeyboardDeps as makeDeps,
+  pressKey as press,
+} from './fixtures/workspaceKeyboardDeps';
+import type { WorkspaceKeyboardDeps as Deps } from './fixtures/workspaceKeyboardDeps';
 import { ShortcutOverlay } from '../ShortcutOverlay';
-import type { GraphLayout, GraphNode } from '../../ipc';
 import type { GraphCanvasHandle } from '../../graph/GraphCanvas';
 import type { DiffSlot } from '../StatusPanel';
 import { shortcutKeys } from '../../utils/platform';
 
 afterEach(() => vi.restoreAllMocks());
 
-type Deps = Parameters<typeof useWorkspaceKeyboard>[0];
-
-function node(id: string): GraphNode {
-  return { id, lane: 0, parents: [], summary: '', author: '', ts: 0, committerTs: 0 };
-}
-function graph(n: number): GraphLayout {
-  return {
-    nodes: Array.from({ length: n }, (_, i) => node(`c${i}`)),
-    edges: [],
-    laneCount: 1,
-    headIndex: null,
-    truncated: false,
-  };
-}
-
-/** All-closed, all-idle deps with fresh spies; override per test. */
-function makeDeps(over: Partial<Deps> = {}): Deps {
-  return {
-    active: true,
-    globalModalOpen: false,
-    collapseDiffSlot: vi.fn(),
-    clearCompare: vi.fn(),
-    closeAiPanel: vi.fn(),
-    closeBlame: vi.fn(),
-    closeHistory: vi.fn(),
-    closeReflog: vi.fn(),
-    aiPanelOpenRef: { current: false },
-    blameOpenRef: { current: false },
-    historyOpenRef: { current: false },
-    reflogOpenRef: { current: false },
-    commitBrowserOpenRef: { current: false },
-    composerOpenRef: { current: false },
-    closeComposer: vi.fn(),
-    composerOpen: false,
-    searchOpenRef: { current: false },
-    closeSearch: vi.fn(),
-    historySearchOpenRef: { current: false },
-    closeHistorySearch: vi.fn(),
-    paletteOpenRef: { current: false },
-    closePalette: vi.fn(),
-    diffSlotRef: { current: null },
-    compareRef: { current: null },
-    setSelectedIndex: vi.fn(),
-    setCommitBrowserOpen: vi.fn(),
-    searchOpen: false,
-    openSearch: vi.fn(),
-    historySearchOpen: false,
-    paletteOpen: false,
-    togglePalette: vi.fn(),
-    refreshing: false,
-    statusLoading: false,
-    graphLoading: false,
-    mutating: false,
-    canPullPush: true,
-    dialogOpen: false,
-    abortConfirmOpen: false,
-    selectedIndex: null,
-    graph: null,
-    graphRef: { current: null },
-    onAiActivity: vi.fn(),
-    onGitActivity: vi.fn(),
-    handleRefresh: vi.fn(),
-    handleFetch: vi.fn(),
-    handlePull: vi.fn(),
-    handlePush: vi.fn(),
-    ...over,
-  };
-}
-
-function mount(deps: Deps) {
-  return renderHook((d: Deps) => useWorkspaceKeyboard(d), { initialProps: deps });
-}
-
-/** Dispatch a keydown from `target` (default: window) and return the event so
- *  tests can assert defaultPrevented. */
-function press(key: string, opts: KeyboardEventInit = {}, target: EventTarget = window) {
-  const ev = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...opts });
-  target.dispatchEvent(ev);
-  return ev;
-}
-
 /** A focused-ish input attached to the document so e.target is a real INPUT. */
 function attachedInput(tag: 'input' | 'textarea' | 'select' = 'input') {
   const el = document.createElement(tag);
   document.body.appendChild(el);
   return el;
+}
+
+function mount(deps: Deps) {
+  return renderHook((d: Deps) => useWorkspaceKeyboard(d), { initialProps: deps });
 }
 
 // ---------------------------------------------------------------------------
@@ -381,13 +309,21 @@ describe('graph navigation', () => {
 
   it('PageDown/PageUp step by the visible row count (graphRef), default 10', () => {
     const deps = navDeps({
-      graphRef: { current: { getVisibleRowCount: () => 4 } as unknown as GraphCanvasHandle },
+      graphRef: {
+        current: {
+          getVisibleRowCount: () => 4,
+          focusScroller: () => {},
+        } as unknown as GraphCanvasHandle,
+      },
     });
-    mount(deps);
+    const withRef = mount(deps);
     press('PageDown');
     expect(lastNext(deps, 2)).toBe(6);
     press('PageUp');
     expect(lastNext(deps, 2)).toBe(0); // 2-4 clamped
+    // P95 §2.1: the new `defaultPrevented` guard means a second mounted hook
+    // bails on a key the first one already consumed — unmount first.
+    withRef.unmount();
 
     const noRef = navDeps();
     mount(noRef);

@@ -123,7 +123,7 @@ button.checks-tip-sha:hover {
   background: color-mix(in srgb, var(--text-2) 12%, transparent);
 }
 .checks-rollup-pill--neutral .checks-rollup-glyph {
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 /* --- check list (§2.3) --- */

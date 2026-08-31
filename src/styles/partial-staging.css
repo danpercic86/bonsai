@@ -13,7 +13,7 @@
   border: none;
   background: none;
   font: inherit;
-  color: var(--text-3);
+  color: var(--text-2);
   cursor: pointer;
   user-select: none;
 }
@@ -44,7 +44,7 @@
   border: none;
   background: none;
   font: inherit;
-  color: var(--text-3);
+  color: var(--text-2);
   cursor: pointer;
   user-select: none;
 }

@@ -138,7 +138,7 @@ button.asset-row-clickable:hover {
 .asset-chip-missing,
 .asset-chip-muted {
   background: color-mix(in srgb, var(--text-3) 18%, transparent);
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .asset-chip-active {

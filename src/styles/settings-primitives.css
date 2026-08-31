@@ -443,7 +443,7 @@
 }
 
 .identity-swatch-option:hover:not(.is-selected) {
-  border-color: var(--text-3);
+  border-color: var(--text-2);
 }
 
 .identity-swatch-option.is-selected {

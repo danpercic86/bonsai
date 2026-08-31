@@ -78,7 +78,7 @@
   padding: 4px 10px;
   border: none;
   background: transparent;
-  color: var(--text-3);
+  color: var(--text-2);
   cursor: pointer;
 }
 
@@ -101,7 +101,7 @@
   border: 1px solid var(--border);
   border-radius: 4px;
   background: transparent;
-  color: var(--text-3);
+  color: var(--text-2);
   cursor: pointer;
 }
 
