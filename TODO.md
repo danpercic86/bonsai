@@ -24,25 +24,24 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
-## ⚡ P92 — Actionable multi-ref commits (branch picker + "+N" chip) — in-progress
+## ✅ P92 — Actionable multi-ref commits (branch picker + "+N" chip) — DONE
 
-**Current step:** AI GATE GREEN — awaiting USER CHECKPOINT + commit approval.
-Round 2 approved by `reviewer` (no MUST-FIX). Evidence: vitest 2344/2344; `tsc` clean; `vite build`
-OK; file-size check OK; eslint clean. **Playwright e2e 160 passed / 1 skipped (serial, 8.6m).**
-NOTE: the parallel e2e run fails 6-10 specs with the mock repo never seeding (empty state, no
-`graph-canvas`) — reproduced as worker contention, NOT a P92 regression: spec 14 passes 8/8 isolated
-and the full suite is green at `--workers=1`. Same pattern as the recorded `07-rebase` flake (L203).
-Worth a separate look at e2e parallel-worker isolation.
+**Current step:** done. AI gate green + USER CHECKPOINT verified by the user 2026-08-31.
+Committed `f5948d2` on `dev`. Evidence: vitest 2344/2344; Playwright e2e 160 passed / 1 skipped
+(serial); tsc, vite build, file-size ratchet, eslint clean; reviewer + ui-designer approved.
+`ui-reference.md` §6.2 + §4.1 corrected post-commit (defective clamp replaced by what shipped).
 
 Open follow-ups spun out of P92 (do NOT block the increment):
-- `ui-reference.md` §6.2 still documents the defective clamp and §4.1 lacks the Menu/Shift+F10 entry
-  — needs a dedicated edit-capable `ui-designer` pass (addendum A.1/A.2). **Blocks milestone closure.**
+- **e2e parallel-worker isolation** — the suite fails 6-10 specs in default parallel mode (mock repo
+  never seeds; app stuck on empty state, no `graph-canvas`), green at `--workers=1`. Pre-existing,
+  surfaced by P92. A real regression could hide in this noise — worth its own increment.
+- `ContextMenu.tsx` is 486 lines (limit 500); `MenuList` is the extraction seam — split it in the
+  next increment that touches the file.
 - Graph scroller has a dangling `aria-activedescendant` IDREF and `role="grid"` with no `role="row"`
   children (pre-existing, not P92's doing) — own increment.
 - Window-level arrow-key row nav can select a row without focusing the scroller, so the keyboard
   row-menu is unreachable that way.
-- USER CHECKPOINT (native): flyout hover-open/close timing + menu scroll feel; right-click a
-  multi-ref commit; confirm ≤1-ref menus are unchanged.
+- ~~USER CHECKPOINT (native)~~ — verified by the user 2026-08-31.
 
 Problem (user, 2026-08-31): a commit carrying several refs shows a dead "+N" chip whose hidden
 refs are hover-only and not actionable; and the commit context menu binds branch actions

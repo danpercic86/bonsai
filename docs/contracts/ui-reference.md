@@ -240,6 +240,18 @@ The `<canvas>` is opaque to assistive tech, so the graph MUST be a focusable com
 - A permanently-mounted polite live region (the RevealAnnouncer / §9–§10 split) announces the
   settled selection: `"{summary} — {author}, {relative date}. Row {n+1} of {N}. {ref summary}"`,
   debounced ~150 ms so a held arrow key does not flood the reader.
+- **Menu key / Shift+F10** on the focused graph scroller opens the **selected** row's context menu,
+  anchored at the ref band's left edge just under that row (clamped to the scroller's box). This is
+  the keyboard route to the P92 ref picker, and therefore to every ref on a multi-ref commit.
+  *Known gap:* arrow-key row selection is a **window-level** keydown, so a user can select a row
+  without the scroller holding focus, and the Menu key then does nothing. The durable fix is to focus
+  the scroller whenever the window-level handler changes the graph selection (or to move that nav
+  onto the scroller's own handler). Tracked as a follow-up.
+- **Known defect (pre-P92, needs its own increment):** `aria-activedescendant="graph-row-{i}"` points
+  at an id that does not exist — the rows are canvas pixels — and `role="grid"` has no `role="row"`
+  children. A dangling IDREF is worse than none. Either render one visually-hidden `role="row"` per
+  *visible* row, or drop `role="grid"` + `aria-activedescendant` and let the live region be the sole
+  channel.
 
 ## 5. Lane color palette (deterministic, per theme)
 
@@ -340,9 +352,46 @@ Full contract: `docs/contracts/P92-multi-ref-commit-ui.md`. When a commit carrie
 - **Picker rows have no default action** — they omit `onSelect` (`ContextMenu.activate()` fires
   `onSelect` and closes when one is present, and only otherwise toggles the flyout), so clicking one
   opens its flyout and never mutates.
-- **Context menus are now height-clamped, app-wide:**
-  `.context-menu, .context-menu--sub { max-height: min(60vh, 480px); overflow-y: auto; overscroll-behavior: contain; }`
-  Previously an unclamped menu (12+ refs, or any long list) could run off-screen.
+- **Context menus are height-clamped, app-wide** — and the clamp only works together with its
+  companion rules below. The first shipped version had the clamp alone and was broken (P92 review
+  2026-08-31); this is what ships now, in `src/styles/context-menu.css`:
+  ```css
+  .context-menu, .context-menu--sub {
+    max-height: min(60vh, 480px);
+    overflow-y: auto;
+    overflow-x: hidden;          /* `overflow-y: auto` alone computes overflow-x to `auto` */
+    overscroll-behavior: contain;
+  }
+  .context-menu--sub { position: fixed; }
+  ```
+  Previously an unclamped menu (12+ refs, or any long list) could run off-screen. The clamp requires
+  all four of:
+  1. **`overflow-x: hidden` is explicit, not incidental.** `overflow-y: auto` computes `overflow-x`
+     to `auto`, which gave every clamped menu a spurious horizontal scrollbar.
+  2. **The scroll-dismiss handler must ignore scrolls originating inside the menu root.**
+     `window.addEventListener('scroll', …, true)` receives the menu's own scroll box even though
+     `scroll` does not bubble, so an unguarded handler closed the menu the instant the user wheeled
+     it — and also on `focusRow`'s `scrollIntoView` during arrow-key navigation. Guard with
+     `rootRef.current.contains(e.target as Node)`, as the pointerdown handler already does.
+  3. **Flyouts escape the scroll box via `position: fixed`.** A scroll container clips
+     absolutely-positioned descendants, so an `absolute` `.context-menu--sub` inside a
+     `.context-menu-row` was clipped and made the browser scroll the parent sideways to reveal it.
+     The flyout is positioned from the anchor row's `getBoundingClientRect()`: `left = rowRect.right`,
+     right-flipping to `max(4, rowRect.left - width)` when `rowRect.right + width > innerWidth - 4`,
+     and `top = clamp(rowRect.top, 4, innerHeight - 4 - height)`. It is rendered
+     `visibility: hidden` until measured, so it never flashes at the wrong spot.
+  4. **A fixed flyout no longer tracks its row, so the parent closes its own open flyout when the
+     parent's scroll box scrolls** (hover or ArrowRight reopens it). Scrolling a *submenu* never
+     closes it — the guard is scoped to the list's own box.
+
+  Two further invariants of the component, recorded here because they are design contract, not
+  implementation detail:
+  - **Focus restores to the opener on close.** The element focused at first render is captured and
+    refocused on unmount, but only if focus is still inside the menu (never steal focus back from
+    somewhere the user has since moved).
+  - **`separator?: true` is the canonical separator primitive.** A menu item with `separator: true`
+    renders a non-interactive `role="separator"` divider; it is skipped by arrow-key navigation and
+    by index-based row resolution. Do not spec ad-hoc divider rows or blank labels.
 - **Keyboard parity.** The canvas chip is not a tab stop; the keyboard path to every hidden ref is the
   selected-row context menu (§4.1), which contains the picker. Menu roles/keys are the component's
   existing `role="menu"` / `aria-haspopup` / Arrow-key behaviour.
