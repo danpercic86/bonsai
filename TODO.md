@@ -24,9 +24,36 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
-## 🔄 P94 — e2e parallel-worker isolation — IN-PROGRESS
+## ✅ P94 — e2e parallel-worker isolation — DONE
 
-**Current step:** senior-dev diagnosing + fixing.
+**Current step:** done. Committed `c7e3dfe`. AI gate only — no USER CHECKPOINT (test infra, no
+native-window behaviour). Verified **160 passed / 1 skipped** across three consecutive bare
+`playwright test` runs (2.9 / 4.2 / 3.1 min) plus a fourth after my adaptive-worker edit (4.3 min).
+The 1 skip is pre-existing, present in the baseline before any change.
+
+**Root cause was NOT shared mutable state** — the original hypothesis (localStorage / mock module
+state leaking across workers) was disproved with evidence: Playwright gives each test a fresh
+context, no `storageState` is configured, and the mock's module-level state lives in each page's JS
+realm, so it is per-test by construction. Two real causes instead:
+1. **Machine oversubscription.** Playwright's default is half the cores = 11 concurrent Edge
+   instances on this box, all loading a canvas-heavy app through ONE Vite dev-server transform
+   pipeline. Signature was resource death, not wrong data: CDP "session closed" mid-test,
+   `page.goto` timing out at `load`, whole spec files dying in cascade — which is exactly why the
+   failing set moved between runs. Measured ladder: 11 workers → 7-12 failures in 5.8-6.3 min;
+   6 → 3 failures in 3.6 min; 4 → 0-1 in ~4.5 min. **Capping is not a throughput trade — 4 workers
+   is faster than 11.** Orchestrator edit: made the cap adaptive (`min(4, cores/2)`) so it can never
+   oversubscribe a smaller box, since Bonsai ships cross-platform.
+2. **`reuseExistingServer` on the shared port 1420** — the suite silently adopted whatever was
+   listening, including a hand-run `pnpm dev` *without* `VITE_MOCK_IPC`, which boots against real
+   Tauri IPC and leaves every spec on the empty state. **That is precisely the "mock repo never
+   seeds" symptom P92 recorded.** e2e now owns port 1430 (`PORT` still overrides).
+
+Plus a real row-map race, hardened behind a new `clickGraphRowUntilVisible` helper at the five
+mutation→click→assert sites: `scrollHeight` settling does not mean the display-row map has settled,
+because the WIP row can still toggle as the same refresh round's status slice lands, shifting every
+row by one. The helper retries the **click**, never the assertion.
+
+Nothing serialised, no `retries` bump, no test skipped or weakened.
 
 **Goal:** the Playwright suite must be trustworthy in its DEFAULT parallel mode. Today it fails a
 varying 2-10 specs per run (P92 saw 6-10; P93's gate saw 2 then 4, different specs each time) and
@@ -40,6 +67,35 @@ persisted "last repo" key / a fixed port / a shared scratch dir) rather than a p
 **Acceptance:** `pnpm exec playwright test` green in default parallel mode across 3 consecutive
 runs, with no `--workers=1` pin and no test weakened or skipped to get there. The root cause is
 named in the commit message.
+
+## 🚨 P99 — `repo` state never set in a production bundle — PENDING (HIGH)
+
+**Found by senior-dev while instrumenting P94 — a genuine product defect, not test infra.** Filed
+rather than fixed, because it needs its own increment and a proper contract.
+
+`RepoWorkspace`'s `repo` state (`src/components/RepoWorkspace.tsx:156`, set only at `:1122` inside
+`runRefreshRound`'s `openRepo` slice) **is never set after boot in a built bundle** — it stays
+`null` forever. So `const head = repo?.head ?? branches?.head` (`:641`) permanently falls back to
+the branches snapshot.
+
+**User-visible consequence:** because the branches snapshot is never unborn/detached, an **unborn
+repo renders the full graph instead of "No commits yet"**. Any other behaviour keyed on
+`repo?.<field>` is equally suspect and needs auditing — unborn/detached HEAD handling is the
+obvious blast radius, and empty-state correctness is a locked v1 product decision.
+
+**Why it hid:** it only manifests in a production bundle. The dev server works *by accident*, via
+React StrictMode's double-mount masking that the first refresh round never runs the `openRepo`
+slice. Evidence: a temporary `console.info` of `{repo.head, branches.head}` logged three head-states
+against the dev server (the third being `repo = {unborn:true}`), but only **two** against a
+`vite build --mode mock` + `vite preview` bundle, with `repo` always `null` — reproducible **6/6 at
+11 workers and 3/3 at `--workers=1`**, so it is deterministic, not a race.
+
+**Open question to settle first:** `pnpm tauri dev` uses the dev bundle, so it is NOT yet confirmed
+whether `pnpm tauri build` ships this. **Determine that before anything else** — if the release
+build is affected, this is a shipped-in-1.5.0 bug and should jump the queue ahead of P95/P96/P97.
+
+Side effect worth knowing: this is why serving a built bundle to e2e was abandoned in P94 (it would
+have cut the suite from 5.8 to 1.3 min) — the built bundle is **not** behaviour-equivalent to dev.
 
 ## ⏳ P95 — a11y: graph scroller semantics, keyboard reachability, toolbar contrast — PENDING
 
