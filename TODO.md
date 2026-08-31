@@ -24,6 +24,51 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
+## 🔄 P94 — e2e parallel-worker isolation — IN-PROGRESS
+
+**Current step:** senior-dev diagnosing + fixing.
+
+**Goal:** the Playwright suite must be trustworthy in its DEFAULT parallel mode. Today it fails a
+varying 2-10 specs per run (P92 saw 6-10; P93's gate saw 2 then 4, different specs each time) and
+is green at `--workers=1`. Because the failures move around, a real regression can hide in the
+noise — every gate run currently needs manual triage.
+
+**Symptom (from P92):** the mock repo never seeds; the app sits on the empty state and no
+`graph-canvas` ever appears. Strongly suggests cross-worker shared state (localStorage / a
+persisted "last repo" key / a fixed port / a shared scratch dir) rather than a product bug.
+
+**Acceptance:** `pnpm exec playwright test` green in default parallel mode across 3 consecutive
+runs, with no `--workers=1` pin and no test weakened or skipped to get there. The root cause is
+named in the commit message.
+
+## ⏳ P95 — a11y: graph scroller semantics, keyboard reachability, toolbar contrast — PENDING
+
+Batches the three filed a11y follow-ups (two from P92, one from P93). ui-designer writes the UI
+contract first (workflow step 2b), then senior-dev implements.
+
+- Graph scroller has a dangling `aria-activedescendant` IDREF and `role="grid"` with no
+  `role="row"` children (pre-existing).
+- Window-level arrow-key row nav can select a row without focusing the scroller, so the keyboard
+  row-menu is unreachable that way.
+- `.diff-intra-toggle` off-state label is `--text-3` on the transparent overlay toolbar (≈4.0:1),
+  under the 4.5:1 AA floor; `--text-2` fixes it. Shared overlay chrome, not P93's doing.
+
+## ⏳ P96 — P93 review follow-ups — PENDING
+
+- SHOULD-FIX: add `overlayMeta.test.ts` pinning the load-bearing prefix ordering
+  (`conflict:`/`ai-proposal:`/`pr:` before the `WorkdirSection` cast). Currently only indirect.
+- NIT: `PrChangesSection.tsx` focus restore resolves the row by positional index into
+  `listRef.current.children` — switch to `data-path` + `querySelector` (render-order independent).
+- NIT: `overlayMeta.ts:41` `parsePrSlotPath(key) ?? key` surfaces a raw `pr:<oid>:<oid>` key as the
+  overlay path for a malformed key.
+- NIT: `PrDetailContainer.tsx:550-554` — C2 (unmount) and C3 (headOid change) both fire
+  `onClosePrFileDiff` on a PR switch. Idempotent, just a double call.
+
+## ⏳ P97 — split ContextMenu.tsx — PENDING
+
+486 lines against the ~500 limit; `MenuList` is the extraction seam. Strictly behaviour-preserving
+(refactorer), proven by identical before/after test counts.
+
 ## ✅ P93 — PR diffs open in the center overlay — DONE
 
 **Current step:** done. AI gate green + USER CHECKPOINT verified by the user 2026-08-31.
