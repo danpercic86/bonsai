@@ -801,8 +801,7 @@
   color: var(--text-3);
 }
 
-/* Push Collapse-all / Retry to the row end. */
-.pr-changes-collapse-all,
+/* Push Retry to the row end. */
 .pr-changes-retry {
   margin-left: auto;
 }
@@ -816,4 +815,30 @@
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+/* P93: the row whose diff is showing in the center overlay. Verbatim the
+   .file-row-expanded recipe (diff.css) — the house "the overlay is showing this
+   row" marker: --selection fill + a 2px --accent inset rail + a bolded label.
+   Hover must not override it, hence the doubled selector. */
+.pr-file-row-active .diff-card-header,
+.pr-file-row-active .diff-card-header:hover {
+  background: var(--selection);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.pr-file-row-active .diff-card-path {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+/* P93 §4.3: a binary changed file has no text diff, so its row is a
+   non-interactive <span> — no pointer affordance, no hover feedback. The fill is
+   RESTATED as the `.diff-card-header` base `--bg-1` (not `none`, which would
+   strip the row's own fill and let the card's `--bg-0` show through), and the
+   selector is doubled so the result is independent of cascade order. */
+.pr-file-row-binary,
+.pr-file-row-binary:hover {
+  cursor: default;
+  background: var(--bg-1);
 }

@@ -13,10 +13,12 @@ import { usePushToast } from '../ToastContext';
 import { errorMessage, isAppError } from '../utils/errors';
 import type { ComboboxOption } from './Combobox';
 import { SkeletonRows } from './CommitPanel';
-import { ForgeAccountHeader } from './ForgeAccountHeader';
 import { ForgeConnect, type ConnectMode } from './ForgeConnect';
 import { PrCreateForm } from './PrCreateForm';
 import { PrDetailContainer } from './prPanel/PrDetailContainer';
+import { PrDetailFallback } from './prPanel/PrDetailFallback';
+import type { PrDetailContainerProps } from './prPanel/PrDetailContainer';
+import { PrPanelAccountHeader } from './prPanel/PrPanelAccountHeader';
 import { PrList } from './PrList';
 import { useForgeAccountCache } from './prPanel/useForgeAccountCache';
 
@@ -28,7 +30,13 @@ import { useForgeAccountCache } from './prPanel/useForgeAccountCache';
 
 type View = 'loading' | 'error' | 'unsupported' | 'connect' | 'list' | 'detail' | 'create';
 
-export interface PrPanelProps {
+/** P93: the center-overlay wiring for the changed-files list is pure pass-through
+ *  to PrDetailContainer (open one file / collapse an orphaned overlay / active path). */
+export interface PrPanelProps
+  extends Pick<
+    PrDetailContainerProps,
+    'onOpenFileDiff' | 'onClosePrFileDiff' | 'prOverlayPath' | 'prRestoreFocusTo'
+  > {
   repoId: string;
   /** Current branch name — seeds the create form's compare field. */
   defaultHead?: string | null;
@@ -60,6 +68,10 @@ export function PrPanel({
   baseOptions = [],
   compareOptions = [],
   onManageAccounts,
+  onOpenFileDiff,
+  onClosePrFileDiff,
+  prOverlayPath = null,
+  prRestoreFocusTo = null,
 }: PrPanelProps) {
   const pushToast = usePushToast();
 
@@ -262,10 +274,6 @@ export function PrPanel({
     setView('connect');
   }
 
-  function handleManageAccounts() {
-    onManageAccounts?.();
-  }
-
   /** P72: the ONE open-external-URL implementation, shared by the connect
    *  panel's "Create a token" link and the detail view's "Open in browser".
    *  Both children stay presentational; a launch failure names the intent first
@@ -313,21 +321,14 @@ export function PrPanel({
     );
   }
 
-  const showHeader =
-    ctx?.viewer != null && (view === 'list' || view === 'detail' || view === 'create');
+  const showHeader = view === 'list' || view === 'detail' || view === 'create';
 
   return (
     <div className="pr-panel">
-      {showHeader && ctx?.viewer != null && (
-        <ForgeAccountHeader
-          viewer={ctx.viewer}
-          host={ctx.host}
-          kind={ctx.provider}
-          accountSource={ctx.accountSource}
-          resolvedAccountId={ctx.resolvedAccountId}
-          accounts={
-            accounts === null ? null : accounts.filter((a) => a.host === ctx.host)
-          }
+      {showHeader && (
+        <PrPanelAccountHeader
+          ctx={ctx}
+          accounts={accounts}
           accountsError={accountsError}
           busy={accountsBusy}
           onOpenMenu={handleOpenAccountMenu}
@@ -340,7 +341,7 @@ export function PrPanel({
             setView('connect');
           }}
           onResetToDefault={handleResetToDefault}
-          onManageAccounts={handleManageAccounts}
+          onManageAccounts={() => onManageAccounts?.()}
         />
       )}
       {renderBody()}
@@ -472,26 +473,13 @@ export function PrPanel({
           onListChanged={() => setListTick((t) => t + 1)}
           onReload={loadDetail}
           onAuthFailed={handleAuthFailed}
+          onOpenFileDiff={onOpenFileDiff}
+          onClosePrFileDiff={onClosePrFileDiff}
+          prOverlayPath={prOverlayPath}
+          prRestoreFocusTo={prRestoreFocusTo}
         />
       );
     }
-    return (
-      <div className="pr-detail pr-detail-shell">
-        <div className="pr-detail-header pr-detail-title-row">
-          <button type="button" className="section-action pr-back-button" onClick={() => setView('list')}>
-            {'← Pull requests'}
-          </button>
-        </div>
-        {detailError !== null ? (
-          <div className="error-banner error-banner-dismissible pr-error" role="alert">
-            <span className="error-banner-text">{detailError}</span>
-          </div>
-        ) : (
-          <div className="pr-detail-loading">
-            <SkeletonRows />
-          </div>
-        )}
-      </div>
-    );
+    return <PrDetailFallback detailError={detailError} onBack={() => setView('list')} />;
   }
 }

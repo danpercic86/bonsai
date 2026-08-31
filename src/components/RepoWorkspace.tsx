@@ -68,6 +68,10 @@ import { isImagePath } from '../utils/imagePaths';
 import { useRemoteOps, type NonFfPullInfo } from './repoWorkspace/useRemoteOps';
 import { useCommitActions } from './repoWorkspace/useCommitActions';
 import { usePartialStaging } from './repoWorkspace/usePartialStaging';
+import type { PrOverlayCtx } from './repoWorkspace/types';
+import { isPrSlotKey } from './repoWorkspace/prSlotKey';
+import { deriveOverlayMeta } from './repoWorkspace/overlayMeta';
+import { usePrFileOverlay } from './repoWorkspace/usePrFileOverlay';
 import { useHookGate } from './repoWorkspace/useHookGate';
 import { useHookDisclosure } from './repoWorkspace/useHookDisclosure';
 import { useBranchActions } from './repoWorkspace/useBranchActions';
@@ -479,6 +483,11 @@ export function RepoWorkspace({
   const [commitDiffLoading, setCommitDiffLoading] = useState(false);
   const [commitDiffError, setCommitDiffError] = useState<string | null>(null);
   const [diffSlot, setDiffSlot] = useState<DiffSlot | null>(null);
+  // P93: the PR file open in the center overlay (the `pr:` key cannot carry its
+  // status / rename origin / PR number). Cleared in collapseDiffSlot.
+  const [prOverlayCtx, setPrOverlayCtx] = useState<PrOverlayCtx | null>(null);
+  const prOverlayCtxRef = useRef(prOverlayCtx); // read by the overlay refetch toggles
+  prOverlayCtxRef.current = prOverlayCtx;
   // P17c: File vs Diff view for the center-pane diff overlay. Drives the
   // `fullContext` arg of the primary overlay fetchers; read through a ref by the
   // stable `refetchStatus` callback so toggling never re-creates it.
@@ -658,41 +667,15 @@ export function RepoWorkspace({
     [repoId],
   );
 
-  const overlayMeta: DiffOverlayMeta | null = useMemo(() => {
-    if (diffSlot === null) return null;
-    const key = diffSlot.key;
-    if (key.startsWith('conflict:')) {
-      return {
-        path: key.slice('conflict:'.length),
-        origPath: null,
-        status: 'conflicted',
-        kind: 'conflict',
-      };
-    }
-    // P13 §8.3: AI proposal review — reuses the conflict editor (seeded with the
-    // markerless proposed body carried on diffSlot.conflict).
-    if (key.startsWith('ai-proposal:')) {
-      return {
-        path: key.slice('ai-proposal:'.length),
-        origPath: null,
-        status: 'conflicted',
-        kind: 'aiProposal',
-      };
-    }
-    const sep = key.indexOf(':');
-    const section = key.slice(0, sep) as WorkdirSection;
-    const path = key.slice(sep + 1);
-    const entry = status?.[section].find((e) => e.path === path) ?? null;
-    return {
-      path,
-      origPath: entry?.origPath ?? null,
-      status: entry?.status ?? null,
-      kind: section,
-    };
-  }, [diffSlot, status]);
+  const overlayMeta: DiffOverlayMeta | null = useMemo(
+    () => (diffSlot === null ? null : deriveOverlayMeta(diffSlot.key, status, prOverlayCtx)),
+    [diffSlot, status, prOverlayCtx],
+  );
 
   // Latest overlay meta read by the partial-staging handlers + the view-mode
   // toggle without widening their (stable) callback deps.
+  // P93: the ctx only while its slot is open (active-row marker + `PR #n` chip).
+  const prOverlaySlot = diffSlot !== null && isPrSlotKey(diffSlot.key) ? prOverlayCtx : null;
   const overlayMetaRef = useRef(overlayMeta);
   overlayMetaRef.current = overlayMeta;
 
@@ -783,6 +766,7 @@ export function RepoWorkspace({
   const collapseDiffSlot = useCallback(() => {
     fileDiffReqId.current += 1;
     setDiffSlot(null);
+    setPrOverlayCtx(null); // P93: only meaningful while a `pr:` slot is open
   }, []);
 
   // P5 §5.3: tear down compare mode. Bumps the req-id so any in-flight fetch is
@@ -921,7 +905,9 @@ export function RepoWorkspace({
         slot !== null &&
         !slot.key.startsWith('commit:') &&
         !slot.key.startsWith('conflict:') &&
-        !slot.key.startsWith('ai-proposal:')
+        !slot.key.startsWith('ai-proposal:') &&
+        // P93: a `pr:` slot is a forge diff — never refetch it as a workdir one.
+        !isPrSlotKey(slot.key)
       ) {
         const sep = slot.key.indexOf(':');
         const section = slot.key.slice(0, sep) as WorkdirSection;
@@ -1709,6 +1695,7 @@ export function RepoWorkspace({
     stageableRef,
     diffViewModeRef,
     intralineRef,
+    prOverlayCtxRef,
     setDiffViewMode,
     setIntraline,
     setPendingHunkDiscard,
@@ -1716,6 +1703,15 @@ export function RepoWorkspace({
     fetchDiffSlot,
     refetchStatus,
     reportStatusError,
+  });
+
+  // P93 §6.1: `handleDismissDiffOverlay` replaces `collapseDiffSlot` at the
+  // overlay's dismissal affordances (× / Esc / error banner) — the only arm point.
+  const {
+    handleOpenPrFileDiff, handleClosePrFileDiff, handleDismissDiffOverlay, prRestoreFocusTo,
+  } = usePrFileOverlay({
+    repoId, diffSlotRef, diffViewModeRef, intralineRef, prOverlayCtxRef, setPrOverlayCtx,
+    fetchDiffSlot, collapseDiffSlot,
   });
 
   // P56b: open the general "Release notes…" range picker (palette entry). Stable
@@ -2146,7 +2142,7 @@ export function RepoWorkspace({
   useWorkspaceKeyboard({
     active,
     globalModalOpen,
-    collapseDiffSlot,
+    collapseDiffSlot: handleDismissDiffOverlay,
     clearCompare,
     closeAiPanel,
     closeBlame,
@@ -2429,6 +2425,7 @@ export function RepoWorkspace({
         />
         <PaneDivider side="sidebar" onResize={onSidebarResize} onResizeEnd={onPaneResizeEnd} />
         <WorkspaceGraphPane
+          prNumber={prOverlaySlot?.prNumber ?? null}
           graphError={graphError}
           graph={graph}
           head={head}
@@ -2456,7 +2453,7 @@ export function RepoWorkspace({
           historySearch={historySearch}
           diffSlot={diffSlot}
           overlayMeta={overlayMeta}
-          collapseDiffSlot={collapseDiffSlot}
+          collapseDiffSlot={handleDismissDiffOverlay}
           onResolveConflictText={handleResolveConflictText}
           mutating={mutating}
           overlayExplain={overlayExplain}
@@ -2502,6 +2499,10 @@ export function RepoWorkspace({
           rightPanelWidth={paneWidths.rightPanel}
           repoId={repoId}
           rightPaneTab={rightPaneTab}
+          onOpenPrFileDiff={handleOpenPrFileDiff}
+          onClosePrFileDiff={handleClosePrFileDiff}
+          prOverlayPath={prOverlaySlot?.path ?? null}
+          prRestoreFocusTo={prRestoreFocusTo}
           onSelectRightPaneTab={setRightPaneTab}
           prDefaultHead={headBranch?.name ?? null}
           prDefaultBase={prDefaultBase}

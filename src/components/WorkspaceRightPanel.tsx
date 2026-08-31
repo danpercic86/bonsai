@@ -8,6 +8,8 @@ import { CommitPanel } from './CommitPanel';
 import { ComparePanel } from './ComparePanel';
 import { OpBanner } from './OpBanner';
 import { PrPanel } from './PrPanel';
+import type { PrFileDiffOpen } from './prPanel/PrChangesSection';
+import type { PrRestoreFocus } from './repoWorkspace/usePrFileOverlay';
 import { StatusPanel } from './StatusPanel';
 import { shortOid } from './workspaceUtils';
 import type {
@@ -39,6 +41,14 @@ export interface WorkspaceRightPanelProps {
   repoId: string;
   /** P62c/P90: active right-pane tab (owned by RepoWorkspace). */
   rightPaneTab: 'work' | 'prs' | 'checks';
+  /** P93: open one PR changed file's diff in the center overlay. */
+  onOpenPrFileDiff(ctx: PrFileDiffOpen): void;
+  /** P93 §6: collapse the center PR overlay (stable identity required). */
+  onClosePrFileDiff(): void;
+  /** P93: path of the PR file open in the center overlay (null = none). */
+  prOverlayPath: string | null;
+  /** P93 §6.1: dismissal-event focus restore for the PR changed-files list. */
+  prRestoreFocusTo: PrRestoreFocus | null;
   onSelectRightPaneTab(tab: 'work' | 'prs' | 'checks'): void;
   /** P90: the branch resolved from the last sidebar reveal (or HEAD) → Checks tab. */
   checksTarget: ChecksTarget | null;
@@ -239,6 +249,10 @@ export function WorkspaceRightPanel({
   onShowGitActivity,
   repoId,
   rightPaneTab,
+  onOpenPrFileDiff,
+  onClosePrFileDiff,
+  prOverlayPath,
+  prRestoreFocusTo,
   onSelectRightPaneTab,
   prDefaultHead,
   prDefaultBase,
@@ -434,6 +448,10 @@ export function WorkspaceRightPanel({
           openToPr={prNav}
           aiEligible={aiEligible}
           onManageAccounts={onOpenAccountSettings}
+          onOpenFileDiff={onOpenPrFileDiff}
+          onClosePrFileDiff={onClosePrFileDiff}
+          prOverlayPath={prOverlayPath}
+          prRestoreFocusTo={prRestoreFocusTo}
         />
       )}
       {rightPaneTab === 'checks' && (

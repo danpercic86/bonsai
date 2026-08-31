@@ -469,6 +469,8 @@ describe('branch list: 1000 branches, XSS-shaped + duplicate names in Sidebar', 
     };
   }
 
+  // 1000-branch adversarial-scale render: deliberately far past any real repo's branch count,
+  // so the 5s vitest default is arbitrary here. Measured ~7s on the Windows dev box.
   it('renders without crashing; script-tag name stays inert text; duplicates tolerated', () => {
     const local = [
       branch('main', { isHead: true }),
@@ -489,5 +491,5 @@ describe('branch list: 1000 branches, XSS-shaped + duplicate names in Sidebar', 
     expect(screen.getAllByText('dup').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('feature/branch-999')).toBeInTheDocument();
     assertConsoleClean();
-  });
+  }, 30_000);
 });

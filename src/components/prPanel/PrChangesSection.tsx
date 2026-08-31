@@ -1,14 +1,15 @@
-import { useCallback, useState } from 'react';
-import type { PrDiffStats } from '../../ipc';
+import { useEffect, useRef } from 'react';
+import type { FileDiffHeader, PrDiffStats } from '../../ipc';
 import { SkeletonRows } from '../CommitPanel';
+import type { PrRestoreFocus } from '../repoWorkspace/usePrFileOverlay';
 import { PrFileRow } from './PrFileRow';
 import type { PrDiffErrorCause, PrDiffStatus } from './usePrDiff';
-import type { UsePrFileDiffs } from './usePrFileDiffs';
 
-// P89: the PR detail's changed-files section (contract §1/§4). A small state
-// machine over the forgePrDiff result: loading skeleton, empty, error+retry, or
-// the <ul> of expandable file rows. Presentational — no IPC of its own; the
-// per-file fetch orchestration is passed in via `fileDiffs`.
+// P89/P93: the PR detail's changed-files section. A small state machine over the
+// forgePrDiff result: loading skeleton, empty, error+retry, or the <ul> of file
+// rows. Since P93 a row click opens the file's diff in the CENTER OVERLAY (never
+// inline), so this component owns no per-file fetch state — only the "which row
+// is open" marker, which is passed in as `activePath`.
 
 const ERROR_COPY: Record<PrDiffErrorCause, string> = {
   network:
@@ -19,6 +20,18 @@ const ERROR_COPY: Record<PrDiffErrorCause, string> = {
   generic: "Couldn't compute this pull request's diff.",
 };
 
+/** P93 §3: the click payload that travels up to RepoWorkspace, which owns the
+ *  overlay slot. The overlay key alone cannot carry the header status, the
+ *  rename origin or the PR number, so they ride along here. */
+export interface PrFileDiffOpen {
+  prNumber: number;
+  /** `prDiff.stats.mergeBaseOid` — the three-dot base. */
+  baseOid: string;
+  /** `prDiff.stats.headOid`. */
+  headOid: string;
+  header: FileDiffHeader;
+}
+
 export interface PrChangesSectionProps {
   status: PrDiffStatus;
   stats: PrDiffStats | null;
@@ -26,7 +39,14 @@ export interface PrChangesSectionProps {
   errorCause: PrDiffErrorCause;
   /** Re-run forgePrDiff for this PR. */
   onRetry(): void;
-  fileDiffs: UsePrFileDiffs;
+  /** Path of the file whose diff is open in the center overlay (null = none). */
+  activePath: string | null;
+  /** P93 §6.1: set ONLY when the user dismissed this PR file's overlay. `token`
+   *  changes on every dismissal so a repeat close of the same row still fires.
+   *  Never derived from an `activePath` transition — that cannot tell a user
+   *  dismissal apart from a slot replacement / PR switch / head advance. */
+  restoreFocusTo: PrRestoreFocus | null;
+  onOpenFile(header: FileDiffHeader): void;
 }
 
 export function PrChangesSection({
@@ -35,47 +55,35 @@ export function PrChangesSection({
   stale,
   errorCause,
   onRetry,
-  fileDiffs,
+  activePath,
+  restoreFocusTo,
+  onOpenFile,
 }: PrChangesSectionProps) {
-  // Rows start collapsed (lazy per-file fetch); an EMPTY set means all collapsed.
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
-  const { getEntry, requestFile, retryFile } = fileDiffs;
-
   const files = stats?.files ?? [];
-
-  const toggle = useCallback(
-    (path: string) => {
-      setExpanded((prev) => {
-        const next = new Set(prev);
-        if (next.has(path)) {
-          next.delete(path);
-        } else {
-          next.add(path);
-          const header = files.find((f) => f.path === path);
-          if (header !== undefined && !header.binary) requestFile(path, header.origPath);
-        }
-        return next;
-      });
-    },
-    [files, requestFile],
-  );
-
-  const expandable = files.filter((f) => !f.binary);
-  const allExpanded = expandable.length > 0 && expandable.every((f) => expanded.has(f.path));
-  const toggleAll = useCallback(() => {
-    if (allExpanded) {
-      setExpanded(new Set());
-    } else {
-      const next = new Set<string>();
-      for (const f of files) {
-        next.add(f.path);
-        if (!f.binary) requestFile(f.path, f.origPath);
-      }
-      setExpanded(next);
-    }
-  }, [allExpanded, files, requestFile]);
-
   const count = stats?.changedFiles ?? files.length;
+  // Read through a ref so the restore effect keys on the token ALONE (§6.1) and
+  // never re-fires when the stats object is replaced by a refetch.
+  const statsRef = useRef(stats);
+  statsRef.current = stats;
+
+  // P93 §6.1 focus restore, driven by the DISMISSAL EVENT (`restoreFocusTo`), not
+  // by an `activePath` transition. Fires once per token, and only when all three
+  // guards hold: the row still exists, it has a <button> (binary rows do not),
+  // and focus has fallen back to <body> — if the user has since focused the graph
+  // or the sidebar we must not take it back.
+  const listRef = useRef<HTMLUListElement>(null);
+  const lastTokenRef = useRef<number | null>(restoreFocusTo?.token ?? null);
+  useEffect(() => {
+    if (restoreFocusTo === null) return;
+    if (lastTokenRef.current === restoreFocusTo.token) return;
+    lastTokenRef.current = restoreFocusTo.token;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    const index = (statsRef.current?.files ?? []).findIndex((f) => f.path === restoreFocusTo.path);
+    if (index < 0) return;
+    const row = listRef.current?.children[index];
+    if (row instanceof HTMLElement) row.querySelector('button')?.focus();
+  }, [restoreFocusTo]);
 
   // SF2: on a head-advance refetch the hook keeps the prior stats and sets
   // `stale`. Keep rendering the existing rows underneath, dimmed via
@@ -83,15 +91,13 @@ export function PrChangesSection({
   // (no prior rows) shows the bare skeleton.
   const showStaleRows = status === 'loading' && stale && files.length > 0;
   const fileList = (
-    <ul className={`pr-changes-list${stale ? ' diff-stale' : ''}`}>
+    <ul ref={listRef} className={`pr-changes-list${stale ? ' diff-stale' : ''}`}>
       {files.map((f) => (
         <PrFileRow
           key={f.path}
           header={f}
-          entry={f.binary ? undefined : getEntry(f.path)}
-          collapsed={!expanded.has(f.path)}
-          onToggle={toggle}
-          onRetry={retryFile}
+          active={activePath === f.path}
+          onOpen={onOpenFile}
         />
       ))}
     </ul>
@@ -105,16 +111,6 @@ export function PrChangesSection({
           <span className="pr-changes-count">
             {`${count} file${count === 1 ? '' : 's'}`}
           </span>
-        )}
-        {status === 'ready' && expandable.length > 0 && (
-          <button
-            type="button"
-            className="section-action pr-changes-collapse-all"
-            title={allExpanded ? 'Collapse all' : 'Expand all'}
-            onClick={toggleAll}
-          >
-            {allExpanded ? 'Collapse all' : 'Expand all'}
-          </button>
         )}
         {status === 'error' && (
           <button type="button" className="section-action pr-changes-retry" onClick={onRetry}>

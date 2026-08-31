@@ -80,6 +80,9 @@ export interface WorkspaceGraphPaneProps {
   onSetViewMode: DiffOverlayProps['onSetViewMode'];
   intraline: boolean;
   onSetIntraline: DiffOverlayProps['onSetIntraline'];
+  /** P93: PR number for a `pr:` overlay slot's computed kind chip (pass-through
+   *  only — the overlay is mounted here, not in RepoWorkspace). */
+  prNumber?: number | null;
   imageDiff: DiffOverlayProps['imageDiff'];
   imageDiffLoading: boolean;
   imageDiffError: string | null;
@@ -179,6 +182,7 @@ export function WorkspaceGraphPane({
   onSetViewMode,
   intraline,
   onSetIntraline,
+  prNumber = null,
   imageDiff,
   imageDiffLoading,
   imageDiffError,
@@ -338,6 +342,7 @@ export function WorkspaceGraphPane({
           onSetViewMode={onSetViewMode}
           intraline={intraline}
           onSetIntraline={onSetIntraline}
+          prNumber={prNumber}
           imageDiff={imageDiff}
           imageLoading={imageDiffLoading}
           imageError={imageDiffError}

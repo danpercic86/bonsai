@@ -24,6 +24,69 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
+## 🔄 P93 — PR diffs open in the center overlay — IN-PROGRESS
+
+**Current step:** round 2 reviewed and APPROVED by both reviewer and ui-designer (2026-08-31,
+zero MUST-FIX). Gate triage done (below); final `pnpm gate` running, then commit, then USER
+CHECKPOINT (AC20 + the end-to-end half of AC17).
+
+**Gate triage 2026-08-31 — all five initial red steps were non-P93:**
+- `[rust] cargo nextest` / `cargo test --doc` / `cargo clippy` — cargo's cached `tauri` build-script
+  output had a **stale absolute path from an old checkout** (`D:\Repos\Playground\bonsai`, which no
+  longer exists) baked in, so the build script died reading plugin permissions. Fixed by
+  `cargo clean -p tauri -p bonsai` plus deleting `target/clippy/debug/build/{tauri,bonsai}-*`
+  (clippy uses its own target dir, so it needed clearing separately). nextest then went green:
+  **2051 tests pass**. Not a code defect — if the repo is moved again, expect this and clean again.
+- `[e2e] playwright` — 2 failed in the first run, 4 in the second, differing specs each time: the
+  **known P92 parallel-worker isolation flake**. Re-ran the two originally-failing specs
+  (`14-destructive-confirms`, `17-ai-dock`) at `--workers=1`: **18/18 pass**.
+- `bonsai-core ai::session_tests::watchdog_does_not_fire_while_awaiting_input` — took 30s under
+  parallel load, **passes isolated in 5.5s**. A watchdog timing test starved by CPU contention.
+- `[frontend] vitest` — genuine but **pre-existing and unrelated to P93**: the 1000-branch Sidebar
+  render in `adversarial-dto.test.tsx` takes ~7s against vitest's 5s default. The test file is
+  unchanged since HEAD (last touched P77/P80) and Sidebar's only P93-touched import is
+  `repoWorkspace/types`, which is type-only and erased at runtime. **User decision 2026-08-31:**
+  bump that one test's timeout to 30s (it is a deliberate adversarial-scale render, so the 5s
+  default is arbitrary for it). Now 22/22 pass in 4.5s.
+
+**Goal:** the Pull requests tab was the last place a diff rendered INLINE in the narrow right
+panel; every other diff (workdir staged/unstaged, commit files, compare) opens in the center
+`DiffOverlay` over the graph. User-reported on 1.5.0.
+
+**Approach (user-locked):** per-file center overlay — slot key `pr:<baseOid>:<headOid>:<path>`,
+new `DiffOverlayMeta.kind` `'pr'`, data via the existing `ipc.forgePrFileDiff`. **No Rust/IPC
+changes.** Rejected alternative: an all-files DiffBrowser `pr` source.
+
+Contract: `docs/contracts/P93-pr-diff-center-overlay-ui.md` (rev 2 — §6.1 focus rule + AC18/AC19
+were ui-designer errata found in review; rev 1 was implemented faithfully).
+
+**Acceptance criteria:** AC1–AC19 in the contract. AC17 (focus stays in the graph scroller on a
+commit click while a PR overlay is open) is a **USER CHECKPOINT** — the harness is headless-ish,
+rAF never fires, so canvas clicks are no-ops; unit tests cover the C5 + head-advance cases instead.
+
+**Deferred follow-ups (not blocking):** stale `prOverlayCtx` after slot replacement (latent, all
+consumers key-gated); `onManageAccounts` callback identity; the fixture `fail` sentinel matches
+`includes('fail')` too broadly; PR rows ignore `panelDensity` (pre-existing since P89, contract
+§12.5).
+
+**Round-2 review follow-ups (both agents approved; velocity mode — filed, not blocking):**
+- SHOULD-FIX: no `overlayMeta.test.ts`. `overlayMeta.ts` was extracted to make the load-bearing
+  prefix ordering (`conflict:`/`ai-proposal:`/`pr:` before the `WorkdirSection` cast) testable, but
+  no test pins it. AC3 is covered only indirectly. A 5-line `deriveOverlayMeta('pr:…') → kind:'pr'`
+  assertion would guard against regression.
+- NIT: `PrChangesSection.tsx` focus restore resolves the row by positional index into
+  `listRef.current.children`; a `data-path` + `querySelector` would be render-order independent.
+- NIT: `overlayMeta.ts:41` `parsePrSlotPath(key) ?? key` would surface a raw `pr:<oid>:<oid>` key as
+  the overlay path for a malformed key (unreachable via `prSlotKey()`).
+- NIT: `PrDetailContainer.tsx:550-554` — on a PR switch, C2 (unmount) and C3 (headOid change) both
+  fire `onClosePrFileDiff`. Idempotent, just a double call.
+- NIT (pre-existing, not P93): `.diff-intra-toggle` off-state label is `--text-3` on the transparent
+  overlay toolbar ≈4.0:1, under the 4.5:1 AA floor; `--text-2` would fix it. Shared overlay chrome.
+- NIT (pre-existing house pattern): `PrDetailFallback.tsx:23` carries `error-banner-dismissible`
+  with no dismiss button — `CommitPanel`/`ComparePanel`/`ComposerDialog` all do the same.
+
+---
+
 ## ✅ P92 — Actionable multi-ref commits (branch picker + "+N" chip) — DONE
 
 **Current step:** done. AI gate green + USER CHECKPOINT verified by the user 2026-08-31.

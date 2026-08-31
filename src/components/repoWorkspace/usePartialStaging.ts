@@ -21,7 +21,7 @@ import { errorMessage } from '../../utils/errors';
 import type { LineSelection } from '../../ipc';
 import type { DiffOverlayMeta } from '../DiffOverlay';
 import type { DiffSlot } from '../StatusPanel';
-import type { PendingHunkDiscard, PendingLineDiscard, Setter } from './types';
+import type { PendingHunkDiscard, PendingLineDiscard, PrOverlayCtx, Setter } from './types';
 
 export interface PartialStagingDeps {
   repoId: string;
@@ -34,6 +34,9 @@ export interface PartialStagingDeps {
   stageableRef: { current: null | 'stage' | 'unstage' };
   diffViewModeRef: { current: 'diff' | 'file' | 'split' };
   intralineRef: { current: boolean };
+  /** P93: the open `pr:` slot's context (oids + rename origin), needed to refetch
+   *  a PR file diff under the same key. null ⇒ no PR slot open. */
+  prOverlayCtxRef: { current: PrOverlayCtx | null };
   setDiffViewMode: Setter<'diff' | 'file' | 'split'>;
   setIntraline: Setter<boolean>;
   setPendingHunkDiscard: Setter<PendingHunkDiscard | null>;
@@ -53,6 +56,7 @@ export function usePartialStaging(deps: PartialStagingDeps) {
     stageableRef,
     diffViewModeRef,
     intralineRef,
+    prOverlayCtxRef,
     setDiffViewMode,
     setIntraline,
     setPendingHunkDiscard,
@@ -72,6 +76,25 @@ export function usePartialStaging(deps: PartialStagingDeps) {
       const meta = overlayMetaRef.current;
       const slot = diffSlotRef.current;
       if (slot === null || meta === null) return;
+      if (meta.kind === 'pr') {
+        // P93 §5.3: a PR file diff refetches base…head under the SAME key; the
+        // oids/origPath come from the ctx side-channel (the key alone loses the
+        // rename origin).
+        const ctx = prOverlayCtxRef.current;
+        if (ctx === null) return;
+        void fetchDiffSlot(slot.key, () =>
+          ipc.forgePrFileDiff(
+            repoId,
+            ctx.baseOid,
+            ctx.headOid,
+            ctx.path,
+            ctx.origPath,
+            m === 'file',
+            intralineRef.current,
+          ),
+        );
+        return;
+      }
       if (meta.kind === 'staged' || meta.kind === 'unstaged' || meta.kind === 'untracked') {
         const staged = meta.kind === 'staged';
         void fetchDiffSlot(slot.key, () =>
@@ -86,7 +109,15 @@ export function usePartialStaging(deps: PartialStagingDeps) {
         );
       }
     },
-    [repoId, fetchDiffSlot, setDiffViewMode, overlayMetaRef, diffSlotRef, intralineRef],
+    [
+      repoId,
+      fetchDiffSlot,
+      setDiffViewMode,
+      overlayMetaRef,
+      diffSlotRef,
+      intralineRef,
+      prOverlayCtxRef,
+    ],
   );
 
   // P61a: flip "Highlight changes" and refetch the open workdir slot with the
@@ -99,6 +130,23 @@ export function usePartialStaging(deps: PartialStagingDeps) {
       const meta = overlayMetaRef.current;
       const slot = diffSlotRef.current;
       if (slot === null || meta === null) return;
+      if (meta.kind === 'pr') {
+        // P93 §5.3: same refetch shape as handleSetViewMode, new `intraline`.
+        const ctx = prOverlayCtxRef.current;
+        if (ctx === null) return;
+        void fetchDiffSlot(slot.key, () =>
+          ipc.forgePrFileDiff(
+            repoId,
+            ctx.baseOid,
+            ctx.headOid,
+            ctx.path,
+            ctx.origPath,
+            diffViewModeRef.current === 'file',
+            next,
+          ),
+        );
+        return;
+      }
       if (meta.kind === 'staged' || meta.kind === 'unstaged' || meta.kind === 'untracked') {
         const staged = meta.kind === 'staged';
         void fetchDiffSlot(slot.key, () =>
@@ -113,7 +161,15 @@ export function usePartialStaging(deps: PartialStagingDeps) {
         );
       }
     },
-    [repoId, fetchDiffSlot, setIntraline, overlayMetaRef, diffSlotRef, diffViewModeRef],
+    [
+      repoId,
+      fetchDiffSlot,
+      setIntraline,
+      overlayMetaRef,
+      diffSlotRef,
+      diffViewModeRef,
+      prOverlayCtxRef,
+    ],
   );
 
   // P17c: stage/unstage exactly `selection` (already Context-dropped) for the
