@@ -114,12 +114,42 @@ build is affected, this is a shipped-in-1.5.0 bug and should jump the queue ahea
 Side effect worth knowing: this is why serving a built bundle to e2e was abandoned in P94 (it would
 have cut the suite from 5.8 to 1.3 min) — the built bundle is **not** behaviour-equivalent to dev.
 
-## ⏳ P95 — a11y: graph scroller semantics, keyboard reachability, toolbar contrast — PENDING
+## ⏳ P95 — a11y: graph scroller semantics, keyboard reachability, toolbar contrast — AWAITING USER CHECKPOINT
 
-**Current step:** UI contract DONE — `docs/contracts/P95-a11y-ui.md` (AC1-AC17). Its
-`ui-reference.md` revisions are applied (commit `b788cc8`). Waiting on P94 to clear the working
-tree, then senior-dev implements. Scope: 2 `.tsx` + 1 `.ts` + 7 `.css`; ui-designer says **no split
-needed**.
+**Current step:** IMPLEMENTED and committed `f9a9209`. Reviewer + ui-designer both **approve**,
+zero MUST-FIX. AI gate green — full `pnpm gate` **8/8** first try (Rust 2051/2051, vitest 2397/2397,
+Playwright 160 passed in default parallel mode — which independently re-validates P94 — plus
+clippy/eslint/tsc/size-ratchet clean). Contrast measured per selector in both themes in the
+harness; orchestrator separately confirmed zero console errors and the exact rendered attribute set.
+
+**Remaining: USER CHECKPOINT** — run `pnpm tauri dev` and confirm:
+- **AC8** — clicking a commit in the graph while a centre overlay is open leaves focus in the
+  scroller (the P93 rule; click path untouched by P95, but only a real canvas click proves it).
+- **AC14** — with a screen reader, arrow-key navigation produces exactly ONE utterance per row and
+  the keyboard hint is discoverable.
+- **AC15** — the selection ring follows keyboard nav and focus does not fight scroll (needs a real
+  canvas repaint; rAF never fires in the harness).
+- **AC16** — the partial-staging gutter buttons still read as dim-at-idle now that they are
+  `--text-2` (perceptual judgement).
+
+**Verified in review, worth knowing:** the reviewer confirmed the load-bearing assumption by
+sweeping **every** `keydown` listener in the app — nothing upstream `preventDefault`s an arrow key,
+so the new `defaultPrevented` guard cannot silently kill graph navigation. Both new files
+(`GraphKeyboardHint.tsx`, `GraphTooltip.tsx`) exist because `GraphCanvas.tsx` is already ~860 lines;
+the tooltip extraction is verbatim and the file **shrank** 868 → 862, so no ratchet bump was needed.
+Two contract faults found in review (§1.4's "no new file", AC10's unsatisfiable "exactly") were
+corrected in the contract in place.
+
+**Follow-ups filed, not blocking:**
+- `useWorkspaceKeyboard.p95.test.tsx` spies `focusScroller`, so nothing pins the
+  `focus({ preventScroll: true })` argument that §2.2 calls "required". Needs a `GraphCanvas`-level
+  test, not a hook-level one.
+- **For `tester`:** *Menu key → Esc → Menu key again* returned "no menu" on the second open once in
+  the harness, but only during a degenerate mount transient (scroller measured 480×24 mid-mount) and
+  a clean reload was reliable. Ambiguous evidence; pre-existing P92 focus-restore territory, not
+  introduced by P95. Wants a real-window check.
+- `ui-reference.md:70` "one known AA shortfall remains" now reads stale in tone (still factually
+  true of the read-text residual) — fold into P98.
 
 **Chosen ARIA model — live-region-only.** `role="grid"`, `aria-rowcount` and
 `aria-activedescendant` are **dropped and now forbidden** by `ui-reference.md` §4.1. The scroller
