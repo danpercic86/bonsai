@@ -6,7 +6,26 @@ All notable changes to Bonsai are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Brand-new files could be destroyed by a branch switch.** A dirty-tree switch auto-stashes with
+  untracked files included and pops the stash on the far side. libgit2's untracked-restore phase can
+  silently fail to write those files back — the target branch tracks that path (a binary is replaced
+  by the branch's version, a text file gets conflict markers) or a directory now occupies it — while
+  recording no index conflict. Bonsai read that as a clean apply and **dropped the stash**, deleting
+  the only remaining copy. Every apply/pop now verifies each carried untracked blob against the
+  worktree and keeps the stash unless all of them landed byte-identically, reporting the paths it
+  could not restore. Regression tests cover the binary, file-vs-directory, and text-collision cases.
+- **A failed re-apply after a branch switch no longer looks like data loss.** If popping the
+  auto-stash fails once the switch has already happened, the operation now succeeds with a
+  structured "not applied" outcome that names `stash@{0}`, instead of surfacing a bare error next to
+  a working directory that suddenly looks empty.
+
 ### Changed
+
+- **Two stash actions instead of three.** The commit-panel `⋯` menu now offers **Stash** — the whole
+  working directory, staged, unstaged and brand-new files alike — and **Stash staged**. The old
+  "Stash all" (which quietly left untracked files behind) and "Stash all + untracked" are gone.
 
 - **Dependency refresh (maintenance).** Frontend majors: ESLint 9 → 10, Vite 7 → 8,
   TypeScript 5.9 → 6.0, jsdom 26 → 30, `@testing-library/jest-dom` 6 → 7, and

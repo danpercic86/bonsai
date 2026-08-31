@@ -4,6 +4,23 @@ import type { StashScope } from '../../ipc';
 import type { RefreshAll } from './refreshScope';
 import type { BaseActionDeps, PendingReservedStash, Setter } from './types';
 
+/** Shared copy for a partial restore: the stash is ALWAYS kept, and the files
+ *  that did not come back are named (up to 5, then a count) so the user knows
+ *  exactly what to recover and from where. */
+function unrestoredCopy(index: number, unrestored: string[]): string {
+  const shown = unrestored.slice(0, 5).join(', ');
+  const more = unrestored.length > 5 ? ` +${unrestored.length - 5} more` : '';
+  return (
+    `Applied, but ${unrestored.length} new file(s) could not be restored: ${shown}${more}. ` +
+    `Nothing was lost — they are kept at stash@{${index}}.`
+  );
+}
+
+/** Shared copy for a re-apply that failed outright after the ref already moved. */
+function notAppliedCopy(index: number, message: string): string {
+  return `Your changes could not be re-applied (${message}). Nothing was lost — they are safe at stash@{${index}}.`;
+}
+
 /** P9 / P34: scope-aware stash handling. */
 export function useStashActions(
   deps: BaseActionDeps & {
@@ -68,6 +85,12 @@ export function useStashActions(
             `Applied stash@{${index}} — skipped ${res.skipped.length} file(s) Windows can't restore: ${res.skipped.join(', ')}`,
           );
           break;
+        case 'appliedPartially':
+          pushToast('info', unrestoredCopy(index, res.unrestored));
+          break;
+        case 'notApplied':
+          pushToast('error', notAppliedCopy(index, res.message));
+          break;
       }
       // P88a row 7: apply mutates worktree+index+stash list ⇒ stash scope.
       await refreshAll('stash');
@@ -102,6 +125,12 @@ export function useStashActions(
             `Applied stash@{${index}} — skipped ${res.skipped.length} file(s) Windows can't restore: ${res.skipped.join(', ')}. ` +
               'The stash was kept because those files could not be restored.',
           );
+          break;
+        case 'appliedPartially':
+          pushToast('info', unrestoredCopy(index, res.unrestored));
+          break;
+        case 'notApplied':
+          pushToast('error', notAppliedCopy(index, res.message));
           break;
       }
       // P88a row 8: pop mutates worktree+index+stash list ⇒ stash scope.

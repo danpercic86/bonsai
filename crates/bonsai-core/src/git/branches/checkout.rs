@@ -73,6 +73,24 @@ pub fn checkout_branch_with(
     Ok(())
 }
 
+/// Re-applies the auto-stash AFTER the ref move has already succeeded. Never
+/// returns `Err`: at this point the switch is a fact, so a propagated error
+/// would abort the command and read to the user as "my changes vanished" —
+/// while the carried work in fact sits intact at `stash@{0}`. Every failure is
+/// therefore reported as the structured `NotApplied` outcome instead, and the
+/// caller returns a SUCCESS that names the retained stash.
+pub(super) fn carry_back_autostash(
+    repo: &mut git2::Repository,
+    workdir: &Path,
+) -> stash::ApplyStashOutcome {
+    match stash::pop_stash_with(repo, workdir, 0, false, None) {
+        Ok(outcome) => outcome,
+        Err(e) => stash::ApplyStashOutcome::NotApplied {
+            message: e.to_string(),
+        },
+    }
+}
+
 /// Result of `checkout_branch_autostash`. Wire: camelCase.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -163,7 +181,7 @@ pub fn checkout_branch_autostash(
     //    and RETAINS on conflict (never lossy). A `Conflicts` outcome is a
     //    SUCCESS return (branch switched; changes present w/ markers).
     if stashed {
-        let outcome = stash::pop_stash_with(&mut repo, workdir, 0, false, None)?;
+        let outcome = carry_back_autostash(&mut repo, workdir);
         return Ok(CheckoutResult {
             stashed: true,
             fast_forwarded,
@@ -262,7 +280,7 @@ pub fn checkout_commit_detached(workdir: &Path, oid: &str) -> Result<CheckoutRes
 
     // 4. Re-apply carried work iff stashed. Conflicts → SUCCESS, stash retained.
     if stashed {
-        let outcome = stash::pop_stash_with(&mut repo, workdir, 0, false, None)?;
+        let outcome = carry_back_autostash(&mut repo, workdir);
         return Ok(CheckoutResult {
             stashed: true,
             fast_forwarded: false,

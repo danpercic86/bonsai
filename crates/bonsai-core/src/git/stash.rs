@@ -29,6 +29,7 @@ mod stash_hardening_tests;
 mod apply;
 mod create;
 mod list;
+mod verify;
 
 pub use apply::{apply_stash, drop_stash, pop_stash, pop_stash_with};
 pub use create::{create_stash, create_stash_with};
@@ -81,6 +82,15 @@ pub enum ApplyStashOutcome {
     /// is RETAINED (the reserved blobs live only in the stash). `skipped` =
     /// sorted reserved paths.
     AppliedSkippingReserved { skipped: Vec<String> },
+    /// Applied, but libgit2's untracked-restore phase did NOT put these
+    /// brand-new files back byte-identically (the target ref tracks that path,
+    /// or a directory occupies it). The stash is RETAINED — it is the only
+    /// remaining copy of that content. `unrestored` = sorted paths.
+    AppliedPartially { unrestored: Vec<String> },
+    /// The apply itself failed AFTER the surrounding operation (e.g. a branch
+    /// switch) had already succeeded. Nothing was dropped; the carried work is
+    /// intact at `stash@{0}`. `message` = the underlying git error, for display.
+    NotApplied { message: String },
 }
 
 /// Result of create_stash.

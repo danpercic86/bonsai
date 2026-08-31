@@ -153,7 +153,7 @@ describe('WorkspaceRightPanel commit-options menu (P80 §2b)', () => {
     expect(amendItems[amendItems.length - 1]).toBeDisabled();
   });
 
-  it('⋯ opens a menu with the three stash scopes, each firing onCreateStash', () => {
+  it('⋯ opens a menu with the two stash actions, each firing onCreateStash', () => {
     const { props } = renderPanel({
       status: snapshot({ staged: [entry('a.ts')], untracked: [entry('c.ts')] }),
     });
@@ -161,44 +161,35 @@ describe('WorkspaceRightPanel commit-options menu (P80 §2b)', () => {
     fireEvent.click(overflowBtn());
     const menu = screen.getByRole('menu');
     const items = screen.getAllByRole('menuitem');
-    expect(items.map((i) => i.textContent)).toEqual([
-      'Stash all',
-      'Stash all + untracked',
-      'Stash staged only',
-    ]);
+    expect(items.map((i) => i.textContent)).toEqual(['Stash', 'Stash staged']);
     expect(menu.contains(items[0])).toBe(true);
 
+    // "Stash" is the whole working directory — untracked files included.
     fireEvent.click(items[0]);
-    expect(props.onCreateStash).toHaveBeenCalledWith('all');
+    expect(props.onCreateStash).toHaveBeenCalledWith('allWithUntracked');
     // Choosing a stash scope closes the menu.
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
 
     fireEvent.click(overflowBtn());
     fireEvent.click(screen.getAllByRole('menuitem')[1]);
-    expect(props.onCreateStash).toHaveBeenCalledWith('allWithUntracked');
-
-    fireEvent.click(overflowBtn());
-    fireEvent.click(screen.getAllByRole('menuitem')[2]);
     expect(props.onCreateStash).toHaveBeenCalledWith('staged');
-    expect(props.onCreateStash).toHaveBeenCalledTimes(3);
+    expect(props.onCreateStash).toHaveBeenCalledTimes(2);
   });
 
-  it('per-scope gating: staged needs staged files, all needs tracked changes', () => {
-    // Untracked only → `all` disabled, `allWithUntracked` enabled, `staged` disabled.
+  it('per-scope gating: `Stash staged` needs staged files, `Stash` needs any change', () => {
+    // Untracked only → `Stash` enabled (it captures new files), `Stash staged` not.
     renderPanel({ status: snapshot({ untracked: [entry('c.ts')] }) });
     fireEvent.click(overflowBtn());
     let items = screen.getAllByRole('menuitem');
-    expect(items[0]).toBeDisabled();
-    expect(items[1]).toBeEnabled();
-    expect(items[2]).toBeDisabled();
+    expect(items[0]).toBeEnabled();
+    expect(items[1]).toBeDisabled();
 
-    // Unstaged tracked edit only → `all` + `allWithUntracked` enabled, `staged` not.
+    // Unstaged tracked edit only → `Stash` enabled, `Stash staged` not.
     const second = renderPanel({ status: snapshot({ unstaged: [entry('b.ts')] }) });
     fireEvent.click(second.getAllByRole('button', { name: 'Commit options' }).slice(-1)[0]);
     items = Array.from(second.container.querySelectorAll('.rp-overflow-item[role="menuitem"]'));
     expect(items[0]).toBeEnabled();
-    expect(items[1]).toBeEnabled();
-    expect(items[2]).toBeDisabled();
+    expect(items[1]).toBeDisabled();
   });
 
   it('the `⋯` trigger is enabled while mutating; its stash items are disabled', () => {

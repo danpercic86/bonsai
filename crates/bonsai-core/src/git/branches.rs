@@ -117,3 +117,5 @@ mod checkout_autostash_tests;
 mod rename_branch_tests;
 #[cfg(test)]
 mod checkout_commit_detached_tests;
+#[cfg(test)]
+mod checkout_autostash_untracked_tests;

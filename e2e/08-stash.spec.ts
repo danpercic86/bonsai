@@ -32,25 +32,26 @@ test.describe('08 stash @destructive', () => {
   // P80 §2b folded the stash scopes into the commit box's `⋯ Commit options`
   // overflow menu (CommitOptionsMenu.tsx); the old top-level 'Stash all' /
   // 'Stash options' buttons no longer exist.
-  test('save all: tracked changes clear and a new stash@{0} appears', async ({ page }) => {
+  test('Stash: tracked AND untracked changes clear, a new stash@{0} appears', async ({ page }) => {
     await openWithStatus(page);
     await page.getByRole('button', { name: 'Commit options' }).click();
-    await page.getByRole('menuitem', { name: 'Stash all', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Stash', exact: true }).click();
     await expect(page.locator('.toast-stack').getByText('Changes stashed')).toBeVisible();
     // New entry pushed on top; old entries re-indexed (+1) → stash@{3} exists.
     await expect(
       page.getByTitle('WIP on main: mock stashed changes', { exact: true }),
     ).toBeVisible();
     await expect(page.getByText('stash@{3}', { exact: true })).toBeVisible();
-    // 'all' scope clears tracked changes; untracked stays.
+    // "Stash" is the WHOLE working directory: tracked changes AND brand-new
+    // files leave the panel together (no silently-left-behind untracked rows).
     await expect(page.getByRole('button', { name: 'Stage README.md' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Stage notes/todo.txt' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Stage notes/todo.txt' })).toHaveCount(0);
   });
 
   test('save staged-only via the split-button menu keeps unstaged rows', async ({ page }) => {
     await openWithStatus(page);
     await page.getByRole('button', { name: 'Commit options' }).click();
-    await page.getByRole('menuitem', { name: 'Stash staged only' }).click();
+    await page.getByRole('menuitem', { name: 'Stash staged', exact: true }).click();
     await expect(page.locator('.toast-stack').getByText('Stashed staged changes')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Unstage src/app.rs' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Stage README.md' })).toBeVisible();

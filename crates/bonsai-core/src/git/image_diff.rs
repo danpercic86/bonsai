@@ -253,7 +253,7 @@ pub fn get_image_diff(workdir: &Path, req: &ImageDiffRequest) -> Result<ImageDif
         }
         ImageDiffRequest::Commit { oid, .. } => {
             let commit = repo.find_commit(git2::Oid::from_str(oid)?)?;
-            let (old_tree, new_tree) = commit_trees(&commit)?;
+            let (old_tree, new_tree) = commit_trees(&repo, &commit)?;
             let old = match old_tree {
                 Some(t) => blob_from_tree(&repo, &t, old_lookup)?,
                 None => None, // root commit

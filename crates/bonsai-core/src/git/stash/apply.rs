@@ -246,7 +246,7 @@ pub fn apply_stash(
                         paths: conflict_paths(workdir)?,
                     })
                 } else {
-                    Ok(ApplyStashOutcome::Applied)
+                    Ok(applied_or_partially(&repo, workdir, index, &[])?)
                 }
             }
             Err(e) if e.code() == git2::ErrorCode::Conflict => {
@@ -355,9 +355,18 @@ pub fn pop_stash_with(
                         paths: conflict_paths(workdir)?,
                     })
                 } else {
-                    // Clean apply → now drop, equivalent to a clean pop.
-                    repo.stash_drop(index)?;
-                    Ok(ApplyStashOutcome::Applied)
+                    // UNTRACKED-RESTORE GUARD: libgit2's untracked phase can
+                    // silently fail to write a carried brand-new file back
+                    // without recording an index conflict. Dropping here would
+                    // destroy the only copy — verify first, retain on doubt.
+                    match applied_or_partially(&*repo, workdir, index, &[])? {
+                        ApplyStashOutcome::Applied => {
+                            // Clean apply → now drop, equivalent to a clean pop.
+                            repo.stash_drop(index)?;
+                            Ok(ApplyStashOutcome::Applied)
+                        }
+                        partial => Ok(partial),
+                    }
                 }
             }
             // A checkout-level conflict means nothing droppable was applied →
@@ -418,6 +427,25 @@ pub fn drop_stash(workdir: &Path, index: usize, expected_oid: Option<&str>) -> R
     verify_expected_oid(&repo, index, expected_oid)?;
     repo.stash_drop(index)?;
     Ok(())
+}
+
+/// Classifies an index-conflict-free `stash_apply` as fully `Applied` or as
+/// `AppliedPartially` when a carried untracked blob did not land byte-identically
+/// (see `verify::unrestored_untracked`). `skip` names paths the caller
+/// deliberately left out (the Windows-reserved allowlist), which are never
+/// reported here. Callers must NOT drop the stash on `AppliedPartially`.
+fn applied_or_partially(
+    repo: &git2::Repository,
+    workdir: &Path,
+    index: usize,
+    skip: &[String],
+) -> Result<ApplyStashOutcome, AppError> {
+    let unrestored = super::verify::unrestored_untracked(repo, workdir, index, skip)?;
+    Ok(if unrestored.is_empty() {
+        ApplyStashOutcome::Applied
+    } else {
+        ApplyStashOutcome::AppliedPartially { unrestored }
+    })
 }
 
 /// Maps a `GIT_ECONFLICT` from `stash_apply` to an outcome. A MERGE-level
