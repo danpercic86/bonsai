@@ -24,11 +24,18 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
-## 🔄 P93 — PR diffs open in the center overlay — IN-PROGRESS
+## ⏳ P93 — PR diffs open in the center overlay — AWAITING USER CHECKPOINT
 
 **Current step:** round 2 reviewed and APPROVED by both reviewer and ui-designer (2026-08-31,
-zero MUST-FIX). Gate triage done (below); final `pnpm gate` running, then commit, then USER
-CHECKPOINT (AC20 + the end-to-end half of AC17).
+zero MUST-FIX). AI gate GREEN — full `pnpm gate` **8/8 steps** (Rust nextest 2051/2051,
+cargo test --doc + clippy clean, eslint 0 errors, file-size ratchet OK, vitest 2379/2379,
+tsc + vite build clean, Playwright e2e 160 passed). Committed `09eb5d9` on `dev`.
+The unrelated scratch-path relocation was split into its own commit `d78b04e` (57 files).
+
+**Remaining: USER CHECKPOINT** — run `pnpm tauri dev` and confirm AC20 (native-window feel,
+large-diff scroll in the center overlay) and the end-to-end half of AC17 (clicking a commit in the
+graph while a PR overlay is open leaves focus in the graph scroller). Not self-declarable: the
+harness never fires rAF, so canvas clicks are no-ops there.
 
 **Gate triage 2026-08-31 — all five initial red steps were non-P93:**
 - `[rust] cargo nextest` / `cargo test --doc` / `cargo clippy` — cargo's cached `tauri` build-script
