@@ -70,13 +70,26 @@ Focus: 2px `--accent` outline, offset 1px, keyboard only (`:focus-visible`).
 One known AA shortfall remains (`--text-3`); the hue-as-text family was retro-fitted by P74.
 **New surfaces must not add to either**:
 
-- `--text-3` is **3.38:1** on `--bg-1` and **3.67:1** on `--bg-0` (dark), **2.96:1** on `--bg-1` and
-  **≈3.2:1** on `--bg-0` (light). That is below the 4.5:1 AA bar for text. Treat `--text-3` as
+- `--text-3` is **3.68:1** on `--bg-0`, **3.38:1** on `--bg-1` and **2.98:1** on `--bg-2` (dark);
+  **3.17:1**, **2.96:1** and **2.73:1** respectively (light). Over its own 18% tint it is
+  **2.78:1** / **2.51:1**. Every one of those is below the 4.5:1 text bar, and the `--bg-2` and
+  own-tint cases are below even the **3:1** graphics bar. Treat `--text-3` as
   **decorative only** (uppercase section labels that duplicate visible structure, dividers, disabled
   glyphs). Any text the user must actually read — metadata, timestamps, costs, log lines, hints,
   **status-pill labels**, **settings help text**, **any heading that is the user's only wayfinder**
-  (§12.5's result-group headers) — uses `--text-2` (**7.9:1** dark / **4.9:1** light on `--bg-0`;
-  **7.3:1** / **7.4:1** on `--bg-1`).
+  (§12.5's result-group headers) — uses `--text-2` (**7.90:1** dark / **7.99:1** light on `--bg-0`;
+  **7.25:1** / **7.45:1** on `--bg-1`; **6.40:1** / **6.87:1** on `--bg-2`).
+- **`--text-3` is never the label or glyph colour of an *enabled* interactive control
+  (added 2026-08-31, P95).** Button labels, segmented-control segments, tab labels, close
+  buttons, hover-revealed gutter controls, chip labels and pill glyphs use `--text-2` or brighter.
+  **Disabled states are exempt** — dimming *is* the disabled signal, and the `disabled` attribute
+  plus `cursor: default` carry the meaning independently of colour. **Icon-only glyphs** are judged
+  at the 3:1 graphics bar against their *actual composited* backdrop in **both** themes; `--text-3`
+  clears 3:1 on none of `--bg-0`/`--bg-1`/`--bg-2` in the light theme, so in practice an
+  icon-only control also uses `--text-2`. P95 swept the enabled-control class app-wide; a new
+  occurrence is a defect. (A residual set of `--text-3` **read-text** violations — `.diff-overlay-kind`,
+  `.diff-tree-count`, `.conflict-editor-split-label`, `.wtctx-branch`, `.wtctx-blocked`,
+  `.combobox-option-hint`, `.command-palette-option-hint` — is tracked as its own follow-up.)
 - **A hue is never a label colour over its own tint.** Use the hue for borders, glyphs, bars and
   fills (≥3:1 graphics bar) and `--text-1` for the words beside them. For a filled warning chip,
   `color: var(--bg-0)` on `background: var(--warning)` is safe in both themes (**6.4:1** dark /
@@ -223,35 +236,53 @@ section mirrors them — update both together.
   stays there.
 - **HiDPI:** canvas backing store scaled by `devicePixelRatio`; all metrics above are CSS px.
 
-### 4.1 Keyboard & screen-reader access (added 2026-08-22, graph review)
+### 4.1 Keyboard & screen-reader access (added 2026-08-22, graph review; ARIA model revised 2026-08-31, P95)
 
-The `<canvas>` is opaque to assistive tech, so the graph MUST be a focusable composite widget:
+The `<canvas>` is opaque to assistive tech and the graph is virtualized to visible rows, so there
+are **no per-row DOM elements** and there never will be. The graph is therefore **not** an ARIA
+composite widget: it is a single labelled, focusable container whose selection is announced through a
+live region.
 
-- The scroller (`.graph-scroll`) is the single tab stop: `tabIndex={0}`, `role="grid"`,
-  `aria-label="Commit graph"`, `aria-rowcount={total}`, and
-  `aria-activedescendant="graph-row-{selectedIndex}"` while a row is selected. It shows a
-  `:focus-visible` ring (2px `--accent`, 1px offset, inset so the canvas does not clip it), distinct
-  from the per-row `--accent` selection ring above.
-- **Keyboard nav must be able to START with no prior selection.** When the graph has focus and
-  nothing is selected, the first ArrowDown/ArrowUp/Home/End/PageUp/PageDown selects an anchor —
-  `headIndex` if it is in loaded history, else `0` (Down/Home) or the last row (Up/End). Thereafter
-  Arrow = ±1 row, PageUp/Down = ±visible-row-count (`getVisibleRowCount`), Home/End = first/last.
-  Selection scroll-into-view already exists (`viewport.ts:scrollRowIntoView`).
-- A permanently-mounted polite live region (the RevealAnnouncer / §9–§10 split) announces the
-  settled selection: `"{summary} — {author}, {relative date}. Row {n+1} of {N}. {ref summary}"`,
-  debounced ~150 ms so a held arrow key does not flood the reader.
+- The scroller (`.graph-scroll`) is the single tab stop and carries **exactly**: `tabIndex={0}`,
+  `role="group"`, `aria-label="Commit graph"`, and `aria-describedby` pointing at the keyboard hint
+  below. It shows a `:focus-visible` ring (2px `--accent`, 1px offset, inset so the canvas does not
+  clip it), distinct from the per-row `--accent` selection ring above.
+- **`role="grid"`, `aria-rowcount` and `aria-activedescendant` are forbidden here.** A `grid` with no
+  `role="row"` children is malformed, and `aria-activedescendant` would have to reference a row
+  element that does not exist (and, if one were rendered per visible row, would dangle the moment
+  the active row scrolled out of the rendered window). There is no `graph-row-{i}` ID scheme.
+  The rejected alternatives — visually-hidden rows per visible row, and a one-option `listbox` —
+  are recorded in `docs/contracts/P95-a11y-ui.md` §1.1 with the reasons.
+- A visually-hidden `.sr-only` span (id from `useId`, so multiple repo tabs do not collide) is the
+  described-by target and reads: **"Use the arrow keys to move between commits. Press the Menu key
+  or Shift+F10 for actions on the selected commit."**
+- A permanently-mounted polite live region is the **sole** announcement channel — one utterance per
+  settled selection, never two. `GraphSelectionAnnouncer` (mounted by `WorkspaceGraphPane`, wrapping
+  the P84 `RevealAnnouncer`) announces
+  `"{summary} — {author}, {relative date}. Row {n+1} of {N}. {ref summary}"`, debounced ~150 ms so a
+  held arrow key does not flood the reader. The `Row {n+1} of {N}` clause is what `aria-rowcount`
+  used to attempt, delivered where the user actually hears it.
+- **Keyboard nav must be able to START with no prior selection.** The nav keys live on a
+  **window-level** handler (`useWorkspaceKeyboard`), deliberately, so arrows work without first
+  tabbing to the graph. When nothing is selected, the first
+  ArrowDown/ArrowUp/Home/End/PageUp/PageDown selects an anchor — `headIndex` if it is in loaded
+  history, else `0` (Down/Home) or the last row (Up/End). Thereafter Arrow = ±1 row, PageUp/Down =
+  ±visible-row-count (`getVisibleRowCount`), Home/End = first/last. Selection scroll-into-view
+  already exists (`viewport.ts:scrollRowIntoView`).
+- **Focus follows consumption (P95).** Whenever that window-level handler *consumes* a nav key to
+  change the graph selection — precisely the branches that call `e.preventDefault()` — it must also
+  call `GraphCanvasHandle.focusScroller()` (`scroller.focus({ preventScroll: true })`;
+  `preventScroll` is required so the browser does not fight `scrollRowIntoView`). Without this, a
+  user can select a row while focus sits on `<body>`, and every key the scroller owns — the row menu
+  below — is unreachable. The handler's existing `typing` guard and its
+  dialog/palette/search/composer bail-out run first, so the graph never steals focus from an open
+  overlay.
 - **Menu key / Shift+F10** on the focused graph scroller opens the **selected** row's context menu,
   anchored at the ref band's left edge just under that row (clamped to the scroller's box). This is
-  the keyboard route to the P92 ref picker, and therefore to every ref on a multi-ref commit.
-  *Known gap:* arrow-key row selection is a **window-level** keydown, so a user can select a row
-  without the scroller holding focus, and the Menu key then does nothing. The durable fix is to focus
-  the scroller whenever the window-level handler changes the graph selection (or to move that nav
-  onto the scroller's own handler). Tracked as a follow-up.
-- **Known defect (pre-P92, needs its own increment):** `aria-activedescendant="graph-row-{i}"` points
-  at an id that does not exist — the rows are canvas pixels — and `role="grid"` has no `role="row"`
-  children. A dangling IDREF is worse than none. Either render one visually-hidden `role="row"` per
-  *visible* row, or drop `role="grid"` + `aria-activedescendant` and let the live region be the sole
-  channel.
+  the keyboard route to the P92 ref picker, and therefore to every ref on a multi-ref commit. Esc
+  restores focus to the scroller.
+- Clicking a commit in the graph leaves focus in the scroller, including while a centre overlay is
+  open (P93) — the click path is unchanged by P95.
 
 ## 5. Lane color palette (deterministic, per theme)
 
