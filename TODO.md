@@ -43,8 +43,48 @@ named in the commit message.
 
 ## ⏳ P95 — a11y: graph scroller semantics, keyboard reachability, toolbar contrast — PENDING
 
-Batches the three filed a11y follow-ups (two from P92, one from P93). ui-designer writes the UI
-contract first (workflow step 2b), then senior-dev implements.
+**Current step:** UI contract DONE — `docs/contracts/P95-a11y-ui.md` (AC1-AC17). Its
+`ui-reference.md` revisions are applied (commit `b788cc8`). Waiting on P94 to clear the working
+tree, then senior-dev implements. Scope: 2 `.tsx` + 1 `.ts` + 7 `.css`; ui-designer says **no split
+needed**.
+
+**Chosen ARIA model — live-region-only.** `role="grid"`, `aria-rowcount` and
+`aria-activedescendant` are **dropped and now forbidden** by `ui-reference.md` §4.1. The scroller
+becomes `role="group"` + `aria-label="Commit graph"` + `aria-describedby` → a new `.sr-only`
+keyboard hint; the existing `GraphSelectionAnnouncer` stays the sole announcement channel and
+already speaks "Row {n+1} of {N}". This is what the canvas + virtualization invariant forces: with
+no per-row DOM there is nothing for an IDREF to point at, so the "active row scrolled out of the
+rendered window" problem stops existing rather than being managed. Rejected: visually-hidden rows
+per visible row (reintroduces DOM into the one component premised on having none, and the IDREF
+dangles intermittently); a one-option `listbox` (misreports a 20k-row graph and double-announces).
+
+**Contrast finding is bigger than filed.** The `≈4.0:1` in the original follow-up was optimistic —
+`.diff-overlay` is opaque `--bg-0`, so the toggle composites onto a solid backdrop, giving
+**3.68:1 dark / 3.17:1 light**. And it is **10 selectors, not one**: `.diff-intra-toggle`,
+`.diff-view-toggle button`, `.right-pane-tab`, `.diff-hunk-discard-btn`, `.tab-close`, the two
+partial-staging gutter buttons, AI asset chips, the checks-panel neutral rollup glyph, and the
+settings swatch hover border. Seven disabled-state rules are explicitly exempt. ui-designer also
+caught a **stale figure in `ui-reference.md` §2** (`--text-2` on light `--bg-0` written as 4.9:1,
+actually 7.99:1 — the old number used the dark `--text-3` hex on white); corrected.
+
+**Bonus defect found, folded in as AC17.** `GitActivityDock.tsx:116-133` calls `preventDefault()` on
+arrow keys **without** `stopPropagation()`, so today the window-level handler *also* moves the graph
+selection silently while the dock has focus. P95 must add an `if (e.defaultPrevented) return;` guard
+before those branches — without it, P95 would upgrade a silent bug into focus being yanked out of
+the dock on every keypress.
+
+**Orchestrator decisions (2026-08-31)** on the three questions ui-designer flagged:
+- **(A) Deferred `--text-3` read-text sweep:** defer all 7 selectors to **P98**, as recommended —
+  do not pull the two `*-hint` ones forward. Keeps P95 a single reviewable class of change
+  (enabled-control labels) instead of mixing in a second, differently-motivated class.
+- **(B) `role="group"` vs `role="region"`:** **`group`**, as recommended — `region` is a landmark
+  and would add navigation noise for a pane that is not a document region.
+- **(C) AC17 (the dock arrow-key guard):** **keep it.** It is a behaviour change, but the current
+  behaviour is a silent bug, and P95 cannot ship its focus-follows-consumption rule without making
+  that bug user-visible. Fixing it is the smaller change.
+
+**Harness-verifiable:** AC1-7, AC9-13, AC17. **USER CHECKPOINT:** AC8 (real canvas click), AC14
+(screen reader), AC15 (canvas repaint needs rAF), AC16 (perceptual).
 
 - Graph scroller has a dangling `aria-activedescendant` IDREF and `role="grid"` with no
   `role="row"` children (pre-existing).
@@ -52,6 +92,14 @@ contract first (workflow step 2b), then senior-dev implements.
   row-menu is unreachable that way.
 - `.diff-intra-toggle` off-state label is `--text-3` on the transparent overlay toolbar (≈4.0:1),
   under the 4.5:1 AA floor; `--text-2` fixes it. Shared overlay chrome, not P93's doing.
+
+## ⏳ P98 — `--text-3` read-text sweep — PENDING
+
+Split out of P95 by orchestrator decision (see P95 decision A). Seven selectors use `--text-3` for
+text the user must actually **read**, violating the long-standing `ui-reference.md` §2 rule (these
+are read-text, not the enabled-control class P95 sweeps): `.diff-overlay-kind`, `.diff-tree-count`,
+`.conflict-editor-split-label`, `.wtctx-branch`, `.wtctx-blocked`, `.combobox-option-hint`,
+`.command-palette-option-hint`. The two `*-hint` selectors are the worst offenders.
 
 ## ⏳ P96 — P93 review follow-ups — PENDING
 
