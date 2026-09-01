@@ -291,11 +291,11 @@ not code:
 - **P88/P89/P90/DEP-REFRESH** all say "UNMERGED/UNPUSHED, awaiting merge decision", but
   `git branch --contains` (2026-09-01) shows `feat/pr-local-diff`, `perf/git-action-round2` and
   `chore/dep-refresh-2026-08` are already in `dev` (dep-refresh also in `main`).
-- **P84 has no board section and no `docs/history/` entry**, though its code shipped
-  (`cce9eb9`, `90b315c`, `1803391`, `6868be6`). Its USER CHECKPOINT is therefore unverifiable, so
-  its two contracts were left live rather than archived.
-- **`graph-design-review-2026-08-22.md` M1** (`role="grid"` + `aria-activedescendant`) is
-  contradicted by P95, and `ui-reference.md` §4.1 now forbids that model. Left unarchived.
+- **P84's USER CHECKPOINT was never recorded**, though its code shipped (`cce9eb9`, `90b315c`,
+  `1803391`, `6868be6`). It never had a board section. On the user's 2026-09-01 instruction its two
+  contracts were moved to `docs/contracts/archive/` and the gap written up in
+  `docs/history/todo-archive-2026-09.md` Part 33 — **the checkpoint is still unverified**; the
+  archive says so explicitly and does not claim it passed.
 - No contract file was ever written for **P94**.
 
 ### Hoisted off milestones archived 2026-09-01 (still open)
@@ -321,10 +321,24 @@ not code:
   baseline (1 graph-nav `defaultPrevented` case), introduced by the peer's graph-a11y commit
   `590f2ef`. Likely test-isolation flakiness. Raised in the P86 block; carried here on archive
   (archive Part 27). Status unverified since 2026-08-23.
-- **P84 board section is missing.** P84 (sidebar reveal-in-graph + tag auto-sync, commits `cce9eb9`,
-  `90b315c`, `1803391`, merge-back `6868be6`) has no milestone section on this board and none in
-  `docs/history/`; its USER CHECKPOINT is therefore unverifiable from the record. Its contracts
-  (`docs/contracts/P84-*.md`) were deliberately NOT archived for that reason (2026-09-01).
+- **P84 record gap** → written up in `docs/history/todo-archive-2026-09.md` Part 33 (2026-09-01):
+  code shipped, USER CHECKPOINT never recorded, contracts archived on user instruction.
+
+### Residue of the two dated 2026-08-22 design reviews (still open)
+Both review files now live in `docs/contracts/archive/`; per-finding dispositions +
+verification evidence → `docs/history/todo-archive-2026-09.md` Part 35.
+- **`graph-design-review-2026-08-22.md` M1 is SUPERSEDED — do not implement.** `role="grid"` /
+  `aria-rowcount` / `aria-activedescendant` are forbidden by `ui-reference.md` §4.1 (`:250-252`,
+  revised 2026-08-31 by P95). Verified 2026-09-01.
+- **`graph-design-review-2026-08-22.md` M2/M3/M4/S2/S3/N1/N2 — resolution unverified.** Not checked
+  by the 2026-09-01 sweep (bounded effort); do not assume they landed.
+- **`review-2026-08-22-ui.md` NIT-1 — Sidebar ignores `panelDensity`** (confirmed still open
+  2026-09-01: no density reference in `Sidebar.tsx`, `src/components/sidebar/**`, or
+  `src/styles/sidebar.css`; `.branch-row` is a fixed height).
+- **`review-2026-08-22-ui.md` NIT-2 —** `src/components/OnboardingOverlay.tsx:229` is still
+  `aria-label="Close"`; the review preferred "Close the tour".
+- `review-2026-08-22-ui.md` SHOULD-3 (`--accent` text over `--selection` fails AA) is the **same
+  item** as the live P69 **A9** follow-up below — A9 is the canonical entry.
 
 ### Known load-flake (still open) — timing-sensitive, not a correctness bug
 `ai::session_tests::watchdog_does_not_fire_while_awaiting_input` failed once under load and passed on
@@ -410,20 +424,14 @@ harness cannot observe rAF/compositing).
   `validate_tag_name` duplicated from `tags.rs` (module-private) — promote to shared if a 3rd caller.
   Full P77 detail: `docs/history/todo-archive-2026-08.md` Part 18.
 
-### macOS ad-hoc code signing — **DONE (config), release pending** (2026-08-30)
-- **Symptom:** installed release repeatedly triggers the macOS "Bonsai would like to access your
-  Downloads folder" TCC prompt, multiple at once, and re-prompts after Allow. Root cause: the release
-  `.app` was only linker-ad-hoc-signed — `Info.plist=not bound`, `Sealed Resources=none`, identifier
-  `bonsai-<hash>` not `com.bonsai.app`, `codesign --verify` → "not signed at all". TCC has no stable
-  identity to anchor the grant to.
-- **Fix applied:** `bundle.macOS.signingIdentity: "-"` added to `src-tauri/tauri.conf.json` → Tauri now
-  runs a proper sealed ad-hoc `codesign` on the bundle. Takes effect on the next tagged release.
-- **User's currently-installed app** was manually re-signed on 2026-08-30
-  (`codesign --force --deep --sign - --identifier com.bonsai.app`) + `tccutil reset` — prompt should
-  now stick after one Allow.
-- **Still not fixed by ad-hoc:** Gatekeeper "unidentified developer" warning; a new version re-prompts
-  once (cdhash changes). Full fix = Developer ID + notarization (needs Apple Developer Program) — the
-  `APPLE_*` env block in `.github/workflows/release.yml` is already scaffolded for it.
+### macOS ad-hoc code signing — config DONE 2026-08-30, **RELEASE STILL PENDING**
+Only the pending half stays here; full detail → `docs/history/todo-archive-2026-09.md` Part 34.
+- `bundle.macOS.signingIdentity: "-"` is in `src-tauri/tauri.conf.json` but **has not shipped**: the
+  last tag is `v1.5.0` (2026-08-26), which predates the fix. It takes effect on the next tagged
+  release — verify the sealed ad-hoc signature then.
+- Not fixed by ad-hoc at all: Gatekeeper "unidentified developer"; a new version re-prompts once for
+  TCC (cdhash changes). Full fix = Developer ID + notarization (Apple Developer Program); the
+  `APPLE_*` env block in `.github/workflows/release.yml` is already scaffolded.
 
 ---
 
@@ -431,9 +439,13 @@ harness cannot observe rAF/compositing).
 
 ## Archive
 
+**Start at `docs/history/README.md`** — it is the navigable index of every archived milestone and
+part number. The table below is the short form.
+
 | File | Covers |
 |---|---|
-| `docs/history/todo-archive-2026-09.md` | **Parts 22-32 (moved 2026-09-01, verbatim):** P94 · P93 + P92 · DEP REFRESH 2026-08-28 · P90 + P89 · P88 · the P85-P87 perf+observability batch incl. P87c/P87d · P82 + P83 · divergence reconcile + Release 1.1.0 + P80b/P81/P82 · the full DX dev-loop text · the full confirmed-checkpoints block · the 2026-08-21 resolved follow-ups. |
+| `docs/history/README.md` | **The archive index** — which file/part holds which milestone. |
+| `docs/history/todo-archive-2026-09.md` | **Parts 33-35 (moved 2026-09-01):** the P84 record gap (code shipped, USER CHECKPOINT never recorded) · the macOS ad-hoc-signing detail (release still pending) · per-finding dispositions of the two dated 2026-08-22 design reviews. **Parts 22-32 (moved 2026-09-01, verbatim):** P94 · P93 + P92 · DEP REFRESH 2026-08-28 · P90 + P89 · P88 · the P85-P87 perf+observability batch incl. P87c/P87d · P82 + P83 · divergence reconcile + Release 1.1.0 + P80b/P81/P82 · the full DX dev-loop text · the full confirmed-checkpoints block · the 2026-08-21 resolved follow-ups. |
 | `docs/history/todo-archive-2026-08.md` | Parts 1-9: P65 → P28 build detail, the Phase 1-4 banners, resolved FOR-USER decisions, P69(1.0.0)/P67/P68 detail, the 2026-08-17 batch mapping, resolved spun-out items. **Parts 10-16 (moved 2026-08-20): the P62-P74 checkpoint waiver + P71, P72, P73, P74, the P69 Settings redesign, and the Audit #2 fix batch, condensed. Parts 17-18 (moved 2026-08-21): P70 and P77, both checkpoints verified. Part 19 (moved 2026-08-21): the OPEN follow-ups resolved in the 2026-08-21 fix batch (read_status/palette/refetch/stash/submodule/STDERR/cred-split), verbatim. Part 20 (moved 2026-08-21): P78/P79/P80 forge milestones, condensed. Part 21 (moved 2026-08-21): P80b/P81/P82, done + checkpoints confirmed, condensed.** |
 | `docs/history/todo-archive.md` | P27 → P2, M0-M6 |
 | `docs/history/milestones-mvp.md` | the M0-M6 AI-gate vs USER CHECKPOINT split |

@@ -38,11 +38,7 @@ carries open, tracked work).
 | `P68-user-checklist.md` | P68 | Native checklist (real CLI past 90 s, cancel, mid-run question, read-only tools, bulk, settings, consent copy). | done — kept with the P68 cluster |
 | `P75-ipc-codegen.md` | P75 | Generate the IPC boundary from Rust with tauri-specta v2 (all 173 commands, no call-site churn). | HALTED 2026-08-21 — tauri-specta breaks Win10 app launch (`kernel32!WaitOnAddress`); reverted, findings + pins kept |
 | `P76-native-checkpoint-automation.md` | P76 | tauri-driver + WebdriverIO harness to automate ~60–70% of the native USER CHECKPOINT backlog. | deferred — HELD as contract-only per user (2026-08-20) |
-| `P84-sidebar-reveal-and-tag-autosync.md` | P84 | Sidebar click-to-reveal-in-graph (frontend) + automatic tag sync on fetch (one core fn + one command). | done (code shipped: `cce9eb9`/`90b315c`/`1803391`) — kept active: P84 has no board section and no `docs/history/` entry, so its USER CHECKPOINT is unverifiable (2026-09-01) |
-| `P84-reveal-in-graph-ui.md` | P84 | UI contract for reveal-in-graph: single-click sidebar → scroll + flash. | as above — kept active pending a verifiable P84 checkpoint record |
 | `P95-a11y-ui.md` | P95 | Graph scroller semantics (live-region-only ARIA), keyboard reachability, toolbar/control contrast; AC1–AC17. | awaiting USER CHECKPOINT (AC8/AC14/AC15/AC16) — implemented `f9a9209` |
-| `graph-design-review-2026-08-22.md` | — (dated review) | Commit-graph design review: M1–M4 MUST-FIX, S1–S3, N1–N2, with a resolution plan. | done in part — kept active: M1's `role="grid"`/`aria-activedescendant` prescription was superseded by P95, and S2/S3/N1/N2 resolution is unverified |
-| `review-2026-08-22-ui.md` | — (dated review) | Whole-app UI/UX review: prioritized findings, onboarding/token redesign specs, icon-system verdict, sidebar keyboard-a11y contract. | done in part — kept active: per-finding resolution unverified |
 | `checkout-commit-backend.md` | — | Dirty-safe "checkout an arbitrary commit → detached HEAD" command + IPC surface + frontend handler. | implementation appears shipped (`7036fef` covers detached-HEAD checkout) — kept active: no checkpoint record mapped |
 | `checkout-commit-ui.md` | — | Commit & branch menu structure for checkout-commit across graph rows, ref pills, sidebar rows. | implementation appears shipped (`7036fef` covers detached-HEAD checkout) — kept active: no checkpoint record mapped |
 | `hook-disclosure.md` | — | First-time per-repo git-hook execution disclosure (`hooks_enabled` defaults true). | spec — implementation status unverified |
@@ -60,9 +56,11 @@ carries open, tracked work).
 
 ## Archived contracts — `docs/contracts/archive/`
 
-**173 files** (contracts + `*-user-checklist` scripts) for milestones that shipped **and** had their
-native USER CHECKPOINT confirmed or explicitly waived. 161 were moved out of the live path on
-**2026-08-21**; a further 12 on **2026-09-01** (see the sweep note below). All moved with `git mv`
+**177 files** (contracts + `*-user-checklist` scripts) for milestones that shipped **and** had their
+native USER CHECKPOINT confirmed or explicitly waived — **with the four documented exceptions in the
+second 2026-09-01 sweep note below, which were archived on explicit user instruction and NOT because
+a checkpoint passed**. 161 were moved out of the live path on
+**2026-08-21**; a further 12 + 4 on **2026-09-01** (see the sweep notes below). All moved with `git mv`
 (history preserved). Board history for these milestones is in
 `docs/history/todo-archive.md` and `docs/history/todo-archive-2026-08.md`; the MVP AI-gate vs
 USER-CHECKPOINT split is in `docs/history/milestones-mvp.md`. Coverage:
@@ -84,6 +82,19 @@ USER-CHECKPOINT split is in `docs/history/milestones-mvp.md`. Coverage:
   (its owed `ui-reference.md` §6.2 edit is applied — verified at `ui-reference.md:394-406`) ·
   `P93-pr-diff-center-overlay-ui.md` (both 2026-08-31, Part 23).
 - **No contract file** exists for **P94** (e2e parallel-worker isolation) — board-only.
+- **2026-09-01 second sweep** (4 files, moved on the user's explicit "archive history" instruction —
+  **not** on a confirmed checkpoint; dispositions in `docs/history/todo-archive-2026-09.md`
+  Parts 33 and 35):
+  - `P84-sidebar-reveal-and-tag-autosync.md` and `P84-reveal-in-graph-ui.md` — P84's code shipped
+    (`cce9eb9`/`90b315c`/`1803391`/`6868be6`) but its **USER CHECKPOINT was never recorded**;
+    archived on user instruction to close the record gap. Status: `code shipped; checkpoint
+    unrecorded`.
+  - `graph-design-review-2026-08-22.md` — **M1 (`role="grid"` + `aria-rowcount` +
+    `aria-activedescendant`) is SUPERSEDED by P95 and forbidden by `ui-reference.md` §4.1
+    (`:250-252`) — do not implement.** M2/M3/M4/S2/S3/N1/N2 resolution unverified (live line in
+    `TODO.md`).
+  - `review-2026-08-22-ui.md` — MUST-1/2/3, SHOULD-1/2/4 and NIT-3 verified resolved at HEAD
+    `ed5bb11`; SHOULD-3 (= P69 A9), NIT-1 and NIT-2 remain open as live lines in `TODO.md`.
 
 > **Known label collisions in the archive** (kept as-is, resolve on next touch): **P82** names two
 > milestones — color-coded identity profiles (`P82-color-profiles.md`, `P82-ui.md`) and

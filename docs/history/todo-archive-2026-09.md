@@ -875,3 +875,111 @@ modules (a real refactor with call-graph impact, not a leaf move).
   `evict_fresh_on_auth_fail`, `FillOutcome`, `CredAttempts`); `remote.rs` imports it — landed with
   P70's finalized tree.
 
+---
+
+## Part 33 — P84 (sidebar reveal-in-graph + tag auto-sync) — record gap, archived on user instruction 2026-09-01
+
+**Read this entry before assuming P84 is done.**
+
+- P84's **code shipped**: `cce9eb9`, `90b315c`, `1803391`, merge-back `6868be6`.
+- P84 **never had a board section** in `TODO.md` and never had a `docs/history/` entry.
+- Its **USER CHECKPOINT was therefore never recorded** and cannot be verified from the record.
+  Nothing in this archive should be read as the checkpoint having passed.
+- Its two contracts were moved to `docs/contracts/archive/` on **2026-09-01**, on the user's
+  explicit instruction ("cleanup everything until P91, archive history"), purely to close the
+  dangling record gap — **not** because the checkpoint was confirmed:
+  - `docs/contracts/archive/P84-sidebar-reveal-and-tag-autosync.md` — sidebar click-to-reveal-in-graph
+    (frontend) + automatic tag sync on fetch (one core fn + one command).
+  - `docs/contracts/archive/P84-reveal-in-graph-ui.md` — UI contract for reveal-in-graph: single-click
+    sidebar → scroll + flash.
+- The previous curation sweep (2026-09-01, earlier the same day) **refused** to archive these for
+  exactly this reason; that refusal is superseded by the user's instruction, but the underlying fact
+  (unrecorded checkpoint) stands and is preserved here.
+
+---
+
+## Part 34 — macOS ad-hoc code signing — config DONE 2026-08-30, release still pending (verbatim off the board)
+
+Archived 2026-09-01. A one-line live pointer stays in `TODO.md` because the **release half is still
+pending**: the last tag is `v1.5.0` (2026-08-26), which predates the 2026-08-30 config change, so
+the fix has not shipped in any release yet.
+
+- **Symptom:** installed release repeatedly triggers the macOS "Bonsai would like to access your
+  Downloads folder" TCC prompt, multiple at once, and re-prompts after Allow. Root cause: the release
+  `.app` was only linker-ad-hoc-signed — `Info.plist=not bound`, `Sealed Resources=none`, identifier
+  `bonsai-<hash>` not `com.bonsai.app`, `codesign --verify` → "not signed at all". TCC has no stable
+  identity to anchor the grant to.
+- **Fix applied:** `bundle.macOS.signingIdentity: "-"` added to `src-tauri/tauri.conf.json` → Tauri now
+  runs a proper sealed ad-hoc `codesign` on the bundle. Takes effect on the next tagged release.
+- **User's currently-installed app** was manually re-signed on 2026-08-30
+  (`codesign --force --deep --sign - --identifier com.bonsai.app`) + `tccutil reset` — prompt should
+  now stick after one Allow.
+- **Still not fixed by ad-hoc:** Gatekeeper "unidentified developer" warning; a new version re-prompts
+  once (cdhash changes). Full fix = Developer ID + notarization (needs Apple Developer Program) — the
+  `APPLE_*` env block in `.github/workflows/release.yml` is already scaffolded for it.
+
+---
+
+## Part 35 — The two dated 2026-08-22 design reviews — dispositions (archived 2026-09-01)
+
+Both review contracts were moved to `docs/contracts/archive/` on **2026-09-01**. Findings verified
+by the curator against the current tree at HEAD `ed5bb11`; anything **not** confirmed resolved is
+listed as still-open here **and** kept as a live line in `TODO.md`.
+
+### 35.1 `docs/contracts/archive/graph-design-review-2026-08-22.md`
+
+- **M1 — "make the graph a focusable, announced composite widget" (`role="grid"` +
+  `aria-rowcount` + `aria-activedescendant`) is SUPERSEDED BY P95 — DO NOT IMPLEMENT.**
+  `docs/contracts/ui-reference.md` §4.1 (heading: "ARIA model revised 2026-08-31, P95",
+  `ui-reference.md:250-252`) now states verbatim: "**`role="grid"`, `aria-rowcount` and
+  `aria-activedescendant` are forbidden here.**" The shipped model is live-region-only:
+  `.graph-scroll` carries exactly `tabIndex={0}`, `role="group"`, `aria-label="Commit graph"` and
+  `aria-describedby` → the `.sr-only` keyboard hint, with `GraphSelectionAnnouncer` as the sole
+  announcement channel. Verified by the curator 2026-09-01.
+- **S1 — ui-reference §4 accuracy** — marked DONE in the review's own pass.
+- **M2, M3, M4, S2, S3, N1, N2 — resolution NOT verified** by this sweep (bounded effort). Carried
+  as a live line in `TODO.md` so nobody assumes they landed.
+
+### 35.2 `docs/contracts/archive/review-2026-08-22-ui.md`
+
+Verified **resolved** (evidence at HEAD `ed5bb11`):
+
+- **MUST-1 — `ui-reference.md` truncated to 4 subsections** → RESOLVED. The file is now 1224 lines
+  with §1–§13 (layout, tokens, typography, graph metrics, lane palette, ref pills, file-status
+  colors, states, AI dock, notice bar, status pills, settings surface, icon system).
+- **MUST-2 — sidebar rows keyboard-inaccessible** → RESOLVED. The §D `role="tree"` contract shipped:
+  `src/components/Sidebar.tsx:117` ("the six sections compose one `role="tree"`"), with
+  `role="treeitem"` + `aria-level` on `src/components/sidebar/SectionHeader.tsx:39`,
+  `SubmoduleRow.tsx:36`, `TagsSection.tsx:61`, and `sidebar/rows.tsx`.
+- **MUST-3 — icon-only toolbar buttons lack accessible names** → RESOLVED. In
+  `src/components/WorkspaceToolbar.tsx` the three icon-only buttons carry `aria-label`
+  ("More push actions" `:212`, "Open externally" `:271`, "Refresh" `:284`); the remaining buttons
+  carry visible text labels plus a `title`.
+- **SHOULD-1 — emoji as the app-wide icon language** → RESOLVED. `lucide-react ^1.34.0` is a
+  declared dependency (`package.json:37`) and the SVG icon system is specced in `ui-reference.md`
+  §13.
+- **SHOULD-2 — onboarding last step exposes three dismiss controls** → RESOLVED per spec B.1.
+  `src/components/OnboardingOverlay.tsx:166-167,251-254`: `isLast` computed, Skip rendered only
+  before the last step, primary label `Get started`/`Next`/`Finish`, `✕` always present.
+- **SHOULD-4 — HEAD branch name marginal on hover** → RESOLVED per spec B.2. `src/styles/sidebar.css`
+  now carries the B.2 comment verbatim ("the checked-out branch is conveyed by weight + the accent
+  glyph + aria-current — NOT by hue on the label") and `.branch-row-head .branch-name` is
+  `font-weight:600; color: var(--text-1)`.
+- **NIT-3 — obscure list-view toggle glyph `⋔`** → RESOLVED. Zero occurrences of `⋔` remain under
+  `src/components/`.
+
+**Still open** (kept as live lines in `TODO.md`):
+
+- **SHOULD-3 — `--accent` as text colour over `--selection` fails AA.** This is the same item as the
+  live **P69 A9** follow-up; `ui-reference.md` §2 now prohibits new call sites, but the ~30 existing
+  ones are unaudited.
+- **NIT-1 — Sidebar ignores `panelDensity`.** Confirmed still open: no `panelDensity`/`density`
+  reference exists in `src/components/Sidebar.tsx`, `src/components/sidebar/**`, or
+  `src/styles/sidebar.css`; `.branch-row` remains a fixed height.
+- **NIT-2 — onboarding `✕` accessible name.** Confirmed still open:
+  `src/components/OnboardingOverlay.tsx:229` is still `aria-label="Close"` (the review preferred
+  "Close the tour").
+
+Everything else in that review (§B redesign specs, §C icon-system verdict, §D sidebar keyboard
+contract, positive findings) is descriptive/shipped and preserved verbatim in the archived file.
+
