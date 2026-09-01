@@ -9,6 +9,8 @@ import { branchHandlers } from './branches';
 import { statusHandlers } from './status';
 import { resetRevertHandlers } from './resetRevert';
 import { requireRepo } from '../repoState';
+import { MOCK_OID } from '../../fixtures/branches';
+import type { HeadInfo } from '../../types';
 
 beforeAll(() => vi.useFakeTimers());
 afterAll(() => vi.useRealTimers());
@@ -239,5 +241,79 @@ describe('createBranchHere + resetBranch', () => {
     // Unknown oid: HEAD moves (mock simplification) but the list is untouched.
     await run(resetRevertHandlers.resetBranch(repoId, 'ff'.repeat(20), 'hard'));
     expect(requireRepo(repoId).commits).toHaveLength(1);
+  });
+});
+
+/** P99 — mock fidelity: `openRepo` and `listBranches` must agree about HEAD,
+ *  the way the backend's shared `read_head_info` forces them to. */
+describe('listBranches HEAD fidelity across repo kinds', () => {
+  async function open(label: string): Promise<{ repoId: string; head: HeadInfo | null }> {
+    const { repoId, info } = await run(repoHandlers.openRepo(freshRepoPath(label)));
+    return { repoId, head: info.head };
+  }
+
+  it('reports the SAME head as openRepo for an unborn repo (unborn, empty oid)', async () => {
+    const { repoId, head } = await open('unborn');
+    const snap = await run(branchHandlers.listBranches(repoId));
+    // The consistency property itself — a future drift between the two handlers
+    // fails here even if both are individually plausible.
+    expect(snap.head).toEqual(head);
+    expect(snap.head).toEqual({ branchName: 'main', oid: '', detached: false, unborn: true });
+  });
+
+  it('returns empty ref lists for an unborn repo (no refs exist pre-first-commit)', async () => {
+    const { repoId } = await open('unborn');
+    const snap = await run(branchHandlers.listBranches(repoId));
+    expect(snap.local).toEqual([]);
+    expect(snap.remote).toEqual([]);
+    expect(snap.tags).toEqual([]);
+  });
+
+  it('leaves the default kind unchanged (born HEAD on main, refs present)', async () => {
+    const { repoId, head } = await open('br-default');
+    const snap = await run(branchHandlers.listBranches(repoId));
+    expect(snap.head).toEqual(head);
+    expect(snap.head).toEqual({
+      branchName: 'main',
+      oid: MOCK_OID,
+      detached: false,
+      unborn: false,
+    });
+    expect(snap.local.some((b) => b.name === 'main' && b.isHead)).toBe(true);
+    expect(snap.remote.length).toBeGreaterThan(0);
+    expect(snap.tags.length).toBeGreaterThan(0);
+  });
+
+  it('leaves the detached kind unchanged (detached HEAD, no local isHead)', async () => {
+    const { repoId, head } = await open('detached');
+    const snap = await run(branchHandlers.listBranches(repoId));
+    expect(snap.head).toEqual(head);
+    expect(snap.head).toEqual({
+      branchName: null,
+      oid: MOCK_OID,
+      detached: true,
+      unborn: false,
+    });
+    expect(snap.local.every((b) => !b.isHead)).toBe(true);
+    expect(snap.local.length).toBeGreaterThan(0);
+  });
+
+  // A repo cannot hold a commit AND an unborn HEAD: the first commit is what
+  // creates the default branch. Before P99's follow-up the mock stayed `unborn`
+  // forever, so "No commits yet" / "No branches yet" survived a commit.
+  it('leaves unborn behind on the first commit (HEAD born, one isHead branch)', async () => {
+    const { repoId } = await open('unborn');
+    await run(statusHandlers.stage(repoId, ['README.md']));
+    const result = await run(statusHandlers.commit(repoId, 'first commit'));
+    const snap = await run(branchHandlers.listBranches(repoId));
+    expect(snap.head.unborn).toBe(false);
+    expect(snap.head.oid).toBe(result.oid);
+    expect(snap.head.branchName).toBe('main');
+    expect(snap.head.detached).toBe(false);
+    const heads = snap.local.filter((b) => b.isHead);
+    expect(heads).toEqual([
+      { name: 'main', isHead: true, upstream: null, ahead: null, behind: null, tip: result.oid },
+    ]);
+    expect(snap.local).toHaveLength(1);
   });
 });

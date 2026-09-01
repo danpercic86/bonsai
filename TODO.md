@@ -51,34 +51,91 @@ inserts immediately after, so expect one conflict hunk) and `src/styles/forge-pr
 same file P95 edits). It adds 18 lines to `tokens-and-base.css` but does **not** change
 `--text-2`/`--text-3`, so P95's contrast figures remain valid.
 
-## 🚨 P99 — `repo` state never set in a production bundle — PENDING (HIGH)
+## ✅ P99 — `repo` state dead in a production bundle — DONE (2026-09-01) — **DOWNGRADED, NOT A PRODUCT BUG**
 
-**Found by senior-dev while instrumenting P94 — a genuine product defect, not test infra.** Filed
-rather than fixed, because it needs its own increment and a proper contract.
+**The original HIGH framing was WRONG and is retracted.** It was filed (from P94 instrumentation) as
+"an unborn repo renders the full graph instead of *No commits yet*", i.e. a shipped-in-1.5.0
+violation of a locked v1 product decision. Investigated 2026-09-01: **there is no product defect.**
+The P94 observations were real; the *attribution* was wrong.
 
-`RepoWorkspace`'s `repo` state (`src/components/RepoWorkspace.tsx:156`, set only at `:1122` inside
-`runRefreshRound`'s `openRepo` slice) **is never set after boot in a built bundle** — it stays
-`null` forever. So `const head = repo?.head ?? branches?.head` (`:641`) permanently falls back to
-the branches snapshot.
+### What was actually true
+- **The mechanism is real.** The activation self-heal effect (`RepoWorkspace.tsx:1233`) skips its
+  first run via `activeFlipRef`, and it was the only path to `setRepo`. Under React StrictMode
+  (dev only) setup->cleanup->setup runs on the same instance, the ref persists, and the second setup
+  fires the refresh **by accident**. In a production bundle nothing calls `setRepo` at boot.
+  `tauri.conf.json` confirms `pnpm tauri dev` serves the vite dev server (`beforeDevCommand: pnpm
+  dev`, `devUrl: 1420`) while `pnpm tauri build` ships `../dist` — so dev masks it, the release
+  bundle does not. **No `pnpm tauri build` was needed to settle this**; the config plus React's
+  production semantics are decisive.
+- **Correction to the filing:** not "never set / null forever" but **null until the first `full`
+  refresh** (manual Refresh, window focus, activation flip, mutation).
+- **Correction to the blast radius:** the filing said "anything keyed on `repo?.<field>` needs
+  auditing". There was exactly **one** consumer (`:641`), confirmed with an unfiltered
+  `grep -n "\brepo\b"` — the filtered grep I first ran could have hidden a `fn(repo, repoId)` line.
 
-**User-visible consequence:** because the branches snapshot is never unborn/detached, an **unborn
-repo renders the full graph instead of "No commits yet"**. Any other behaviour keyed on
-`repo?.<field>` is equally suspect and needs auditing — unborn/detached HEAD handling is the
-obvious blast radius, and empty-state correctness is a locked v1 product decision.
+### Why it was harmless — and the real culprit
+`head` was `repo?.head ?? branches?.head ?? null`, and the backend derives **both** from one shared
+`read_head_info` (`crates/bonsai-core/src/git/repo.rs:73`; called by `repo.rs:62` for `openRepo` and
+`branches/list.rs:24` for the snapshot). They cannot disagree.
 
-**Why it hid:** it only manifests in a production bundle. The dev server works *by accident*, via
-React StrictMode's double-mount masking that the first refresh round never runs the `openRepo`
-slice. Evidence: a temporary `console.info` of `{repo.head, branches.head}` logged three head-states
-against the dev server (the third being `repo = {unborn:true}`), but only **two** against a
-`vite build --mode mock` + `vite preview` bundle, with `repo` always `null` — reproducible **6/6 at
-11 workers and 3/3 at `--workers=1`**, so it is deterministic, not a race.
+**The observed symptom was 100% MOCK infidelity.** `src/ipc/mock/handlers/branches.ts` hardcoded
+`unborn: false` in *both* arms and had no unborn case, while `buildInfo` honoured the unborn kind —
+a divergence the real backend structurally cannot have. Worse, the unborn mock state seeded the full
+`INITIAL_BRANCHES` clone: **~13 phantom local branches**, 5+ remote-tracking branches and every tag,
+none of which can exist in a real unborn repo.
 
-**Open question to settle first:** `pnpm tauri dev` uses the dev bundle, so it is NOT yet confirmed
-whether `pnpm tauri build` ships this. **Determine that before anything else** — if the release
-build is affected, this is a shipped-in-1.5.0 bug and should jump the queue ahead of P95/P96/P97.
+### Evidence (the decisive experiment)
+Against a **production** bundle (`vite build --mode mock` + `vite preview`, unborn repo opened):
+- with the mock fix -> **"No commits yet"** + "No branches yet", 0 console errors;
+- with **only** the mock fix reverted -> no empty state, **7+ phantom branch rows**.
 
-Side effect worth knowing: this is why serving a built bundle to e2e was abandoned in P94 (it would
-have cut the suite from 5.8 to 1.3 min) — the built bundle is **not** behaviour-equivalent to dev.
+That single experiment proves BOTH that `repo` really is null in the production bundle (otherwise
+`repo.head.unborn` would have rendered the empty state anyway) AND that the mock was the sole cause.
+
+### What shipped
+1. **Rust tests** — `crates/bonsai-core/src/git/branches/unborn_boot_tests.rs` (6 tests) prove that
+   on a real unborn repo `list_refs` returns `Ok` with `head.unborn == true`, `oid == ""`,
+   `branch_name == Some("main")` and empty ref lists, and that every other boot slice (repo info,
+   status, graph seed, graph stream) also returns `Ok`. **This was the load-bearing gap: dev's
+   accidental refresh had been masking any branches-side failure too, so nothing had ever tested the
+   unborn boot path.** In-crate because `read_head_info` is `pub(crate)`. Mutation-checked (flipping
+   the assertion goes red) and the fixture self-guards on `UnbornBranch` so it cannot pass vacuously.
+2. **Mock fidelity fix** — one exported `buildHead(state)` (the mock analogue of `read_head_info`)
+   now used by `buildInfo`, `listBranches` and the state seed, so the handlers **cannot drift again**;
+   unborn seeds `{local: [], remote: [], tags: []}`. Plus: `commitInner` now flips `kind` off
+   `'unborn'` and seeds the branch the first commit creates — previously the harness would show
+   "No commits yet" + "No branches yet" *while a commit row existed*, which real git cannot do.
+3. **Dead-state removal** — dropped the `repo`/`setRepo` `useState`; `head` is now
+   `branches?.head ?? null`. `RepoWorkspace.tsx` 2778 -> 2774. **This fixed a latent bug:** on an
+   unusable repo the old code took `head` from a `RepoInfo` the UI had *just* declared unusable and
+   wiped (and a bare repo does have a HEAD). It now fails closed.
+4. Corrected two comments that P99 falsified (`refreshScope.ts:21`, `RepoWorkspace.tsx:1108`) — they
+   claimed `openRepo` maintains the header HEAD; it is now used only for the usability check and
+   watcher self-heal.
+
+### Why single-sourcing HEAD is safe (reviewer's invariant — record this)
+In the scope matrix (`refreshScope.ts:67-86`) **every scope with `openRepo: true` also has
+`branches: true`**, and the `openRepo: false` scopes never move HEAD. That — not merely "the two
+heads are equal" — is the structural reason the snapshot cannot strand a stale value.
+
+**The StrictMode-masking bug class is now closed by construction:** the `openRepo` block writes **no
+state at all**, it only clears. `activeFlipRef` remains but gates a refresh call, not a sole writer.
+
+Reviewer verdict: **approve, zero MUST-FIX**. Gate: **full 8/8 green, 566s** (one earlier run showed
+the known e2e parallel flake at `24-settings-shell.spec.ts:238` — 54/54 passed isolated, that test
+3/3, unrelated to P99). No USER CHECKPOINT owed: verified in a real production bundle.
+
+Remaining NIT, deliberately not actioned: `buildHead` hardcodes `branchName: 'main'` for unborn
+where the real `read_head_info` reads HEAD's symbolic target — an accepted mock simplification.
+
+## 🛠️ DX — built-bundle e2e is UNBLOCKED again (filed 2026-09-01)
+
+P94 abandoned serving a built bundle to Playwright — which would have cut the suite **5.8 min ->
+1.3 min** — on the grounds that "the built bundle is not behaviour-equivalent to dev". **That
+non-equivalence WAS this defect plus the mock infidelity, and both are now fixed.** The stated
+reason for abandoning it no longer holds, so revisit it. Re-verify equivalence first rather than
+assuming: the dev/prod difference was only ever observable through StrictMode's double-mount, so
+check for any *other* effect that depends on running twice before switching the suite over.
 
 ## ⏳ P95 — a11y: graph scroller semantics, keyboard reachability, toolbar contrast — AWAITING USER CHECKPOINT
 

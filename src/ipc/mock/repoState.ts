@@ -13,7 +13,7 @@ import { INITIAL_STATUS } from '../fixtures/status';
 import { seedSubmodules } from '../fixtures/submodules';
 import { seedOpState } from './opStateSeed';
 import { worktreesFor } from './worktreeState';
-import type { AgentAsset, AiAssetInventory, AppError, BranchesSnapshot, ConflictEntry, ConflictFile, ProfileStore, RemoteInfo, RepoInfo, RepoOpState, StaleBranch, StaleReport, StashEntry, StatusSnapshot, SubmoduleInfo } from '../types';
+import type { AgentAsset, AiAssetInventory, AppError, BranchesSnapshot, ConflictEntry, ConflictFile, HeadInfo, ProfileStore, RemoteInfo, RepoInfo, RepoOpState, StaleBranch, StaleReport, StashEntry, StatusSnapshot, SubmoduleInfo } from '../types';
 
 export const MOCK_REPO_PATH = 'C:\\mock\\bonsai-fixture';
 
@@ -261,7 +261,14 @@ export function createRepoState(path: string): MockRepoState {
     hooksAcked: false,
     status: structuredClone(INITIAL_STATUS),
     headOid: MOCK_OID,
-    branches: structuredClone(INITIAL_BRANCHES),
+    // P99 fidelity: a real unborn repo has NO refs at all — `list_refs`
+    // documents "empty lists" — so the unborn kind must not carry the default
+    // branch/remote/tag fixture (the sidebar showed phantom refs that cannot
+    // exist before the first commit). `head` is rewritten below via buildHead.
+    branches:
+      kind === 'unborn'
+        ? { local: [], remote: [], tags: [], head: INITIAL_BRANCHES.head }
+        : structuredClone(INITIAL_BRANCHES),
     headBranch: 'main',
     fetched: false,
     commits: [],
@@ -303,33 +310,35 @@ export function createRepoState(path: string): MockRepoState {
       });
     }
   }
+  // Derived LAST, from the final headBranch/headOid: the worktree-fidelity block
+  // above rewrites both, so deriving earlier left the stored snapshot stale for
+  // the linked-worktree case (only `isRefTip` reads the stored copy — both
+  // `listBranches` and `buildInfo` re-derive — but the trap was live).
+  state.branches.head = buildHead(state);
   return state;
+}
+
+/**
+ * P99: the ONE head derivation for a mock repo — the mock's stand-in for the
+ * backend's shared `read_head_info` (git/repo.rs), which both `openRepo` and the
+ * branches snapshot go through. `buildInfo` and `listBranches` must both call
+ * this so they cannot drift on unborn/detached-ness (they did: listBranches used
+ * to hardcode `unborn: false`). Unborn ⇒ `oid: ''`, exactly like the real
+ * `read_head_info` returning `String::new()`.
+ */
+export function buildHead(state: MockRepoState): HeadInfo {
+  if (state.kind === 'unborn') {
+    return { branchName: 'main', oid: '', detached: false, unborn: true };
+  }
+  if (state.kind === 'detached') {
+    return { branchName: null, oid: state.headOid, detached: true, unborn: false };
+  }
+  return { branchName: state.headBranch, oid: state.headOid, detached: false, unborn: false };
 }
 
 /** Fresh RepoInfo reflecting the repo's current HEAD (follows checkouts/commits). */
 export function buildInfo(state: MockRepoState, path: string): RepoInfo {
-  if (state.kind === 'unborn') {
-    return {
-      path,
-      isRepo: true,
-      bare: false,
-      head: { branchName: 'main', oid: '', detached: false, unborn: true },
-    };
-  }
-  if (state.kind === 'detached') {
-    return {
-      path,
-      isRepo: true,
-      bare: false,
-      head: { branchName: null, oid: state.headOid, detached: true, unborn: false },
-    };
-  }
-  return {
-    path,
-    isRepo: true,
-    bare: false,
-    head: { branchName: state.headBranch, oid: state.headOid, detached: false, unborn: false },
-  };
+  return { path, isRepo: true, bare: false, head: buildHead(state) };
 }
 
 /** Looks up an open repo or throws the backend's NoRepo error shape. */

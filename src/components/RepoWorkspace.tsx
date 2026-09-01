@@ -50,7 +50,6 @@ import type {
   ReflogEntry,
   UndoPlan,
   RemoteInfo,
-  RepoInfo,
   RepoOpState,
   ResetMode,
   SigningStatus,
@@ -150,10 +149,6 @@ export function RepoWorkspace({
   // P11d §4.1: METRICS overlaid with the user's graph knobs; memoized so the
   // canvas metricsRef only churns when a knob actually changes.
   const metrics = useMemo(() => effectiveMetrics(graphPrefs), [graphPrefs]);
-
-  // RepoInfo is (re)loaded by refreshAll's openRepo; head also arrives via the
-  // branches snapshot, so gating works before the first refreshAll.
-  const [repo, setRepo] = useState<RepoInfo | null>(null);
 
   const [status, setStatus] = useState<StatusSnapshot | null>(null);
   const [statusError, setStatusError] = useState<{ id: number; message: string } | null>(null);
@@ -636,9 +631,11 @@ export function RepoWorkspace({
   // that only shifts the row index).
   const commitDiffKeyRef = useRef<string | null>(null);
 
-  // Head: prefer the freshly re-opened RepoInfo, fall back to the branches
-  // snapshot (available before the first refreshAll, §5.1).
-  const head: HeadInfo | null = repo?.head ?? branches?.head ?? null;
+  // P99: the branches snapshot is the SINGLE source for HEAD. `openRepo`'s
+  // RepoInfo.head is no longer mirrored into local state — the backend derives
+  // both from one shared `read_head_info`, so they cannot disagree, and the
+  // snapshot is already available before the first refresh round.
+  const head: HeadInfo | null = branches?.head ?? null;
   const opActive = opState.kind !== 'none';
   const canPullPush =
     head != null && !head.detached && !head.unborn && !opActive;
@@ -1108,8 +1105,9 @@ export function RepoWorkspace({
    *  all origins funnel through the coalescer to it. P86a: SCOPED — only the
    *  slices `scope` implies run, so a ref-only mutation never pays the O(worktree)
    *  `get_status` scan and non-`full` scopes skip `openRepo` (they never move
-   *  HEAD). `full` still re-openRepos (refreshes header HEAD + self-heals the
-   *  watcher; clears everything if the repo went unusable). Never throws —
+   *  HEAD). `full` still re-openRepos — for the usability check (clears
+   *  everything if the repo went unusable) + the watcher self-heal; P99: the
+   *  header HEAD comes from the branches snapshot, not from here. Never throws —
    *  failures surface as a sticky error toast. */
   const runRefreshRound = useCallback(
     async (scope: RefreshScope): Promise<void> => {
@@ -1119,7 +1117,6 @@ export function RepoWorkspace({
       try {
         if (slices.openRepo) {
           const { info } = await ipc.openRepo(repoPath);
-          setRepo(info);
           if (!isUsableRepo(info)) {
             clearStatus();
             clearGraph();

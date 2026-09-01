@@ -119,3 +119,5 @@ mod rename_branch_tests;
 mod checkout_commit_detached_tests;
 #[cfg(test)]
 mod checkout_autostash_untracked_tests;
+#[cfg(test)]
+mod unborn_boot_tests;

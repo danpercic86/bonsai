@@ -1,7 +1,7 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
 import type { IpcApi } from '../../types';
 import { randomOid } from '../../fixtures/oids';
-import { buildStaleReport, delay, isInvalidBranchName, query, requireRepo, setDetached } from '../repoState';
+import { buildHead, buildStaleReport, delay, isInvalidBranchName, query, requireRepo, setDetached } from '../repoState';
 import { upsert } from '../statusHelpers';
 import type { AppError, BranchDeleteResult, BranchDeleteStatus, BranchesSnapshot, CheckoutResult, CreateBranchHereResult, RenameBranchResult, StaleReport } from '../../types';
 
@@ -10,16 +10,12 @@ export const branchHandlers = {
     await delay(150);
     const state = requireRepo(repoId);
     const snapshot = structuredClone(state.branches);
+    // P99: head comes from the SHARED buildHead (the mock's `read_head_info`),
+    // so this snapshot can never disagree with openRepo's RepoInfo on
+    // detached/unborn-ness.
+    snapshot.head = buildHead(state);
     if (state.kind === 'detached') {
-      snapshot.head = { branchName: null, oid: state.headOid, detached: true, unborn: false };
       for (const branch of snapshot.local) branch.isHead = false;
-    } else {
-      snapshot.head = {
-        branchName: state.headBranch,
-        oid: state.headOid,
-        detached: false,
-        unborn: false,
-      };
     }
     return snapshot;
   },
