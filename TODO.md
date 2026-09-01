@@ -36,7 +36,7 @@ bottom. Velocity/gate-cost measurements: `docs/history/velocity-2026-09-01.md`.
 
 ## 🚀 P100 + P101 + DX-e2e — IN PROGRESS (started 2026-09-01, USER: "do P100 and P101 and DX: build-bundle e2e")
 
-**Current step:** P100 + P101 + DX-e2e all landed; `senior-dev` still root-causing **P103**. Awaiting USER CHECKPOINT on P100 (4 items) and P101 (AC12-AC16). New work filed while here: **P102** (`--danger` fills), **P104** (4-worker e2e hang), **P105** (`--accent` as text fails AA on `--bg-1` light / `--bg-2` both) — P105 was found by the P101 harness pass and contradicts a claim §2 actively makes.
+**Current step:** all three requested items DONE — P100 (`e118375`), P101 (`4fec07a`), DX-e2e (`46088e0`). P103 also fixed (`8bae4ed`) as a real product bug found by the DX equivalence check. **Awaiting USER CHECKPOINT: P100 (4 items) + P101 (AC12-AC16).** Filed while here: **P102**, **P104**, **P105**. Flipping the e2e bundle default is gated on P104 alone now.
 
 **Sequencing, and why it is not arbitrary.** P100 **must** land before P101. P101's audit method
 (P98 contract §8.8 step 1) requires measuring every declaration against its *composited backdrop
@@ -229,7 +229,7 @@ pass: 1299 → **1322** lines, **13** sections throughout, untouched regions byt
 pointer preserved. **This deviates from CLAUDE.md's "no other agent edits `ui-reference.md`" —
 raise with the user whether to give the designer `Edit` or split the file.**
 
-## ✅ DX — built-bundle e2e — CAPABILITY DELIVERED, DEFAULT DELIBERATELY NOT FLIPPED (2026-09-01)
+## ✅ DX — built-bundle e2e — DELIVERED opt-in; default gated on P104 only (2026-09-01)
 
 P94's stated reason for abandoning this ("the built bundle is not behaviour-equivalent to dev") no
 longer holds for the reason P94 gave — but the equivalence check **found a real difference**, so the
@@ -247,24 +247,46 @@ Bundle mode is **~1.7-2x faster** on summed per-test time (326-363s vs 485-685s)
 possible — the gate's `tsc + vite build` step is **real** mode; the specs need `VITE_MOCK_IPC=1`,
 which only `--mode mock` supplies via `.env.mock`. Documented at the e2e step in `gate.mjs`.
 
-### 🚨 P103 — root-cause `24-settings-shell.spec.ts:238` — PENDING, blocks flipping the default
+### ✅ P103 — `24-settings-shell.spec.ts:238` — FIXED (`8bae4ed`), a REAL product bug
 
-"Esc dismisses the menu and hands global shortcuts back". Isolated
-(`-g "Esc dismisses the menu" --repeat-each=3 --workers=1`): **bundle 3/3 FAILED, dev 1/3 failed.**
-`getByRole('dialog', {name:'Settings'})` never appears after Esc + Ctrl+,.
+**Mechanism (proven, not inferred).** `IdentityMenu` lifted its open state to `App` **only from a
+passive effect**, so `setMenuOpen(false)` landed on React's *default (deferrable)* lane. In a
+production bundle `App`'s re-render — and with it the re-subscription of `useAppShortcuts`' window
+`keydown` listener — was deferred **past the next keypress**, so the stale listener still closed over
+`menuOpen === true` and **swallowed the first `Ctrl+,` after Esc**. Exactly one keypress: a second
+`Ctrl+,` 300 ms later always worked. Instrumented bundle logs showed the menu already gone from the
+DOM while `App render menuOpen=false` printed only *after* the `,` key had been seen with
+`menuOpen=true`.
 
-**Do not dismiss this as the known parallel flake — the orchestrator already made that mistake once.**
-During the P99 gate run this same test failed and was written off as a parallel flake because it then
-passed 3/3 in isolation. The bundle makes it **deterministic**, which is the P99 lesson repeating:
-React StrictMode's setup->cleanup->setup masks consumed-latch bugs, so dev is *flaky* where prod is
-*broken*. **The built bundle is not a hazard here, it is a better detector** — that is the real
-finding of this DX pass, and it inverts P94's conclusion.
+**Fix:** open/confirm state is mirrored into refs and lifted **synchronously from the discrete
+handlers**, so the release rides the discrete lane and is flushed before the next event. The old
+effect stays as a reconcile safety net. `confirmRef` (not a plain `false`) is what keeps shortcuts
+suppressed under the confirm dialog, because `ContextMenu` calls `onClose()` in the same tick as
+`onSelect()`.
 
-**Corroborating evidence nobody connected until now:** P95's tester residual (this file, ~line 202)
-recorded *Menu key -> Esc -> Menu key again* returning "no menu" on the second open, dismissed as a
-"degenerate mount transient" with "ambiguous evidence" and a request for a real-window check. Same
-Esc-then-reacquire-shortcuts shape, different surface. Two independent sightings written off as
-flake, now reproducible on demand. Start from the suppression/latch state that survives an Esc.
+**Fail-before / pass-after — bundle is the discriminator.** Bundle arm: **3/3 failed → 3/3 passed**.
+Dev arm: the whole spec **18 passed**. Independently re-verified by the orchestrator after commit:
+`E2E_BUNDLE=1 ... -g "Esc dismisses the menu" --repeat-each=2 --workers=1` → **2/2 passed (4.1m)**,
+clean exit.
+
+**My briefed hypothesis was the wrong defect class, and the agent said so.** I framed this as a
+consumed-latch bug of the P99 shape. It is effect-lane deferral + a stale handler closure — same
+dev/prod asymmetry (StrictMode's extra work usually flushes the deferred render in time, so dev is
+*flaky* where prod is *deterministic*), different mechanism. The four consumed mount-skip latches
+(`GraphCanvas.tsx:502/513/541`, `RepoWorkspace.tsx:1236`) were checked and are genuinely a different
+class: they make **dev do extra work prod correctly skips**, not prod miss work. Untouched; filed as
+follow-ups, with `RepoWorkspace.tsx:1236`'s extra mount-time `refresh('activation','full')` the most
+likely to matter.
+
+**This closes the P95 loop.** The P95 tester note *"Menu key → Esc → Menu key again ⇒ no menu"*,
+dismissed as a "degenerate mount transient" with "ambiguous evidence", is the same
+one-swallowed-keypress shape. **Three write-offs of this one bug** — P95's tester, my own P99
+"parallel flake" dismissal, and the DX pass's initial full-suite reading — all now explained by one
+mechanism. The lesson is on the board at P105: a flake that reproduces deterministically in a
+production bundle is not a flake.
+
+**Flipping the e2e bundle default is still gated on P104** (the 4-worker post-suite hang, present in
+*both* modes), which is independent of this fix.
 
 ### 🚨 P104 — the 4-worker e2e suite hangs after the last test — PENDING, PRE-EXISTING
 
