@@ -315,7 +315,7 @@ Archived as it read: header `in-progress`, body records the batch AI gate green 
 native USER CHECKPOINTs verified 2026-08-25, with only the merge decision outstanding — and that
 branch is now contained in `dev`.
 
-## ⚡ P88 — Git-action perf round 2 (refresh-scope cluster + repo-handle cache) — in-progress
+## ⚡ P88 — Git-action perf round 2 (refresh-scope cluster + repo-handle cache) — **done** (status confirmed by USER 2026-09-01)
 
 **Current step:** **P88a DONE + committed `2412d8b`** (reviewer APPROVED, no MUST-FIX; tsc clean, eslint 0-err,
 110 vitest pass). 2 SHOULD-FIX = tester gaps for batch-end pass: add `refreshAll('stash')` assertion to stash-pop
@@ -423,6 +423,12 @@ while the individual P85/P86/P87/P87d headers still read `pending` and their bod
 
 ## ✅ PERF + OBSERVABILITY BATCH (P85–P87) — AI GATE GREEN + USER CHECKPOINTS VERIFIED (2026-08-25)
 
+> **Status reconciled 2026-09-01.** The five milestone headings below (P85, P86, P87, P87d, P88)
+> read `pending` / `in-progress` while their bodies recorded both gate halves green and the native
+> USER CHECKPOINTs verified on 2026-08-25. The 2026-09-01 curation sweep flagged the mismatch and
+> declined to resolve it (agents never upgrade a status). **The USER settled it on 2026-09-01:
+> all five are done and verified.** Headings updated accordingly; no body text was changed.
+
 **Full `pnpm gate` re-run CLEAN @ `b802482`: all 8 steps passed (GATE_EXIT=0)** — cargo test/clippy (both
 crates), frontend tsc+build, vitest, eslint (38≤40), file-size ratchet, playwright e2e. Commits: P85 `fde91d7`,
 P86a `e294500`, P86b `88ba86a`, P87a `3bc616a`, M1 `9eceafe`, P87b `298e45b`, P87c `c9a523c`, P87d `b802482`.
@@ -451,7 +457,7 @@ in the peer's 590f2ef (committed pending USER CHECKPOINT, gate not green). Fix d
 "Graph selection", "Git activity") + name-scoped e2e locator. Files: RevealAnnouncer.tsx, GraphSelectionAnnouncer.tsx,
 GitActivityDock.tsx, e2e/20-sidebar-reveal.spec.ts + eslint-directive removals in CommitBox.tsx/RepoWorkspace.tsx.
 
-## 🔴 P87d — fix the pre-existing peer nav test (USER APPROVED 2026-08-23) — pending
+## 🔴 P87d — fix the pre-existing peer nav test (USER APPROVED 2026-08-23) — **done** (status confirmed by USER 2026-09-01)
 `useWorkspaceKeyboard.test.tsx > "nav is inert (and not default-prevented) with no selection or no graph"` fails (peer's
 590f2ef "first arrow seeds selection"). User chose "Fix it too". **Diagnosis: TEST-ONLY fix — the app is
 CORRECT.** `useWorkspaceKeyboard.ts:320-338` implements the intended M2 feature: graph present + `selectedIndex===null`
@@ -463,7 +469,7 @@ ArrowUp/End→9); 40 passed, no app code touched. Committing, then full-gate re-
 
 ---
 
-## ⚡ P85 — Refresh perf: route ref-mutations through echo-suppressed refresh — pending
+## ⚡ P85 — Refresh perf: route ref-mutations through echo-suppressed refresh — **done** (status confirmed by USER 2026-09-01)
 
 **Current step:** DONE (committed) — reviewer APPROVED (no MUST-FIX; A2 arm/disarm + A3 emit both
 scrutinized sound). Targeted checks green (cargo check, clippy, tsc, eslint, 20/20 refresh vitest +
@@ -496,7 +502,7 @@ path.
 counter / instrumentation); echo suppression is robust regardless of round duration; fetch returns
 after a single network round-trip. Full graph/status behavior otherwise unchanged.
 
-## ⚡ P86 — Refresh perf: graph-layout & repo-handle caching, scoped refresh — pending
+## ⚡ P86 — Refresh perf: graph-layout & repo-handle caching, scoped refresh — **done** (status confirmed by USER 2026-09-01)
 
 **Current step:** COMPLETE (AI gate) — P86a `e294500` + P86b `88ba86a`. Follow-ups open: PB-1 (cache
 memory cap), PB-2 (cold-walk store fingerprint), B2 (repo-handle cache). Native wall-time = USER
@@ -557,7 +563,7 @@ branch-create / fetch wall time on a large fixture.
 - NIT (P85): `disarmEcho` late `.finally` after `clearEchoSuppression` on unmount can re-insert one stale
   `disarmUntil` entry per repoId — bounded, self-heals; fix opportunistically.
 
-## ⚡ P87 — Git & hook output observability: live progress + session log — pending
+## ⚡ P87 — Git & hook output observability: live progress + session log — **done** (status confirmed by USER 2026-09-01)
 
 **Current step:** architect contract DONE (`docs/contracts/P87-git-observability.md`); ui-designer DONE
 (`docs/contracts/P87-ui.md` + ui-reference §12.10 — verified purely additive, 71/0, §1–§12.9 intact).

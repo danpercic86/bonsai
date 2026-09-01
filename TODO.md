@@ -285,9 +285,10 @@ proptest banding (`d635464`), doc curation (`0174abf`), 78 → 8 test harnesses 
 
 The curator refused to resolve these itself (it never upgrades a status). All are record-keeping,
 not code:
-- **P88** is headed `in-progress` while its body records the batch AI gate green (2026-08-24) *and*
-  USER CHECKPOINTs verified (2026-08-25). **P85 / P86 / P87 / P87d** are headed `pending` while
-  their bodies read DONE under a banner saying both gate halves are green.
+- ~~**P88** headed `in-progress`, **P85 / P86 / P87 / P87d** headed `pending`, against bodies that
+  read DONE with checkpoints verified 2026-08-25.~~ **RESOLVED by USER 2026-09-01: all five are
+  done and verified.** Headings corrected in `docs/history/todo-archive-2026-09.md` (they were
+  already archived); no body text was changed.
 - **P88/P89/P90/DEP-REFRESH** all say "UNMERGED/UNPUSHED, awaiting merge decision", but
   `git branch --contains` (2026-09-01) shows `feat/pr-local-diff`, `perf/git-action-round2` and
   `chore/dep-refresh-2026-08` are already in `dev` (dep-refresh also in `main`).
