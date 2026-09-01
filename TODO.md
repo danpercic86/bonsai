@@ -36,7 +36,7 @@ bottom. Velocity/gate-cost measurements: `docs/history/velocity-2026-09-01.md`.
 
 ## 🚀 P100 + P101 + DX-e2e — IN PROGRESS (started 2026-09-01, USER: "do P100 and P101 and DX: build-bundle e2e")
 
-**Current step:** slot 1 — `ui-designer` writing `docs/contracts/P100-accent-fill-ui.md` ∥ `senior-dev` on DX built-bundle e2e.
+**Current step:** slot 2 — `senior-dev` implementing P100 + the 3 mock fixtures. DX-e2e is **DONE** (capability delivered opt-in; default deliberately not flipped — see the DX section, and P103/P104 which it uncovered). P100 contract written; its four `ui-reference.md` hunks already applied by the orchestrator and held uncommitted so the doc never claims closure before the CSS ships.
 
 **Sequencing, and why it is not arbitrary.** P100 **must** land before P101. P101's audit method
 (P98 contract §8.8 step 1) requires measuring every declaration against its *composited backdrop
@@ -160,14 +160,81 @@ the known e2e parallel flake at `24-settings-shell.spec.ts:238` — 54/54 passed
 Remaining NIT, deliberately not actioned: `buildHead` hardcodes `branchName: 'main'` for unborn
 where the real `read_head_info` reads HEAD's symbolic target — an accepted mock simplification.
 
-## 🛠️ DX — built-bundle e2e is UNBLOCKED again (filed 2026-09-01)
+## ✅ DX — built-bundle e2e — CAPABILITY DELIVERED, DEFAULT DELIBERATELY NOT FLIPPED (2026-09-01)
 
-P94 abandoned serving a built bundle to Playwright — which would have cut the suite **5.8 min ->
-1.3 min** — on the grounds that "the built bundle is not behaviour-equivalent to dev". **That
-non-equivalence WAS this defect plus the mock infidelity, and both are now fixed.** The stated
-reason for abandoning it no longer holds, so revisit it. Re-verify equivalence first rather than
-assuming: the dev/prod difference was only ever observable through StrictMode's double-mount, so
-check for any *other* effect that depends on running twice before switching the suite over.
+P94's stated reason for abandoning this ("the built bundle is not behaviour-equivalent to dev") no
+longer holds for the reason P94 gave — but the equivalence check **found a real difference**, so the
+default stays on the dev server. Opt-in only: `node scripts/gate.mjs --e2e-bundle`, or
+`E2E_BUNDLE=1 pnpm test:e2e`.
+
+Delivered: `scripts/e2e-server.mjs` (new, 72 lines — Vite's JS API, not a spawned CLI, with
+SIGTERM/SIGINT/stdin-EOF handling); `playwright.config.ts` (`E2E_BUNDLE`/`E2E_BUNDLE_PORT`,
+`gracefulShutdown`); `scripts/gate.mjs` (`--e2e-bundle`, default unchanged); `dist-mock/` ignored.
+Ports: harness 1420, e2e dev 1430, **e2e bundle 1440**.
+
+**Equivalence result: 161 tests, 2 full runs per mode. 160/161 identical pass/fail identity.**
+Bundle mode is **~1.7-2x faster** on summed per-test time (326-363s vs 485-685s); the
+`vite build --mode mock` itself is negligible (~0.6-2.1s warm). Gate artifact reuse is **not**
+possible — the gate's `tsc + vite build` step is **real** mode; the specs need `VITE_MOCK_IPC=1`,
+which only `--mode mock` supplies via `.env.mock`. Documented at the e2e step in `gate.mjs`.
+
+### 🚨 P103 — root-cause `24-settings-shell.spec.ts:238` — PENDING, blocks flipping the default
+
+"Esc dismisses the menu and hands global shortcuts back". Isolated
+(`-g "Esc dismisses the menu" --repeat-each=3 --workers=1`): **bundle 3/3 FAILED, dev 1/3 failed.**
+`getByRole('dialog', {name:'Settings'})` never appears after Esc + Ctrl+,.
+
+**Do not dismiss this as the known parallel flake — the orchestrator already made that mistake once.**
+During the P99 gate run this same test failed and was written off as a parallel flake because it then
+passed 3/3 in isolation. The bundle makes it **deterministic**, which is the P99 lesson repeating:
+React StrictMode's setup->cleanup->setup masks consumed-latch bugs, so dev is *flaky* where prod is
+*broken*. **The built bundle is not a hazard here, it is a better detector** — that is the real
+finding of this DX pass, and it inverts P94's conclusion.
+
+**Corroborating evidence nobody connected until now:** P95's tester residual (this file, ~line 202)
+recorded *Menu key -> Esc -> Menu key again* returning "no menu" on the second open, dismissed as a
+"degenerate mount transient" with "ambiguous evidence" and a request for a real-window check. Same
+Esc-then-reacquire-shortcuts shape, different surface. Two independent sightings written off as
+flake, now reproducible on demand. Start from the suppression/latch state that survives an Esc.
+
+### 🚨 P104 — the 4-worker e2e suite hangs after the last test — PENDING, PRE-EXISTING
+
+**Reproducible in BOTH modes and observed before any DX change** (the very first run, stock config on
+`pnpm dev:mock`, hit a 10-min timeout having reached test 161). The suite completes all 161 tests then
+**hangs before printing the summary line**; both full runs had to be killed. Does **not** happen
+single-worker. The board's 407-566s gate baseline implies e2e used to complete, so this is a
+regression from something outside the DX change. **Consequence: full-suite e2e wall clock is
+currently unverifiable, so the "5.8 min -> 1.3 min" claim cannot be confirmed either way.** Run e2e
+single-worker until fixed.
+
+Two costs already isolated, so P104 does not start from zero: **Edge teardown is ~116s per browser**
+(30s graceful-close timeout, then 85s force-kill to process exit; timestamped under
+`DEBUG=pw:browser`) — a fixed per-run floor that caps the "1.3 min" target regardless of bundle mode.
+And one hang variant is **already fixed** in this pass: the old `command: 'pnpm dev:mock'` orphaned
+the server on Windows (port stayed bound, Playwright waited on it) — 446s wall for 178s of testing.
+In-process server + `gracefulShutdown` cut teardown to 0.3s, which accounted for ~4.5 min of the
+original "e2e is 5.8 min" figure.
+
+### Dev/prod gaps found by step 3 (recorded so P103 has a suspect list)
+
+Latches where **dev does extra work prod skips** — `if (!ref.current) { ref.current = true; return; }`
+with no cleanup reset, so StrictMode's second setup passes the latch:
+`src/graph/GraphCanvas.tsx:504` (activeMountRef), `:514` (firstDataPaintSkippedRef), `:543`
+(metricsMountRef) — an extra `resize()`/`paintNow()` at mount in dev only; and
+`src/components/RepoWorkspace.tsx:1237` (activeFlipRef) — an extra `refresh('activation','full')` at
+mount in dev only (**latent:** if a spec ever relied on that refresh, prod would not do it).
+Correct in both (`if (ref.current) return;`): `RepoWorkspace.tsx:1216`, `src/App.tsx:609`, `:697`.
+Benign prev-value baselines: `OnboardingOverlay.tsx:86`, `useReadOverlays.ts:150`, `CommitBox.tsx:156`,
+`PrDetailContainer.tsx:111-112`, `AiActivityPanel.tsx:104`, `RepoWorkspace.tsx:203`.
+
+A dev/prod gap **besides** StrictMode: `import.meta.env.DEV`-gated code absent from a production
+bundle — `ConflictEditor.tsx:73` (`window.__bonsai.conflictSelfTest`), `GraphCanvas.tsx:287`/`:629`
+(`[bonsai] frames`, `[bonsai] scroll-test` logs), `selfTest.ts:300`, `conflictSelfTest.ts:143`,
+`useCoalescedRefresh.ts:12` (`__bonsaiRefreshRounds`), `settings/GitConfigAdvanced.tsx:36`,
+`SettingsRow.tsx:72`, `SettingsSegmented.tsx:37`. **No e2e spec consumes `window.__bonsai` or those
+logs** (grep for `__bonsai` in `e2e/` is empty), so none is load-bearing for the suite today — but a
+future spec that reaches for them would pass in dev and fail in a bundle.
+`GraphCanvas.tsx:136` uses `DEV || MOCK_MODE`, so graph stats stay on in a mock bundle.
 
 ## ✅ P95 — a11y: graph scroller semantics, keyboard reachability, toolbar contrast — DONE + VERIFIED (`f9a9209`, USER 2026-09-01)
 
@@ -253,6 +320,25 @@ per-selector figures above):
   row-menu is unreachable that way.
 - `.diff-intra-toggle` off-state label is `--text-3` on the transparent overlay toolbar (≈4.0:1),
   under the 4.5:1 AA floor; `--text-2` fixes it. Shared overlay chrome, not P93's doing.
+
+## 📋 P102 — `--danger` fill contrast — PENDING (filed 2026-09-01 from P100's survey)
+
+Same defect class as P100, deliberately **not** folded into it (P100 contract §6-C; orchestrator
+agreed — one defect class per milestone is what kept P95/P98/P100 reviewable).
+
+`.btn-danger` (`src/styles/controls.css:70-71`) and `src/styles/updates.css:114-116` put a
+**hardcoded `#ffffff`** on `var(--danger)`. `ui-reference.md` §6 already measures that pair at
+**3.70:1 in dark** — below the 4.5:1 read-text bar, on destructive-action buttons where misreading
+the label is the worst case.
+
+**The remedy is already shipped in-repo**, so this is a small pass: `partial-staging.css:104` uses
+the `--bg-0`-ink flip on `--danger` at **4.80:1** dark. P100 establishes the precedent and the
+decision rule (reference §2 ACCENT FILL bullet, recipe 2: an action keeps its loud hue fill and
+flips the ink; only *states* get demoted to `--selection`). Expect a `--danger-text` token mirroring
+`--accent-text`'s per-theme split rather than two inline literals.
+
+Scope check before implementing: sweep for every `#fff`/`#ffffff` on a `var(--danger)` fill, not
+just these two — P100's survey found 7 accent fills where the seed list had 4.
 
 ## 🚨 P101 — audit the 122 unaudited `--text-3` uses — PENDING (found 2026-09-01)
 
