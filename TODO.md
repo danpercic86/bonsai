@@ -190,7 +190,7 @@ Method to use (ui-designer is writing it into the P98 contract as the durable de
 each of the 122 against the "**must the user read it to act?**" test, not against how the text looks
 — small/uppercase/letter-spaced does not make text decorative.
 
-## ⏳ P98 — `--text-3` read-text sweep — AWAITING USER CHECKPOINT
+## ✅ P98 — `--text-3` read-text sweep — DONE + VERIFIED (`be668e0`, USER 2026-09-01)
 
 **Implemented; ui-designer APPROVED after one MUST-FIX. AI gate green; USER CHECKPOINT owed.**
 
@@ -225,7 +225,7 @@ CSSOM), not a React-mounted option.
   each label's left edge). Below the 4px grain and it cannot reflow the `flex: none` panes, but it is
   not a no-op — this is a USER CHECKPOINT item, not something the AI gate can clear.
 
-**USER CHECKPOINT owed:** (a) the 1px border appearing in the merge editor looks intentional and
+**USER CHECKPOINT — CONFIRMED by the user 2026-09-01.** Checked: (a) the 1px border appearing in the merge editor looks intentional and
 doesn't crowd the panes; (b) on the *active* palette/combobox row the hint's colour step is now
 exactly **1.00x** by design — subordination rests on 11px-vs-13px + right-edge placement, which is
 the one place perception can disagree; (c) the 6 unreachable selectors read correctly in the real app.
