@@ -9,6 +9,7 @@ import type { PendingForceSubmodule } from './dialogs/SubmoduleDialogs';
 import { WorkspaceGraphPane } from './WorkspaceGraphPane';
 import { WorkspaceRightPanel } from './WorkspaceRightPanel';
 import { isUsableRepo, shortOid } from './workspaceUtils';
+import { prBaseRefOptions, prCompareRefOptions } from './repoWorkspace/prRefOptions';
 import { createWorkspaceMenus } from './workspaceMenus';
 import type { DiffOverlayMeta } from './DiffOverlay';
 import type { DiffScope } from './DiffFileTree';
@@ -1432,15 +1433,12 @@ export function RepoWorkspace({
   // P78: branch suggestions + base hint for the PR create form. Compare = local
   // branches; Base = local + remote-tracking branches. Base hint prefers the head
   // branch's upstream, then a local main/master, else empty.
+  // P78/P100: PR ref-field options (short-oid hints) live in ./repoWorkspace/prRefOptions.
   const prCompareOptions = useMemo<ComboboxOption[]>(
-    () => (branches?.local ?? []).map((b) => ({ value: b.name, label: b.name })),
+    () => prCompareRefOptions(branches),
     [branches],
   );
-  const prBaseOptions = useMemo<ComboboxOption[]>(() => {
-    const locals = (branches?.local ?? []).map((b) => ({ value: b.name, label: b.name }));
-    const remotes = (branches?.remote ?? []).map((b) => ({ value: b.name, label: b.name }));
-    return [...locals, ...remotes];
-  }, [branches]);
+  const prBaseOptions = useMemo<ComboboxOption[]>(() => prBaseRefOptions(branches), [branches]);
   const prDefaultBase = useMemo<string | null>(() => {
     if (headBranch?.upstream != null && headBranch.upstream !== '') return headBranch.upstream;
     const localNames = (branches?.local ?? []).map((b) => b.name);

@@ -178,7 +178,9 @@
 
 .conflict-editor-mode-btn {
   appearance: none;
-  border: none;
+  /* P100 §3.1: transparent 1px border so the .is-active `border-color: var(--accent)`
+     has a box to colour and both states keep the same 24px outer height. */
+  border: 1px solid transparent;
   background: var(--bg-0);
   color: var(--text-2);
   font-size: 11px;
@@ -197,8 +199,14 @@
 }
 
 .conflict-editor-mode-btn.is-active {
-  background: var(--accent);
-  color: var(--accent-fg, #fff);
+  /* P100 + P98 §8.9 NIT-1: `--accent-fg` was never a token, so this rule survived only on
+     its hardcoded #fff fallback — and #fff on --accent is 3.22:1 dark. House segmented
+     recipe (ui-reference §12.3.2): --text-1 on --selection = 9.36:1 / 13.29:1; the 600
+     weight and the accent border are the non-colour carriers. */
+  background: var(--selection);
+  color: var(--text-1);
+  font-weight: 600;
+  border-color: var(--accent);
 }
 
 /* P12d: side-by-side pane labels (Ours | Theirs/Result). */

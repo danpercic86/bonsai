@@ -17,7 +17,10 @@
   --text-3: #6b7280;
   --border: #2c313a;
   --accent: #4f8cff;
-  --accent-text: #ffffff;
+  /* P100: was #ffffff — 3.22:1 on the --accent fill in dark. Near-black ink on the dark
+     theme's light-blue accent is 5.52:1 (ui-reference §5 lane 0, symmetric). Same device
+     as §6's luminance-adaptive branch pill and .diff-stage-float button. */
+  --accent-text: #16181d;
   --selection: #2a3b57;
   --danger: #e5534b;
   --success: #57ab5a;
@@ -102,8 +105,9 @@
   --accent: #2f6fe4;
   --accent-text: #ffffff;
   --selection: #dbe7ff;
-  /* --accent-text is intentionally identical to the dark palette's value
-     (ui-reference §2: both themes use white text on the blue accent). */
+  /* P100: the two themes deliberately DIFFER. Dark uses #16181d on its light-blue accent
+     (5.52:1); light keeps #ffffff on its darker accent (4.65:1). See ui-reference §2's
+     ACCENT FILL bullet, recipe 2 — an action keeps the fill and flips the ink. */
   --danger: #d13438;
   --success: #1a7f37;
   --intra-add: #1a7f37;

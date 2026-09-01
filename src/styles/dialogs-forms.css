@@ -148,7 +148,9 @@
 .wt-copy-toggle button {
   font-size: 11px;
   padding: 2px 8px;
-  border: none;
+  /* P100 §3.2: transparent 1px border so .wt-copy-toggle-on's `border-color:
+     var(--accent)` has a box to colour and both states share one height. */
+  border: 1px solid transparent;
   background: var(--bg-2);
   color: var(--text-2);
   cursor: pointer;
@@ -159,9 +161,14 @@
   opacity: 0.6;
 }
 
-.wt-copy-toggle-on {
-  background: var(--accent) !important;
-  color: #fff !important;
+/* P100 + P98 §8.9 NIT-2: was `background: var(--accent) !important; color: #fff !important`
+   — a hardcoded literal on an accent fill at 3.22:1 dark. Selector qualified to (0,2,1) so
+   it beats `.wt-copy-toggle button` (0,1,1) on specificity; both !important are dropped. */
+.wt-copy-toggle button.wt-copy-toggle-on {
+  background: var(--selection);
+  color: var(--text-1);
+  font-weight: 600;
+  border-color: var(--accent);
 }
 
 .wt-copy-warn {
@@ -210,9 +217,11 @@
 }
 
 .combobox-option--active {
-  background: var(--accent);
-  /* P98: token hygiene — same computed value as the #fff literal it replaces. */
-  color: var(--accent-text);
+  /* P100: the --accent fill put a 3.22:1 dark label on this row (P98 §2.2). House
+     selected-row recipe instead; the inset bar is the shape carrier (ui-reference §2). */
+  background: var(--selection);
+  color: var(--text-1);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .combobox-option--disabled {
@@ -223,6 +232,7 @@
 .combobox-option--disabled.combobox-option--active {
   background: transparent;
   color: var(--text-3);
+  box-shadow: none; /* P100: a neutralised row must not keep the accent bar */
 }
 
 .combobox-option-label {
@@ -239,9 +249,10 @@
 }
 
 .combobox-option--active .combobox-option-hint {
-  /* P98 §3 row 6a: drops a hardcoded rgba literal; on the --accent fill white is the
-     ceiling (3.22:1 dark / 4.65:1 light — see contract §5-A). */
-  color: var(--accent-text);
+  /* P100: was var(--accent-text) at the 3.22:1 dark ceiling of the old --accent fill.
+     On --selection, --text-2 measures 5.01:1 dark / 6.42:1 light and the
+     label/hint colour step is restored (P98 §3.3 flattened it to 1.00x). */
+  color: var(--text-2);
 }
 
 /* P98 AC19 (§8.4): the disabled exemption applies to the hint too — the child rule would

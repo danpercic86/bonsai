@@ -58,7 +58,7 @@ CSS custom properties on `:root` (dark, default) and `[data-theme="light"]`.
 | `--text-3` | `#6b7280` | `#8a919e` | muted/labels — **see the contrast note below** |
 | `--border` | `#2c313a` | `#dcdfe5` | 1px pane/row borders |
 | `--accent` | `#4f8cff` | `#2f6fe4` | primary buttons, links, focus ring |
-| `--accent-text` | `#ffffff` | `#ffffff` | text on accent |
+| `--accent-text` | `#16181d` | `#ffffff` | text on a solid `--accent` fill (**5.52:1** dark / **4.65:1** light) — the two themes differ deliberately, P100 |
 | `--selection` | `#2a3b57` | `#dbe7ff` | selected row background |
 | `--danger` | `#e5534b` | `#d13438` | errors, destructive |
 | `--success` | `#57ab5a` | `#1a7f37` | staged/added |
@@ -80,9 +80,10 @@ unaudited remainder: `.blame-date`, `.file-history-date` and `.reflog-date`
 (`src/styles/blame-history.css`) are **timestamps on the `--bg-0` `.diff-overlay` surface at 3.67:1
 dark / 3.17:1 light** — read text by this section's own rule, in a file neither sweep opened. The
 full audit is **P101**; its classification method is specced in
-`docs/contracts/P98-text3-readtext-ui.md` §8.8. **Two known AA shortfalls remain** — white text on
-the `--accent` fill in the dark theme (see the KNOWN SHORTFALL bullet), and the unaudited `--text-3`
-remainder. **New surfaces must not add to any of these**:
+`docs/contracts/P98-text3-readtext-ui.md` §8.8. **One known AA shortfall remains** — the unaudited
+`--text-3` remainder. The accent-fill shortfall is **closed** (P100, 2026-09-01): the full survey
+found seven text-bearing accent fills and fixed all seven; see the ACCENT FILL bullet for the two
+recipes that replaced it. **New surfaces must not add to it**:
 
 - `--text-3` is **3.68:1** on `--bg-0`, **3.38:1** on `--bg-1` and **2.98:1** on `--bg-2` (dark);
   **3.17:1**, **2.96:1** and **2.73:1** respectively (light). On `--selection` it is **2.33:1** /
@@ -107,7 +108,9 @@ remainder. **New surfaces must not add to any of these**:
     `.diff-overlay-kind`, `.diff-tree-count`, `.conflict-editor-split-label`, `.wtctx-branch`,
     `.wtctx-blocked`, `.combobox-option-hint`, `.command-palette-option-hint`,
     `.pr-merge-method-desc` (§12.9). Plus the two active-state hint overrides, which moved from a
-    hardcoded `rgba(255,255,255,.8)` to `var(--accent-text)`.
+    hardcoded `rgba(255,255,255,.8)` to `var(--accent-text)` in P98, and then to **`--text-2`** in
+    P100 when the `--accent` fill under them was retired for `--selection` (see the ACCENT FILL
+    bullet).
   - **Sanctioned decorative — audited and deliberately left at `--text-3`.** This list is
     exhaustive; a `--text-3` use *not* on it and *not* among the eight above is **unclassified**,
     not approved.
@@ -149,22 +152,42 @@ remainder. **New surfaces must not add to any of these**:
   (`.submodule-badge-ok` **4.76** / **4.06**, `.submodule-badge-warn` ≈**5.4** / **3.94**) was
   already fixed in P73 by §11's pill recipe. **There is no remaining sanctioned use of
   hue-as-text-over-its-own-tint anywhere in the app; a new one is a defect.**
-- **KNOWN SHORTFALL — text on a solid `--accent` fill is sub-AA in dark (measured 2026-09-01,
-  P98).** `--accent-text` / `#ffffff` on `background: var(--accent)` is **3.22:1** dark /
-  **4.65:1** light. Every accent-filled active/selected row therefore has a **primary label below
-  4.5:1 in the default theme** — `.combobox-option--active` and
-  `.command-palette-option.is-active` at minimum. White is the ceiling, so **no** foreground fixes
-  this; only the fill can. Two consequences, both binding:
-  1. **Never dim text on a hue fill with a hardcoded `rgba(255,255,255,α)`.** P98 removed the two
-     instances (`rgba(255,255,255,0.8)` on the two option hints, **2.61:1** dark / **3.56:1**
-     light). If a hint must sit on an accent fill, it takes `var(--accent-text)` — the same colour
-     as the row's label — and subordination is carried by size (11px vs 13px) and right-edge
-     placement, not by opacity.
-  2. **A new surface must not add an accent-filled row carrying read text.** The house
-     selected-row recipe is `background: var(--selection)` with `--text-1` label (**9.36:1** dark /
-     **13.29:1** light) and `--text-2` secondary (**5.01** / **6.42**) — both pass in both themes,
-     and an `inset 2px 0 0 var(--accent)` leading bar keeps the accent emphasis. Retro-fitting the
-     existing accent-filled rows to that recipe is the open follow-up.
+- **ACCENT FILL — two recipes, and the retracted "white is the ceiling" claim (P98, revised and
+  closed 2026-09-01, P100).** `--accent-text` on `background: var(--accent)` was `#ffffff` in both
+  themes and measured **3.22:1** dark / **4.65:1** light, putting a sub-AA primary label on every
+  accent-filled surface in the default theme. P98's conclusion that *"white is the ceiling, so only
+  the fill can fix this"* was **wrong**: white is the ceiling only among *lighter* inks. Going
+  darker passes — `#16181d` on the dark accent is **5.52:1** (§5 lane 0, symmetric), and
+  `.diff-stage-float button` and §6's luminance-adaptive branch pill already shipped that device.
+  P100 surveyed all 7 text-bearing accent fills (plus 11 decorative ones, which are fine at the 3:1
+  graphics bar) and closed the class with two recipes. **Pick by what the surface is:**
+  1. **A state (selected row, active option, segment) ⇒ change the fill.** House selected-row
+     recipe: `background: var(--selection)` with `--text-1` label (**9.36:1** dark / **13.29:1**
+     light) and `--text-2` secondary (**5.01** / **6.42**). Because `--selection` vs `--bg-1` is
+     only ~1.3:1, a **non-colour carrier is mandatory**: an `inset 2px 0 0 var(--accent)` leading
+     bar for list rows (`.diff-tree-selected`, the §12.1 rail, `.combobox-option--active`,
+     `.command-palette-option.is-active`), or §12.3.2's `font-weight: 600` +
+     `border-color: var(--accent)` for segmented controls (`.conflict-editor-mode-btn.is-active`,
+     `.wt-copy-toggle-on`). Never `font-weight` on a pointer-synced list row — it reflows the label
+     under the cursor. A neutralised disabled+active row must also reset `box-shadow: none`.
+  2. **An action (primary button) ⇒ keep the fill, flip the ink.** `--accent-text` is `#16181d`
+     dark / `#ffffff` light — deliberately different per theme, because the dark accent is a light
+     blue. `.btn-primary` is the only consumer. A hue fill that must stay loud keeps its hue and
+     takes dark ink; it does **not** get demoted to `--selection`.
+     Hovering a kept hue fill: **never `filter: brightness()`** — it moves ink and fill together, so
+     it fails in whichever theme has least headroom (`.btn-primary` light went 4.65 -> 3.95). Use
+     `background: color-mix(in srgb, <hue> 92%, var(--text-1))`: it brightens in dark, deepens in
+     light, leaves the ink alone, and adds no literal hex (P100: **5.99:1** dark / **5.15:1** light).
+     The same device is what P102 should use for `.btn-danger`.
+  3. **Never dim text on a hue fill with a hardcoded `rgba(255,255,255,α)`.** P98 removed the two
+     instances (**2.61:1** dark / **3.56:1** light). Subordination on a filled row is carried by
+     size (11px vs 13px) and right-edge placement, never by opacity — and on a `--selection` fill
+     it is carried by the real `--text-1` ↔ `--text-2` colour step.
+  4. **The same defect exists for `--danger` fills and is not yet fixed** — `.btn-danger`
+     (`controls.css:70`) and `updates.css:114` put a hardcoded `#ffffff` on `var(--danger)`, which
+     §6 measures at **3.70:1** in dark. `partial-staging.css:104` already ships the ink flip
+     (`--bg-0` on `--danger`, **4.80:1** dark). Tracked as **P102**; a new `#fff`-on-hue fill
+     anywhere is a defect.
 - **`--accent` as *text* never sits on a `--selection` fill (added 2026-08-20, P69l).**
   `color: var(--accent)` is a house-wide pattern (~30 call sites) and is fine on `--bg-0` / `--bg-1`
   / `--bg-2`, but over `--selection` it measures **2.6:1** dark / **3.6:1** light (independently

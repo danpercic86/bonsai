@@ -93,7 +93,13 @@
 }
 
 .btn-primary:hover:not(:disabled) {
-  filter: brightness(1.1);
+  /* P100 AC7: `filter: brightness(1.1)` brightened fill AND ink together, which in the
+     light theme pushed white-on-accent from 4.65:1 down to 3.95:1 (derived from the token hexes via the sRGB filter model, not mounted). A fill-only
+     lift toward the theme's own --text-1 is brighter in dark and deeper in light, so the
+     ink keeps its headroom in both: 6.01:1 dark / 5.13:1 light. Contract §4.2 prescribed
+     mixing toward a literal #ffffff, which still measures 4.04:1 in light AND would add a
+     hardcoded hex outside tokens-and-base.css (AC9) — mixing toward --text-1 instead. */
+  background: color-mix(in srgb, var(--accent) 92%, var(--text-1));
 }
 
 .btn-primary:disabled {

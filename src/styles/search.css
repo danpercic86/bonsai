@@ -204,9 +204,10 @@
   cursor: pointer;
 }
 .command-palette-option.is-active {
-  background: var(--accent);
-  /* P98: token hygiene — same computed value as the #fff literal it replaces. */
-  color: var(--accent-text);
+  /* P100: see dialogs-forms.css .combobox-option--active — same recipe, same reason. */
+  background: var(--selection);
+  color: var(--text-1);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .command-palette-option.is-disabled {
   color: var(--text-3);
@@ -215,6 +216,7 @@
 .command-palette-option.is-disabled.is-active {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
   color: var(--text-3);
+  box-shadow: none; /* P100 */
 }
 
 .command-palette-option-title {
@@ -231,9 +233,8 @@
   font-variant-numeric: tabular-nums;
 }
 .command-palette-option.is-active .command-palette-option-hint {
-  /* P98 §3 row 7a: drops a hardcoded rgba literal; on the --accent fill white is the
-     ceiling (3.22:1 dark / 4.65:1 light — see contract §5-A). */
-  color: var(--accent-text);
+  /* P100: was var(--accent-text); --text-2 on --selection = 5.01:1 / 6.42:1. */
+  color: var(--text-2);
 }
 
 /* P98 AC19 (§8.4): the disabled exemption applies to the hint too — the child rule would
