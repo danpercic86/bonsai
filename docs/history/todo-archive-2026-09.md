@@ -6,9 +6,13 @@ line below stood in `TODO.md` exactly as written; nothing was summarized away.
 
 Curator's merge-state note (verified 2026-09-01 with `git branch --contains`, reported as fact, not
 as a status upgrade): the branches several parts below record as "UNMERGED/UNPUSHED, awaiting merge
-decision" are **now contained in `dev`** — `feat/pr-local-diff` (P89/P90), `perf/git-action-round2`
-(P88), `chore/dep-refresh-2026-08` (DEP REFRESH; also in `main`). `feat/p91-observability` is still
-contained in no other branch, matching the live P91 board entry.
+decision" are **now contained in BOTH `dev` and `main`** — `feat/pr-local-diff` (P89/P90),
+`perf/git-action-round2` (P88) and `chore/dep-refresh-2026-08` (DEP REFRESH) all verified
+2026-09-01 with `git merge-base --is-ancestor` against both branches. (An earlier version of this
+note said only dep-refresh had reached `main`; re-verification showed all three had.) The USER
+confirmed on 2026-09-01 that the merge decision is settled, so each stale "UNMERGED/UNPUSHED" line
+below now carries an inline correction. `feat/p91-observability` is still contained in no other
+branch, matching the live P91 board entry.
 
 Board headers were archived exactly as they read, including the header-vs-body contradictions listed
 in the curator report (e.g. P88 headed `in-progress` while its body records both gate halves green;
@@ -222,7 +226,7 @@ Follow-ups filed, not blocking:
 per-branch states, no-auto-switch, connect, links, live-region). Reviewer + ui-designer both approved
 (MUST-FIX push-refresh fixed). **USER CHECKPOINT VERIFIED (2026-08-25):** user confirmed on the native
 app — Checks tab shows live per-check detail and refreshes on fetch/pull/push. Committed `b0e880c` on
-`feat/pr-local-diff` (branch still UNMERGED/UNPUSHED — see P89 merge decision).
+`feat/pr-local-diff` (branch still UNMERGED/UNPUSHED — see P89 merge decision). **[CORRECTED 2026-09-01 — this branch is now contained in BOTH `dev` and `main`; verified with `git merge-base --is-ancestor`. The merge decision was made; the text above is the historical record.]**
 
 **Follow-ups (deferred):** P90.1 per-check timing fields; header commit-summary text; command-palette
 `Refresh checks` / `Show checks`; mock fixtures for noForge/error reachable by click.
@@ -296,13 +300,13 @@ GREEN** after ratchet fix `48ae17f` (split pr_diff.rs tests → pr_diff_tests.rs
 nextest+doctests+clippy 0-warn, eslint, file-size OK, vitest, tsc+build all pass. 2 e2e fails
 (`16-history-undo-health`, `17-ai-dock ?aiFlood`) are **pre-existing flakes** — pass 16/16 isolated;
 P89 touches no e2e/AI-dock/health code. Commits on `feat/pr-local-diff` (off main): `1e0dfff` `23285d7`
-`71171d4` `a0f0575` `a988388` `48ae17f`. **NOT merged/pushed.**
+`71171d4` `a0f0575` `a988388` `48ae17f`. **NOT merged/pushed.** **[CORRECTED 2026-09-01 — this branch is now contained in BOTH `dev` and `main`; verified with `git merge-base --is-ancestor`. The merge decision was made; the text above is the historical record.]**
 **USER CHECKPOINT VERIFIED (2026-08-25):** user confirmed everything OK on the native app (Azure +
 GitHub PR changed-files list + correct three-dot counts + expand-to-diff; fork-head auto-fetch;
-offline/Retry). Branch `feat/pr-local-diff` still **NOT merged/pushed** — awaiting merge decision.
+offline/Retry). Branch `feat/pr-local-diff` still **NOT merged/pushed** — awaiting merge decision. **[CORRECTED 2026-09-01 — this branch is now contained in BOTH `dev` and `main`; verified with `git merge-base --is-ancestor`. The merge decision was made; the text above is the historical record.]**
 Follow-ups SF1+SF2+NIT **DONE + committed `fe23d08`** (reviewer APPROVED; tsc clean, 24 vitest,
 clippy -D clean, 6 azure::refs tests incl. 3 new TFS-fallback cases). **All P89 follow-ups cleared.**
-Branch `feat/pr-local-diff` (8 P89 commits) stays UNMERGED/UNPUSHED per user. Nothing left on P89.
+Branch `feat/pr-local-diff` (8 P89 commits) stays UNMERGED/UNPUSHED per user. Nothing left on P89. **[CORRECTED 2026-09-01 — this branch is now contained in BOTH `dev` and `main`; verified with `git merge-base --is-ancestor`. The merge decision was made; the text above is the historical record.]**
 
 ---
 
@@ -338,7 +342,7 @@ store cap; byte-identical emit; bonsai 293). **P88a test-gap fill committed `709
 clippy 0-warn workspace, eslint 38≤40, file-size ok, vitest 2288 passed, tsc+build clean, playwright e2e 159 passed
 (1 skip; 1 flake = `e2e/07-rebase.spec.ts` timing, PASSES isolated 1.8m — rebase is outside the P88a matrix, not a
 regression). Commits: contract `31bf4bd`, P88a `2412d8b`, B2a `f4c060c`, B2b `52f5d74`, PB-1 `cc5fdac`, P88a-tests
-`709c9cc`. Branch `perf/git-action-round2` (off c0825a3/1.3.0), NOT merged/pushed. **PENDING: native USER CHECKPOINTs
+`709c9cc`. Branch `perf/git-action-round2` (off c0825a3/1.3.0), NOT merged/pushed. **[CORRECTED 2026-09-01 — this branch is now contained in BOTH `dev` and `main`; verified with `git merge-base --is-ancestor`. The merge decision was made; the text above is the historical record.]** **PENDING: native USER CHECKPOINTs
 + merge decision.** User confirmed "go ahead with B2 after this" (2026-08-24). **Then user chose "Do FU-B2c now"
 (2026-08-24) → FU-B2c IN PROGRESS. Architect design DONE (contract §FU-B2c): Option 1 = move owned `Repository`
 in/out through new `run_with_git_timeout_owned` + `with_repo_timed`/`_mut_timed` wrappers (Send-only, one owner at a
@@ -354,7 +358,7 @@ Warm status+graph round now opens **0** (was 2/call). bonsai-core 1489, bonsai 2
 push/pop/drop, commit, add/remove remote+submodule, delete local branch, file-by-file conflict resolve all
 snappy + consistent UI (no stale ahead/behind after commit); no regression in checkout/fetch/pull/push/rebase/merge.
 Branch `perf/git-action-round2` tip = `059caf3` (10 commits off `c0825a3`/1.3.0) — **still UNMERGED/UNPUSHED,
-awaiting merge decision** (checkpoints done, merge is a separate call).
+awaiting merge decision** (checkpoints done, merge is a separate call). **[CORRECTED 2026-09-01 — this branch is now contained in BOTH `dev` and `main`; verified with `git merge-base --is-ancestor`. The merge decision was made; the text above is the historical record.]**
 
 **NEW FOLLOW-UPS (this batch):**
 - **FU-B2c (perf, MED — the remaining B2 win):** hoist `with_repo` OUTSIDE `run_with_git_timeout` for `get_status`+
@@ -883,14 +887,16 @@ modules (a real refactor with call-graph impact, not a leaf move).
 
 ---
 
-## Part 33 — P84 (sidebar reveal-in-graph + tag auto-sync) — record gap, archived on user instruction 2026-09-01
+## Part 33 — P84 (sidebar reveal-in-graph + tag auto-sync) — **done + verified** (checkpoint confirmed by USER 2026-09-01)
 
 **Read this entry before assuming P84 is done.**
 
 - P84's **code shipped**: `cce9eb9`, `90b315c`, `1803391`, merge-back `6868be6`.
 - P84 **never had a board section** in `TODO.md` and never had a `docs/history/` entry.
-- Its **USER CHECKPOINT was therefore never recorded** and cannot be verified from the record.
-  Nothing in this archive should be read as the checkpoint having passed.
+- Its **USER CHECKPOINT was never recorded at the time** and could not be verified from the record.
+  **RESOLVED 2026-09-01: the USER confirmed that P84's checkpoint DID pass.** Recorded on the
+  user's direct confirmation on that date — not from a contemporaneous 2026-08 record, which
+  never existed. P84 is therefore **done and verified**.
 - Its two contracts were moved to `docs/contracts/archive/` on **2026-09-01**, on the user's
   explicit instruction ("cleanup everything until P91, archive history"), purely to close the
   dangling record gap — **not** because the checkpoint was confirmed:

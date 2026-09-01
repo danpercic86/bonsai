@@ -289,14 +289,18 @@ not code:
   read DONE with checkpoints verified 2026-08-25.~~ **RESOLVED by USER 2026-09-01: all five are
   done and verified.** Headings corrected in `docs/history/todo-archive-2026-09.md` (they were
   already archived); no body text was changed.
-- **P88/P89/P90/DEP-REFRESH** all say "UNMERGED/UNPUSHED, awaiting merge decision", but
-  `git branch --contains` (2026-09-01) shows `feat/pr-local-diff`, `perf/git-action-round2` and
-  `chore/dep-refresh-2026-08` are already in `dev` (dep-refresh also in `main`).
-- **P84's USER CHECKPOINT was never recorded**, though its code shipped (`cce9eb9`, `90b315c`,
-  `1803391`, `6868be6`). It never had a board section. On the user's 2026-09-01 instruction its two
-  contracts were moved to `docs/contracts/archive/` and the gap written up in
-  `docs/history/todo-archive-2026-09.md` Part 33 — **the checkpoint is still unverified**; the
-  archive says so explicitly and does not claim it passed.
+- ~~**P88/P89/P90/DEP-REFRESH** all say "UNMERGED/UNPUSHED, awaiting merge decision".~~
+  **RESOLVED by USER 2026-09-01: the merge decision is settled.** Re-verified the same day with
+  `git merge-base --is-ancestor`: `feat/pr-local-diff`, `perf/git-action-round2` and
+  `chore/dep-refresh-2026-08` are contained in **both `dev` and `main`** (all three, not just
+  dep-refresh as first noted). The six stale lines in
+  `docs/history/todo-archive-2026-09.md` now carry inline corrections; the historical text was kept.
+  `feat/p91-observability` remains in no other branch — consistent with the live P91 entry.
+- ~~**P84's USER CHECKPOINT was never recorded.**~~ **RESOLVED by USER 2026-09-01: the user
+  confirmed P84's checkpoint DID pass**, so P84 is done and verified. Recorded on that direct
+  confirmation, not on a contemporaneous 2026-08 record — none was ever written. Its code shipped
+  (`cce9eb9`, `90b315c`, `1803391`, `6868be6`); its two contracts are in
+  `docs/contracts/archive/` and `todo-archive-2026-09.md` Part 33 carries the corrected status.
 - No contract file was ever written for **P94**.
 
 ### Hoisted off milestones archived 2026-09-01 (still open)

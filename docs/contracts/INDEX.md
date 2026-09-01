@@ -86,9 +86,9 @@ USER-CHECKPOINT split is in `docs/history/milestones-mvp.md`. Coverage:
   **not** on a confirmed checkpoint; dispositions in `docs/history/todo-archive-2026-09.md`
   Parts 33 and 35):
   - `P84-sidebar-reveal-and-tag-autosync.md` and `P84-reveal-in-graph-ui.md` — P84's code shipped
-    (`cce9eb9`/`90b315c`/`1803391`/`6868be6`) but its **USER CHECKPOINT was never recorded**;
-    archived on user instruction to close the record gap. Status: `code shipped; checkpoint
-    unrecorded`.
+    (`cce9eb9`/`90b315c`/`1803391`/`6868be6`). Its USER CHECKPOINT was never recorded at the time,
+    but **the user confirmed on 2026-09-01 that it DID pass**. Status: `done + verified`
+    (checkpoint confirmed by USER 2026-09-01, not from a contemporaneous 2026-08 record).
   - `graph-design-review-2026-08-22.md` — **M1 (`role="grid"` + `aria-rowcount` +
     `aria-activedescendant`) is SUPERSEDED by P95 and forbidden by `ui-reference.md` §4.1
     (`:250-252`) — do not implement.** M2/M3/M4/S2/S3/N1/N2 resolution unverified (live line in
