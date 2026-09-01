@@ -11,6 +11,9 @@ import { isPrSlotKey, parsePrSlotPath } from './prSlotKey';
 import type { PrOverlayCtx } from './types';
 import type { WorkdirSection } from '../StatusSection';
 
+/** P96: user-visible stand-in for the path of a malformed `pr:` slot key. */
+export const UNKNOWN_PR_PATH = '(unknown file)';
+
 export function deriveOverlayMeta(
   key: string,
   status: StatusSnapshot | null,
@@ -37,8 +40,12 @@ export function deriveOverlayMeta(
   // P93: the path comes from the ctx side-channel (which also carries
   // status/origPath); the key parse is the fallback for a remount that lost it.
   if (isPrSlotKey(key)) {
+    // P96: a malformed `pr:` key (fewer than three segments) has no recoverable
+    // path — surface a clearly-degraded label rather than the raw key, matching
+    // how the section fallback below degrades an unresolvable entry (status
+    // null, no badge) instead of inventing data.
     return {
-      path: prOverlayCtx?.path ?? parsePrSlotPath(key) ?? key,
+      path: prOverlayCtx?.path ?? parsePrSlotPath(key) ?? UNKNOWN_PR_PATH,
       origPath: prOverlayCtx?.origPath ?? null,
       status: prOverlayCtx?.status ?? null,
       kind: 'pr',

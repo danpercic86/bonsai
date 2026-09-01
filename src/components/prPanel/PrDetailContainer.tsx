@@ -90,13 +90,45 @@ export function PrDetailContainer({
   // P93 §6.3: a head advance re-keys the diff (the open file may not even exist
   // at the new head) — collapse rather than dim. The LIST keeps its `.diff-stale`
   // dim while the new stats load (P89 SF2, unchanged).
+  //
+  // P96 item 4: on a PR switch the new head oid arrives a commit LATE — the
+  // hook only calls `setStats` from its fetch effect, so on the switch commit
+  // `stats` still holds the OLD PR's oid (a cached target has the same shape,
+  // just shorter latency). Recording that stale oid as the baseline made the
+  // next commit's old→new flip read as a head advance and fire a SECOND,
+  // redundant close on top of the cleanup above. The switch episode is therefore
+  // bracketed explicitly: the number change opens it (baseline cleared, nothing
+  // fired — C2 already closed the overlay), and the FIRST stats belonging to the
+  // new PR closes it by establishing the baseline. That first arrival is
+  // detected by the stats OBJECT IDENTITY, not by the oid — two PRs can share a
+  // head sha, in which case `headOid` never changes across the switch and an
+  // oid-only guard would leave the baseline stuck at `null` and swallow the next
+  // genuine advance. `usePrDiff` hands back a different object whenever stats
+  // for the newly-keyed PR land (cache hit or fetch resolve), so identity is the
+  // reliable signal. Extra runs outside a switch episode are harmless: they see
+  // `prev === headOid` and fire nothing.
   const headOid = prDiff.stats?.headOid ?? null;
   const prevHeadOidRef = useRef(headOid);
+  const prevNumberRef = useRef(summary.number);
+  const awaitingSwitchRef = useRef(false);
+  const statsObj = prDiff.stats;
   useEffect(() => {
+    if (prevNumberRef.current !== summary.number) {
+      prevNumberRef.current = summary.number;
+      prevHeadOidRef.current = null;
+      awaitingSwitchRef.current = true;
+      return;
+    }
+    if (awaitingSwitchRef.current) {
+      // First stats for the new PR — baseline only, never a close.
+      awaitingSwitchRef.current = false;
+      prevHeadOidRef.current = headOid;
+      return;
+    }
     const prev = prevHeadOidRef.current;
     prevHeadOidRef.current = headOid;
     if (prev !== null && headOid !== null && prev !== headOid) onClosePrFileDiff?.();
-  }, [headOid, onClosePrFileDiff]);
+  }, [headOid, statsObj, summary.number, onClosePrFileDiff]);
 
   const stats = prDiff.stats;
   const handleOpenFile = useCallback(

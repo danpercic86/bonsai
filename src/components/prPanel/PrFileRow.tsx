@@ -59,7 +59,10 @@ export function PrFileRow({ header, active, onOpen }: PrFileRowProps) {
     // P93 §10: `diff-card-collapsed` is STATIC — the row has no body, ever, so
     // it is permanently collapsed. The house rule drops the header's duplicate
     // bottom border and rounds every corner (diff-browser.css:197).
+    // P96: `data-path` lets the focus-restore in PrChangesSection resolve this
+    // row by PATH rather than by positional index into the list's children.
     <li
+      data-path={header.path}
       className={`diff-card diff-card-collapsed pr-file-row${
         active ? ' pr-file-row-active' : ''
       }`}

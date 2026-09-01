@@ -281,4 +281,163 @@ describe('PrDetailContainer — P93 PR file diff wiring', () => {
     expect(document.activeElement).toBe(elsewhere);
     elsewhere.remove();
   });
+  // P96 item 4: the two closing effects (C2's cleanup keyed on the PR number,
+  // C3's headOid watcher) must not double-fire on a PR switch — and the guard
+  // that collapses them must not swallow the close either. Exact counts only:
+  // "called" would pass with both the redundant-close and the missed-close bug.
+  function switchProps(detail: PrDetail, onClose: () => void) {
+    return {
+      repoId: 'r1',
+      detail,
+      kind: 'gitHub' as ForgeKind,
+      host: 'github.com',
+      comments: [],
+      commentsLoading: false,
+      commentsError: null,
+      onBack: vi.fn(),
+      onOpenUrl: vi.fn(),
+      onDetailReplaced: vi.fn(),
+      onListChanged: vi.fn(),
+      onReload: vi.fn(),
+      onAuthFailed: vi.fn().mockReturnValue(false),
+      onOpenFileDiff: vi.fn(),
+      onClosePrFileDiff: onClose,
+      prOverlayPath: 'README.md' as string | null,
+    };
+  }
+
+  it('fires exactly one close when the shown PR is switched', async () => {
+    vi.spyOn(ipc, 'forgePrDiff').mockResolvedValue(PR_DIFF_STATS);
+    const onClose = vi.fn();
+    // PR numbers no other test used: usePrDiff's re-open cache is module-level.
+    const first: PrDetail = {
+      ...FORGE_PR_DETAIL,
+      summary: { ...FORGE_PR_DETAIL.summary, number: 9933, headSha: 'a'.repeat(40) },
+    };
+    const props = switchProps(first, onClose);
+    const { rerender } = render(
+      <ToastContext.Provider value={vi.fn()}>
+        <PrDetailContainer {...props} />
+      </ToastContext.Provider>,
+    );
+    await screen.findByRole('button', { name: /README\.md/ });
+    expect(onClose).not.toHaveBeenCalled();
+    onClose.mockClear();
+
+    // A different PR takes over the same detail slot (list → other PR).
+    const second: PrDetail = {
+      ...FORGE_PR_DETAIL,
+      summary: { ...FORGE_PR_DETAIL.summary, number: 9934, headSha: 'b'.repeat(40) },
+    };
+    rerender(
+      <ToastContext.Provider value={vi.fn()}>
+        <PrDetailContainer {...props} detail={second} />
+      </ToastContext.Provider>,
+    );
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    await screen.findByRole('button', { name: /README\.md/ });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  // The hole an oid-only guard leaves: two PRs that happen to share a head sha.
+  // `headOid` never changes across the switch, so nothing re-establishes the
+  // baseline unless the guard keys off the stats object identity — and a stuck
+  // `null` baseline silently swallows the NEXT genuine advance on the new PR.
+  it('fires one close per episode when both PRs share a headOid and the new PR then advances', async () => {
+    const SHARED = '5'.repeat(40);
+    const firstFile = PR_DIFF_STATS.files[0];
+    const statsA = { ...PR_DIFF_STATS, headOid: SHARED };
+    // Distinct object, SAME headOid — the switch the oid can't see.
+    const statsB = {
+      ...PR_DIFF_STATS,
+      headOid: SHARED,
+      files: [{ ...firstFile, path: 'beta.md' }],
+    };
+    const statsBAdvanced = {
+      ...PR_DIFF_STATS,
+      headOid: '6'.repeat(40),
+      files: [{ ...firstFile, path: 'gamma.md' }],
+    };
+    vi.spyOn(ipc, 'forgePrDiff')
+      .mockResolvedValueOnce(statsA)
+      .mockResolvedValueOnce(statsB)
+      .mockResolvedValue(statsBAdvanced);
+    const onClose = vi.fn();
+    const first: PrDetail = {
+      ...FORGE_PR_DETAIL,
+      summary: { ...FORGE_PR_DETAIL.summary, number: 9937, headSha: SHARED },
+    };
+    const props = switchProps(first, onClose);
+    const { rerender } = render(
+      <ToastContext.Provider value={vi.fn()}>
+        <PrDetailContainer {...props} />
+      </ToastContext.Provider>,
+    );
+    await screen.findByRole('button', { name: /README\.md/ });
+    expect(onClose).not.toHaveBeenCalled();
+    onClose.mockClear();
+
+    // Phase 1 — the switch: C2's cleanup owns it, exactly one close.
+    const second: PrDetail = {
+      ...FORGE_PR_DETAIL,
+      summary: { ...FORGE_PR_DETAIL.summary, number: 9938, headSha: SHARED },
+    };
+    rerender(
+      <ToastContext.Provider value={vi.fn()}>
+        <PrDetailContainer {...props} detail={second} />
+      </ToastContext.Provider>,
+    );
+    // The new PR's own stats have landed (its distinct file is listed).
+    await screen.findByRole('button', { name: /beta\.md/ });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    onClose.mockClear();
+
+    // Phase 2 — a genuine head advance on the NEW PR: exactly one more close.
+    const advancedDetail: PrDetail = {
+      ...second,
+      summary: { ...second.summary, headSha: '6'.repeat(40) },
+    };
+    rerender(
+      <ToastContext.Provider value={vi.fn()}>
+        <PrDetailContainer {...props} detail={advancedDetail} />
+      </ToastContext.Provider>,
+    );
+    await screen.findByRole('button', { name: /gamma\.md/ });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('fires exactly one close when a PR switch also advances the headOid', async () => {
+    const advanced = { ...PR_DIFF_STATS, headOid: '7'.repeat(40) };
+    vi.spyOn(ipc, 'forgePrDiff')
+      .mockResolvedValueOnce(PR_DIFF_STATS)
+      .mockResolvedValue(advanced);
+    const onClose = vi.fn();
+    const first: PrDetail = {
+      ...FORGE_PR_DETAIL,
+      summary: { ...FORGE_PR_DETAIL.summary, number: 9935, headSha: 'c'.repeat(40) },
+    };
+    const props = switchProps(first, onClose);
+    const { rerender } = render(
+      <ToastContext.Provider value={vi.fn()}>
+        <PrDetailContainer {...props} />
+      </ToastContext.Provider>,
+    );
+    await screen.findByRole('button', { name: /README\.md/ });
+    onClose.mockClear();
+
+    // Both the number AND the head move in one rerender: C2 owns this episode,
+    // C3's guard must stay out of it — and must not cancel the close entirely.
+    const second: PrDetail = {
+      ...FORGE_PR_DETAIL,
+      summary: { ...FORGE_PR_DETAIL.summary, number: 9936, headSha: '7'.repeat(40) },
+    };
+    rerender(
+      <ToastContext.Provider value={vi.fn()}>
+        <PrDetailContainer {...props} detail={second} />
+      </ToastContext.Provider>,
+    );
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    await screen.findByRole('button', { name: /README\.md/ });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });

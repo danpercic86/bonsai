@@ -61,16 +61,19 @@ export function PrChangesSection({
 }: PrChangesSectionProps) {
   const files = stats?.files ?? [];
   const count = stats?.changedFiles ?? files.length;
-  // Read through a ref so the restore effect keys on the token ALONE (§6.1) and
-  // never re-fires when the stats object is replaced by a refetch.
-  const statsRef = useRef(stats);
-  statsRef.current = stats;
 
   // P93 §6.1 focus restore, driven by the DISMISSAL EVENT (`restoreFocusTo`), not
   // by an `activePath` transition. Fires once per token, and only when all three
   // guards hold: the row still exists, it has a <button> (binary rows do not),
   // and focus has fallen back to <body> — if the user has since focused the graph
   // or the sidebar we must not take it back.
+  //
+  // P96: the row is resolved by its `data-path` attribute, not by a positional
+  // index into `children`, so a re-order or an added wrapper element can't send
+  // focus to the wrong row. Paths may contain quotes/backslashes, so nothing is
+  // interpolated into a selector — the attribute values are compared directly.
+  // `:scope >` keeps "a row, not a descendant" structural rather than relying on
+  // the convention that nothing nested carries `data-path`.
   const listRef = useRef<HTMLUListElement>(null);
   const lastTokenRef = useRef<number | null>(restoreFocusTo?.token ?? null);
   useEffect(() => {
@@ -79,10 +82,12 @@ export function PrChangesSection({
     lastTokenRef.current = restoreFocusTo.token;
     const active = document.activeElement;
     if (active !== null && active !== document.body) return;
-    const index = (statsRef.current?.files ?? []).findIndex((f) => f.path === restoreFocusTo.path);
-    if (index < 0) return;
-    const row = listRef.current?.children[index];
-    if (row instanceof HTMLElement) row.querySelector('button')?.focus();
+    const rows = listRef.current?.querySelectorAll<HTMLElement>(':scope > [data-path]') ?? [];
+    for (const row of rows) {
+      if (row.dataset.path !== restoreFocusTo.path) continue;
+      row.querySelector('button')?.focus();
+      return;
+    }
   }, [restoreFocusTo]);
 
   // SF2: on a head-advance refetch the hook keeps the prior stats and sets
