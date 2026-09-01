@@ -34,6 +34,38 @@ bottom. Velocity/gate-cost measurements: `docs/history/velocity-2026-09-01.md`.
 
 ---
 
+## 🚀 P100 + P101 + DX-e2e — IN PROGRESS (started 2026-09-01, USER: "do P100 and P101 and DX: build-bundle e2e")
+
+**Current step:** slot 1 — `ui-designer` writing `docs/contracts/P100-accent-fill-ui.md` ∥ `senior-dev` on DX built-bundle e2e.
+
+**Sequencing, and why it is not arbitrary.** P100 **must** land before P101. P101's audit method
+(P98 contract §8.8 step 1) requires measuring every declaration against its *composited backdrop
+per state* — and P100 changes the active/selected-row fill that those backdrops composite against.
+Auditing first would measure figures P100 then invalidates. DX-e2e touches only `scripts/`+config,
+so it runs concurrently with the design pass.
+
+Slots: **1** P100 contract ∥ DX-e2e → **2** P100 impl + the 3 fixtures, review, commit →
+**3** P101 audit against the committed P100 tree (never overlapped with P100 review — MUST-FIX churn
+on the active rows would stale the measurements) → **4** P101 impl, review, tester, full gate, commit.
+
+**Fixture ask GRANTED (orchestrator decision, 2026-09-01).** P98 §8.8 asked for three mock fixtures
+and capped that as the only fixture ask for the whole `--text-3` programme. Granted, and folded into
+P100's implementation pass so they exist before P101 mounts anything: (a) a mock state opening
+`DiffOverlay` on a **conflicted** scope; (b) a hint on one **enabled** and one **active** combobox
+option plus one **disabled palette** option; (c) a route to `WorktreeContextDialog` with one
+**blocked** row. Rationale: without them ~6 of 10 P98 declarations were source-derived rather than
+measured, and P101 has 120+ — an audit asserted from CSS source is the exact failure mode P101
+exists to correct. `.diff-tree-count` stays structurally unreachable (canvas-driven selection) and
+remains a USER CHECKPOINT; do not try to automate it.
+
+**P100 carries a USER CHECKPOINT.** It changes the app's most-used selection affordance's visual
+identity — the designer called this a product call, not a sweep. AI-gate evidence (contrast ratios,
+AC19, harness screenshots) is necessary but NOT sufficient; the perceptual result (a quieter active
+row; whether the `inset 2px 0 0 var(--accent)` leading bar restores the punch) needs the user's eyes.
+
+
+---
+
 ## 🚧 P91 — observability — WIP ON BRANCH, NOT READY (do not merge)
 
 Lives only on `feat/p91-observability` (7 increments, 356 files, last commit 2026-08-28, now 20+
@@ -223,6 +255,26 @@ per-selector figures above):
   under the 4.5:1 AA floor; `--text-2` fixes it. Shared overlay chrome, not P93's doing.
 
 ## 🚨 P101 — audit the 122 unaudited `--text-3` uses — PENDING (found 2026-09-01)
+
+**Count reconciliation, done 2026-09-01 by the orchestrator — the contract pins 122, a fresh grep
+says 124. Do not "correct" either number; both were right when taken.** The delta is exactly the
+**two disabled-hint overrides P98's own MUST-FIX-1 added** (`src/styles/search.css:243`,
+`src/styles/dialogs-forms.css:250`) — per-file counts confirm it: `search.css` 8 -> 9 and
+`dialogs-forms.css` 6 -> 7, everything else unchanged. Both new declarations are legitimately in the
+`disabled` bucket, so the audit's *work* is still 122 items. Authoritative surface as of `0fe0102`:
+**124 in `src/styles/` across 33 files**, plus **one outside** it — `src/components/conflictCmSetup.ts:36`
+(`.cm-gutters`, already sanctioned decorative in `ui-reference.md` §2 at 3.68/3.17 with a revisit
+trigger). `src/components/settings/SettingsEmpty.tsx` mentions the token in a comment only — not a
+declaration, not an audit item. Re-pin at audit time; §8.8 step 6's "family closed" claim must rest
+on an enumeration that matches a fresh grep, which is the exact failure P101 exists to fix.
+
+Distribution (highest first): `forge-pr` 15, `settings-legacy-sections` 11, `search` 9,
+`commit-panel` 9, `sidebar` 7, `dialogs-forms` 7, `blame-history` 6, `repo-health` 5,
+`diff-content`/`dialogs`/`controls`/`commit-box`/`agent-assets` 4 each, then 3s/2s/1s.
+
+**One more seed found during reconciliation:** `.search-result-date`
+(`src/styles/search.css:331`) — a date, the same class of string as the three `blame-history.css`
+timestamps §8.8 already rules read-text. Audit it, do not assume the verdict.
 
 **`ui-reference.md` §2's claim that the `--text-3` family is "closed" is FALSE — corrected during
 P98, do not let it come back.** P95 swept the enabled-control class and P98 an *enumerated* read-text
