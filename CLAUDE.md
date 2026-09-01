@@ -154,10 +154,12 @@ The workflow loop below applies to every milestone, past and present.
    `senior-dev`; file SHOULD-FIX / NIT as follow-ups (a TODO.md line or a spun-out task) instead of
    blocking the increment. On intermediate rounds re-review only the changed surface and run
    **targeted** checks (the specific tests + `cargo check` / `tsc`), saving the full gate for step 7.
-   **Never run the bare `pnpm gate` on an intermediate round** — measured 2026-09-01, the full
-   Rust leg is 3m22 (of which one proptest is 57s) plus 68s of vitest, and the whole gate is
-   ~5–7 min. Intermediate rounds use `pnpm gate --quick` (no e2e, `PROPTEST_CASES=16`) or a
-   narrower `--rust` / `--frontend`; the bare `pnpm gate` belongs to step 7 only.
+   **Never run the bare `pnpm gate` on an intermediate round.** Measured 2026-09-01 (all 7 steps
+   green): `--quick` is **305s** — `cargo nextest --workspace` 181s, vitest 62s, clippy 22s,
+   eslint 20s, tsc+build 14s, doctests 6s, size ratchet 1s. `--quick` only drops e2e, so it is NOT
+   a fast tier; prefer the **narrow** tiers on intermediate rounds — `--frontend` (~96s) or
+   `--rust` (~209s) — or, better, the specific failing test plus `cargo check` / `tsc`. The bare
+   `pnpm gate` (adds Playwright e2e) belongs to step 7 only.
    Repeat 3–4 until `reviewer` (and `ui-designer`, for UI) approve. **Commit each approved
    sub-increment** (`wip(M<N>): ...`) so review diffs stay small and resume points exist.
 6. Delegate to `tester`: write/run tests + smoke checklist against the scratch repo (pass the

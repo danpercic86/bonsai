@@ -257,6 +257,47 @@ CLAUDE.md velocity-mode and batching rules exist to cut. Gate child processes no
 Items resolved in the 2026-08-21 fix batch were archived → `todo-archive-2026-09.md` Part 32
 (underlying full text: `todo-archive-2026-08.md` Part 19).
 
+### Velocity follow-ups from the 2026-09-01 measurement pass (still open)
+
+Context + all baseline numbers: `docs/history/velocity-2026-09-01.md`. Done in that pass:
+proptest banding (`d635464`), doc curation (`0174abf`), 78 → 8 test harnesses (`12882f9`).
+
+- **`prop_status::status_matches_porcelain` is now the workspace's slowest test at 23.5s** in a
+  single test fn (measured at full baked counts). nextest parallelizes per test fn, so this is the
+  new critical-path floor. Same fix as `prop_graph_layout`: band the input axis into N fns with
+  cases allocated proportional to band width. Expected ~23.5s → ~5s.
+- **`prop_stash_roundtrip` 14.3s** across 2 fns — same banding treatment, lower priority.
+- **`submodule_cli::oracle_add_deinit_remove_roundtrip` 12–14s** — NOT a proptest (a git-CLI
+  oracle roundtrip), so banding does not apply; needs its own look if the ~12s floor matters.
+- **vitest jsdom construction dominates the frontend leg.** CPU-aggregate across workers:
+  `environment` 613s vs `tests` 147s, for 199 files / 2397 tests in 62–68s wall. Try `happy-dom`,
+  or `environmentMatchGlobs` so only DOM-touching files pay for one. Untried — measure after.
+- **`pnpm gate --quick` is 305s and only drops e2e**, so it is not a fast tier. `cargo nextest
+  --workspace` alone is 181s of it. Either add a genuinely narrow tier or lean on
+  `--rust` / `--frontend`. CLAUDE.md velocity mode now says so.
+- **Ceremony, not machine time, is the dominant per-task cost**: ~75–85% of wall clock. Of the 200
+  commits before this pass, 61 were `docs:` bookkeeping vs 24 `feat` + 27 `fix`, and small tasks
+  (P92/P93/P95) ran 1h45–2h45 end to end against a ~5–7 min gate. Candidate process changes, NOT
+  yet adopted — needs a USER decision: batch small P-tasks through one senior-dev spawn, skip the
+  architect contract for single-component fixes, fold the board update into the feat commit.
+
+### ⚠ FOR USER — record inconsistencies surfaced by the 2026-09-01 curation sweep
+
+The curator refused to resolve these itself (it never upgrades a status). All are record-keeping,
+not code:
+- **P88** is headed `in-progress` while its body records the batch AI gate green (2026-08-24) *and*
+  USER CHECKPOINTs verified (2026-08-25). **P85 / P86 / P87 / P87d** are headed `pending` while
+  their bodies read DONE under a banner saying both gate halves are green.
+- **P88/P89/P90/DEP-REFRESH** all say "UNMERGED/UNPUSHED, awaiting merge decision", but
+  `git branch --contains` (2026-09-01) shows `feat/pr-local-diff`, `perf/git-action-round2` and
+  `chore/dep-refresh-2026-08` are already in `dev` (dep-refresh also in `main`).
+- **P84 has no board section and no `docs/history/` entry**, though its code shipped
+  (`cce9eb9`, `90b315c`, `1803391`, `6868be6`). Its USER CHECKPOINT is therefore unverifiable, so
+  its two contracts were left live rather than archived.
+- **`graph-design-review-2026-08-22.md` M1** (`role="grid"` + `aria-activedescendant`) is
+  contradicted by P95, and `ui-reference.md` §4.1 now forbids that model. Left unarchived.
+- No contract file was ever written for **P94**.
+
 ### Hoisted off milestones archived 2026-09-01 (still open)
 - **keyring 3 → 4** needs a dedicated increment: 4.x moves onto `keyring-core`, renames every
   per-backend feature (`windows-native` → `windows-native-keyring-store`, etc.), drops
