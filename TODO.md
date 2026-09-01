@@ -36,7 +36,7 @@ bottom. Velocity/gate-cost measurements: `docs/history/velocity-2026-09-01.md`.
 
 ## 🚀 P100 + P101 + DX-e2e — IN PROGRESS (started 2026-09-01, USER: "do P100 and P101 and DX: build-bundle e2e")
 
-**Current step:** slot 3 — `ui-designer` running the P101 audit (writing `docs/contracts/P101-text3-audit-ui.md` in per-file batches) ∥ `senior-dev` root-causing P103. P100 is committed (`e118375`) with its AI gate green and **4 USER CHECKPOINT items owed**. DX-e2e done (`46088e0`, opt-in).
+**Current step:** P100 + P101 + DX-e2e all landed; `senior-dev` still root-causing **P103**. Awaiting USER CHECKPOINT on P100 (4 items) and P101 (AC12-AC16). New work filed while here: **P102** (`--danger` fills), **P104** (4-worker e2e hang), **P105** (`--accent` as text fails AA on `--bg-1` light / `--bg-2` both) — P105 was found by the P101 harness pass and contradicts a claim §2 actively makes.
 
 **Sequencing, and why it is not arbitrary.** P100 **must** land before P101. P101's audit method
 (P98 contract §8.8 step 1) requires measuring every declaration against its *composited backdrop
@@ -390,6 +390,45 @@ per-selector figures above):
 - `.diff-intra-toggle` off-state label is `--text-3` on the transparent overlay toolbar (≈4.0:1),
   under the 4.5:1 AA floor; `--text-2` fixes it. Shared overlay chrome, not P93's doing.
 
+## 🚨 P105 — `--accent` as TEXT fails AA on `--bg-1`/`--bg-2` — PENDING (found 2026-09-01, measured mounted)
+
+**Found by the orchestrator's P101 harness pass, and it contradicts a claim `ui-reference.md` §2
+actively makes.** §2 states `color: var(--accent)` "is a house-wide pattern (~30 call sites) and is
+**fine on `--bg-0` / `--bg-1` / `--bg-2`**". Measured mounted at `4fec07a` from the shipped tokens
+(`--accent` `#4f8cff` dark / `#2f6fe4` light):
+
+| Backdrop | Dark | Light |
+|---|---|---|
+| `--bg-0` | **5.52** ✓ | **4.65** ✓ |
+| `--bg-1` | **5.07** ✓ | **4.34 ✗** |
+| `--bg-2` | **4.48 ✗** (marginal) | **4.00 ✗** |
+
+So the §2 sentence is wrong for **`--bg-1` in light** and for **`--bg-2` in both themes**. Only
+`--bg-0` is clean in both. `--bg-2` light at 4.00 is not a rounding argument.
+
+**How it surfaced, because the route matters.** A P101 probe of `.branch-glyph` returned 4.34 in
+light instead of the expected `--text-2` 7.45. The cause was *not* a P101 defect and *not* opacity —
+`.branch-row-head .branch-glyph` overrides to `color: var(--accent)`, so the probe had grabbed the
+HEAD row's glyph. `.branch-glyph` itself is a 12px glyph, judged at the **3:1** graphics bar, so
+**4.34 passes for that element** and P101 is unaffected. Chasing the anomaly rather than dismissing
+it is what exposed the documented-vs-measured gap.
+
+**Why this is the pattern, not an isolated bug.** §2 credits **P74** with retro-fitting "the
+hue-as-text family". That is now the **third** app-wide claim in this programme to fail on
+inspection — P95's enabled-control class (3 escapes found by P101), P98's "`--text-3` family closed"
+(122 declarations never classified), and now P74's hue-as-text sweep. Every one was asserted
+app-wide without an enumeration. **P101 §3 is the template for the fix: enumerate, bucket, record a
+verdict per call site, and only then claim closure.** Do not accept a "~30 call sites and it's fine"
+sentence as evidence again.
+
+**Scope for the pass:** enumerate every `color: var(--accent)` call site, resolve each one's
+composited backdrop per state, and split text (4.5:1) from glyph/border/bar (3:1) — the split P100
+established and P101 §2 formalised. Expect many to be legitimately glyphs. Related and already
+filed: **P102** (`--danger` fills at 3.70:1, hardcoded `#ffffff`) and P100's residual noting four
+sibling buttons still on `filter: brightness`. Consider doing P102 and P105 as one hue-audit
+milestone, since both are "a hue token used against an insufficiently contrasting surface" and both
+want the same enumerate-then-bucket method.
+
 ## 📋 P102 — `--danger` fill contrast — PENDING (filed 2026-09-01 from P100's survey)
 
 Same defect class as P100, deliberately **not** folded into it (P100 contract §6-C; orchestrator
@@ -409,7 +448,13 @@ flips the ink; only *states* get demoted to `--selection`). Expect a `--danger-t
 Scope check before implementing: sweep for every `#fff`/`#ffffff` on a `var(--danger)` fill, not
 just these two — P100's survey found 7 accent fills where the seed list had 4.
 
-## 🚨 P101 — audit the 122 unaudited `--text-3` uses — PENDING (found 2026-09-01)
+## ✅ P101 — the full --text-3 audit — AI GATE GREEN, ⏳ AWAITING USER CHECKPOINT (`4fec07a`)
+
+**All 124 declarations carry a recorded bucket and verdict** (`docs/contracts/P101-text3-audit-ui.md` §3) — the first pass in this programme to meet its own standard, so §2's "family closed" claim finally has an enumeration behind it. **31 exempt** (16 disabled, 10 placeholder/empty, 3 group titles, 2 glyphs clearing 3:1 on every state) + **93 fixed**. Post-fix grep is exactly **32 in 14 files** as predicted. Verified exhaustively, not sampled: the diff is 92 plain `color:` + 1 `border-color:` + 1 `background:` + the one §4.2 rule, and nothing else. Mounted spot-check (orchestrator, 5 of 94 selectors reachable in the default state): `.section-label`, `.tree-dir-name`, `.branch-badge`, `.file-chevron` all **7.25 dark / 7.45 light** — matching the predicted `--text-2`-on-`--bg-1` figures exactly, which validates the source-derivation method. 84 selectors are not reachable in the default mock state; AC7 coverage is therefore **5/94 measured**, the rest source-derived — stated plainly rather than called verified. **USER CHECKPOINT owed:** AC12-AC16 (hierarchy, density, the 15 `forge-pr` declarations behind a token screen, colour-only dot states, `.rebase-plan-commit.dropped` now carrying on `line-through` alone). Prior text archived below.
+
+### Original filing (kept for the reasoning)
+
+## 🚨 P101 — audit the 122 unaudited `--text-3` uses — RESOLVED by `4fec07a`
 
 **Count reconciliation, done 2026-09-01 by the orchestrator — the contract pins 122, a fresh grep
 says 124. Do not "correct" either number; both were right when taken.** The delta is exactly the
