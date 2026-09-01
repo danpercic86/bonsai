@@ -28,6 +28,17 @@ const USE_EDGE_CHANNEL = !CI && process.platform === 'win32';
 // PORT still overrides, so a second worktree can pick another free port.
 const DEV_PORT = Number(process.env.PORT) || 1430;
 
+// DX: `E2E_BUNDLE=1` serves a BUILT mock-mode bundle (`scripts/e2e-bundle.mjs`,
+// `vite build --mode mock` + `vite preview`) instead of the dev server. The dev
+// server's per-request transform pipeline is what the suite is bottlenecked on,
+// so a static bundle is dramatically faster.
+// Port allocation on this project, all explicit: 1420 = hand-driven `dev:mock`
+// harness, 1430 = e2e dev server, 1440 = e2e built bundle. Separate ports mean
+// the two modes never adopt each other's server via `reuseExistingServer`.
+const BUNDLE = process.env.E2E_BUNDLE === '1';
+const BUNDLE_PORT = Number(process.env.E2E_BUNDLE_PORT) || 1440;
+const PORT = BUNDLE ? BUNDLE_PORT : DEV_PORT;
+
 export default defineConfig({
   testDir: 'e2e',
   fullyParallel: true,
@@ -56,7 +67,7 @@ export default defineConfig({
   // from the uploaded artifact instead of just the text log.
   reporter: CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
-    baseURL: `http://localhost:${DEV_PORT}`,
+    baseURL: `http://localhost:${PORT}`,
     trace: 'on-first-retry',
   },
   projects: [
@@ -65,14 +76,26 @@ export default defineConfig({
       : { name: 'chromium', use: { browserName: 'chromium' } }, // bundled chromium (CI + local macOS/Linux)
   ],
   webServer: {
-    command: 'pnpm dev:mock',
-    // vite.config.ts reads PORT (strictPort), so passing it here is what pins
-    // the spawned server to the e2e port instead of the shared 1420 one.
-    env: { PORT: String(DEV_PORT) },
-    port: DEV_PORT,
+    // Both modes are hosted IN-PROCESS by this script via Vite's JS API. The
+    // old `pnpm dev:mock` command orphaned the dev server on Windows when
+    // Playwright tore the webServer down — the port stayed bound and the run
+    // hung for minutes past the last test (446s wall for 178s of tests).
+    // See the header of scripts/e2e-server.mjs.
+    command: 'node scripts/e2e-server.mjs',
+    // The script reads PORT (dev) / E2E_BUNDLE_PORT (bundle); both strictPort.
+    env: BUNDLE
+      ? { E2E_BUNDLE: '1', E2E_BUNDLE_PORT: String(BUNDLE_PORT) }
+      : { PORT: String(DEV_PORT) },
+    port: PORT,
     // Safe now that the port is e2e-only: anything already listening there was
-    // started by this same `dev:mock` command, not by a hand-run `pnpm dev`.
+    // started by this same e2e server script, not by a hand-run `pnpm dev`.
     reuseExistingServer: !CI,
-    timeout: 120_000,
+    // Bundle mode builds before it serves, so it needs headroom the dev server
+    // does not (a cold rolldown build is slower than the ~2s warm case).
+    timeout: BUNDLE ? 180_000 : 120_000,
+    // Without this, Playwright's Windows teardown never actually reached the
+    // server process and every run hung for minutes past the last test. Paired
+    // with the signal handlers at the top of scripts/e2e-server.mjs.
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
   },
 });

@@ -18,7 +18,10 @@
 //   pnpm gate --rust     # rust steps only
 //   pnpm gate --frontend # frontend steps only
 // Flags: --bail (stop at first failure), --list (print steps and exit),
-//        --ci-parity (add the cross-target compile checks to any tier).
+//        --ci-parity (add the cross-target compile checks to any tier),
+//        --e2e-bundle (run e2e against a BUILT mock-mode bundle instead of the
+//                      Vite dev server: ~2x faster, but one spec currently
+//                      diverges — see the E2E_BUNDLE note at the e2e step).
 //
 // CI-parity notes (both classes bit the 1.1.0 release — see TODO.md / the
 // release memory):
@@ -162,7 +165,34 @@ const steps = [
     group: 'frontend',
   },
   { name: 'tsc + vite build', cmd: 'pnpm', args: ['build'], group: 'frontend' },
-  { name: 'playwright e2e', cmd: 'pnpm', args: ['test:e2e'], group: 'e2e' },
+  // `--e2e-bundle` (E2E_BUNDLE=1) serves a BUILT mock-mode bundle instead of
+  // the Vite dev server — see scripts/e2e-server.mjs. It is ~2x faster on
+  // summed test time (326-363s vs 485-685s over two full runs each), because
+  // the dev server's per-request transform pipeline is what the suite is
+  // bottlenecked on.
+  //
+  // It is OPT-IN, not the default, and deliberately so. Equivalence was
+  // measured, not assumed: the full 161-test suite ran twice in each mode and
+  // 160/161 tests matched every time — but `e2e/24-settings-shell.spec.ts:238`
+  // ("Esc dismisses the menu and hands global shortcuts back") does NOT match.
+  // Isolated with `-g … --repeat-each=3 --workers=1` it fails 3/3 in bundle
+  // mode against 1/3 in dev mode — i.e. reproducible on a built bundle, merely
+  // flaky on the dev server. The mechanism was NOT identified; two hypotheses
+  // fit: (a) a genuine dev/prod behavioural gap in the Esc → shortcut-
+  // suppression handoff that StrictMode's double-mount masks (the P99 shape),
+  // or (b) a load-timing race the bundle's much faster page load exposes more
+  // often. Either way, flipping the default would turn a dev-only flake into a
+  // hard gate failure. Root-cause that test first, then flip.
+  //
+  // NOTE: the `tsc + vite build` step above is REAL mode; it cannot be reused
+  // here, because the specs need `VITE_MOCK_IPC=1` from `--mode mock`.
+  {
+    name: 'playwright e2e',
+    cmd: 'pnpm',
+    args: ['test:e2e'],
+    group: 'e2e',
+    env: has('--e2e-bundle') ? { E2E_BUNDLE: '1' } : {},
+  },
   { name: 'cargo-deny', cmd: 'cargo', args: ['deny', '--all-features', 'check'], group: 'audit' },
   { name: 'pnpm audit', cmd: 'pnpm', args: ['audit', '--audit-level', 'high'], group: 'audit' },
 ].filter(Boolean);

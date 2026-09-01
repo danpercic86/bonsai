@@ -32,6 +32,7 @@ export default tseslint.config(
     // Build output, deps, Rust target dir, test artifacts.
     ignores: [
       'dist/**',
+      'dist-mock/**', // e2e built-bundle output (scripts/e2e-server.mjs)
       'coverage/**',
       'node_modules/**',
       'target/**',
