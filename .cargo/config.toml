@@ -5,9 +5,11 @@
 # acceleration) and the velocity analysis.
 
 # Link with the LLD linker bundled in every Rust toolchain (rust-lld) instead
-# of MSVC's link.exe. Linking dominates this workspace's rebuild time — 77+
-# integration-test binaries each statically link vendored libgit2 — so a faster
-# linker is the single biggest local win, and rust-lld needs no extra install.
+# of MSVC's link.exe. Linking is a large share of this workspace's cold-build
+# time — every integration-test binary statically links vendored libgit2 — so a
+# faster linker is a cheap win, and rust-lld needs no extra install. (The link
+# set shrank ~10x on 2026-09-01: bonsai-core's 78 test binaries were consolidated
+# into 8 harnesses, so this matters less than it did, but still helps cold builds.)
 # rust-lld ships with the toolchain, so this is safe both locally and on the
 # windows-latest CI leg. Delete this block to restore MSVC link.exe.
 [target.x86_64-pc-windows-msvc]

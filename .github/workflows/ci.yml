@@ -94,7 +94,7 @@ jobs:
         with:
           tool: cargo-nextest
 
-      # nextest runs the 77+ test binaries in PARALLEL (vs `cargo test`'s serial
+      # nextest runs the test binaries in PARALLEL (vs `cargo test`'s serial
       # default) — the biggest CI-time win for a suite this large. The `ci`
       # profile (.config/nextest.toml) sets fail-fast=false (one failure must not
       # hide the rest) + retries=1 (absorb a flake) + a per-test hang cap. Runs
