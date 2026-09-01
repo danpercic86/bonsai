@@ -165,7 +165,30 @@ per-selector figures above):
 - `.diff-intra-toggle` off-state label is `--text-3` on the transparent overlay toolbar (≈4.0:1),
   under the 4.5:1 AA floor; `--text-2` fixes it. Shared overlay chrome, not P93's doing.
 
-## ⏳ P98 — `--text-3` read-text sweep — PENDING
+## 🔧 P98 — `--text-3` read-text sweep — IN-PROGRESS
+
+**Current step:** contract written (`docs/contracts/P98-text3-readtext-ui.md`, AC1+); `ui-reference.md`
+§2 updated (1225 -> 1261 lines, diff verified confined to lines 69-145, 13 sections intact).
+Awaiting senior-dev implementation once P96 commits (one writer in the tree at a time).
+
+**Orchestrator decisions on the contract's three open questions (2026-09-01):**
+1. **Accept the `--accent`-fill deferral (contract §5-A) as its own milestone → P100.** White text on
+   the `--accent` fill measures **3.22:1 in dark** — below the 4.5:1 bar — and this affects the active
+   row's **own primary label**, not just the hint. White is the ceiling, so no hint colour can pass in
+   dark; the real fix is the fill (the designer measured a `--selection` recipe: label `--text-1`
+   9.36/13.29, hint `--text-2` 5.01/6.42). Out of scope for a colour-swap milestone. Consequence
+   accepted for now: in the active row the hint loses its colour step and leans on 11px-vs-13px +
+   right-edge placement.
+2. **Include the `--border-0` fix (contract §4)** — the one sanctioned non-colour change. `--border-0`
+   is **not a real token**; its 5 uses in `conflicts.css` mean the merge editor's split-label bottom
+   border and the OURS/THEIRS divider **do not render at all today**. Latent bug in a file P98 is
+   already editing; leaving it would be worse than the small scope impurity. Must land as a clearly
+   separated hunk. Note it makes a previously-invisible border appear — a real visual change.
+3. **Fold in the 8th selector `.pr-merge-method-desc`** (designer excluded it as §5-D to respect the
+   locked seven). Reason to override: §2 now asserts "the `--text-3` family is **closed**". A merge-method
+   description is text you read *in order to choose* — read-text by the contract's own test — so leaving
+   it `--text-3` makes that claim false. It is sanctioned in `ui-reference.md` §12.9, so ui-designer must
+   amend §12.9 as part of its P98 design-review pass.
 
 Split out of P95 by orchestrator decision (see P95 decision A). Seven selectors use `--text-3` for
 text the user must actually **read**, violating the long-standing `ui-reference.md` §2 rule (these
@@ -173,7 +196,32 @@ are read-text, not the enabled-control class P95 sweeps): `.diff-overlay-kind`, 
 `.conflict-editor-split-label`, `.wtctx-branch`, `.wtctx-blocked`, `.combobox-option-hint`,
 `.command-palette-option-hint`. The two `*-hint` selectors are the worst offenders.
 
-## ⏳ P96 — P93 review follow-ups — PENDING
+## ✅ P96 — P93 review follow-ups — DONE (`cf8bdda`, 2026-09-01)
+
+All four items landed; reviewer approved with **zero MUST-FIX**. Scope was the four filed items only
+— the "carried in from P93" list below stays recorded context, **not** promoted work.
+Gate: frontend tier 4/4 green (78.6s). prPanel suite 35 -> 38 tests, overlayMeta +7.
+
+**Item 4 is worth remembering: it was filed as a NIT and was not one.** "Both effects fire
+`onClosePrFileDiff`; idempotent, just a double call" made it look trivial. It took three attempts,
+and the first two were wrong in ways only an exact-count test caught:
+- Comparing PR numbers fixes only a *same-render* swap. `usePrDiff` calls `setStats` solely from its
+  fetch effect, so on a switch `stats` still holds the OLD PR's oid and flips a commit **later** —
+  the number guard no longer suppresses and C3 fires a second close. Distinct PRs normally have
+  distinct heads, so this was the **common** path.
+- Resetting the baseline to `null` then depends on a later oid change to re-establish it. Two PRs
+  **can share a head sha**, leaving the baseline stuck at `null` and swallowing the next genuine
+  advance — trading a harmless double call for a **missed** close (orphaned overlay showing the old
+  head's file). A strict trade-down.
+Final shape: the switch episode is bracketed and closed on stats **object identity** (changes when
+the new PR's stats land on either the cache-hit or fetch-resolve path, even when the oid does not).
+Fails safe toward over-fire on a handler whose prop contract permits it, never toward a missed close.
+
+**Process lesson:** `reviewer`'s round-1 approval of item 4 reasoned only about synchronous
+same-commit effect ordering (destroy-before-create) and missed the async late-arrival path; the
+orchestrator's own check made the same error. The bug was found only by requiring each new test to
+be shown FAILING against the unfixed code. Keep that requirement — a "was called" assertion would
+have passed on the very double-fire being removed.
 
 - SHOULD-FIX: add `overlayMeta.test.ts` pinning the load-bearing prefix ordering
   (`conflict:`/`ai-proposal:`/`pr:` before the `WorkdirSection` cast). Currently only indirect.
@@ -188,9 +236,11 @@ are read-text, not the enabled-control class P95 sweeps): `.diff-overlay-kind`, 
   sentinel matches `includes('fail')` too broadly; PR rows ignore `panelDensity` (pre-existing since
   P89, contract §12.5). Full text → archive Part 23.
 
-## ⏳ P97 — split ContextMenu.tsx — PENDING
+## ⏳ P97 — split ContextMenu.tsx — PENDING (queued last)
 
-486 lines against the ~500 limit; `MenuList` is the extraction seam. Strictly behaviour-preserving
+486 lines against the ~500 limit; `MenuList` (lines 102-383, ~281 lines) is the extraction seam,
+confirmed 2026-09-01; the three exported interfaces (lines 3-72) are a second candidate. Queued
+last so its file-size-baseline churn lands after P96/P98. Strictly behaviour-preserving
 (refactorer), proven by identical before/after test counts.
 
 ---

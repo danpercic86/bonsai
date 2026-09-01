@@ -66,19 +66,35 @@ CSS custom properties on `:root` (dark, default) and `[data-theme="light"]`.
 
 Focus: 2px `--accent` outline, offset 1px, keyboard only (`:focus-visible`).
 
-**Contrast notes (measured 2026-08-17, P68e design pass; toast rows updated 2026-08-20, P74).**
-One known AA shortfall remains (`--text-3`); the hue-as-text family was retro-fitted by P74.
-**New surfaces must not add to either**:
+**Contrast notes (measured 2026-08-17, P68e design pass; toast rows updated 2026-08-20, P74; the
+`--text-3` classes closed 2026-08-31 P95 and 2026-09-01 P98).**
+The `--text-3` family is **closed**: P95 swept the enabled-interactive-control class, P98 the
+read-text class. The hue-as-text family was retro-fitted by P74. **One known AA shortfall remains —
+white text on the `--accent` fill in the dark theme (see the fifth bullet). New surfaces must not
+add to any of these**:
 
 - `--text-3` is **3.68:1** on `--bg-0`, **3.38:1** on `--bg-1` and **2.98:1** on `--bg-2` (dark);
-  **3.17:1**, **2.96:1** and **2.73:1** respectively (light). Over its own 18% tint it is
-  **2.78:1** / **2.51:1**. Every one of those is below the 4.5:1 text bar, and the `--bg-2` and
-  own-tint cases are below even the **3:1** graphics bar. Treat `--text-3` as
+  **3.17:1**, **2.96:1** and **2.73:1** respectively (light). On `--selection` it is **2.33:1** /
+  **2.55:1** (measured 2026-09-01, P98). Over its own 18% tint it is **2.78:1** / **2.51:1**. Every
+  one of those is below the 4.5:1 text bar, and the `--bg-2`, `--selection` and own-tint cases are
+  below even the **3:1** graphics bar. Treat `--text-3` as
   **decorative only** (uppercase section labels that duplicate visible structure, dividers, disabled
   glyphs). Any text the user must actually read — metadata, timestamps, costs, log lines, hints,
   **status-pill labels**, **settings help text**, **any heading that is the user's only wayfinder**
   (§12.5's result-group headers) — uses `--text-2` (**7.90:1** dark / **7.99:1** light on `--bg-0`;
-  **7.25:1** / **7.45:1** on `--bg-1`; **6.40:1** / **6.87:1** on `--bg-2`).
+  **7.25:1** / **7.45:1** on `--bg-1`; **6.40:1** / **6.87:1** on `--bg-2`; **5.01:1** / **6.42:1**
+  on `--selection`).
+- **Read text is judged at 4.5:1 against its *actual composited* backdrop, in both themes
+  (rule made explicit 2026-09-01, P98).** The test for "decorative" is **not** how the text looks —
+  small, uppercase and letter-spaced does not make text decorative. The test is whether the user
+  **must read it to act**. A 11px uppercase pane label is read text when it is the only thing
+  telling the user which merge pane is OURS vs THEIRS; an option's trailing hint is read text
+  because it is what the user reads *in order to choose*. P98 swept the read-text class app-wide
+  (`.diff-overlay-kind`, `.diff-tree-count`, `.conflict-editor-split-label`, `.wtctx-branch`,
+  `.wtctx-blocked`, `.combobox-option-hint`, `.command-palette-option-hint` — all now `--text-2`);
+  a new occurrence is a defect. Where the same element has hover/selected/active states, **each
+  state's backdrop is measured separately** — `--text-3` on a `--selection` row fill was the worst
+  case found (2.33:1).
 - **`--text-3` is never the label or glyph colour of an *enabled* interactive control
   (added 2026-08-31, P95).** Button labels, segmented-control segments, tab labels, close
   buttons, hover-revealed gutter controls, chip labels and pill glyphs use `--text-2` or brighter.
@@ -87,9 +103,9 @@ One known AA shortfall remains (`--text-3`); the hue-as-text family was retro-fi
   at the 3:1 graphics bar against their *actual composited* backdrop in **both** themes; `--text-3`
   clears 3:1 on none of `--bg-0`/`--bg-1`/`--bg-2` in the light theme, so in practice an
   icon-only control also uses `--text-2`. P95 swept the enabled-control class app-wide; a new
-  occurrence is a defect. (A residual set of `--text-3` **read-text** violations — `.diff-overlay-kind`,
-  `.diff-tree-count`, `.conflict-editor-split-label`, `.wtctx-branch`, `.wtctx-blocked`,
-  `.combobox-option-hint`, `.command-palette-option-hint` — is tracked as its own follow-up.)
+  occurrence is a defect. The enabled/disabled distinction survives the swap: `--text-2` vs
+  `--text-3` is a **2.15:1** dark / **2.52:1** light apparent step, so an enabled `--text-2` hint
+  beside a disabled `--text-3` option still reads as two states.
 - **A hue is never a label colour over its own tint.** Use the hue for borders, glyphs, bars and
   fills (≥3:1 graphics bar) and `--text-1` for the words beside them. For a filled warning chip,
   `color: var(--bg-0)` on `background: var(--warning)` is safe in both themes (**6.4:1** dark /
@@ -102,6 +118,22 @@ One known AA shortfall remains (`--text-3`); the hue-as-text family was retro-fi
   (`.submodule-badge-ok` **4.76** / **4.06**, `.submodule-badge-warn` ≈**5.4** / **3.94**) was
   already fixed in P73 by §11's pill recipe. **There is no remaining sanctioned use of
   hue-as-text-over-its-own-tint anywhere in the app; a new one is a defect.**
+- **KNOWN SHORTFALL — text on a solid `--accent` fill is sub-AA in dark (measured 2026-09-01,
+  P98).** `--accent-text` / `#ffffff` on `background: var(--accent)` is **3.22:1** dark /
+  **4.65:1** light. Every accent-filled active/selected row therefore has a **primary label below
+  4.5:1 in the default theme** — `.combobox-option--active` and
+  `.command-palette-option.is-active` at minimum. White is the ceiling, so **no** foreground fixes
+  this; only the fill can. Two consequences, both binding:
+  1. **Never dim text on a hue fill with a hardcoded `rgba(255,255,255,α)`.** P98 removed the two
+     instances (`rgba(255,255,255,0.8)` on the two option hints, **2.61:1** dark / **3.56:1**
+     light). If a hint must sit on an accent fill, it takes `var(--accent-text)` — the same colour
+     as the row's label — and subordination is carried by size (11px vs 13px) and right-edge
+     placement, not by opacity.
+  2. **A new surface must not add an accent-filled row carrying read text.** The house
+     selected-row recipe is `background: var(--selection)` with `--text-1` label (**9.36:1** dark /
+     **13.29:1** light) and `--text-2` secondary (**5.01** / **6.42**) — both pass in both themes,
+     and an `inset 2px 0 0 var(--accent)` leading bar keeps the accent emphasis. Retro-fitting the
+     existing accent-filled rows to that recipe is the open follow-up.
 - **`--accent` as *text* never sits on a `--selection` fill (added 2026-08-20, P69l).**
   `color: var(--accent)` is a house-wide pattern (~30 call sites) and is fine on `--bg-0` / `--bg-1`
   / `--bg-2`, but over `--selection` it measures **2.6:1** dark / **3.6:1** light (independently
@@ -110,6 +142,11 @@ One known AA shortfall remains (`--text-3`); the hue-as-text family was retro-fi
   `--accent` may never be chosen as the "emphasised" colour for a value inside a selected row — use
   `--text-1`. `--accent` as a **border, bar or glyph** on `--selection` remains fine as decorative
   delineation that carries no meaning (the settings rail's inset bar, §12.1).
+- **A `var(--x)` that is not defined silently deletes its declaration.** `var(--border-0)` — never a
+  real token — appeared 5× in `src/styles/conflicts.css` and computed to
+  `border-style: none; border-width: 0px`, so the merge editor's split-label dividers simply did not
+  render (found and fixed 2026-09-01, P98 §4). There is **one** border token: `--border`. Before
+  shipping a new stylesheet, confirm every `var(--…)` it names resolves.
 
 Additional measured pairs (2026-08-19, P70 pass), all on `--bg-1`: `--text-1` **13.5:1** dark /
 **15.4:1** light; `--warning` glyph **7.3:1** / **4.5:1**; `--success` glyph **5.7:1** / **4.7:1**;
