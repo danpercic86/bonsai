@@ -309,11 +309,33 @@ have passed on the very double-fire being removed.
   sentinel matches `includes('fail')` too broadly; PR rows ignore `panelDensity` (pre-existing since
   P89, contract §12.5). Full text → archive Part 23.
 
-## ⏳ P97 — split ContextMenu.tsx — PENDING (queued last)
+## ✅ P97 — split ContextMenu.tsx — DONE (2026-09-01)
 
-486 lines against the ~500 limit; `MenuList` (lines 102-383, ~281 lines) is the extraction seam,
-confirmed 2026-09-01; the three exported interfaces (lines 3-72) are a second candidate. Queued
-last so its file-size-baseline churn lands after P96/P98. Strictly behaviour-preserving
+Strictly behaviour-preserving (refactorer). `ContextMenu.tsx` **486 -> 112 lines**, into
+`src/components/contextMenu/`: `MenuList.tsx` (313) and `types.ts` (70).
+
+**Equivalence proof: 113/113 tests identical before and after**, across the same 7 affected test
+files. That identity — not the split — was the deliverable.
+
+**The types had to move too, and not for tidiness:** `MenuList` needs `ContextMenuItem`, so leaving
+the interfaces in `ContextMenu.tsx` would have created a container<->child import **cycle**.
+`ContextMenu.tsx` re-exports all three from the original path via `export type { ... } from
+'./contextMenu/types'` — `export type`, not a plain re-export, so it survives
+`isolatedModules`/`verbatimModuleSyntax`. **Zero consumer updates**; all ~37 referencing files
+untouched, and no barrel `index.ts` (CLAUDE.md prefers narrow explicit imports). `MenuList` was
+module-private before and stays unexported from `ContextMenu.tsx`, so the public surface is unchanged.
+
+Net 486 -> 495 total lines: ordinary move overhead (imports, the re-export block, one `export`).
+Structure was the goal, not line reclaim.
+
+**Size baseline NOT updated** (deliberate, decision below). `ContextMenu.tsx` at 486 was never a
+baselined offender, so the ratchet output is byte-identical before and after: `18 line(s) reclaimed
+across 13 file(s)`, 29 offenders over limit.
+
+Pre-existing smells moved verbatim and deliberately **not** fixed (refactorer scope): the
+`react-hooks/exhaustive-deps` disable on `MenuList`'s `autoFocus` effect (calls `focusFirst`,
+declared later, deliberately omitted from deps), and the index-based `key={i}` on rows, which the
+surrounding comment already justifies. Strictly behaviour-preserving
 (refactorer), proven by identical before/after test counts.
 
 ---
