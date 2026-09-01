@@ -349,7 +349,7 @@
 /* P1 §8 item 7: neutral until the first line exceeds the limit, then --warning. */
 .commit-counter {
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
   font-family: var(--font-mono);
 }
 

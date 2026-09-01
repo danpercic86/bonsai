@@ -80,7 +80,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--text-3);
+  color: var(--text-2);
   background: var(--bg-2);
   padding: 2px 8px;
   min-width: 100%;
@@ -215,7 +215,7 @@
 }
 
 .diff-nonewline .diff-content {
-  color: var(--text-3);
+  color: var(--text-2);
   font-style: italic;
 }
 

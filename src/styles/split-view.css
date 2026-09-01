@@ -50,7 +50,7 @@
 
 /* Trailing "\ No newline at end of file" note (mirrors .diff-nonewline .diff-content). */
 .diff-split-nonewline {
-  color: var(--text-3);
+  color: var(--text-2);
   font-style: italic;
 }
 

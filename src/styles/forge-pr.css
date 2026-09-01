@@ -136,7 +136,7 @@
 .pr-row-num {
   flex: none;
   font-size: 12px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-row-meta {
@@ -144,7 +144,7 @@
   align-items: center;
   gap: 10px;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-row-branches {
@@ -237,7 +237,7 @@
 
 .pr-detail-num {
   font-size: 13px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-detail-meta {
@@ -269,7 +269,7 @@
 }
 
 .pr-stat-files {
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-mergeable {
@@ -363,7 +363,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-comment-kind-review {
@@ -372,13 +372,13 @@
 
 .pr-comment-date {
   margin-left: auto;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-comment-loc {
   margin-top: 4px;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-comment-body {
@@ -433,7 +433,7 @@
 
 .pr-create-arrow {
   padding-bottom: 8px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-field {
@@ -453,7 +453,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-input {
@@ -561,7 +561,7 @@
 .forge-connect-note {
   margin: 0;
   font-size: 12px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 /* P64c: per-provider token-scope hint + "create a token" help link. */
@@ -625,7 +625,7 @@
 .forge-account-host {
   flex: none;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -676,14 +676,14 @@
 .forge-account-caret {
   flex: none;
   font-size: 10px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 /* P80: muted "why this account is active" caption between host and the badge. */
 .forge-account-source {
   flex: none;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -710,7 +710,7 @@
   display: block;
   margin-top: 4px;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 /* Avatar: mirrors .identity-avatar (22px cozy / 20px compact), object-fit for
@@ -802,7 +802,7 @@
 
 .pr-changes-count {
   font-size: 12px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 /* Push Retry to the row end. */

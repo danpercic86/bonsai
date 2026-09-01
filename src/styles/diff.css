@@ -28,7 +28,7 @@ span.file-row-main {
 .file-chevron {
   flex: none;
   width: 10px;
-  color: var(--text-3);
+  color: var(--text-2);
   font-size: 12px;
   line-height: 1;
   transition: transform 0.12s ease;

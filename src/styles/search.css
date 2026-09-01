@@ -189,7 +189,7 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .command-palette-option {
@@ -301,7 +301,7 @@
 .search-result-oid {
   flex: none;
   font-family: var(--font-mono);
-  color: var(--text-3);
+  color: var(--text-2);
 }
 .search-result-summary {
   flex: 1;
@@ -329,7 +329,7 @@
 }
 .search-result-date {
   flex: none;
-  color: var(--text-3);
+  color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
 .search-result-badge {

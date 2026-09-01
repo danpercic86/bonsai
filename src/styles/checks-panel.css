@@ -162,7 +162,7 @@ button.checks-tip-sha:hover {
   color: var(--warning);
 }
 .checks-glyph--neutral {
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .checks-row-main {

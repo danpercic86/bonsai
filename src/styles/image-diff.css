@@ -49,7 +49,7 @@
 }
 
 .img-diff-size {
-  color: var(--text-3);
+  color: var(--text-2);
   font-size: 11px;
 }
 
@@ -142,7 +142,7 @@
 
 .img-diff-hint {
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 /* P61b: image comparison inside a DiffBrowser card (commit/compare). Unlike the

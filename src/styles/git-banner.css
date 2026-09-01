@@ -147,7 +147,7 @@
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .git-banner-list {
@@ -162,7 +162,7 @@
 }
 
 .git-banner-bullet {
-  color: var(--text-3);
+  color: var(--text-2);
   padding-inline-start: 8px;
   padding-inline-end: 6px;
 }

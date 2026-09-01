@@ -61,7 +61,7 @@
   margin-top: 4px;
   font-size: 11px;
   font-weight: 400;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .asset-editor-fields {
@@ -136,7 +136,7 @@
 .asset-compare-head {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-3);
+  color: var(--text-2);
   overflow-wrap: anywhere;
 }
 

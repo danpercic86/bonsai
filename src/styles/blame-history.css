@@ -90,7 +90,7 @@
 
 .blame-date {
   flex: none;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .blame-code {
@@ -109,7 +109,7 @@
   flex: none;
   min-width: 3ch;
   text-align: right;
-  color: var(--text-3);
+  color: var(--text-2);
   user-select: none;
 }
 
@@ -164,7 +164,7 @@
 
 .file-history-date {
   flex: none;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 /* P38: reflog viewer overlay — a sibling read overlay to blame/file-history.
@@ -211,11 +211,11 @@
 
 .reflog-oid-old,
 .reflog-oid-arrow {
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .reflog-oid-root {
-  color: var(--text-3);
+  color: var(--text-2);
   font-style: italic;
 }
 
@@ -238,7 +238,7 @@
 
 .reflog-date {
   flex: none;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .reflog-actions {

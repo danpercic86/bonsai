@@ -85,6 +85,14 @@
   cursor: default;
 }
 
+/* P101 §4.2: the disabled exemption applies to the subnote too — the child rule
+   (forge-pr.css .context-menu-subnote) would otherwise re-brighten half a disabled
+   menu item. Specificity 0,2,1 beats the plain 0,1,0 subnote rule regardless of
+   source order; there is no equal-specificity --active override to tie against. */
+.context-menu-item:disabled .context-menu-subnote {
+  color: var(--text-3);
+}
+
 /* Destructive actions (Delete, hard reset): red icon + label. The icon inherits
    currentColor, so the glyph reddens with the label; hover keeps the --selection
    background (--danger text stays legible on it in both themes). */
@@ -112,7 +120,7 @@
 .context-menu-chevron {
   margin-left: auto;
   padding-left: 8px;
-  color: var(--text-3);
+  color: var(--text-2);
   font-size: 10px;
   line-height: 1;
   flex: 0 0 auto;

@@ -28,7 +28,7 @@
    ring. Colour alone carries nothing here; the menu names the source. */
 .identity-avatar[data-identity-state='unmatched'],
 .identity-avatar[data-identity-state='loading'] {
-  border-color: var(--text-3);
+  border-color: var(--text-2);
 }
 
 /* State 3 — nothing set (or unreadable). The `?` GLYPH and the accessible name
@@ -67,7 +67,7 @@
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .identity-menu-name {
