@@ -165,11 +165,84 @@ per-selector figures above):
 - `.diff-intra-toggle` off-state label is `--text-3` on the transparent overlay toolbar (≈4.0:1),
   under the 4.5:1 AA floor; `--text-2` fixes it. Shared overlay chrome, not P93's doing.
 
-## 🔧 P98 — `--text-3` read-text sweep — IN-PROGRESS
+## 🚨 P101 — audit the 122 unaudited `--text-3` uses — PENDING (found 2026-09-01)
 
-**Current step:** contract written (`docs/contracts/P98-text3-readtext-ui.md`, AC1+); `ui-reference.md`
-§2 updated (1225 -> 1261 lines, diff verified confined to lines 69-145, 13 sections intact).
-Awaiting senior-dev implementation once P96 commits (one writer in the tree at a time).
+**`ui-reference.md` §2's claim that the `--text-3` family is "closed" is FALSE — corrected during
+P98, do not let it come back.** P95 swept the enabled-control class and P98 an *enumerated* read-text
+set, but **122 `color: var(--text-3)` declarations remain in `src/styles/` and have never been
+classified.** P95's AC10 grep hit ~140 and the AC was reworded precisely because enumerating them was
+unsatisfiable; nobody went back.
+
+Confirmed violations by §2's own test, in `src/styles/blame-history.css` — a file P98 never opened:
+- `.blame-date` (:93), `.file-history-date` (:167), `.reflog-date` (:241) — **timestamps**, which §2
+  explicitly names as read-text requiring `--text-2`. 3.68:1 dark / 3.17:1 light on `--bg-0`, worse
+  on `--bg-1`/`--bg-2`.
+- Borderline, needs a ui-designer call: `.reflog-oid-old`, `.reflog-oid-arrow`, `.reflog-oid-root`
+  (:214/:218) — abbreviated oids in the reflog.
+
+**Why this is filed as HIGH and not a NIT:** the discovery rate is the signal. Two gaps
+(`.pr-merge-method-desc`, `.cm-gutters`) turned up by casual inspection, then three more by grepping
+a *single* extra file. The orchestrator's P98 decision #3 was justified by "this is the last gap
+making the closed claim true" — that premise was simply wrong, and a tidy-but-false "closed" claim
+is worse than an honest scope statement because it stops a future sweep from ever looking.
+
+Method to use (ui-designer is writing it into the P98 contract as the durable deliverable): classify
+each of the 122 against the "**must the user read it to act?**" test, not against how the text looks
+— small/uppercase/letter-spaced does not make text decorative.
+
+## ⏳ P98 — `--text-3` read-text sweep — AWAITING USER CHECKPOINT
+
+**Implemented; ui-designer APPROVED after one MUST-FIX. AI gate green; USER CHECKPOINT owed.**
+
+Landed: 10 read-text swaps `--text-3` -> `--text-2` (8 selectors incl. the orchestrator's 8th,
+`.pr-merge-method-desc`), 4 hardcoded white literals -> `var(--accent-text)`, and the §4 dead-token
+repair (5x `var(--border-0)` -> `var(--border)`). Diff verified colour-only outside that one
+sanctioned hunk; `git diff --stat` byte-identical to `--ignore-all-space --stat`.
+
+**MUST-FIX-1 (found by ui-designer, a regression P98 itself introduced).** The `*-hint` rules are
+*child* selectors, so they also matched inside a **disabled** option and beat the `--text-3` the
+disabled state relies on inheriting: label 3.38:1 / hint 7.25:1 — the qualifier twice as bright as
+the text it qualifies, disabled dimming half-applied, AC7 broken. Fixed with two rules
+(`.combobox-option--disabled .combobox-option-hint`, `.command-palette-option.is-disabled
+.command-palette-option-hint`). **Placement is load-bearing and must not be reordered:** each ties on
+specificity with its `--active`/`.is-active` override, so source order alone decides the
+disabled+active state. Measured specificity is (0,2,0) in `dialogs-forms.css` but **(0,3,0)** in
+`search.css` (compound selectors on one element) — both carry a comment saying why the order matters.
+All four disabled states verified to compute an identical label/hint colour in both themes.
+
+**Verification honesty — read before trusting the numbers.** Only **4 of 10** declarations were
+measured on a mounted instance (`.diff-overlay-kind`, `.command-palette-option-hint` idle + active,
+and the active row's own label). The other 6 are **CSSOM-rule-confirmed but source-derived**, not
+composited: `.diff-tree-count` needs canvas-driven commit selection (synthetic clicks don't hit the
+canvas), and there is no mock fixture for a conflicted scope, the worktree dialog, or an *enabled*
+combobox hint. The AC19 disabled-state figures are rule-level (injected nodes against the real
+CSSOM), not a React-mounted option.
+
+**Two mechanism traps recorded so they aren't re-hit:**
+- `resize_window colorScheme` measures **dark twice** — the app themes off a `data-theme` attribute
+  on `<html>` and never reads `prefers-color-scheme`. Set the attribute directly.
+- `border-style: none` has a **used width of 0px**, so the §4 repair adds a real **1px** (bar height,
+  each label's left edge). Below the 4px grain and it cannot reflow the `flex: none` panes, but it is
+  not a no-op — this is a USER CHECKPOINT item, not something the AI gate can clear.
+
+**USER CHECKPOINT owed:** (a) the 1px border appearing in the merge editor looks intentional and
+doesn't crowd the panes; (b) on the *active* palette/combobox row the hint's colour step is now
+exactly **1.00x** by design — subordination rests on 11px-vs-13px + right-edge placement, which is
+the one place perception can disagree; (c) the 6 unreachable selectors read correctly in the real app.
+
+**Routing correction:** ui-designer filed two pre-existing NITs "-> P99", but P99 is the
+production-bundle `repo`-state bug. Both are accent-fill issues and belong with **P100**:
+`conflicts.css:201` `var(--accent-fg, #fff)` — **`--accent-fg` is not a token** either, a second
+phantom in the file §4 just repaired, surviving on its fallback (prescribed `var(--accent-text)`);
+and `dialogs-forms.css:163` `.wt-copy-toggle-on` hardcoding `#fff !important`.
+
+**`.cm-gutters` -> sanctioned decorative** (ui-designer's call): line numbers are universal editor
+chrome and a coordinate duplicating visible structure, and the act-carrying text in that pane is
+already `--text-2`. Recorded in §2's sanctioned list **with a revisit trigger** — any go-to-line,
+line-range or line-naming feature makes them read text.
+**Reflog oids (for P101):** `.reflog-oid-old`/`-root` are read text (you read them to pick a reset
+target); `.reflog-oid-arrow` clears 3:1 so contrast doesn't force it — move it for **cohesion** only,
+flagged as such so the precedent isn't misread as a contrast fix.
 
 **Orchestrator decisions on the contract's three open questions (2026-09-01):**
 1. **Accept the `--accent`-fill deferral (contract §5-A) as its own milestone → P100.** White text on

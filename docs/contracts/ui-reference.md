@@ -66,12 +66,23 @@ CSS custom properties on `:root` (dark, default) and `[data-theme="light"]`.
 
 Focus: 2px `--accent` outline, offset 1px, keyboard only (`:focus-visible`).
 
-**Contrast notes (measured 2026-08-17, P68e design pass; toast rows updated 2026-08-20, P74; the
-`--text-3` classes closed 2026-08-31 P95 and 2026-09-01 P98).**
-The `--text-3` family is **closed**: P95 swept the enabled-interactive-control class, P98 the
-read-text class. The hue-as-text family was retro-fitted by P74. **One known AA shortfall remains —
-white text on the `--accent` fill in the dark theme (see the fifth bullet). New surfaces must not
-add to any of these**:
+**Contrast notes (measured 2026-08-17, P68e design pass; toast rows updated 2026-08-20, P74;
+`--text-3` swept in two enumerated passes, 2026-08-31 P95 and 2026-09-01 P98).**
+
+**Scope of the `--text-3` work so far — stated honestly, because an overclaim here stops the next
+sweep from looking.** Two *enumerated* classes have been swept: P95 took the
+**enabled-interactive-control** class, P98 took an **eight-selector read-text set** (named in the
+read-text bullet). The hue-as-text family was retro-fitted by P74. **The `--text-3` family is NOT
+closed.** As of 2026-09-01 there are **122 `color: var(--text-3)` declarations across 33 files in
+`src/styles/`**, and apart from the eight P98 swept and the sanctioned-decorative list below,
+**none of them has ever been individually classified**. Known violations already sitting inside that
+unaudited remainder: `.blame-date`, `.file-history-date` and `.reflog-date`
+(`src/styles/blame-history.css`) are **timestamps on the `--bg-0` `.diff-overlay` surface at 3.67:1
+dark / 3.17:1 light** — read text by this section's own rule, in a file neither sweep opened. The
+full audit is **P101**; its classification method is specced in
+`docs/contracts/P98-text3-readtext-ui.md` §8.8. **Two known AA shortfalls remain** — white text on
+the `--accent` fill in the dark theme (see the KNOWN SHORTFALL bullet), and the unaudited `--text-3`
+remainder. **New surfaces must not add to any of these**:
 
 - `--text-3` is **3.68:1** on `--bg-0`, **3.38:1** on `--bg-1` and **2.98:1** on `--bg-2` (dark);
   **3.17:1**, **2.96:1** and **2.73:1** respectively (light). On `--selection` it is **2.33:1** /
@@ -89,12 +100,32 @@ add to any of these**:
   small, uppercase and letter-spaced does not make text decorative. The test is whether the user
   **must read it to act**. A 11px uppercase pane label is read text when it is the only thing
   telling the user which merge pane is OURS vs THEIRS; an option's trailing hint is read text
-  because it is what the user reads *in order to choose*. P98 swept the read-text class app-wide
-  (`.diff-overlay-kind`, `.diff-tree-count`, `.conflict-editor-split-label`, `.wtctx-branch`,
-  `.wtctx-blocked`, `.combobox-option-hint`, `.command-palette-option-hint` — all now `--text-2`);
-  a new occurrence is a defect. Where the same element has hover/selected/active states, **each
-  state's backdrop is measured separately** — `--text-3` on a `--selection` row fill was the worst
-  case found (2.33:1).
+  because it is what the user reads *in order to choose*. Where the same element has
+  hover/selected/active states, **each state's backdrop is measured separately** — `--text-3` on a
+  `--selection` row fill was the worst case found (2.33:1).
+  - **The eight selectors P98 swept to `--text-2`** — a new `--text-3` on any of these is a defect:
+    `.diff-overlay-kind`, `.diff-tree-count`, `.conflict-editor-split-label`, `.wtctx-branch`,
+    `.wtctx-blocked`, `.combobox-option-hint`, `.command-palette-option-hint`,
+    `.pr-merge-method-desc` (§12.9). Plus the two active-state hint overrides, which moved from a
+    hardcoded `rgba(255,255,255,.8)` to `var(--accent-text)`.
+  - **Sanctioned decorative — audited and deliberately left at `--text-3`.** This list is
+    exhaustive; a `--text-3` use *not* on it and *not* among the eight above is **unclassified**,
+    not approved.
+
+    | Use | Where | Measured | Why decorative |
+    |---|---|---|---|
+    | Editor line-number gutter | `src/components/conflictCmSetup.ts:36`, `.cm-gutters` | 3.68 / 3.17 on `--bg-0` | a coordinate that duplicates visible structure; universal editor convention (a `--text-2` gutter would be louder than any editor the user knows). The act-carrying text in that pane — `.conflict-region-caption`, `.conflict-editor-split-label`, the accept/reject buttons — is already `--text-2` or brighter. **Revisit trigger:** if a line number ever becomes actionable or is named in copy (go-to-line, line-range selection, any message citing a line), it becomes read text and moves to `--text-2`. |
+    | The disabled option set | `dialogs-forms.css` / `search.css`: `.combobox-option--disabled`(`.combobox-option--active`), `.command-palette-option.is-disabled`(`.is-active`) | 3.38 / 2.96 on `--bg-1` | dimming *is* the disabled signal, carried independently by `disabled` / `aria-disabled` + `cursor: default` |
+    | The P95 §3.3 exempt set | `docs/contracts/P95-a11y-ui.md` §3.3 | — | as recorded there |
+  - **The child-rule trap (found 2026-09-01, P98 §8.4 — check this after every swap).** A `color`
+    rule on a **child** of a disabled row beats the `--text-3` that child would otherwise inherit
+    from the row, so brightening a hint app-wide silently re-brightens **half of every disabled
+    row**. P98 shipped exactly this bug: a disabled combobox option's label measured `--text-3`
+    (3.38 / 2.96) while its own hint measured `--text-2` (7.25 / 7.45) — the qualifier twice as
+    bright as the thing it qualified, and the disabled affordance only half-applied. **Whenever a
+    child element is raised to `--text-2`, restate the dim on the disabled compound selector**
+    (`.combobox-option--disabled .combobox-option-hint { color: var(--text-3) }`). The disabled
+    exemption is not inherited for you.
 - **`--text-3` is never the label or glyph colour of an *enabled* interactive control
   (added 2026-08-31, P95).** Button labels, segmented-control segments, tab labels, close
   buttons, hover-revealed gutter controls, chip labels and pill glyphs use `--text-2` or brighter.
@@ -146,7 +177,10 @@ add to any of these**:
   real token — appeared 5× in `src/styles/conflicts.css` and computed to
   `border-style: none; border-width: 0px`, so the merge editor's split-label dividers simply did not
   render (found and fixed 2026-09-01, P98 §4). There is **one** border token: `--border`. Before
-  shipping a new stylesheet, confirm every `var(--…)` it names resolves.
+  shipping a new stylesheet, confirm every `var(--…)` it names resolves. Note the box-model
+  consequence when repairing one: `border-width: 1px` with `border-style: none` has a **used width
+  of 0px**, so restoring the style adds 1px of real space — small, but state it rather than claiming
+  a zero-layout change.
 
 Additional measured pairs (2026-08-19, P70 pass), all on `--bg-1`: `--text-1` **13.5:1** dark /
 **15.4:1** light; `--warning` glyph **7.3:1** / **4.5:1**; `--success` glyph **5.7:1** / **4.7:1**;
@@ -1146,8 +1180,12 @@ The number input shows a **draft** while focused and commits the clamped value o
   tight for a picker + fields). Same overlay, Esc, and overlay-click-cancels behaviour as
   `ConfirmDialog`. Structure top→bottom: `dialog-title` → lead summary paragraph (names consequence +
   irreversibility) → a method **radiogroup** (`SettingsSegmented`, `role="radiogroup"`, options
-  filtered to `SUPPORTED_MERGE_METHODS[kind]`, with a one-line `.pr-merge-method-desc` in `--text-3`
-  updated per selection) → optional commit title/message fields (`.pr-input` / `.pr-textarea`, shown
+  filtered to `SUPPORTED_MERGE_METHODS[kind]`, with a one-line `.pr-merge-method-desc` in
+  **`--text-2`** updated per selection — **amended by P98**: it was `--text-3` at 3.38:1 dark /
+  2.96:1 light on the `.dialog-card` `--bg-1` surface, which fails the §2 text bar; it is the only
+  sentence telling the user what the selected method will do to their branch, immediately above an
+  irreversible action, so it is read text and now measures **7.25:1** dark / **7.45:1** light) →
+  optional commit title/message fields (`.pr-input` / `.pr-textarea`, shown
   only for methods that consume them) → a delete-source-branch checkbox (`.pr-draft-toggle` idiom,
   default OFF, **hidden when `kind === 'gitHub'`** since GitHub ignores it on merge) → `.dialog-buttons`
   Cancel + confirm. The merge confirm is `btn-primary` (constructive happy path; irreversibility is

@@ -205,7 +205,8 @@
 }
 .command-palette-option.is-active {
   background: var(--accent);
-  color: #fff;
+  /* P98: token hygiene — same computed value as the #fff literal it replaces. */
+  color: var(--accent-text);
 }
 .command-palette-option.is-disabled {
   color: var(--text-3);
@@ -225,11 +226,21 @@
 .command-palette-option-hint {
   flex: none;
   font-size: 11px;
-  color: var(--text-3);
+  /* P98 §3: the bound shortcut is read in order to choose — read text, needs AA. */
+  color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
 .command-palette-option.is-active .command-palette-option-hint {
-  color: rgba(255, 255, 255, 0.8);
+  /* P98 §3 row 7a: drops a hardcoded rgba literal; on the --accent fill white is the
+     ceiling (3.22:1 dark / 4.65:1 light — see contract §5-A). */
+  color: var(--accent-text);
+}
+
+/* P98 AC19 (§8.4): the disabled exemption applies to the hint too — the child rule would
+   otherwise re-brighten half a disabled row. Must stay after the .is-active hint override
+   (equal specificity, 0,3,0 — source order decides the disabled+active tie). */
+.command-palette-option.is-disabled .command-palette-option-hint {
+  color: var(--text-3);
 }
 
 .graph-search-fab {

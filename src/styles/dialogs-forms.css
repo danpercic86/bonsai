@@ -211,7 +211,8 @@
 
 .combobox-option--active {
   background: var(--accent);
-  color: #fff;
+  /* P98: token hygiene — same computed value as the #fff literal it replaces. */
+  color: var(--accent-text);
 }
 
 .combobox-option--disabled {
@@ -233,11 +234,21 @@
 .combobox-option-hint {
   flex: none;
   font-size: 11px;
-  color: var(--text-3);
+  /* P98 §3: disambiguating text read in order to choose — read text, needs AA. */
+  color: var(--text-2);
 }
 
 .combobox-option--active .combobox-option-hint {
-  color: rgba(255, 255, 255, 0.8);
+  /* P98 §3 row 6a: drops a hardcoded rgba literal; on the --accent fill white is the
+     ceiling (3.22:1 dark / 4.65:1 light — see contract §5-A). */
+  color: var(--accent-text);
+}
+
+/* P98 AC19 (§8.4): the disabled exemption applies to the hint too — the child rule would
+   otherwise re-brighten half a disabled row. Must stay after the --active hint override
+   (equal specificity, 0,2,0 — source order decides the disabled+active tie). */
+.combobox-option--disabled .combobox-option-hint {
+  color: var(--text-3);
 }
 
 /* P23b: interactive-rebase plan editor — wider card, a reorderable row list. */

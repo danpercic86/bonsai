@@ -10,7 +10,8 @@
 
 .wtctx-branch {
   font-size: 11px;
-  color: var(--text-3);
+  /* P98 §3: read text — --text-3 fails 4.5:1 AA; --text-2 clears it in both themes. */
+  color: var(--text-2);
 }
 
 .wtctx-status {
@@ -19,7 +20,8 @@
 
 .wtctx-blocked {
   font-size: 11px;
-  color: var(--text-3);
+  /* P98 §3: the only text explaining why the action is blocked — read text, needs AA. */
+  color: var(--text-2);
   font-style: italic;
 }
 

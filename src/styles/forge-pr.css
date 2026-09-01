@@ -545,7 +545,11 @@
 .pr-merge-method-desc {
   margin: 4px 0 0;
   font-size: 12px;
-  color: var(--text-3);
+  /* P98 (orchestrator addition to the contract's seven): a merge-method description is
+     text the user reads in order to choose, i.e. read text by the contract's own test, and
+     ui-reference §2 now asserts the --text-3 read-text family is closed — leaving this one
+     would make that claim false. Was 3.38:1 dark / 2.96:1 light on --bg-1. */
+  color: var(--text-2);
 }
 
 .forge-connect-sub {

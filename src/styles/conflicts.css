@@ -126,12 +126,17 @@
   height: 100%;
 }
 
+/* P98 §4: the 5 `var(--border-0)` uses in this file named a token that was never
+   defined, so they computed to `border-style: none; border-width: 0px` and rendered no
+   border at all. All 5 now use `var(--border)`, the app's single 1px pane/row border
+   token — so the split-label bar's bottom border and the OURS/THEIRS divider become
+   visible. Sanctioned by the contract as the one non-colour change in P98. */
 .conflict-editor-header {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 6px 12px;
-  border-bottom: 1px solid var(--border-0);
+  border-bottom: 1px solid var(--border);
   background: var(--bg-1);
   flex: 0 0 auto;
 }
@@ -166,7 +171,7 @@
 /* P12d: two-segment Unified | Side-by-side toggle. */
 .conflict-editor-mode-toggle {
   display: inline-flex;
-  border: 1px solid var(--border-0);
+  border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -183,7 +188,7 @@
 }
 
 .conflict-editor-mode-btn + .conflict-editor-mode-btn {
-  border-left: 1px solid var(--border-0);
+  border-left: 1px solid var(--border);
 }
 
 .conflict-editor-mode-btn:hover {
@@ -200,7 +205,7 @@
 .conflict-editor-split-labels {
   display: flex;
   flex: 0 0 auto;
-  border-bottom: 1px solid var(--border-0);
+  border-bottom: 1px solid var(--border);
   background: var(--bg-1);
 }
 
@@ -208,13 +213,14 @@
   flex: 1 1 0;
   padding: 3px 12px;
   font-size: 11px;
-  color: var(--text-3);
+  /* P98 §3: sole OURS/THEIRS/OUTPUT wayfinder — read text, not decorative; --text-2 for AA. */
+  color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .conflict-editor-split-label + .conflict-editor-split-label {
-  border-left: 1px solid var(--border-0);
+  border-left: 1px solid var(--border);
 }
 
 .conflict-editor-error {
