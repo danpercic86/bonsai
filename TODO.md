@@ -51,7 +51,7 @@ inserts immediately after, so expect one conflict hunk) and `src/styles/forge-pr
 same file P95 edits). It adds 18 lines to `tokens-and-base.css` but does **not** change
 `--text-2`/`--text-3`, so P95's contrast figures remain valid.
 
-## ✅ P99 — `repo` state dead in a production bundle — DONE (2026-09-01) — **DOWNGRADED, NOT A PRODUCT BUG**
+## ✅ P99 — `repo` state dead in a production bundle — DONE + VERIFIED (`fea4a71`, USER 2026-09-01) — **DOWNGRADED, NOT A PRODUCT BUG**
 
 **The original HIGH framing was WRONG and is retracted.** It was filed (from P94 instrumentation) as
 "an unborn repo renders the full graph instead of *No commits yet*", i.e. a shipped-in-1.5.0
@@ -137,7 +137,7 @@ reason for abandoning it no longer holds, so revisit it. Re-verify equivalence f
 assuming: the dev/prod difference was only ever observable through StrictMode's double-mount, so
 check for any *other* effect that depends on running twice before switching the suite over.
 
-## ⏳ P95 — a11y: graph scroller semantics, keyboard reachability, toolbar contrast — AWAITING USER CHECKPOINT
+## ✅ P95 — a11y: graph scroller semantics, keyboard reachability, toolbar contrast — DONE + VERIFIED (`f9a9209`, USER 2026-09-01)
 
 **Current step:** IMPLEMENTED and committed `f9a9209`. Reviewer + ui-designer both **approve**,
 zero MUST-FIX. AI gate green — full `pnpm gate` **8/8** first try (Rust 2051/2051, vitest 2397/2397,
@@ -145,7 +145,7 @@ Playwright 160 passed in default parallel mode — which independently re-valida
 clippy/eslint/tsc/size-ratchet clean). Contrast measured per selector in both themes in the
 harness; orchestrator separately confirmed zero console errors and the exact rendered attribute set.
 
-**Remaining: USER CHECKPOINT** — run `pnpm tauri dev` and confirm:
+**USER CHECKPOINT — CONFIRMED by the user 2026-09-01.** All four items below were checked in the real Tauri window:
 - **AC8** — clicking a commit in the graph while a centre overlay is open leaves focus in the
   scroller (the P93 rule; click path untouched by P95, but only a real canvas click proves it).
 - **AC14** — with a screen reader, arrow-key navigation produces exactly ONE utterance per row and
@@ -249,7 +249,7 @@ each of the 122 against the "**must the user read it to act?**" test, not agains
 
 ## ✅ P98 — `--text-3` read-text sweep — DONE + VERIFIED (`be668e0`, USER 2026-09-01)
 
-**Implemented; ui-designer APPROVED after one MUST-FIX. AI gate green; USER CHECKPOINT owed.**
+**Implemented; ui-designer APPROVED after one MUST-FIX. AI gate green; USER CHECKPOINT confirmed.**
 
 Landed: 10 read-text swaps `--text-3` -> `--text-2` (8 selectors incl. the orchestrator's 8th,
 `.pr-merge-method-desc`), 4 hardcoded white literals -> `var(--accent-text)`, and the §4 dead-token
@@ -326,7 +326,7 @@ are read-text, not the enabled-control class P95 sweeps): `.diff-overlay-kind`, 
 `.conflict-editor-split-label`, `.wtctx-branch`, `.wtctx-blocked`, `.combobox-option-hint`,
 `.command-palette-option-hint`. The two `*-hint` selectors are the worst offenders.
 
-## ✅ P96 — P93 review follow-ups — DONE (`cf8bdda`, 2026-09-01)
+## ✅ P96 — P93 review follow-ups — DONE + VERIFIED (`cf8bdda`, USER 2026-09-01)
 
 All four items landed; reviewer approved with **zero MUST-FIX**. Scope was the four filed items only
 — the "carried in from P93" list below stays recorded context, **not** promoted work.
@@ -366,7 +366,7 @@ have passed on the very double-fire being removed.
   sentinel matches `includes('fail')` too broadly; PR rows ignore `panelDensity` (pre-existing since
   P89, contract §12.5). Full text → archive Part 23.
 
-## ✅ P97 — split ContextMenu.tsx — DONE (2026-09-01)
+## ✅ P97 — split ContextMenu.tsx — DONE + VERIFIED (`59d3a41`, USER 2026-09-01)
 
 Strictly behaviour-preserving (refactorer). `ContextMenu.tsx` **486 -> 112 lines**, into
 `src/components/contextMenu/`: `MenuList.tsx` (313) and `types.ts` (70).
