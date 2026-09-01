@@ -36,7 +36,7 @@ bottom. Velocity/gate-cost measurements: `docs/history/velocity-2026-09-01.md`.
 
 ## 🚀 P100 + P101 + DX-e2e — IN PROGRESS (started 2026-09-01, USER: "do P100 and P101 and DX: build-bundle e2e")
 
-**Current step:** slot 2 — `senior-dev` implementing P100 + the 3 mock fixtures. DX-e2e is **DONE** (capability delivered opt-in; default deliberately not flipped — see the DX section, and P103/P104 which it uncovered). P100 contract written; its four `ui-reference.md` hunks already applied by the orchestrator and held uncommitted so the doc never claims closure before the CSS ships.
+**Current step:** slot 3 — `ui-designer` running the P101 audit (writing `docs/contracts/P101-text3-audit-ui.md` in per-file batches) ∥ `senior-dev` root-causing P103. P100 is committed (`e118375`) with its AI gate green and **4 USER CHECKPOINT items owed**. DX-e2e done (`46088e0`, opt-in).
 
 **Sequencing, and why it is not arbitrary.** P100 **must** land before P101. P101's audit method
 (P98 contract §8.8 step 1) requires measuring every declaration against its *composited backdrop
@@ -159,6 +159,75 @@ the known e2e parallel flake at `24-settings-shell.spec.ts:238` — 54/54 passed
 
 Remaining NIT, deliberately not actioned: `buildHead` hardcodes `branchName: 'main'` for unborn
 where the real `read_head_info` reads HEAD's symbolic target — an accepted mock simplification.
+
+## ✅ P100 — accent-fill contrast — AI GATE GREEN, ⏳ AWAITING USER CHECKPOINT (`e118375`)
+
+Closed the last AA shortfall in `ui-reference.md` §2 apart from the `--text-3` remainder (P101).
+Contract `docs/contracts/P100-accent-fill-ui.md`; design review
+`docs/contracts/design-review-2026-09-01-P100.md`.
+
+**A retracted premise, recorded so it does not come back.** P98 §5-A concluded *"white is the
+ceiling, so no foreground fixes this; only the fill can"* — and the orchestrator repeated it when
+briefing P100. **It is false.** White is the ceiling only among *lighter* inks; going **darker**
+passes. `#16181d` on the dark accent is **5.52:1** — the reference's own §5 lane-0 row read
+symmetrically, and already shipped at `partial-staging.css:86`. The designer found this by not taking
+the brief on faith. Hence two recipes instead of one blanket demotion:
+- **A — a state** (selected row, active option, segment) → change the fill: `--selection`,
+  `--text-1` label (**9.36/13.29**), `--text-2` secondary (**5.01/6.42**), plus a **mandatory**
+  non-colour carrier (`--selection` vs `--bg-1` is only ~1.3:1). Six surfaces.
+- **B — an action** (`.btn-primary`) → keep the loud hue fill, flip the ink. One token value.
+  `.btn-primary` verified (twice, independently) as the token's **only** live consumer, so B is
+  zero-collateral.
+
+Survey was complete, not seeded: 7 text-bearing accent fills (the brief listed 4), 11 decorative
+fills fine at the 3:1 bar, 15 `color-mix` tints classified out. Also retired the phantom
+`--accent-fg` (a *second* phantom in the file P98 §4 just repaired), dropped two `!important` from
+`.wt-copy-toggle-on`, rewrote the `tokens-and-base.css` comment that asserted the now-retired "both
+themes use white on accent" invariant, and removed the dead `GraphColors.accentText`.
+
+**The hover deviation, approved on measured evidence.** `filter: brightness()` moves ink *and* fill
+together, so light-theme `.btn-primary:hover` went 4.65 → **3.94 ✗**. The contract's own sanctioned
+remedy also failed (**4.06 ✗**) *and* would have added a literal hex outside `tokens-and-base.css`.
+senior-dev substituted `color-mix(in srgb, var(--accent) 92%, var(--text-1))` — brightens in dark,
+deepens in light, leaves ink alone: **5.99/5.15 ✓**. The designer measured all three mounted,
+**retracted its own remedy**, and amended AC16 to accept a deeper light hover. Now a house rule in
+§2 (hunk-3 addendum) and the device P102 must use for `.btn-danger`.
+
+**USER CHECKPOINT owed (4 items — do not self-declare):** (1) the active row is now *quieter*
+(`--selection` not accent) — does it still read as active, and does the `inset 2px 0 0 var(--accent)`
+leading bar restore the punch? (2) light-theme `.btn-primary:hover` reads as **hover, not pressed**
+(amended AC16). (3) the new PR Base/Compare short-oid hint — new visible microcopy in both themes.
+(4) `.wt-copy-toggle` grew **~2px taller and ~4px wider**.
+
+**Residuals (filed, non-blocking):**
+- `.is-disabled.is-active` compound **may be effectively dead** — arrowing skips disabled rows and
+  pointer-over does not set active, so the designer measured it by *injecting* `is-active`. Either it
+  is genuinely unreachable (delete the rule, and AC5/AC19 with it) or a filter-reset path can land
+  the index on a disabled row (keep it). Decide before deleting.
+- Hover mechanism now inconsistent with four sibling accent/danger buttons still on
+  `filter: brightness`: `partial-staging.css:92,111`, `settings-primitives.css:278`,
+  `updates.css:123`. **Folds into P102** with the house device above.
+- `.combobox-option--active .combobox-option-hint` and its `search.css` twin are now **identical to
+  their base** (`--text-2`) — dead declarations, kept deliberately to hold the AC19 triple symmetric.
+  Note, do not "clean up".
+- `.wt-copy-toggle-off` (`WorktreeCopyCandidates.tsx:112,122`) has **no CSS rule at all** —
+  pre-existing dead class, found in review.
+- The contract's own verbatim comments defeat its mechanical greps: `conflicts.css:202` makes AC2
+  ("`--accent-fg` returns zero matches") fail *literally* while being clean in substance;
+  `dialogs-forms.css:164` makes AC1/AC3 report false hits. Reword future contract comments in prose.
+- Stale pre-extraction P78 comment at `RepoWorkspace.tsx:1433-1435`, redundant beside the new P100
+  pointer. NIT. And `padding: 1px 7px` on `.wt-copy-toggle button` would restore exact parity.
+- `pnpm lint:size` reports 23 reclaimable lines across 14 files; baseline update still deliberately
+  not run (it would move other milestones' accounting).
+
+**Process change adopted (P100 §6-D).** `ui-reference.md` is now ~1322 lines / ≈40k tokens and
+`ui-designer` has **no `Edit` tool** — only whole-file `Write`, which **truncates mid-file** at that
+size. *That* is the structural cause of the P95 "silently unapplied patch", not carelessness. From
+P100 on: the designer supplies **verbatim line-anchored hunks**, the orchestrator applies them with
+`Edit`, and verifies line count + section count + tail sentinel + hunk confinement. Verified this
+pass: 1299 → **1322** lines, **13** sections throughout, untouched regions byte-identical, §2's P101
+pointer preserved. **This deviates from CLAUDE.md's "no other agent edits `ui-reference.md`" —
+raise with the user whether to give the designer `Edit` or split the file.**
 
 ## ✅ DX — built-bundle e2e — CAPABILITY DELIVERED, DEFAULT DELIBERATELY NOT FLIPPED (2026-09-01)
 
