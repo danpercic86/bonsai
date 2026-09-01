@@ -1,6 +1,20 @@
 //! T5 property suite (contract §2.1): structural invariants of
-//! `graph::compute_graph` over random [`RepoShape`]s. Default 64 cases;
-//! `PROPTEST_CASES=256` for the exhaustive local run.
+//! `graph::compute_graph` over random [`RepoShape`]s. 64 cases total;
+//! `PROPTEST_CASES=<n>` overrides the baked per-band literal at runtime
+//! (`PROPTEST_CASES=256` for the exhaustive local run).
+//!
+//! WALL-CLOCK NOTE: the whole 64-case run used to live in ONE test fn, and
+//! nextest parallelizes across test *functions*, not across cases inside a
+//! `proptest!` block — so that one fn was the suite's critical path (~57s).
+//! The commit-count axis (`1..=200`) is therefore partitioned into 8 DISJOINT
+//! bands that TILE `1..=200` exactly, one test fn each, via
+//! `prop_common::repo_shape_sized`. Every band runs the identical body (all of
+//! items 1-6 plus the item-7 determinism recompute), so no assertion is
+//! dropped. Band widths follow a sqrt schedule and cases are allocated
+//! PROPORTIONAL TO BAND WIDTH, which (a) keeps the marginal distribution over
+//! commit count ~uniform, exactly as the single fn had it, (b) keeps the case
+//! total at 64 and total CPU unchanged, and (c) equalizes per-band cost
+//! (cost ∝ cases × mean commits), so every fn lands well under the 15s target.
 
 #[path = "prop_common/mod.rs"]
 mod prop_common;
@@ -11,7 +25,7 @@ use std::path::Path;
 use bonsai_core::graph::{compute_graph, GraphLayout, RefKind};
 use proptest::prelude::*;
 
-use prop_common::{build_repo, repo_shape, HeadSpec, RepoShape};
+use prop_common::{build_repo, repo_shape_sized, HeadSpec, RepoShape};
 
 /// All structural invariants (contract §2.1 items 1-7) for one built repo.
 fn assert_invariants(shape: &RepoShape, path: &Path, layout: &GraphLayout) {
@@ -121,21 +135,39 @@ fn assert_invariants(shape: &RepoShape, path: &Path, layout: &GraphLayout) {
     let _ = index_of; // referenced for clarity; kept out of the hot asserts
 }
 
-proptest! {
-    #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+/// One band of the commit-count partition: `$lo..=$hi` commits, `$cases`
+/// cases. The body is the original `graph_invariants_and_determinism` body,
+/// verbatim: build the repo, assert every structural invariant (items 1-6) via
+/// the shared [`assert_invariants`], then recompute and assert byte-identical
+/// output (item 7 — determinism).
+macro_rules! band {
+    ($name:ident, $lo:expr, $hi:expr, $cases:expr) => {
+        proptest! {
+            #![proptest_config(ProptestConfig { cases: $cases, ..ProptestConfig::default() })]
 
-    /// Items 1-6 hold, and the layout is deterministic across two runs (item 7).
-    #[test]
-    fn graph_invariants_and_determinism(shape in repo_shape()) {
-        let (dir, path) = build_repo(&shape);
-        let first = compute_graph(&path).expect("compute_graph");
-        assert_invariants(&shape, &path, &first);
-        let second = compute_graph(&path).expect("compute_graph again");
-        prop_assert_eq!(&first, &second, "same repo ⇒ identical layout");
-        drop(dir);
-    }
-
+            #[test]
+            fn $name(shape in repo_shape_sized($lo, $hi)) {
+                let (dir, path) = build_repo(&shape);
+                let first = compute_graph(&path).expect("compute_graph");
+                assert_invariants(&shape, &path, &first);
+                let second = compute_graph(&path).expect("compute_graph again");
+                prop_assert_eq!(&first, &second, "same repo ⇒ identical layout");
+                drop(dir);
+            }
+        }
+    };
 }
+
+// 8 bands tiling 1..=200 (widths 71/29/22/19/17/15/14/13 = 200) with cases
+// proportional to width (23/9/7/6/5/5/5/4 = 64).
+band!(graph_invariants_and_determinism_b1_001_071, 1, 71, 23);
+band!(graph_invariants_and_determinism_b2_072_100, 72, 100, 9);
+band!(graph_invariants_and_determinism_b3_101_122, 101, 122, 7);
+band!(graph_invariants_and_determinism_b4_123_141, 123, 141, 6);
+band!(graph_invariants_and_determinism_b5_142_158, 142, 158, 5);
+band!(graph_invariants_and_determinism_b6_159_173, 159, 173, 5);
+band!(graph_invariants_and_determinism_b7_174_187, 174, 187, 5);
+band!(graph_invariants_and_determinism_b8_188_200, 188, 200, 4);
 
 // ---- F-T5-1: lane stability under HEAD append (DEMOTED to a pinned finding) --
 //

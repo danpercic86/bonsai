@@ -32,10 +32,34 @@
 // Zero dependencies, plain Node ESM — same behaviour on Windows/macOS/Linux.
 
 import { spawnSync } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
 
 const argv = new Set(process.argv.slice(2));
 const has = (f) => argv.has(f);
 const isWin = process.platform === 'win32';
+
+// --- keep compile intermediates out of Defender-scanned space ---------------
+// Measured 2026-09-01: agent/dev shells here run with TMP=TEMP=C:\Temp, but
+// D:\Data is the Defender-excluded volume on this machine (see the global
+// rule + CLAUDE.md). rustc and the linker write their intermediates to TMP, so
+// every gate run was handing MsMpEng a few thousand files to scan. Point the
+// child processes at the excluded volume instead.
+//
+// Deliberately NOT in .cargo/config.toml: cargo's `[env]` table has no
+// per-target conditional, so a hardcoded D:\ path would also be exported on
+// the ubuntu/macos CI legs. Windows-only, and only when the dir is available.
+const SCRATCH_WIN = String.raw`D:\Data\Temp\bonsai-build`;
+function scratchEnv() {
+  if (!isWin) return {};
+  try {
+    mkdirSync(SCRATCH_WIN, { recursive: true });
+    return { TMP: SCRATCH_WIN, TEMP: SCRATCH_WIN };
+  } catch {
+    // No D: volume (another machine, or a contributor's checkout) — stock TMP.
+    return {};
+  }
+}
+const scratch = scratchEnv();
 
 // --- resolve tier -----------------------------------------------------------
 const quick = has('--quick');
@@ -94,12 +118,23 @@ const RUSTDOC_DENY = { RUSTDOCFLAGS: '-D warnings' };
 // prop_* suites (crates/bonsai-core/tests/prop_*.rs) hardcode a per-suite
 // `cases: N` literal, but proptest's PROPTEST_CASES env var OVERRIDES that
 // literal at runtime — verified empirically: prop_graph_layout runs its baked
-// 64 cases in ~89s when unset vs ~7s at PROPTEST_CASES=4. So --quick just sets
-// it to 16 for the test-running step; the default / --full / CI tiers leave it
-// UNSET, so the suites run their full baked-in counts (64/64/64/48/32) and CI
+// 64 cases in ~89s when unset vs ~7s at PROPTEST_CASES=4. The default / --full /
+// CI tiers leave it UNSET, so the suites run their full baked-in counts and CI
 // thoroughness is unchanged. Only the test step needs it (doctests/clippy run
 // no proptests). Determinism is preserved — a smaller run is still a subset.
-const proptestEnv = quick ? { PROPTEST_CASES: '16' } : {};
+//
+// Why 4 and not 16 (changed 2026-09-01): PROPTEST_CASES is a FLAT per-test-fn
+// override, and prop_graph_layout is now 8 banded test fns partitioning the
+// commit-count axis (so nextest can parallelize what used to be one 57s test).
+// A flat N therefore costs that suite 8×N cases, not N. Measured per-suite wall
+// at full baked counts: prop_status 23.5s (one fn — now the workspace's slowest
+// test), prop_stash_roundtrip 14.3s, prop_graph_layout 13.9s, the other two
+// <0.2s. At N=16 the banded suite balloons to 128 cases / ~41s, which would
+// make --quick SLOWER than before the split; at N=4 it runs 32 cases in ~10s —
+// still twice the total cases the old N=16 flat override gave this suite, and
+// faster. The quick-tier floor then falls back to submodule_cli (~14s), which
+// is not a proptest and needs a separate fix.
+const proptestEnv = quick ? { PROPTEST_CASES: '4' } : {};
 const rustTest = hasNextest
   ? { name: 'cargo nextest', cmd: 'cargo', args: ['nextest', 'run', '--workspace'], group: 'rust', env: proptestEnv }
   // nextest never runs doctests; the fallback cargo test does, so deny there too.
@@ -175,7 +210,7 @@ for (const step of selected) {
   const r = spawnSync(step.cmd, step.args, {
     stdio: 'inherit',
     shell: isWin,
-    env: step.env ? { ...process.env, ...step.env } : process.env,
+    env: { ...process.env, ...scratch, ...(step.env ?? {}) },
   });
   const dur = Number(process.hrtime.bigint() / 1000000n) - start;
   const ok = r.status === 0 && !r.error;

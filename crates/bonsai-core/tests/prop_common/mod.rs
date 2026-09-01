@@ -75,6 +75,16 @@ fn ref_name_strat() -> impl Strategy<Value = String> {
 /// ~20%, duplicate-parent ~2%; the rest are linear (70% first-parent = i-1) or
 /// branch-from-ancestor.
 pub fn repo_shape() -> impl Strategy<Value = RepoShape> {
+    repo_shape_sized(1, 200)
+}
+
+/// [`repo_shape`] restricted to `lo..=hi` commits. Identical in every other
+/// respect (same parent/merge/ref/HEAD distributions); exists so a suite can
+/// partition the commit-count axis into disjoint bands that run as separate
+/// test fns (nextest parallelizes across fns, not across cases in one fn).
+/// `repo_shape() == repo_shape_sized(1, 200)`, so a set of bands whose ranges
+/// tile `1..=200` covers exactly the same input space.
+pub fn repo_shape_sized(lo: usize, hi: usize) -> impl Strategy<Value = RepoShape> {
     let raw = prop::collection::vec(
         (
             any::<u32>(),
@@ -83,7 +93,7 @@ pub fn repo_shape() -> impl Strategy<Value = RepoShape> {
             message_strat(),
             -1000i64..=1000,
         ),
-        1..=200,
+        lo..=hi,
     );
     raw.prop_flat_map(|raws| {
         let n = raws.len();

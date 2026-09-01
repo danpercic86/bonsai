@@ -154,6 +154,10 @@ The workflow loop below applies to every milestone, past and present.
    `senior-dev`; file SHOULD-FIX / NIT as follow-ups (a TODO.md line or a spun-out task) instead of
    blocking the increment. On intermediate rounds re-review only the changed surface and run
    **targeted** checks (the specific tests + `cargo check` / `tsc`), saving the full gate for step 7.
+   **Never run the bare `pnpm gate` on an intermediate round** — measured 2026-09-01, the full
+   Rust leg is 3m22 (of which one proptest is 57s) plus 68s of vitest, and the whole gate is
+   ~5–7 min. Intermediate rounds use `pnpm gate --quick` (no e2e, `PROPTEST_CASES=16`) or a
+   narrower `--rust` / `--frontend`; the bare `pnpm gate` belongs to step 7 only.
    Repeat 3–4 until `reviewer` (and `ui-designer`, for UI) approve. **Commit each approved
    sub-increment** (`wip(M<N>): ...`) so review diffs stay small and resume points exist.
 6. Delegate to `tester`: write/run tests + smoke checklist against the scratch repo (pass the
