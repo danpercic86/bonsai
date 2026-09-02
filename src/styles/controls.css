@@ -68,7 +68,9 @@
 
 .pill-detached {
   background: var(--danger);
-  color: #ffffff;
+  /* P102 D1: was `#ffffff` — 3.73:1 on the dark theme's --danger. --danger-text flips per
+     theme (near-black dark / white light) for 4.80:1 dark / 4.93:1 light. */
+  color: var(--danger-text);
 }
 
 .pill-unborn {

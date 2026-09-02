@@ -83,13 +83,17 @@
   border: none;
   border-radius: 6px;
   background: var(--accent);
-  color: var(--bg-0);
+  /* P102: was `var(--bg-0)`, numerically identical in both themes — restated as the role
+     token for the ink on an --accent fill (5.52:1 dark / 4.65:1 light). Zero visual change. */
+  color: var(--accent-text);
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
 }
 
 .diff-stage-float button:hover {
-  filter: brightness(1.08);
+  /* P102 §2.3: was `filter: brightness(1.08)`, the same fill+ink lift that took .btn-primary
+     to 3.95:1 in light (P100 AC7). Fill-only mix toward --text-1: 6.01:1 dark / 5.13:1 light. */
+  background: color-mix(in srgb, var(--accent) 92%, var(--text-1));
 }
 
 /* P45: danger float button beside "Stage N lines" (shares the .diff-stage-float
@@ -102,12 +106,16 @@
   border: none;
   border-radius: 6px;
   background: var(--danger);
-  color: var(--bg-0);
+  /* P102 D4: was `var(--bg-0)`, numerically identical in both themes (4.80:1 dark /
+     4.93:1 light) — restated as the role token for ink on a --danger fill. No visual change. */
+  color: var(--danger-text);
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
   margin-left: 8px;
 }
 .diff-float-discard:hover {
-  filter: brightness(1.08);
+  /* P102 §1.4: was `filter: brightness(1.08)` — 4.32:1 in light, because the lift moved fill
+     and ink together. Fill-only mix toward --text-1: 5.1:1 dark / 5.3:1 light. */
+  background: color-mix(in srgb, var(--danger) 92%, var(--text-1));
 }
 

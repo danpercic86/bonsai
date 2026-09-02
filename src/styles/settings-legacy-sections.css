@@ -94,9 +94,23 @@
   min-width: 72px;
 }
 
+/* P105 C5: a selected STATE (§12.3.2 segmented form), so P100 recipe 1. --accent as the
+   label measured 4.48:1 dark / 4.00:1 light on .btn-secondary’s --bg-2; the label now
+   inherits --text-1 from .btn-secondary (9.36 / 13.29 on --selection) and the accent border
+   stays as the non-colour carrier at 3.51:1 dark / 3.74:1 light. */
 .settings-toggle-btn.is-active {
   border-color: var(--accent);
-  color: var(--accent);
+  background: var(--selection);
+}
+
+/* P105 C4/C5 state coverage (§3.6): `.btn-secondary:hover:not(:disabled)` is (0,3,0) and
+   would out-specify the (0,2,0) rule above, dropping the selected fill back to --bg-3 on
+   hover — the state would then hang on the border alone. Re-assert --selection at matching
+   specificity, lifted 8% toward --text-1 (the same device as .btn-primary/.btn-danger hover)
+   so hovering still gives feedback. --text-1 on the lifted fill is 7.55:1 dark /
+   11.42:1 light. */
+.settings-toggle-btn.is-active:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--selection) 92%, var(--text-1));
 }
 
 /* Hint under a radio, aligned with the radio's label text. A radio group exists
@@ -381,7 +395,10 @@
 
 .settings-profile-applied {
   font-size: 11px;
-  color: var(--accent);
+  /* P105 B2: 11px read text. --accent clears 4.5:1 on the settings body’s --bg-0 (5.52 /
+     4.65) and nowhere else, so it was one surface change away from failing.
+     --accent-strong is surface-independent: 7.76 dark / 6.23 light here. */
+  color: var(--accent-strong);
 }
 
 .settings-config-advanced-details {

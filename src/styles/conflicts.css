@@ -85,13 +85,18 @@
 /* P13 §8.2: the ✨ AI conflict-row action — accent-tinted, distinct from the
    plain ours/theirs/resolved text buttons. */
 .row-action.conflict-action-ai {
-  color: var(--accent);
+  /* P105 B17: was --accent — 5.07:1 dark / 4.34:1 light on the row’s --bg-1. */
+  color: var(--accent-strong);
   font-weight: 600;
 }
 
 .row-action.conflict-action-ai:hover:not(:disabled) {
+  /* P105 B18: the accent tint stays — it is the deliberate distinction from the plain
+     ours/theirs buttons. This is the ONLY sanctioned hue-ink-over-its-own-tint left in the
+     app, and it is sanctioned only because --accent-strong measures 5.86:1 dark /
+     4.87:1 light on this tint. Plain --accent measured 4.17 / 3.64. */
   background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 /* ----- P3c: read-only conflict marker view (DiffOverlay) ----- */

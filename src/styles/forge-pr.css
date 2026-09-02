@@ -29,9 +29,15 @@
   background: var(--bg-2);
 }
 
+/* P105 C4: a selected STATE, so P100 recipe 1 — --accent stops being ink (it measured
+   4.17:1 dark / 3.64:1 light on its own 14% tint) and the state is carried by --selection
+   plus a mandatory non-colour carrier, because --selection alone is only 1.45:1 dark /
+   1.16:1 light against --bg-1. --text-1 on --selection is 9.36 / 13.29. The bar is an inset
+   box-shadow, not a border-bottom, so the tab strip cannot reflow. */
 .right-pane-tab.active {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text-1);
+  background: var(--selection);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .pr-panel {
@@ -169,19 +175,29 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 2px 8px;
-  color: #ffffff;
+  /* P102 D3: the shared `color: #ffffff` that used to live here sat over three different
+     fills and hid the worst ratio in the audit (white on the dark --success was 2.85:1,
+     below even the 3:1 graphics bar). Ink is now declared per fill, beside its fill. */
 }
 
+/* P102 D3a: --success-text is 6.24:1 dark / 5.08:1 light. */
 .pr-state-open {
   background: var(--success);
+  color: var(--success-text);
 }
 
+/* P102 D3b / §5.4 Option A: was a hardcoded, theme-invariant #8957e5 + white — the last
+   colour literal outside tokens-and-base.css. --merged-text on --merged is 5.30:1 dark /
+   5.05:1 light, and the light theme now gets a purple tuned for a white page. */
 .pr-state-merged {
-  background: #8957e5;
+  background: var(--merged);
+  color: var(--merged-text);
 }
 
+/* P102 D3c: --danger-text is 4.80:1 dark / 4.93:1 light. */
 .pr-state-closed {
   background: var(--danger);
+  color: var(--danger-text);
 }
 
 .pr-draft-tag {
@@ -367,7 +383,8 @@
 }
 
 .pr-comment-kind-review {
-  color: var(--accent);
+  /* P105 B4: was --accent — 5.07:1 dark / 4.34:1 light on the PR detail’s --bg-1. */
+  color: var(--accent-strong);
 }
 
 .pr-comment-date {
@@ -498,7 +515,8 @@
   gap: 6px;
   text-transform: none;
   letter-spacing: normal;
-  color: var(--accent);
+  /* P105 B5: was --accent — 4.48:1 dark / 4.00:1 light once the row hovers to --bg-2. */
+  color: var(--accent-strong);
 }
 
 /* Icon-system §2.7: 14px leading SummarizeIcon + label. */
@@ -572,7 +590,9 @@
 }
 
 .forge-connect-link {
-  color: var(--accent);
+  /* P105 B6: was --accent — 5.07:1 dark / 4.34:1 light on --bg-1. The hover underline
+     stays as the second, non-colour carrier for the link affordance. */
+  color: var(--accent-strong);
   text-decoration: none;
   white-space: nowrap;
   /* P72: explicit, so the affordance can never silently depend on the `href`

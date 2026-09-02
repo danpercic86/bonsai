@@ -103,8 +103,10 @@ export const FORGE_REPO_CONTEXT: ForgeRepoContext = {
   accountSource: 'none',
 };
 
-/** PR list: two open (one draft), one open with comments, one merged — so an
- *  `open` filter shows 3 rows and `all` shows 4. The three OPEN PRs'
+/** PR list: five open (one draft, one conflicting, one still-computing), one
+ *  merged and one closed — so `all` renders every `.pr-state-*` pill at once
+ *  (P102 §8) while an `open` filter still shows only the open rows. The three
+ *  branch-tip-aligned OPEN PRs'
  *  `sourceBranch` + `headSha` are aligned to real mock-graph branch tips
  *  (`feat`/`exp`/`gh-pages`) so P63b can light PR badges on those pills; the
  *  merged PR keeps a deleted-branch name (merged branches are usually gone, and
@@ -212,6 +214,30 @@ export const FORGE_PR_LIST: PrSummary[] = [
     updatedAt: '2026-08-02T12:00:00Z',
     url: 'https://github.com/octo-org/bonsai/pull/123',
     headSha: '99aabbccddeeff00112233445566778899aabbcc',
+  },
+  {
+    // P102 §8: the only CLOSED (not merged) PR in the list, so `state: 'all'`
+    // renders all four state pills — open / draft / merged / closed — at once and
+    // `.pr-state-closed` (--danger fill + --danger-text ink) is reachable in the
+    // browser harness. The title is deliberately ~200 chars: §8's pathological
+    // case, proving the 13px/600 `.pr-row-title` still ellipsizes on one line and
+    // that the fixed-width state pill beside it never shrinks (`flex: none`).
+    number: 118,
+    title:
+      'Abandoned experiment: replace the canvas commit graph with an SVG scene ' +
+      'graph so branch lanes could be styled per-ref from CSS, reverted after the ' +
+      'node count past twelve thousand commits made scrolling unusable on Windows',
+    state: 'closed',
+    isDraft: false,
+    author: 'linus-t',
+    authorAvatarUrl: null,
+    sourceBranch: 'exp/svg-graph',
+    targetBranch: 'main',
+    comments: 5,
+    createdAt: '2026-07-10T08:30:00Z',
+    updatedAt: '2026-07-18T17:45:00Z',
+    url: 'https://github.com/octo-org/bonsai/pull/118',
+    headSha: 'aabbccdd00112233445566778899aabbccddeeff',
   },
   {
     // P89 §8: a PATHOLOGICAL fixture — a 5-digit PR number with a very long

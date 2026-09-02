@@ -27,9 +27,25 @@
      theme's light-blue accent is 5.52:1 (ui-reference §5 lane 0, symmetric). Same device
      as §6's luminance-adaptive branch pill and .diff-stage-float button. */
   --accent-text: #16181d;
+  /* P105: --accent as READ TEXT. --accent itself clears 4.5:1 on --bg-0 only (5.52 dark /
+     4.65 light) and drops to 3.51/3.74 on --selection, so it is a graphics-bar token
+     everywhere else. --accent-strong clears 4.5:1 on every neutral surface the app has and
+     on the 14% accent tint — 7.76…4.93 dark / 6.23…4.87 light — which makes it
+     surface-independent. Never a fill, never a border, never the focus ring. */
+  --accent-strong: #7fabff;
   --selection: #2a3b57;
   --danger: #e5534b;
+  /* P102: ink on a solid --danger fill. #ffffff measured 3.73:1 there in dark; near-black
+     is 4.76:1. Same per-theme split as --accent-text (P100 recipe 2). */
+  --danger-text: #16181d;
   --success: #57ab5a;
+  /* P102: ink on a solid --success fill — 6.24:1. The white it replaces measured 2.85:1,
+     below even the 3:1 graphics bar (.pr-state-open, the worst case in the audit). */
+  --success-text: #16181d;
+  /* P102 §5.4 Option A: the PR "merged" hue, previously a theme-invariant #8957e5 literal.
+     --merged-text on --merged is 5.30:1. */
+  --merged: #a371f7;
+  --merged-text: #16181d;
   /* P61a: word-level intraline emphasis — more saturated than the row tint so
      the changed sub-range reads clearly over .diff-line-add/-del AND selection. */
   --intra-add: #2ea043;
@@ -110,12 +126,23 @@
   --border: #dcdfe5;
   --accent: #2f6fe4;
   --accent-text: #ffffff;
+  /* P105: --accent deepened toward black at the same hue (219.7°). 6.23 on --bg-0 …
+     4.93 on --bg-3, 5.01 on --selection, 4.87 on the 14% accent tint. */
+  --accent-strong: #2a5cbe;
   --selection: #dbe7ff;
   /* P100: the two themes deliberately DIFFER. Dark uses #16181d on its light-blue accent
      (5.52:1); light keeps #ffffff on its darker accent (4.65:1). See ui-reference §2's
      ACCENT FILL bullet, recipe 2 — an action keeps the fill and flips the ink. */
   --danger: #d13438;
+  /* P102: white on the light theme's deeper --danger is 4.93:1; near-black would be 3.03. */
+  --danger-text: #ffffff;
   --success: #1a7f37;
+  /* P102: white on the light theme's deeper --success is 5.08:1; near-black would be 2.42. */
+  --success-text: #ffffff;
+  /* P102 §5.4 Option A: a purple tuned for a white page rather than the dark theme's value
+     reused. --merged-text (#ffffff) on it is 5.05:1. */
+  --merged: #8250df;
+  --merged-text: #ffffff;
   --intra-add: #1a7f37;
   --intra-del: #cf222e;
   --warning: #9a6700;

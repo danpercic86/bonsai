@@ -82,7 +82,9 @@
 .settings-update-link {
   border: none;
   background: transparent;
-  color: var(--accent);
+  /* P105 B7: --accent passed on the settings --bg-0 (4.65 light) but only there; the token
+     is now surface-independent. The underline stays as the link carrier. */
+  color: var(--accent-strong);
   padding: 0;
   font: inherit;
   cursor: pointer;
@@ -112,7 +114,9 @@
   border: none;
   border-radius: 6px;
   background: var(--danger);
-  color: #ffffff;
+  /* P102 D2: was `#ffffff` — 3.73:1 on the dark theme's --danger, below the 4.5:1 bar for a
+     13px/600 destructive label. --danger-text is 4.80:1 dark / 4.93:1 light. */
+  color: var(--danger-text);
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -120,7 +124,10 @@
 }
 
 .btn-danger:hover:not(:disabled) {
-  filter: brightness(1.1);
+  /* P102 §1.4: was `filter: brightness(1.1)`, which lifts fill AND ink together and pushed
+     the light theme to 4.17:1. A fill-only mix toward the theme's own --text-1 keeps the
+     ink's headroom in both: 5.17:1 dark / 5.49:1 light. Same device as .btn-primary (P100). */
+  background: color-mix(in srgb, var(--danger) 92%, var(--text-1));
 }
 
 .btn-secondary:disabled,

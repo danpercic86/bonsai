@@ -273,7 +273,15 @@ export const aiHandlers = {
     return {
       names:
         source.kind === 'working'
-          ? ['feat/ai-why-layer', 'ai-why-layer', 'feature/blame-why']
+          ? [
+              'feat/ai-why-layer',
+              'ai-why-layer',
+              'feature/blame-why',
+              // P102/P105 §8 pathological case: a 90-char branch name, so the
+              // harness can prove `.branch-name-chip` (now --text-1 on its accent
+              // tint) wraps at the container and never mid-token.
+              'feature/observability/rewrite-the-per-commit-blame-why-layer-behind-a-cached-lane-index-v2',
+            ]
           : ['feat/range-work', 'range-work', 'topic/selected-commits'],
       costUsd: 0.003,
     };

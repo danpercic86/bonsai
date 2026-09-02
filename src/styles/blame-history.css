@@ -57,7 +57,8 @@
   border: none;
   border-left: 1px solid var(--border);
   background: transparent;
-  color: var(--accent);
+  /* P105 B9: was --accent — 4.48:1 dark / 4.00:1 light once the gutter hovers to --bg-2. */
+  color: var(--accent-strong);
   font-size: 11px;
   padding: 0 8px;
   cursor: pointer;
@@ -77,7 +78,9 @@
 
 .blame-oid {
   flex: none;
-  color: var(--accent);
+  /* P105 B10: an oid is read text — --accent was 4.48:1 dark / 4.00:1 light on the
+     hovered gutter. */
+  color: var(--accent-strong);
 }
 
 .blame-author {
@@ -146,7 +149,8 @@
 
 .file-history-oid {
   flex: none;
-  color: var(--accent);
+  /* P105 B11: was --accent — 5.07:1 dark / 4.34:1 light on the hovered row’s --bg-1. */
+  color: var(--accent-strong);
 }
 
 .file-history-summary {
@@ -220,7 +224,8 @@
 }
 
 .reflog-oid-new {
-  color: var(--accent);
+  /* P105 B12: was --accent — 4.48:1 dark / 4.00:1 light on the hovered reflog row. */
+  color: var(--accent-strong);
 }
 
 .reflog-message {

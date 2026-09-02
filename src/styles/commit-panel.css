@@ -164,7 +164,8 @@
   border: none;
   background: transparent;
   padding: 0;
-  color: var(--accent);
+  /* P105 B15: was --accent — 5.07:1 dark / 4.34:1 light on the commit panel’s --bg-1. */
+  color: var(--accent-strong);
   cursor: pointer;
 }
 

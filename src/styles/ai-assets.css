@@ -112,43 +112,53 @@ button.asset-row-clickable:hover {
   flex: none;
 }
 
+/* P105 §3.4 (C2 / C3 / C3b, plus the -sync and -drifted siblings the enumeration missed):
+   every modifier below painted its own hue as ink over its own 15–18% tint, measuring
+   3.34–4.86:1 — under the 4.5:1 text bar in light for all five. They now share one shape
+   (§11 pill recipe): a --text-1 label (9.01–12.14:1 on every one of these tints), the tint
+   kept as the fill, and a 35% hue border as the identity carrier. The base holds a
+   transparent 1px border so every chip keeps the same outer height in both densities — the
+   device conflicts.css already uses on .conflict-editor-mode-btn. */
 .asset-chip {
   display: inline-block;
   padding: 1px 8px;
+  border: 1px solid transparent;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
+  color: var(--text-1);
 }
 
 .asset-chip-canonical {
   background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--bg-2));
 }
 
 .asset-chip-sync {
   background: color-mix(in srgb, var(--success) 15%, transparent);
-  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 35%, var(--bg-2));
 }
 
 .asset-chip-drifted {
   background: color-mix(in srgb, var(--warning) 15%, transparent);
-  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--bg-2));
 }
 
 .asset-chip-missing,
 .asset-chip-muted {
   background: color-mix(in srgb, var(--text-3) 18%, transparent);
+  border-color: color-mix(in srgb, var(--text-3) 35%, var(--bg-2));
   color: var(--text-2);
 }
 
 .asset-chip-active {
   background: color-mix(in srgb, var(--success) 18%, transparent);
-  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 35%, var(--bg-2));
 }
 
 .asset-chip-new {
   background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--bg-2));
 }
 
 /* --- P25d: stale-branch cleanup dialog --- */
@@ -173,7 +183,8 @@ button.asset-row-clickable:hover {
   background: none;
   padding: 0;
   font-size: 12px;
-  color: var(--accent);
+  /* P105 B8: was --accent — 5.07:1 dark / 4.34:1 light on the panel’s --bg-1. */
+  color: var(--accent-strong);
   cursor: pointer;
 }
 

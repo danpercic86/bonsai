@@ -284,7 +284,10 @@
   border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
+  /* P105 C1: --accent on its own 12% tint was 4.29:1 dark / 3.74:1 light. The tint and the
+     40% accent border already carry the accent identity, so the label takes the canonical
+     pair: 11.46:1 dark / 13.27:1 light (9.73 / 11.60 on the 22% hover tint). */
+  color: var(--text-1);
   font-family: var(--font-mono);
   font-size: 12px;
   cursor: pointer;
