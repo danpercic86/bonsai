@@ -647,7 +647,7 @@ F6 is the user's call; F7 is a judgement call.
 
 ---
 
-## 🎯 P106 — status-badge ink — CONTRACT DONE `c987516`, IMPL IN FLIGHT
+## ✅ P106 — status-badge ink — SHIPPED `10ce967`, ⏳ AWAITING USER CHECKPOINT (AC14/AC15 + AC9 real-repo half)
 
 **8 render sites in 7 files, 6 ink declarations under verdict, 6 distinct composited backdrops.**
 Buckets: **5 FIX**, **1 KEEP** (`.file-status-renamed` on `--accent-strong`, min 4.93/5.01),
@@ -688,10 +688,34 @@ the shipped commit — this programme was already bitten once by the reference d
 **15 ACs with a 10-row predicted residue table.** **AC14/AC15 + the real-repo half of AC9 are USER
 CHECKPOINTs and stay PENDING.**
 
-**⚠ One calibration value did NOT reproduce and is carried as a hedge, not dropped:**
-`--accent-strong` on a 14% accent tint measures **5.16/4.52** here vs P107's **5.85/4.87**, base
-unspecified. Two contracts currently disagree on a measured value; the implementation pass is asked
-to determine which base each used. Recording it rather than silently preferring one is the point.
+**✅ RESOLVED — and the answer is better than either contract having been wrong: it was a BASE
+AMBIGUITY.** `--accent-strong` on a 14% accent tint measures **6.42/5.19 over `--bg-0`**,
+**5.85/4.87 over `--bg-1`** (P107's figure) and **5.16/4.52 over `--bg-2`** (P106's). All three
+reproduce exactly under one method. **The contracts never disagreed — neither stated its base**, and
+the base alone accounts for **1.26** of dark-theme spread.
+
+That is now a rule in `ui-reference.md` §2: **a contrast figure is meaningless without its
+composited base; every ratio must name the ink, the tint, AND the base**, and a figure naming only
+the tint is incomplete evidence that may not be used to close an AC.
+
+**Shipped result (`10ce967`):** worst live badge anywhere is **5.18** — the `C` on a selected row in
+light — exactly the predicted floor. Verified live, not derived: **11/11** recorded historical values
+and the full **30/30** pre-fix matrix reproduced *before* any new number was trusted, then all 8
+render sites reached in a real browser in both themes with the full ancestor stack composited.
+
+**8 of 10 predicted residue rows matched exactly; the two misses were the CONTRACT'S BASELINES being
+wrong, not the fix.** R2's recorded "now" was 50 but measured **53**; R10's was 0 but measured **12**
+(7 hex literals quoted inside prose comments, 5 `var()` fallbacks, all in files P106 never touched).
+Both *deltas* were exact, so the intent held — and **P108's real inventory is 48, not 45.**
+
+**This is the third time grep-counting has bitten**, so it is now also a rule: an acceptance grep
+counts **text**, so prose comments and `var()` fallbacks inflate it. The implementer had to
+deliberately avoid literal strings in its own comments — without that care two counts would have read
+11 and 2 instead of 8 and 1. A residue prediction must state whether it counts **declarations or raw
+matches**, a baseline must be **measured against the real pre-fix tree** rather than inherited from a
+prior contract, and when a grep and a prediction disagree the baseline is re-measured **before**
+touching code. Related: a `file:line` prediction should state that the **count** is the criterion —
+comments added by the fix itself shift the lines (216/227 → 220/231 here, count unchanged).
 
 ---
 
