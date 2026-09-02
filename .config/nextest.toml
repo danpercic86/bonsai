@@ -1,8 +1,10 @@
 # Bonsai — cargo-nextest config (dev-loop speedup, 2026-08-20).
 #
-# nextest runs the workspace's 77+ test binaries in PARALLEL instead of
-# `cargo test`'s serial default — the biggest single win for a suite this
-# large. Install once:
+# nextest runs the workspace's test binaries in PARALLEL instead of `cargo
+# test`'s serial default — the biggest single win for a suite this large. It
+# also parallelizes per TEST FUNCTION, not per binary, which is why the 2026-09-01
+# consolidation of bonsai-core's 78 test files into 8 harness binaries cost no
+# runtime (173.8s -> 142.7s, 1510 tests either way). Install once:
 #
 #   cargo install cargo-nextest --locked      # or a prebuilt binary
 #

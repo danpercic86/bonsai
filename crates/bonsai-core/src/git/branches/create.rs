@@ -142,7 +142,7 @@ pub fn create_branch_here(
     //    and RETAINS on conflict (never lossy). A `Conflicts` outcome is a
     //    SUCCESS return (branch created & checked out; changes present w/ markers).
     if stashed {
-        let outcome = stash::pop_stash_with(&mut repo, workdir, 0, false, None)?;
+        let outcome = super::checkout::carry_back_autostash(&mut repo, workdir);
         return Ok(CreateBranchHereResult {
             stashed: true,
             apply: Some(outcome),

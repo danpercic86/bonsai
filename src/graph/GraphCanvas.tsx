@@ -2,6 +2,7 @@ import {
   forwardRef,
   useCallback,
   useEffect,
+  useId,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -13,6 +14,7 @@ import type { GraphStyle, Theme } from './colors';
 import type { GraphSeason } from './palettes';
 import { drawGraph, drawHeadEdgeMarker, drawHeadGuide, drawWipRow } from './draw';
 import type { WipSummary } from './draw';
+import { groupRefs } from './refLabels';
 import { hitTestRow, sameTarget } from './hitTest';
 import type { TooltipState } from './hitTest';
 import {
@@ -25,10 +27,12 @@ import {
 } from './viewport';
 import type { GraphDisplayOptions } from './rightColumns';
 import { buildEdgeIndex, edgesInRange } from './edgeIndex';
+import { GraphKeyboardHint } from './GraphKeyboardHint';
 import type { IncrementalEdgeIndex } from './incrementalEdgeIndex';
 import { newGapRecorder, newPaintRecorder, useGraphRenderCount } from './graphObs';
 import type { EffectiveMetrics } from './metrics';
-import { resolveContextTarget } from './contextTarget';
+import { chipHiddenEntitiesAt, resolveContextTarget, rowMenuAnchor } from './contextTarget';
+import type { GraphContextTarget } from './contextTarget';
 import { useMockDevHooks } from './useMockDevHooks';
 // Spec-004: fold display-row model — projection, pill painting, mappings.
 import { projectLayout } from './foldProject';
@@ -52,8 +56,7 @@ export type { WipSummary };
 
 // Right-click target on the graph — moved to contextTarget.ts (spec-004 size
 // split); re-exported so existing import sites keep working.
-export type { GraphContextTarget } from './contextTarget';
-import type { GraphContextTarget } from './contextTarget';
+export type { GraphContextTarget };
 
 export interface GraphCanvasProps {
   layout: GraphLayout;
@@ -137,6 +140,8 @@ export interface GraphCanvasProps {
  *  arithmetic downstream — no lane/edge math involved. */
 export interface GraphCanvasHandle {
   getVisibleRowCount(): number;
+  /** P95 §2: focus the scroller so the Menu key / Shift+F10 row menu is reachable. */
+  focusScroller(): void;
 }
 
 const MOCK_MODE = import.meta.env.VITE_MOCK_IPC === '1';
@@ -226,6 +231,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   const gapRecorderRef = useRef(newGapRecorder());
   const gapCountRef = useRef(0);
   const firstDataPaintSkippedRef = useRef(false);
+  /** P95 §1.4: per-instance id — two graph panes can be mounted across tabs. */
+  const hintId = useId();
 
   // P7 §6: hover tooltip. State changes ONLY when the hover TARGET changes (the
   // sameTarget guard), so re-renders are rare and the per-frame canvas paint
@@ -240,6 +247,10 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     () => ({
       getVisibleRowCount: () =>
         visibleRowCount(cssSizeRef.current.h, metricsRef.current.rowHeight),
+      // P95 §2.2: `preventScroll` is required — without it the browser scrolls
+      // the scroller to its own idea of the focus target and fights
+      // `scrollRowIntoView`.
+      focusScroller: () => scrollerRef.current?.focus({ preventScroll: true }),
     }),
     [],
   );
@@ -635,6 +646,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   // Mock-mode dev hooks (`window.__bonsai`) — moved to useMockDevHooks.ts.
   useMockDevHooks(canvasRef, scrollerRef);
 
+  const ctx2d = (): CanvasRenderingContext2D | null => canvasRef.current?.getContext('2d') ?? null;
+
   /** Hover-ref encoding: row index, `-1` for the WIP row, or `null`. */
   const hitTestAtMouseY = (yCss: number, scrollTop: number): number | null => {
     const { layout: lay, wip } = propsRef.current;
@@ -721,10 +734,15 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     // P7 §6.1: recompute the hover tooltip target; setTooltip only fires on a
     // real target change (sameTarget), so this is not a per-frame React churn.
     const next = computeHoverTarget(x, y, scroller.scrollTop);
+    // P92 §1.4: the "+n" chip is clickable, so it — and only it — shows a pointer
+    // cursor. Driven by the already-computed hover target: no extra hit pass, no
+    // canvas repaint, no React state.
+    scroller.style.cursor = next?.kind === 'overflow' ? 'pointer' : '';
     setTooltip((prev) => (sameTarget(prev, next) ? prev : next));
   };
 
   const handleMouseLeave = () => {
+    if (scrollerRef.current !== null) scrollerRef.current.style.cursor = '';
     mouseYRef.current = null;
     mouseXRef.current = null;
     railReveal.onLeave(); // spec-005: leaving the scroller exits the hover zone
@@ -780,7 +798,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       foldModel,
       foldRows,
       boundaryRows,
-      ctx: canvasRef.current?.getContext('2d') ?? null,
+      ctx: ctx2d(),
       m,
       display,
       effectiveWidth: cssSizeRef.current.w - (scroller.offsetWidth - scroller.clientWidth),
@@ -789,22 +807,46 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     if (action.kind === 'deselect') onSelect(null);
     else if (action.kind === 'toggleSpan') fold?.onToggleSpan(action.start);
     else if (action.kind === 'openPr') onOpenPr?.(action.number);
-    else if (action.kind === 'select') onSelect(action.modelRow === selectedIndex ? null : action.modelRow);
+    else if (action.kind === 'select') {
+      // P92 §1.1: left-click the "+n" chip → the same ref picker the right-click
+      // opens (hover = read, click = act), BEFORE the row-select toggle.
+      const node = layout.nodes[action.modelRow];
+      if (onContextMenu !== undefined && node !== undefined) {
+        const chipEntities = chipHiddenEntitiesAt({
+          node,
+          x,
+          m,
+          ctx: ctx2d(),
+          theme: themeRef.current,
+          display,
+        });
+        if (chipEntities !== null) {
+          onContextMenu({ kind: 'refPicker', entities: chipEntities, oid: node.id }, e.clientX, e.clientY);
+          return;
+        }
+      }
+      onSelect(action.modelRow === selectedIndex ? null : action.modelRow);
+    }
   };
 
-  // P5 §4.2 / P7 §5: right-click hit-test. Always suppress the native menu over
-  // the graph; resolution moved verbatim to contextTarget.ts (spec-004 split).
-  // Fold-pill rows get no menu; commit targets carry the MODEL row index.
+  // P5 §4.2 / P7 §5 / P92 §1.1: right-click hit-test. Always suppress the native
+  // menu over the graph; the pill / "+N" chip / whole-row RESOLUTION is pure and
+  // lives in contextTarget.ts (same layoutRefLabels layout as the draw pass), so
+  // this handler only gathers live measurements. Fold-pill rows get no menu;
+  // commit targets carry the MODEL row index.
   const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     const scroller = scrollerRef.current;
     if (scroller === null || onContextMenu === undefined) return;
     const rect = scroller.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const x = e.clientX - rect.left;
     const m = metricsRef.current;
-    const wipOffset = wip !== null ? 1 : 0;
-    const hit = hitTestRow(y, scroller.scrollTop, wipOffset, dLayout.nodes.length, m.rowHeight);
+    const hit = hitTestRow(
+      e.clientY - rect.top,
+      scroller.scrollTop,
+      wip !== null ? 1 : 0,
+      dLayout.nodes.length,
+      m.rowHeight,
+    );
     if (hit === null || hit === 'wip') return;
     let index = hit;
     if (foldModel !== null) {
@@ -813,15 +855,45 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       index = d.row;
     }
     const target = resolveContextTarget({
-      x,
-      index,
       node: dLayout.nodes[hit],
-      ctx: canvasRef.current?.getContext('2d') ?? null,
-      theme: themeRef.current,
+      x: e.clientX - rect.left,
       m,
+      ctx: ctx2d(),
+      theme: themeRef.current,
       display,
+      row: index,
     });
     onContextMenu(target, e.clientX, e.clientY);
+  };
+
+  /** P92 §1.5: Menu key / Shift+F10 on the focused graph scroller opens the
+   *  SELECTED row's menu, anchored at that row — the keyboard route to every ref
+   *  on a multi-ref commit (the canvas-drawn "+N" chip is not a tab stop).
+   *  Spec-004: the MENU carries the MODEL row; the ANCHOR uses the row's DISPLAY
+   *  position (its fold pill's row when the selection sits inside a collapsed
+   *  span), so it lands on the pixels the user sees. */
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ContextMenu' && !(e.key === 'F10' && e.shiftKey)) return;
+    const scroller = scrollerRef.current;
+    const index = selectedIndex;
+    if (scroller === null || onContextMenu === undefined || index === null) return;
+    if (index < 0 || index >= layout.nodes.length) return;
+    const anchorRow = dSel.row ?? dSel.pillRow;
+    if (anchorRow === null) return;
+    e.preventDefault();
+    const node = layout.nodes[index];
+    const at = rowMenuAnchor(
+      scroller.getBoundingClientRect(),
+      scroller.scrollTop,
+      anchorRow,
+      wip !== null ? 1 : 0,
+      metricsRef.current,
+    );
+    onContextMenu(
+      { kind: 'commit', index, oid: node.id, entities: groupRefs(node.refs) },
+      at.x,
+      at.y,
+    );
   };
 
   // P11d §4.3: spacer (total scroll extent) tracks the live rowHeight knob so
@@ -833,9 +905,13 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   const displayRowCount =
     foldRows !== null ? dLayout.nodes.length : Math.max(layout.nodes.length, totalRows ?? 0);
   const spacerH = spacerHeight(displayRowCount, wip !== null ? 1 : 0, metrics.rowHeight);
-  // §4.1 amended (spec-004): aria row counts + active-descendant ids use
+  // §4.1 amended (spec-004 + P95 reconciliation): active-descendant ids use
   // DISPLAY rows; the active pill row wins over the selection while set.
-  const ariaRowCount = foldRows !== null ? dLayout.nodes.length : (totalRows ?? layout.nodes.length);
+  // `aria-rowcount` / `role="row"` / `aria-rowindex` are deliberately ABSENT:
+  // they are only meaningful under a grid/table role, and P95 settled the
+  // scroller as `role="group"`. `group` does support `aria-activedescendant`,
+  // so the IDREF below stays valid and the row ordinal reaches the user via
+  // GraphSelectionAnnouncer's "Row {n+1} of {N}" clause instead.
   const ariaActiveRow = activeRow ?? dSel.row ?? dSel.pillRow;
   // WCAG 4.1.2 (ui-designer ruling): the active-descendant id must resolve to a
   // real element — ONE sr-only row, updated per active row, carrying the §3
@@ -853,23 +929,22 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
         className="graph-scroll"
         data-testid="graph-scroller"
         tabIndex={0}
-        role="grid"
+        role="group"
         aria-label="Commit graph"
-        aria-rowcount={ariaRowCount}
         aria-activedescendant={ariaActiveRow !== null ? `graph-row-${ariaActiveRow}` : undefined}
+        aria-describedby={hintId}
         onScroll={handleScroll}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onClick={handleClick}
+        onKeyDown={handleKeyDown}
         onContextMenu={handleContextMenu}
       >
         {ariaActiveRow !== null && activeA11y !== null && (
           <div
             id={`graph-row-${ariaActiveRow}`}
-            role="row"
-            aria-rowindex={ariaActiveRow + 1}
             aria-selected={dSel.row === ariaActiveRow}
             aria-expanded={activeA11y.expanded}
             className="sr-only"
@@ -891,6 +966,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
             onDraggingChange={railReveal.onDraggingChange}
           />
         )}
+      <GraphKeyboardHint id={hintId} />
       <GraphTooltipOverlay tooltip={tooltip} hostRef={hostRef} />
     </div>
   );

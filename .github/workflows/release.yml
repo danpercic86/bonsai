@@ -79,7 +79,7 @@ jobs:
       release_id: ${{ steps.create.outputs.release_id }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Read app version
         id: version
@@ -89,7 +89,7 @@ jobs:
 
       - name: Create draft release
         id: create
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const input = `${{ github.event.inputs.tag }}`.trim();
@@ -148,7 +148,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Linux native deps for Tauri v2 (webkit2gtk 4.1 + NSIS-free bundlers).
       - name: Install Linux dependencies
@@ -163,11 +163,11 @@ jobs:
             libssl-dev
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         # Version is read from package.json "packageManager" (pnpm@11.17.0).
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           # pnpm 11.17.0 (from package.json packageManager) requires Node >= 22.13.
           node-version: 22
@@ -196,7 +196,11 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build, sign, and upload into the draft
-        uses: tauri-apps/tauri-action@v0
+        # v1 (from v0) renamed `includeUpdaterJson` -> `uploadUpdaterJson` and
+        # dropped Tauri v1 / pre-stable v2 support; it needs runner >= 2.327.1
+        # (Node 24), which every GitHub-hosted runner satisfies. Every other
+        # input used below is unchanged in v1.
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Updater signing (REQUIRED for auto-update to verify).
@@ -215,7 +219,7 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           # tauri-action generates + attaches latest.json when updater artifacts
           # are produced (createUpdaterArtifacts: true is already set in the config).
-          includeUpdaterJson: true
+          uploadUpdaterJson: true
           # P71: never point latest.json at a .msi. tauri-action's default is
           # `false` "for legacy reasons", which is how v1.0.0's manifest ended up
           # referencing the MSI (docs/contracts/P71-updater-relaunch-env.md §1.1).
@@ -239,7 +243,7 @@ jobs:
       # Each entry is [human label, regex the asset name must match]. Keep this in
       # sync with bundle.targets in src-tauri/tauri.conf.json.
       - name: Guard — draft must be complete
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const assets = await github.paginate(
@@ -278,7 +282,7 @@ jobs:
             }
 
       - name: Publish the release
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             await github.rest.repos.updateRelease({

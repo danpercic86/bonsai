@@ -67,7 +67,7 @@ seams, and its service model registers `tauri-driver` as a managed subprocess.
 ### Windows setup (WebView2)
 - WebView2 Runtime (Evergreen) is already required by the app.
 - Driver = **msedgedriver** whose version **must match the installed WebView2 runtime major version**
-  (this is the version-coupling risk, §10). Install to `D:\Temp` (never C: — ASR + full-disk rules);
+  (this is the version-coupling risk, §10). Install to `D:\Data\Temp` (never C: — ASR + full-disk rules);
   set the WDIO capability `"tauri:options": { "application": "<abs path to bonsai.exe>" }` and point
   `tauri-driver --native-driver <path to msedgedriver.exe>`.
 - No Playwright/chromium reuse here — that harness is DOM-only mock; this is the native binary.
@@ -99,7 +99,7 @@ per-milestone C-lists (§7) each carry an explicit "macOS: human on all items" l
   optional `crates/bonsai-fixtures` bin (§4.1) OR a `.mjs` stream generator. Reuses the M2 fixture
   lane topology so `scrollSweep` numbers are comparable to the M2 gate. Target build time < a few
   seconds for 20k.
-- **Scratch root:** honor the standing mandate — Windows uses `D:\Temp\bonsai-scratch`, macOS/Linux
+- **Scratch root:** honor the standing mandate — Windows uses `D:\Data\Temp\bonsai-scratch`, macOS/Linux
   `std::env::temp_dir()/bonsai-scratch`, exactly as `crates/bonsai-core/src/testutil.rs` and
   `tests/common/mod.rs` already do. The TS helper reads `BONSAI_SCRATCH_ROOT` (default per-OS as
   above) so CI can redirect it.
@@ -333,5 +333,5 @@ which stays human by the tauri-driver platform limitation.
    backlog substantially but never eliminates it — stubs prove *plumbing*, not the real integration, and
    the ledger must keep that distinction honest so a green native-smoke is never mistaken for a passed
    **C** item.
-3. **Fixture cost / disk.** Large fast-import fixtures + built binaries are heavy; enforce the D:/temp
+3. **Fixture cost / disk.** Large fast-import fixtures + built binaries are heavy; enforce the D:/Data/Temp
    scratch mandate and `finally` teardown, and cap the 200k fixture to the specs that truly need it.

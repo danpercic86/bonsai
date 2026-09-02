@@ -41,7 +41,6 @@ export interface Theme {
   text3: string;
   selection: string;
   accent: string;
-  accentText: string;
   danger: string;
   warning: string;
   /** P50b: search-match ring color (distinct from head/selection rings). */
@@ -187,7 +186,6 @@ export function resolveTheme(
     text3: read('--text-3'),
     selection: read('--selection'),
     accent,
-    accentText: read('--accent-text'),
     danger: read('--danger'),
     warning: read('--warning'),
     matchRing: read('--match-ring'),

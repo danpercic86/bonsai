@@ -3,7 +3,7 @@
 //! drift). Kept out of the P14d `mcp_stdio.rs` file (which is self-contained) so
 //! those headline tests stay untouched.
 //!
-//! Provides: platform scratch dirs (Windows → `D:\Temp\bonsai-scratch`, never
+//! Provides: platform scratch dirs (Windows → `D:\Data\Temp\bonsai-scratch`, never
 //! C:), a `git` CLI fixture builder, the canonical read/write tool catalogs, and
 //! a newline-delimited JSON-RPC-over-stdio client that can ALSO emit raw /
 //! malformed bytes and observe whether the server survives.
@@ -88,7 +88,7 @@ pub fn skip_if_no_git() -> bool {
 
 #[cfg(windows)]
 fn scratch_root() -> std::path::PathBuf {
-    Path::new("D:\\Temp\\bonsai-scratch").to_path_buf()
+    Path::new("D:\\Data\\Temp\\bonsai-scratch").to_path_buf()
 }
 
 #[cfg(not(windows))]
@@ -188,7 +188,7 @@ impl McpClient {
             cmd.arg("--allow-write");
         }
         #[cfg(windows)]
-        cmd.env("TMP", "D:\\Temp").env("TEMP", "D:\\Temp");
+        cmd.env("TMP", "D:\\Data\\Temp").env("TEMP", "D:\\Data\\Temp");
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());

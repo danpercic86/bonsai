@@ -130,6 +130,15 @@ impl ReqwestTransport {
     /// Build a transport with a shared blocking client. Fails only if the TLS
     /// backend cannot be initialized.
     pub fn new() -> Result<Self, AppError> {
+        // reqwest is built with `rustls-no-provider`, so the process must
+        // install a rustls crypto provider before the first TLS handshake. We
+        // pick `ring` to keep the TLS stack pure-Rust (no aws-lc-rs C/cmake
+        // build). The result is ignored on purpose: installation is
+        // process-global and idempotent-by-first-writer — tauri installs one
+        // too, so inside the app this is usually a no-op, while the crate's own
+        // tests run outside the Tauri process and cannot rely on that.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
         // Never follow redirects: none of the forge APIs legitimately
         // redirect, and reqwest strips Authorization only across HOSTS — a
         // same-host https→http redirect would re-send the Bearer token in

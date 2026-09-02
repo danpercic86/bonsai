@@ -1,4 +1,9 @@
 import type { BranchesSnapshot } from '../types';
+import {
+  MULTI_REF_LOCALS,
+  MULTI_REF_REMOTES,
+  MULTI_REF_TAGS,
+} from './multiRefRow';
 
 /** Canonical HEAD oid of the mock fixture repo (shared with mock.ts). */
 export const MOCK_OID = '9fceb02d0ae598e95dc970b74767f19372d61af8';
@@ -85,6 +90,9 @@ export const INITIAL_BRANCHES: BranchesSnapshot = {
       behind: null,
       tip: 'f'.repeat(40),
     },
+    // P92 §5: the 12-hidden fixture row's locals — present so every picker row
+    // resolves a real menu instead of rendering disabled.
+    ...MULTI_REF_LOCALS,
   ],
   remote: [
     { name: 'origin/main', tip: MOCK_OID },
@@ -96,10 +104,11 @@ export const INITIAL_BRANCHES: BranchesSnapshot = {
     // pair (origin/feat) so their LEFT-column right-click menus resolve.
     { name: 'origin/dev', tip: '4'.repeat(40) },
     { name: 'origin/feat', tip: '3'.repeat(40) },
+    ...MULTI_REF_REMOTES,
   ],
   // P7 §9: v0.9 / v1.0 are referenced on graph row 0; add them here too.
   // P50d: ≥6 tags so the Tags section clears the inline-filter row threshold
   // (FILTER_MIN_ROWS) in the harness; shared prefixes exercise live filtering.
-  tags: ['v0.1.0', 'v0.2.0', 'v0.3.0', 'v0.9', 'v1.0', 'v1.1.0', 'v2.0.0-rc.1'],
+  tags: ['v0.1.0', 'v0.2.0', 'v0.3.0', ...MULTI_REF_TAGS, 'v0.9', 'v1.0', 'v1.1.0', 'v2.0.0-rc.1'],
   head: { branchName: 'main', oid: MOCK_OID, detached: false, unborn: false },
 };

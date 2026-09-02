@@ -5,6 +5,7 @@ import type { CiBadge, ForgeCellLayout, PrBadge } from './forgeBadges';
 import {
   chipHitAt,
   fallbackBranchRef,
+  hiddenEntities,
   forgeHitAt,
   hitTestRow,
   pillHitAt,
@@ -164,7 +165,27 @@ describe('chipHitAt / pillHitAt', () => {
     expect(chipHitAt(laid, 30)).toBeUndefined();
     expect(chipHitAt(laid, 92)).toBe(laid[2]);
     expect(chipHitAt(laid, 112)).toBe(laid[2]); // inclusive right edge
-    expect(chipHitAt(laid, 112.5)).toBeUndefined();
+  });
+
+  it('P92 §1.5: a narrow chip gets a padded HIT box (24px min), the paint does not', () => {
+    // The chip paints [92, 112] (w = 20 < 24) → 2px of extra hit box each side.
+    expect(chipHitAt(laid, 114)).toBe(laid[2]);
+    expect(chipHitAt(laid, 90)).toBe(laid[2]);
+    expect(chipHitAt(laid, 114.5)).toBeUndefined();
+    expect(chipHitAt(laid, 89.5)).toBeUndefined();
+    // A chip already ≥ 24px wide is unpadded.
+    const wide = [laidPill(92, 40, null)];
+    expect(chipHitAt(wide, 132)).toBe(wide[0]);
+    expect(chipHitAt(wide, 132.5)).toBeUndefined();
+  });
+
+  it('P92: hiddenEntities = the slice the band could not show', () => {
+    const e = (n: string): RefEntity => ({ kind: 'tag', name: n, ref: tag(n) });
+    const entities = [e('a'), e('b'), e('c'), e('d')];
+    // Two pills laid + a chip ⇒ entities 2..3 are hidden.
+    expect(hiddenEntities(entities, laid).map((x) => x.name)).toEqual(['c', 'd']);
+    // Everything shown ⇒ nothing hidden.
+    expect(hiddenEntities(entities, [laid[0], laid[1], laid[0], laid[1]])).toEqual([]);
   });
 
   it('gap between pills hits nothing', () => {

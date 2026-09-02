@@ -3,7 +3,7 @@ import type { IpcApi } from '../../types';
 import { hasIdentity } from '../../fixtures/config';
 import { lineDiff, reconstructLines } from '../../fixtures/diffs';
 import { randomOid } from '../../fixtures/oids';
-import { delay, requireRepo } from '../repoState';
+import { buildHead, delay, requireRepo } from '../repoState';
 import { hookRejectionFor } from '../hooksGate';
 import { runMockActivity } from '../gitActivity';
 import { MAIN_RS_PATH, collectSelection, linesEqual, sortByPath, takeMatching, upsert } from '../statusHelpers';
@@ -183,6 +183,25 @@ async function commitInner(
     }
     state.status.staged = [];
     state.headOid = randomOid();
+    // P99 follow-up: the first commit is what BORNS the repo — it creates the
+    // default branch and ends the unborn state. Without this the mock kept
+    // `kind: 'unborn'` forever, so `buildHead` still reported `unborn: true,
+    // oid: ''` while a commit row existed (a state no real repo can reach) and
+    // "No commits yet" / "No branches yet" survived committing. Seeded from the
+    // NEW headOid, and the stored head snapshot is re-derived like every other
+    // kind mutation (setDetached, branches.ts) so `isRefTip` stays consistent.
+    if (state.kind === 'unborn') {
+      state.kind = 'default';
+      state.branches.local.push({
+        name: state.headBranch,
+        isHead: true,
+        upstream: null,
+        ahead: null,
+        behind: null,
+        tip: state.headOid,
+      });
+      state.branches.head = buildHead(state);
+    }
     // M6 contract §5: bump the current branch's ahead count so the harness
     // gets the natural commit → push story (main: 0/0 → ↑1 → push clears).
     const headBranch = state.branches.local.find((b) => b.name === state.headBranch);

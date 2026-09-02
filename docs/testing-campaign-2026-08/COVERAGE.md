@@ -46,9 +46,9 @@ llvm-cov uses its own profile dir, so expect a full rebuild — do not interleav
 with `cargo test`/`clippy`):
 
 ```powershell
-$env:TMP = 'D:\Temp'; $env:TEMP = 'D:\Temp'
+$env:TMP = 'D:\Data\Temp'; $env:TEMP = 'D:\Data\Temp'
 cargo llvm-cov --workspace --summary-only
-cargo llvm-cov --workspace --html --output-dir D:\Temp\bonsai-llvm-cov
+cargo llvm-cov --workspace --html --output-dir D:\Data\Temp\bonsai-llvm-cov
 ```
 
 Workspace baseline (2026-08-10, `cargo llvm-cov --workspace --summary-only`, full suite):

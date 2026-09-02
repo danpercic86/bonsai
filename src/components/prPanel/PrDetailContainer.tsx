@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ipc, SUPPORTED_MERGE_METHODS } from '../../ipc';
-import type { ForgeKind, MergePrInput, PrDetail, PrDiffStats, ReviewComment } from '../../ipc';
+import type { FileDiffHeader, ForgeKind, MergePrInput, PrDetail, ReviewComment } from '../../ipc';
 import { usePushToast } from '../../ToastContext';
 import { errorMessage } from '../../utils/errors';
 import { ConfirmDialog } from '../ConfirmDialog';
@@ -8,6 +8,8 @@ import { closeActionGerund, closeActionLabel, closeActionPast } from '../PrActio
 import { PrDetailView } from '../PrDetailView';
 import { PrReviewComments } from '../PrReviewComments';
 import { PrChangesSection } from './PrChangesSection';
+import type { PrFileDiffOpen } from './PrChangesSection';
+import type { PrRestoreFocus } from '../repoWorkspace/usePrFileOverlay';
 import { PrMergeDialog } from './PrMergeDialog';
 import { usePrDiff } from './usePrDiff';
 
@@ -36,11 +38,16 @@ export interface PrDetailContainerProps {
   /** Route an `authFailed` error to the parent's reauth flow. Returns true when
    *  handled (caller then suppresses the extra toast). */
   onAuthFailed(e: unknown): boolean;
-  /** Open the CENTER-pane DiffBrowser on this PR's resolved local diff.
-   *  Auto-called once stats resolve (≥1 file) and by the file-list rows. */
-  onOpenPrDiff(stats: PrDiffStats, prNumber: number, title: string): void;
-  /** Close the center-pane PR diff (this detail unmounted / PR switched). */
-  onClosePrDiff(): void;
+  /** P93: open ONE changed file's diff in the center overlay. */
+  onOpenFileDiff?(ctx: PrFileDiffOpen): void;
+  /** P93 §6: collapse the center PR overlay — fired when this detail unmounts
+   *  (tab leaves Pull requests / Back to the list), when a different PR is
+   *  shown, and on a head advance. Must be stable / safe to overfire. */
+  onClosePrFileDiff?(): void;
+  /** Path of the PR file currently open in the center overlay (null = none). */
+  prOverlayPath?: string | null;
+  /** P93 §6.1: dismissal-event focus restore for the changed-files list. */
+  prRestoreFocusTo?: PrRestoreFocus | null;
 }
 
 export function PrDetailContainer({
@@ -57,8 +64,10 @@ export function PrDetailContainer({
   onListChanged,
   onReload,
   onAuthFailed,
-  onOpenPrDiff,
-  onClosePrDiff,
+  onOpenFileDiff,
+  onClosePrFileDiff,
+  prOverlayPath = null,
+  prRestoreFocusTo = null,
 }: PrDetailContainerProps) {
   const pushToast = usePushToast();
   const [merging, setMerging] = useState(false);
@@ -73,18 +82,68 @@ export function PrDetailContainer({
   // per-file hunk fetcher is keyed off the resolved merge-base/head oids.
   const prDiff = usePrDiff(repoId, summary.number, summary.headSha);
 
-  // Center-pane diff browser: AUTO-OPEN once the local diff resolves with ≥1
-  // file (mirrors compare mode). Re-fires on a head-advance refetch (new stats
-  // object) so the browser tracks the fresh oids. Closed via the cleanup below.
-  const prStats = prDiff.status === 'ready' ? prDiff.stats : null;
+  // P93 §6.1/§6.2: unmounting this detail (tab switch / Back) or switching to a
+  // different PR orphans any open `pr:` overlay — collapse it. Cleanup-only, so
+  // it fires exactly once per detail episode.
+  useEffect(() => () => onClosePrFileDiff?.(), [summary.number, onClosePrFileDiff]);
+
+  // P93 §6.3: a head advance re-keys the diff (the open file may not even exist
+  // at the new head) — collapse rather than dim. The LIST keeps its `.diff-stale`
+  // dim while the new stats load (P89 SF2, unchanged).
+  //
+  // P96 item 4: on a PR switch the new head oid arrives a commit LATE — the
+  // hook only calls `setStats` from its fetch effect, so on the switch commit
+  // `stats` still holds the OLD PR's oid (a cached target has the same shape,
+  // just shorter latency). Recording that stale oid as the baseline made the
+  // next commit's old→new flip read as a head advance and fire a SECOND,
+  // redundant close on top of the cleanup above. The switch episode is therefore
+  // bracketed explicitly: the number change opens it (baseline cleared, nothing
+  // fired — C2 already closed the overlay), and the FIRST stats belonging to the
+  // new PR closes it by establishing the baseline. That first arrival is
+  // detected by the stats OBJECT IDENTITY, not by the oid — two PRs can share a
+  // head sha, in which case `headOid` never changes across the switch and an
+  // oid-only guard would leave the baseline stuck at `null` and swallow the next
+  // genuine advance. `usePrDiff` hands back a different object whenever stats
+  // for the newly-keyed PR land (cache hit or fetch resolve), so identity is the
+  // reliable signal. Extra runs outside a switch episode are harmless: they see
+  // `prev === headOid` and fire nothing.
+  const headOid = prDiff.stats?.headOid ?? null;
+  const prevHeadOidRef = useRef(headOid);
+  const prevNumberRef = useRef(summary.number);
+  const awaitingSwitchRef = useRef(false);
+  const statsObj = prDiff.stats;
   useEffect(() => {
-    if (prStats !== null && prStats.files.length > 0) {
-      onOpenPrDiff(prStats, summary.number, `#${summary.number} · ${summary.title}`);
+    if (prevNumberRef.current !== summary.number) {
+      prevNumberRef.current = summary.number;
+      prevHeadOidRef.current = null;
+      awaitingSwitchRef.current = true;
+      return;
     }
-  }, [prStats, summary.number, summary.title, onOpenPrDiff]);
-  // Close when THIS detail goes away: unmount (back-to-list, tab switch — the
-  // whole PrPanel unmounts) or a same-mount PR switch (post-create replace).
-  useEffect(() => () => onClosePrDiff(), [summary.number, onClosePrDiff]);
+    if (awaitingSwitchRef.current) {
+      // First stats for the new PR — baseline only, never a close.
+      awaitingSwitchRef.current = false;
+      prevHeadOidRef.current = headOid;
+      return;
+    }
+    const prev = prevHeadOidRef.current;
+    prevHeadOidRef.current = headOid;
+    if (prev !== null && headOid !== null && prev !== headOid) onClosePrFileDiff?.();
+  }, [headOid, statsObj, summary.number, onClosePrFileDiff]);
+
+  const stats = prDiff.stats;
+  const handleOpenFile = useCallback(
+    (header: FileDiffHeader) => {
+      // No resolved oids ⇒ nothing to diff against; never invoke.
+      if (stats === null) return;
+      onOpenFileDiff?.({
+        prNumber: summary.number,
+        baseOid: stats.mergeBaseOid,
+        headOid: stats.headOid,
+        header,
+      });
+    },
+    [stats, summary.number, onOpenFileDiff],
+  );
   // Header counts: use the authoritative local stats once the local diff has
   // resolved — ready OR empty, i.e. even when it's 0/0/0 (SF1: an empty local
   // diff must show +0/-0/0 files, not the forge's stale non-zero counts). Only
@@ -172,18 +231,14 @@ export function PrDetailContainer({
         stats={headerStats}
         changesSlot={
           <PrChangesSection
-            key={summary.number}
             status={prDiff.status}
             stats={prDiff.stats}
             stale={prDiff.stale}
             errorCause={prDiff.errorCause}
             onRetry={prDiff.retry}
-            onOpenBrowser={
-              prStats !== null && prStats.files.length > 0
-                ? () =>
-                    onOpenPrDiff(prStats, summary.number, `#${summary.number} · ${summary.title}`)
-                : undefined
-            }
+            activePath={prOverlayPath}
+            restoreFocusTo={prRestoreFocusTo}
+            onOpenFile={handleOpenFile}
           />
         }
       >

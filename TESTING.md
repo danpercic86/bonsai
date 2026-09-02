@@ -21,8 +21,8 @@ cargo clippy --workspace --all-targets -- -D warnings   # run SEPARATELY — see
 
 - **Never run `cargo test` and `cargo clippy` concurrently** — they share the target dir and race,
   causing spurious failures. CI runs them sequentially in one job.
-- **Windows temp:** set `TMP`/`TEMP` to a drive with space, e.g. `D:\Temp`, and quote it
-  (`$env:TMP='D:\Temp'`) — an unquoted backslash mangles the path and breaks `link.exe`. Scratch git
+- **Windows temp:** set `TMP`/`TEMP` to a drive with space, e.g. `D:\Data\Temp`, and quote it
+  (`$env:TMP='D:\Data\Temp'`) — an unquoted backslash mangles the path and breaks `link.exe`. Scratch git
   repos are created under the temp dir.
 - **`BONSAI_REQUIRE_GIT_STRICT=1`** turns every git-CLI-gated test that would otherwise skip into a
   hard failure when `git` is missing. CI sets it so the suite can never silently under-run. Locally,

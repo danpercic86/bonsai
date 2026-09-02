@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CommitBoxHandle } from './CommitBox';
-import type { ContextMenuItem } from './ContextMenu';
+import type { ContextMenuState } from './ContextMenu';
+import { graphMenuState } from './workspaceMenusRefPicker';
 import { WorkspaceToolbar } from './WorkspaceToolbar';
 import { WorkspaceDialogs } from './WorkspaceDialogs';
 import { WorkspaceOverlays } from './WorkspaceOverlays';
@@ -8,6 +9,7 @@ import type { PendingForceSubmodule } from './dialogs/SubmoduleDialogs';
 import { WorkspaceGraphPane } from './WorkspaceGraphPane';
 import { WorkspaceRightPanel } from './WorkspaceRightPanel';
 import { isUsableRepo } from './workspaceUtils';
+import { prBaseRefOptions, prCompareRefOptions } from './repoWorkspace/prRefOptions';
 import { createWorkspaceMenus } from './workspaceMenus';
 import type { DiffOverlayMeta } from './DiffOverlay';
 import type { DiffScope } from './DiffFileTree';
@@ -57,7 +59,6 @@ import type {
   ReflogEntry,
   UndoPlan,
   RemoteInfo,
-  RepoInfo,
   RepoOpState,
   ResetMode,
   SigningStatus,
@@ -75,6 +76,10 @@ import { isImagePath } from '../utils/imagePaths';
 import { useRemoteOps, type NonFfPullInfo } from './repoWorkspace/useRemoteOps';
 import { useCommitActions } from './repoWorkspace/useCommitActions';
 import { usePartialStaging } from './repoWorkspace/usePartialStaging';
+import type { PrOverlayCtx } from './repoWorkspace/types';
+import { isPrSlotKey } from './repoWorkspace/prSlotKey';
+import { deriveOverlayMeta } from './repoWorkspace/overlayMeta';
+import { usePrFileOverlay } from './repoWorkspace/usePrFileOverlay';
 import { useHookGate } from './repoWorkspace/useHookGate';
 import { useHookDisclosure } from './repoWorkspace/useHookDisclosure';
 import { useBranchActions } from './repoWorkspace/useBranchActions';
@@ -120,7 +125,7 @@ import { buildPaletteActions, type PaletteAction } from './paletteActions';
 import { safeOpDispatch } from './safeOpDispatch';
 import type { ComboboxOption } from './Combobox';
 import { searchScopeOptionsOf } from './repoWorkspace/searchHelpers';
-import { branchStatsOf, diffBrowserViewOf, graphDisplayOf, prBaseOptionsOf, prCompareOptionsOf, prDefaultBaseOf } from './repoWorkspace/displayModels';
+import { branchStatsOf, diffBrowserViewOf, graphDisplayOf, prDefaultBaseOf } from './repoWorkspace/displayModels';
 
 export type { RepoWorkspaceProps } from './repoWorkspace/RepoWorkspaceProps';
 import type { RepoWorkspaceProps } from './repoWorkspace/RepoWorkspaceProps';
@@ -176,10 +181,6 @@ export function RepoWorkspace({
   // P11d §4.1: METRICS overlaid with the user's graph knobs; memoized so the
   // canvas metricsRef only churns when a knob actually changes.
   const metrics = useMemo(() => effectiveMetrics(graphPrefs), [graphPrefs]);
-
-  // RepoInfo is (re)loaded by refreshAll's openRepo; head also arrives via the
-  // branches snapshot, so gating works before the first refreshAll.
-  const [repo, setRepo] = useState<RepoInfo | null>(null);
 
   const [status, setStatus] = useState<StatusSnapshot | null>(null);
   const [statusError, setStatusError] = useState<{ id: number; message: string } | null>(null);
@@ -503,6 +504,11 @@ export function RepoWorkspace({
   const [commitDiffLoading, setCommitDiffLoading] = useState(false);
   const [commitDiffError, setCommitDiffError] = useState<string | null>(null);
   const [diffSlot, setDiffSlot] = useState<DiffSlot | null>(null);
+  // P93: the PR file open in the center overlay (the `pr:` key cannot carry its
+  // status / rename origin / PR number). Cleared in collapseDiffSlot.
+  const [prOverlayCtx, setPrOverlayCtx] = useState<PrOverlayCtx | null>(null);
+  const prOverlayCtxRef = useRef(prOverlayCtx); // read by the overlay refetch toggles
+  prOverlayCtxRef.current = prOverlayCtx;
   // P17c: File vs Diff view for the center-pane diff overlay. Drives the
   // `fullContext` arg of the primary overlay fetchers; read through a ref by the
   // stable `refetchStatus` callback so toggling never re-creates it.
@@ -534,9 +540,7 @@ export function RepoWorkspace({
   const imageDiffPathRef = useRef<string | null>(null);
 
   // P5 §5.2: graph right-click context menu (position + prebuilt items).
-  const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(
-    null,
-  );
+  const [menu, setMenu] = useState<ContextMenuState | null>(null);
 
   // P5 §5.3: Compare right-panel mode (HEAD → right-clicked commit). Mirrors the
   // commitDiff cluster; `compare.oid` is a full oid so it survives refetches.
@@ -559,7 +563,10 @@ export function RepoWorkspace({
   const compareRef = useRef(compare);
   compareRef.current = compare;
   // PR mode: the open PR's local diff → center DiffBrowser (usePrDiffBrowser).
-  const { openPrDiff, closePrDiff, prBrowserView } = usePrDiffBrowser(
+  // P93 superseded the whole-PR open path (PR files now open per-file in the
+  // center overlay), so only the close/peel side is still wired; `openPrDiff`
+  // is intentionally not destructured — nothing opens this view any more.
+  const { closePrDiff, prBrowserView } = usePrDiffBrowser(
     setScope,
     setCommitBrowserOpen,
     compareRef,
@@ -656,9 +663,11 @@ export function RepoWorkspace({
   // that only shifts the row index).
   const commitDiffKeyRef = useRef<string | null>(null);
 
-  // Head: prefer the freshly re-opened RepoInfo, fall back to the branches
-  // snapshot (available before the first refreshAll, §5.1).
-  const head: HeadInfo | null = repo?.head ?? branches?.head ?? null;
+  // P99: the branches snapshot is the SINGLE source for HEAD. `openRepo`'s
+  // RepoInfo.head is no longer mirrored into local state — the backend derives
+  // both from one shared `read_head_info`, so they cannot disagree, and the
+  // snapshot is already available before the first refresh round.
+  const head: HeadInfo | null = branches?.head ?? null;
   const opActive = opState.kind !== 'none';
   const canPullPush =
     head != null && !head.detached && !head.unborn && !opActive;
@@ -687,41 +696,15 @@ export function RepoWorkspace({
     [repoId],
   );
 
-  const overlayMeta: DiffOverlayMeta | null = useMemo(() => {
-    if (diffSlot === null) return null;
-    const key = diffSlot.key;
-    if (key.startsWith('conflict:')) {
-      return {
-        path: key.slice('conflict:'.length),
-        origPath: null,
-        status: 'conflicted',
-        kind: 'conflict',
-      };
-    }
-    // P13 §8.3: AI proposal review — reuses the conflict editor (seeded with the
-    // markerless proposed body carried on diffSlot.conflict).
-    if (key.startsWith('ai-proposal:')) {
-      return {
-        path: key.slice('ai-proposal:'.length),
-        origPath: null,
-        status: 'conflicted',
-        kind: 'aiProposal',
-      };
-    }
-    const sep = key.indexOf(':');
-    const section = key.slice(0, sep) as WorkdirSection;
-    const path = key.slice(sep + 1);
-    const entry = status?.[section].find((e) => e.path === path) ?? null;
-    return {
-      path,
-      origPath: entry?.origPath ?? null,
-      status: entry?.status ?? null,
-      kind: section,
-    };
-  }, [diffSlot, status]);
+  const overlayMeta: DiffOverlayMeta | null = useMemo(
+    () => (diffSlot === null ? null : deriveOverlayMeta(diffSlot.key, status, prOverlayCtx)),
+    [diffSlot, status, prOverlayCtx],
+  );
 
   // Latest overlay meta read by the partial-staging handlers + the view-mode
   // toggle without widening their (stable) callback deps.
+  // P93: the ctx only while its slot is open (active-row marker + `PR #n` chip).
+  const prOverlaySlot = diffSlot !== null && isPrSlotKey(diffSlot.key) ? prOverlayCtx : null;
   const overlayMetaRef = useRef(overlayMeta);
   overlayMetaRef.current = overlayMeta;
 
@@ -812,6 +795,7 @@ export function RepoWorkspace({
   const collapseDiffSlot = useCallback(() => {
     fileDiffReqId.current += 1;
     setDiffSlot(null);
+    setPrOverlayCtx(null); // P93: only meaningful while a `pr:` slot is open
   }, []);
 
   // P5 §5.3: tear down compare mode. Bumps the req-id so any in-flight fetch is
@@ -950,7 +934,9 @@ export function RepoWorkspace({
         slot !== null &&
         !slot.key.startsWith('commit:') &&
         !slot.key.startsWith('conflict:') &&
-        !slot.key.startsWith('ai-proposal:')
+        !slot.key.startsWith('ai-proposal:') &&
+        // P93: a `pr:` slot is a forge diff — never refetch it as a workdir one.
+        !isPrSlotKey(slot.key)
       ) {
         const sep = slot.key.indexOf(':');
         const section = slot.key.slice(0, sep) as WorkdirSection;
@@ -1153,8 +1139,9 @@ export function RepoWorkspace({
    *  all origins funnel through the coalescer to it. P86a: SCOPED — only the
    *  slices `scope` implies run, so a ref-only mutation never pays the O(worktree)
    *  `get_status` scan and non-`full` scopes skip `openRepo` (they never move
-   *  HEAD). `full` still re-openRepos (refreshes header HEAD + self-heals the
-   *  watcher; clears everything if the repo went unusable). Never throws —
+   *  HEAD). `full` still re-openRepos — for the usability check (clears
+   *  everything if the repo went unusable) + the watcher self-heal; P99: the
+   *  header HEAD comes from the branches snapshot, not from here. Never throws —
    *  failures surface as a sticky error toast. */
   const runRefreshRound = useCallback(
     async (scope: RefreshScope): Promise<void> => {
@@ -1164,7 +1151,6 @@ export function RepoWorkspace({
       try {
         if (slices.openRepo) {
           const { info } = await ipc.openRepo(repoPath);
-          setRepo(info);
           if (!isUsableRepo(info)) {
             clearStatus();
             clearGraph();
@@ -1484,8 +1470,12 @@ export function RepoWorkspace({
   // P78: branch suggestions + base hint for the PR create form. Compare = local
   // branches; Base = local + remote-tracking branches. Base hint prefers the head
   // branch's upstream, then a local main/master, else empty.
-  const prCompareOptions = useMemo<ComboboxOption[]>(() => prCompareOptionsOf(branches), [branches]);
-  const prBaseOptions = useMemo<ComboboxOption[]>(() => prBaseOptionsOf(branches), [branches]);
+  // P78/P100: PR ref-field options (short-oid hints) live in ./repoWorkspace/prRefOptions.
+  const prCompareOptions = useMemo<ComboboxOption[]>(
+    () => prCompareRefOptions(branches),
+    [branches],
+  );
+  const prBaseOptions = useMemo<ComboboxOption[]>(() => prBaseRefOptions(branches), [branches]);
   const prDefaultBase = useMemo<string | null>(
     () => prDefaultBaseOf(headBranch, branches),
     [headBranch, branches],
@@ -1740,6 +1730,7 @@ export function RepoWorkspace({
     stageableRef,
     diffViewModeRef,
     intralineRef,
+    prOverlayCtxRef,
     setDiffViewMode,
     setIntraline,
     setPendingHunkDiscard,
@@ -1747,6 +1738,15 @@ export function RepoWorkspace({
     fetchDiffSlot,
     refetchStatus,
     reportStatusError,
+  });
+
+  // P93 §6.1: `handleDismissDiffOverlay` replaces `collapseDiffSlot` at the
+  // overlay's dismissal affordances (× / Esc / error banner) — the only arm point.
+  const {
+    handleOpenPrFileDiff, handleClosePrFileDiff, handleDismissDiffOverlay, prRestoreFocusTo,
+  } = usePrFileOverlay({
+    repoId, diffSlotRef, diffViewModeRef, intralineRef, prOverlayCtxRef, setPrOverlayCtx,
+    fetchDiffSlot, collapseDiffSlot,
   });
 
   // P56b: open the general "Release notes…" range picker (palette entry). Stable
@@ -2134,7 +2134,7 @@ export function RepoWorkspace({
   function handleGraphContextMenu(target: GraphContextTarget, clientX: number, clientY: number) {
     const items = menus.buildContextItems(target);
     if (items.length === 0) return; // no valid actions → menu does not open
-    setMenu({ x: clientX, y: clientY, items });
+    setMenu(graphMenuState(target, items, clientX, clientY));
   }
 
   // P6 §4.3: right-click a sidebar branch/remote row → open the SAME shared menu
@@ -2161,7 +2161,7 @@ export function RepoWorkspace({
   useWorkspaceKeyboard({
     active,
     globalModalOpen,
-    collapseDiffSlot,
+    collapseDiffSlot: handleDismissDiffOverlay,
     clearCompare,
     closeAiPanel,
     closeBlame,
@@ -2401,6 +2401,7 @@ export function RepoWorkspace({
         </RefFilterMarkerContext.Provider>
         <PaneDivider side="sidebar" onResize={onSidebarResize} onResizeEnd={onPaneResizeEnd} />
         <WorkspaceGraphPane
+          prNumber={prOverlaySlot?.prNumber ?? null}
           graphError={graphError}
           graph={graph}
           head={head}
@@ -2435,7 +2436,7 @@ export function RepoWorkspace({
           historySearch={historySearch}
           diffSlot={diffSlot}
           overlayMeta={overlayMeta}
-          collapseDiffSlot={collapseDiffSlot}
+          collapseDiffSlot={handleDismissDiffOverlay}
           onResolveConflictText={handleResolveConflictText}
           mutating={mutating}
           overlayExplain={overlayExplain}
@@ -2481,14 +2482,16 @@ export function RepoWorkspace({
           rightPanelWidth={paneWidths.rightPanel}
           repoId={repoId}
           rightPaneTab={rightPaneTab}
+          onOpenPrFileDiff={handleOpenPrFileDiff}
+          onClosePrFileDiff={handleClosePrFileDiff}
+          prOverlayPath={prOverlaySlot?.path ?? null}
+          prRestoreFocusTo={prRestoreFocusTo}
           onSelectRightPaneTab={setRightPaneTab}
           prDefaultHead={headBranch?.name ?? null}
           prDefaultBase={prDefaultBase}
           prBaseOptions={prBaseOptions}
           prCompareOptions={prCompareOptions}
           prNav={prNav}
-          onOpenPrDiff={openPrDiff}
-          onClosePrDiff={closePrDiff}
           checksTarget={checksTab.target}
           checksRefreshSeq={checksTab.refreshSeq}
           onPushChecksBranch={checksTab.target?.name === headBranch?.name ? () => void pushCurrentBranch() : undefined}

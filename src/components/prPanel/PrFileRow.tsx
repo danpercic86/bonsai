@@ -1,10 +1,15 @@
 import type { FileDiffHeader, FileStatus } from '../../ipc';
 
-// P89 (revised): one changed-file row in the PR detail's changed-files section.
-// Now a COMPACT, non-expanding row (status badge + path + ±counts) — the diff
-// bodies render in the center-pane DiffBrowser (pr mode). Clicking a row simply
-// (re)opens that browser; while the local diff is unresolved (`onOpen`
-// undefined) the row renders as a plain, non-interactive line.
+// P89/P93: one changed-file row in the PR detail's changed-files section. A flat
+// single-line row (status badge + path + ±counts) that OPENS the file's diff in
+// the center DiffOverlay over the graph — the same interaction the working-dir
+// Changes list has. Nothing expands inline any more (P93): loading, error and
+// the hunks all live in the overlay, so this file is purely presentational and
+// holds no fetch state at all.
+//
+// A `binary: true` header renders a NON-interactive <span> (mirroring
+// StatusFileRow's non-expandable branch): there is no text diff to show, so the
+// row is not clickable and not in the tab order.
 
 const BADGES: Record<FileStatus, string> = {
   added: 'A',
@@ -18,15 +23,16 @@ const BADGES: Record<FileStatus, string> = {
 
 export interface PrFileRowProps {
   header: FileDiffHeader;
-  /** (Re)open the center-pane PR diff browser. Undefined = not yet openable. */
-  onOpen?(): void;
+  /** This file's diff is the one currently open in the center overlay. */
+  active: boolean;
+  onOpen(header: FileDiffHeader): void;
 }
 
-export function PrFileRow({ header, onOpen }: PrFileRowProps) {
+export function PrFileRow({ header, active, onOpen }: PrFileRowProps) {
   const isRename = header.origPath !== null;
   const title = isRename ? `${header.origPath} → ${header.path}` : header.path;
 
-  const content = (
+  const inner = (
     <>
       <span className="file-badge mono">{BADGES[header.status]}</span>
       {isRename ? (
@@ -50,20 +56,34 @@ export function PrFileRow({ header, onOpen }: PrFileRowProps) {
   );
 
   return (
-    <li className="pr-file-row">
-      {onOpen !== undefined ? (
+    // P93 §10: `diff-card-collapsed` is STATIC — the row has no body, ever, so
+    // it is permanently collapsed. The house rule drops the header's duplicate
+    // bottom border and rounds every corner (diff-browser.css:197).
+    // P96: `data-path` lets the focus-restore in PrChangesSection resolve this
+    // row by PATH rather than by positional index into the list's children.
+    <li
+      data-path={header.path}
+      className={`diff-card diff-card-collapsed pr-file-row${
+        active ? ' pr-file-row-active' : ''
+      }`}
+    >
+      {header.binary ? (
+        <span
+          className={`diff-card-header file-status-${header.status} pr-file-row-binary`}
+          title="Binary file — no text diff"
+        >
+          {inner}
+        </span>
+      ) : (
         <button
           type="button"
           className={`diff-card-header file-status-${header.status}`}
-          title={`${title} — view diff in the center pane`}
-          onClick={onOpen}
+          title={title}
+          aria-expanded={active}
+          onClick={() => onOpen(header)}
         >
-          {content}
+          {inner}
         </button>
-      ) : (
-        <div className={`diff-card-header file-status-${header.status}`} title={title}>
-          {content}
-        </div>
       )}
     </li>
   );

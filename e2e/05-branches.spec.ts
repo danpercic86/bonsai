@@ -61,7 +61,7 @@ test.describe('05 branches @destructive', () => {
     menu = await openBranchContextMenu(page, 'fix/watcher-debounce');
     await menu.getByRole('menuitem', { name: 'Checkout' }).click();
     await expect(
-      page.locator('.toast-stack').getByText(/carried over with conflicts/),
+      page.locator('.toast-stack').getByText(/carried over with \d+ conflict/),
     ).toBeVisible();
     await expect(row(page, 'fix/watcher-debounce')).toHaveAttribute('aria-current', 'true');
     await expect(page.getByTestId('status-panel').getByText(/Conflicts \(/)).toBeVisible();

@@ -56,10 +56,10 @@ CSS custom properties on `:root` (dark, default) and `[data-theme="light"]`.
 | `--bg-3` | `#2f343d` | `#e2e5ea` | active/pressed |
 | `--text-1` | `#e8eaed` | `#1c1f24` | primary text |
 | `--text-2` | `#a8adb8` | `#4b515c` | secondary text |
-| `--text-3` | `#6b7280` | `#8a919e` | muted/labels — **see the contrast note below** |
+| `--text-3` | `#6b7280` | `#8a919e` | **four exempt roles only** — never read text; see SANCTIONED ROLES below |
 | `--border` | `#2c313a` | `#dcdfe5` | 1px pane/row borders |
 | `--accent` | `#4f8cff` | `#2f6fe4` | primary buttons, links, focus ring |
-| `--accent-text` | `#ffffff` | `#ffffff` | text on accent |
+| `--accent-text` | `#16181d` | `#ffffff` | text on a solid `--accent` fill (**5.52:1** dark / **4.65:1** light) — the two themes differ deliberately, P100 |
 | `--selection` | `#2a3b57` | `#dbe7ff` | selected row background |
 | `--danger` | `#e5534b` | `#d13438` | errors, destructive |
 | `--success` | `#57ab5a` | `#1a7f37` | staged/added |
@@ -68,17 +68,106 @@ CSS custom properties on `:root` (dark, default) and `[data-theme="light"]`.
 
 Focus: 2px `--accent` outline, offset 1px, keyboard only (`:focus-visible`).
 
-**Contrast notes (measured 2026-08-17, P68e design pass; toast rows updated 2026-08-20, P74).**
-One known AA shortfall remains (`--text-3`); the hue-as-text family was retro-fitted by P74.
-**New surfaces must not add to either**:
+**Contrast notes (measured 2026-08-17, P68e design pass; toast rows updated 2026-08-20, P74;
+`--text-3` swept in two enumerated passes, 2026-08-31 P95 and 2026-09-01 P98).**
 
-- `--text-3` is **3.38:1** on `--bg-1` and **3.67:1** on `--bg-0` (dark), **2.96:1** on `--bg-1` and
-  **≈3.2:1** on `--bg-0` (light). That is below the 4.5:1 AA bar for text. Treat `--text-3` as
-  **decorative only** (uppercase section labels that duplicate visible structure, dividers, disabled
-  glyphs). Any text the user must actually read — metadata, timestamps, costs, log lines, hints,
-  **status-pill labels**, **settings help text**, **any heading that is the user's only wayfinder**
-  (§12.5's result-group headers) — uses `--text-2` (**7.9:1** dark / **4.9:1** light on `--bg-0`;
-  **7.3:1** / **7.4:1** on `--bg-1`).
+**Scope of the `--text-3` work — the audit is complete, the fixes are not yet shipped.** Three
+*enumerated* passes: P95 took the **enabled-interactive-control** class, P98 took an
+**eight-selector read-text set**, and **P101 (2026-09-01) audited the family exhaustively** — all
+**124 `color: var(--text-3)` declarations across 33 files in `src/styles/`** (re-pinned by grep at
+audit time: 122 + the two disabled-hint overrides P98 itself added), plus the one declaration
+outside `src/styles/`. Every declaration now carries a recorded bucket and verdict in
+`docs/contracts/P101-text3-audit-ui.md` §3 — **93 fixes, 31 sanctioned exemptions** — and the
+token's role is redefined by the SANCTIONED ROLES bullet below. P101 also found **three pre-existing
+P95-class enabled-control escapes** (`.settings-reset`, `.settings-config-advanced-summary`,
+`.onboarding-skip`), so P95's app-wide claim was as unevidenced as P98's: **an "app-wide swept"
+claim without an enumeration behind it has now failed twice — do not make a third.** The
+hue-as-text family was retro-fitted by P74; the accent-fill shortfall is **closed** (P100). All 93
+P101 fixes **shipped** (P101a–c), so the **`--text-3` family is now CLOSED**, and — unlike the
+retracted P95/P98 claims — the enumeration is behind it, declaration by declaration, in
+`docs/contracts/P101-text3-audit-ui.md` §3. **No AA colour shortfall remains in §2. A new
+`--text-3` use outside the four SANCTIONED ROLES below is a defect**:
+
+- **The full `--text-3` / `--text-2` matrix (P98 measured; the `--bg-3` row added by P101).** Read
+  this before choosing either token on any surface.
+
+  | Backdrop | `--text-3` d / l | `--text-2` d / l |
+  |---|---|---|
+  | `--bg-0` | **3.68** / **3.17** ✗ | **7.90** / **7.99** ✓ |
+  | `--bg-1` | **3.38** / **2.96** ✗ (light also ✗✗) | **7.25** / **7.45** ✓ |
+  | `--bg-2` | **2.98** / **2.73** ✗✗ | **6.40** / **6.87** ✓ |
+  | `--bg-3` | **2.58** / **2.51** ✗✗ | **5.56** / **6.32** ✓ |
+  | `--selection` | **2.33** / **2.55** ✗✗ | **5.01** / **6.42** ✓ |
+  | own 18% tint | **2.78** / **2.51** ✗✗ | — |
+
+  ✗ = below 4.5:1 (text). ✗✗ = below **3:1** (graphics). **`--text-3` clears 4.5:1 on nothing, in
+  either theme, and clears 3:1 only on `--bg-0` (both) and `--bg-1` (dark only).** So it is never
+  *adequate* for text: a `--text-3` declaration is legitimate only when it is **exempt** from the
+  text bar, never because its ratio is good enough. **`--text-3` must not appear on a `--bg-2`,
+  `--bg-3` or `--selection` surface in any role** — it fails even the graphics bar there, in both
+  themes. That is a grep-checkable invariant; use it.
+
+  Any text the user must actually read — metadata, timestamps, costs, log lines, hints,
+  **status-pill labels**, **settings help text**, **form field labels**, **units**, **oids and
+  dates in a picker**, **any heading that is the user's only wayfinder** (§12.5's result-group
+  headers, the command palette's group headers, "STAGED" / "UNSTAGED") — uses `--text-2`.
+- **SANCTIONED ROLES for `--text-3` (P101, exhaustive).** Exactly four, and nothing else:
+  **(1) disabled** — the text or glyph of a disabled control or row (16 declarations);
+  **(2) placeholder / empty** — `::placeholder` and empty-state copy where the surface itself is the
+  message and no fix is named (10); **(3) settings group / section titles** — an uppercase heading
+  over a *visibly bounded* group, on `--bg-0` (3); **(4) coordinate glyphs on `--bg-0`** — line
+  numbers and duplicate-structure glyphs, where 3.68 / 3.17 clears the graphics bar
+  (`.diff-lineno`, `.commit-search-icon`, `.cm-gutters`). A `--text-3` use outside these four is a
+  defect. The per-declaration enumeration behind this list is
+  `docs/contracts/P101-text3-audit-ui.md` §3.
+- **Read text is judged at 4.5:1 against its *actual composited* backdrop, in both themes
+  (rule made explicit 2026-09-01, P98).** The test for "decorative" is **not** how the text looks —
+  small, uppercase and letter-spaced does not make text decorative. The test is whether the user
+  **must read it to act**. A 11px uppercase pane label is read text when it is the only thing
+  telling the user which merge pane is OURS vs THEIRS; an option's trailing hint is read text
+  because it is what the user reads *in order to choose*. Where the same element has
+  hover/selected/active states, **each state's backdrop is measured separately** — `--text-3` on a
+  `--selection` row fill was the worst case found (2.33:1).
+  - **The eight selectors P98 swept to `--text-2`** — a new `--text-3` on any of these is a defect:
+    `.diff-overlay-kind`, `.diff-tree-count`, `.conflict-editor-split-label`, `.wtctx-branch`,
+    `.wtctx-blocked`, `.combobox-option-hint`, `.command-palette-option-hint`,
+    `.pr-merge-method-desc` (§12.9). Plus the two active-state hint overrides, which moved from a
+    hardcoded `rgba(255,255,255,.8)` to `var(--accent-text)` in P98, and then to **`--text-2`** in
+    P100 when the `--accent` fill under them was retired for `--selection` (see the ACCENT FILL
+    bullet).
+  - **Sanctioned decorative — audited and deliberately left at `--text-3`.** This list is
+    exhaustive; a `--text-3` use *not* on it and *not* among the eight above is **unclassified**,
+    not approved.
+
+    | Use | Where | Measured | Why decorative |
+    |---|---|---|---|
+    | Editor line-number gutter | `src/components/conflictCmSetup.ts:36`, `.cm-gutters` | 3.68 / 3.17 on `--bg-0` | a coordinate that duplicates visible structure; universal editor convention (a `--text-2` gutter would be louder than any editor the user knows). The act-carrying text in that pane — `.conflict-region-caption`, `.conflict-editor-split-label`, the accept/reject buttons — is already `--text-2` or brighter. **Revisit trigger:** if a line number ever becomes actionable or is named in copy (go-to-line, line-range selection, any message citing a line), it becomes read text and moves to `--text-2`. Re-checked at P101 — no go-to-line control, no line-range UI, no copy citing a line: **sanction stands**. |
+    | Diff gutter line numbers | `diff-content.css:144`, `.diff-lineno` | 3.68 / 3.17 on `--bg-0` | same ruling and same revisit trigger as `.cm-gutters` (P101). **Contrast the blame gutter:** `blame-history.css:112` `.blame-lineno` was ruled the *other* way and moved to `--text-2`, purely because its gutter goes to `--bg-2` on hover (2.98 / 2.73). This is a coordinate-glyph-**on-`--bg-0`** exemption, not a blanket line-number exemption. |
+    | Search input glyph | `search.css:28`, `.commit-search-icon` | 3.68 / 3.17 on `--bg-0` | duplicates the visible input and its placeholder (P101) |
+    | The disabled set (16 declarations — this list is the whole of them, P101) | `dialogs-forms.css` `.combobox-option--disabled`(`.combobox-option--active`)(` .combobox-option-hint`); `search.css` `.command-palette-option.is-disabled`(`.is-active`)(` .command-palette-option-hint`); `.btn-icon:disabled`, `.toolbar-btn:disabled` (`controls.css`); `.context-menu-item:disabled`(` .context-menu-subnote`) (`context-menu.css`); `.row-action:disabled`, `.commit-msg-tool:disabled` (`commit-box.css`); `.git-dock-clear:disabled`; `.sidebar-add:disabled`; `.tab-add:disabled`; `.settings-account-{kind,default} input:disabled + span` | 3.38 / 2.96 on `--bg-1`; 2.98 / 2.73 on `--bg-2` | dimming *is* the disabled signal, carried independently by `disabled` / `aria-disabled` + `cursor: default`. **Note the child-rule pairs** — a disabled row's hint/subnote needs its own restated dim (see the child-rule trap below); P98 and P101 each had to add one |
+    | `::placeholder` and empty-state copy (10) | `commit-box.css:318`, `sidebar.css:251/288`, `search.css:183/278`, `composer.css:151`, `agent-assets.css:13/162`, `image-diff.css:76`, `diff-content.css:225` | 2.98–3.68 / 2.73–3.17 | the surface itself is the message. **Does not extend to an empty state that names the fix** — that sentence is `--text-2` (§8). P101 recorded the placeholder half as arguable under WCAG 1.4.3 and recommended a **visible label** over a brighter placeholder if it is ever revisited |
+    | Settings group / section titles (3) | `settings-shell.css:412`, `settings-legacy-sections.css:27/124` | 3.68 / 3.17 on `--bg-0` | an uppercase heading over a *visibly bounded* group. **Does not extend to a header that is the only wayfinder** — a result-group header, a split-pane label, a command-palette group header, a checkbox-group header: all `--text-2`. A decorative separator inside a string whose other half moved to `--text-2` also moves, **for cohesion, not contrast** (`.reflog-oid-arrow`, P101 §6.5) — that is not a precedent that glyphs need 4.5:1 |
+    | The P95 §3.3 exempt set | `docs/contracts/P95-a11y-ui.md` §3.3 | — | as recorded there, **minus** the three escapes P101 found (`.settings-reset`, `.settings-config-advanced-summary`, `.onboarding-skip`), which are enabled controls and move to `--text-2` |
+  - **The child-rule trap (found 2026-09-01, P98 §8.4 — check this after every swap).** A `color`
+    rule on a **child** of a disabled row beats the `--text-3` that child would otherwise inherit
+    from the row, so brightening a hint app-wide silently re-brightens **half of every disabled
+    row**. P98 shipped exactly this bug: a disabled combobox option's label measured `--text-3`
+    (3.38 / 2.96) while its own hint measured `--text-2` (7.25 / 7.45) — the qualifier twice as
+    bright as the thing it qualified, and the disabled affordance only half-applied. **Whenever a
+    child element is raised to `--text-2`, restate the dim on the disabled compound selector**
+    (`.combobox-option--disabled .combobox-option-hint { color: var(--text-3) }`). The disabled
+    exemption is not inherited for you.
+- **`--text-3` is never the label or glyph colour of an *enabled* interactive control
+  (added 2026-08-31, P95).** Button labels, segmented-control segments, tab labels, close
+  buttons, hover-revealed gutter controls, chip labels and pill glyphs use `--text-2` or brighter.
+  **Disabled states are exempt** — dimming *is* the disabled signal, and the `disabled` attribute
+  plus `cursor: default` carry the meaning independently of colour. **Icon-only glyphs** are judged
+  at the 3:1 graphics bar against their *actual composited* backdrop in **both** themes; `--text-3`
+  clears 3:1 on none of `--bg-0`/`--bg-1`/`--bg-2` in the light theme, so in practice an
+  icon-only control also uses `--text-2`. P95 swept the enabled-control class app-wide; a new
+  occurrence is a defect. The enabled/disabled distinction survives the swap: `--text-2` vs
+  `--text-3` is a **2.15:1** dark / **2.52:1** light apparent step, so an enabled `--text-2` hint
+  beside a disabled `--text-3` option still reads as two states.
 - **A hue is never a label colour over its own tint.** Use the hue for borders, glyphs, bars and
   fills (≥3:1 graphics bar) and `--text-1` for the words beside them. For a filled warning chip,
   `color: var(--bg-0)` on `background: var(--warning)` is safe in both themes (**6.4:1** dark /
@@ -91,14 +180,62 @@ One known AA shortfall remains (`--text-3`); the hue-as-text family was retro-fi
   (`.submodule-badge-ok` **4.76** / **4.06**, `.submodule-badge-warn` ≈**5.4** / **3.94**) was
   already fixed in P73 by §11's pill recipe. **There is no remaining sanctioned use of
   hue-as-text-over-its-own-tint anywhere in the app; a new one is a defect.**
-- **`--accent` as *text* never sits on a `--selection` fill (added 2026-08-20, P69l).**
-  `color: var(--accent)` is a house-wide pattern (~30 call sites) and is fine on `--bg-0` / `--bg-1`
-  / `--bg-2`, but over `--selection` it measures **2.6:1** dark / **3.6:1** light (independently
-  re-measured at **3.51** / **3.74** in the P69k pass — both readings fail the 4.5:1 text bar in both
-  themes). So: accent-coloured *text* inside a row that can become selected is a latent defect, and
-  `--accent` may never be chosen as the "emphasised" colour for a value inside a selected row — use
-  `--text-1`. `--accent` as a **border, bar or glyph** on `--selection` remains fine as decorative
-  delineation that carries no meaning (the settings rail's inset bar, §12.1).
+- **ACCENT FILL — two recipes, and the retracted "white is the ceiling" claim (P98, revised and
+  closed 2026-09-01, P100).** `--accent-text` on `background: var(--accent)` was `#ffffff` in both
+  themes and measured **3.22:1** dark / **4.65:1** light, putting a sub-AA primary label on every
+  accent-filled surface in the default theme. P98's conclusion that *"white is the ceiling, so only
+  the fill can fix this"* was **wrong**: white is the ceiling only among *lighter* inks. Going
+  darker passes — `#16181d` on the dark accent is **5.52:1** (§5 lane 0, symmetric), and
+  `.diff-stage-float button` and §6's luminance-adaptive branch pill already shipped that device.
+  P100 surveyed all 7 text-bearing accent fills (plus 11 decorative ones, which are fine at the 3:1
+  graphics bar) and closed the class with two recipes. **Pick by what the surface is:**
+  1. **A state (selected row, active option, segment) ⇒ change the fill.** House selected-row
+     recipe: `background: var(--selection)` with `--text-1` label (**9.36:1** dark / **13.29:1**
+     light) and `--text-2` secondary (**5.01** / **6.42**). Because `--selection` vs `--bg-1` is
+     only ~1.3:1, a **non-colour carrier is mandatory**: an `inset 2px 0 0 var(--accent)` leading
+     bar for list rows (`.diff-tree-selected`, the §12.1 rail, `.combobox-option--active`,
+     `.command-palette-option.is-active`), or §12.3.2's `font-weight: 600` +
+     `border-color: var(--accent)` for segmented controls (`.conflict-editor-mode-btn.is-active`,
+     `.wt-copy-toggle-on`). Never `font-weight` on a pointer-synced list row — it reflows the label
+     under the cursor. A neutralised disabled+active row must also reset `box-shadow: none`.
+  2. **An action (primary button) ⇒ keep the fill, flip the ink.** `--accent-text` is `#16181d`
+     dark / `#ffffff` light — deliberately different per theme, because the dark accent is a light
+     blue. `.btn-primary` is the only consumer. A hue fill that must stay loud keeps its hue and
+     takes dark ink; it does **not** get demoted to `--selection`.
+     Hovering a kept hue fill: **never `filter: brightness()`** — it moves ink and fill together, so
+     it fails in whichever theme has least headroom (`.btn-primary` light went 4.65 -> 3.95). Use
+     `background: color-mix(in srgb, <hue> 92%, var(--text-1))`: it brightens in dark, deepens in
+     light, leaves the ink alone, and adds no literal hex (P100: **5.99:1** dark / **5.15:1** light).
+     The same device is what P102 should use for `.btn-danger`.
+  3. **Never dim text on a hue fill with a hardcoded `rgba(255,255,255,α)`.** P98 removed the two
+     instances (**2.61:1** dark / **3.56:1** light). Subordination on a filled row is carried by
+     size (11px vs 13px) and right-edge placement, never by opacity — and on a `--selection` fill
+     it is carried by the real `--text-1` ↔ `--text-2` colour step.
+  4. **The same defect exists for `--danger` fills and is not yet fixed** — `.btn-danger`
+     (`controls.css:70`) and `updates.css:114` put a hardcoded `#ffffff` on `var(--danger)`, which
+     §6 measures at **3.70:1** in dark. `partial-staging.css:104` already ships the ink flip
+     (`--bg-0` on `--danger`, **4.80:1** dark). Tracked as **P102**; a new `#fff`-on-hue fill
+     anywhere is a defect.
+- **`--accent` as *text* never sits on a `--selection` fill (added 2026-08-20, P69l; figures
+  corrected 2026-09-01, P101).** `color: var(--accent)` is a house-wide pattern (~30 call sites) and
+  is fine on `--bg-0` / `--bg-1` / `--bg-2`, but over `--selection` it measures **3.51:1** dark /
+  **3.74:1** light. **These are the authoritative figures**, re-derived by P101 from the shipped
+  hexes (`--accent` `#4f8cff` / `#2f6fe4` over `--selection` `#2a3b57` / `#dbe7ff`); the older
+  "**2.6:1** / **3.6:1**" reading that stood here and below was wrong and is retired. Both fail the
+  4.5:1 **text** bar, so accent-coloured *text* inside a row that can become selected is a latent
+  defect and `--accent` may never be the "emphasised" colour for a value inside a selected row — use
+  `--text-1`. But 3.51 / 3.74 **clears the 3:1 graphics bar in both themes**, so `--accent` as a
+  **border, bar or glyph** on `--selection` is a **compliant non-text carrier** — the settings
+  rail's inset bar (§12.1) and the `inset 2px 0 0 var(--accent)` leading bar on every selected list
+  row. It is load-bearing and it passes; it is not "decorative delineation carrying no meaning".
+- **A `var(--x)` that is not defined silently deletes its declaration.** `var(--border-0)` — never a
+  real token — appeared 5× in `src/styles/conflicts.css` and computed to
+  `border-style: none; border-width: 0px`, so the merge editor's split-label dividers simply did not
+  render (found and fixed 2026-09-01, P98 §4). There is **one** border token: `--border`. Before
+  shipping a new stylesheet, confirm every `var(--…)` it names resolves. Note the box-model
+  consequence when repairing one: `border-width: 1px` with `border-style: none` has a **used width
+  of 0px**, so restoring the style adds 1px of real space — small, but state it rather than claiming
+  a zero-layout change.
 
 Additional measured pairs (2026-08-19, P70 pass), all on `--bg-1`: `--text-1` **13.5:1** dark /
 **15.4:1** light; `--warning` glyph **7.3:1** / **4.5:1**; `--success` glyph **5.7:1** / **4.7:1**;
@@ -109,7 +246,8 @@ Additional measured pairs (2026-08-19, P70 pass), all on `--bg-1`: `--text-1` **
 Measured pairs added 2026-08-19 (P69 Settings pass), on `--bg-0`: `--accent` fill **5.6:1** dark /
 **4.7:1** light; `--text-2` fill **7.9:1** / **4.9:1**; `--text-1` on `--selection` **9.4:1** /
 **13.3:1**; `--accent` 1px border on `--bg-2` **4.4:1** / **4.1:1**. `--accent` on `--selection` is
-**2.6:1** / **3.6:1** — decorative delineation only, never a meaning carrier. And (P69c pass)
+**3.51:1** / **3.74:1** (corrected P101 — the "2.6 / 3.6" that stood here was wrong): it clears the
+3:1 graphics bar in both themes, so it is a valid non-text carrier, but never text. And (P69c pass)
 `--warning` as a 1px ring on `--bg-2`, the input fill: **6.4:1** dark / **4.2:1** light — clears the
 3:1 graphics bar (§12.3.4).
 
@@ -230,28 +368,59 @@ section mirrors them — update both together.
   stays there.
 - **HiDPI:** canvas backing store scaled by `devicePixelRatio`; all metrics above are CSS px.
 
-### 4.1 Keyboard & screen-reader access (added 2026-08-22, graph review)
+### 4.1 Keyboard & screen-reader access (added 2026-08-22, graph review; ARIA model revised 2026-08-31, P95)
 
-The `<canvas>` is opaque to assistive tech, so the graph MUST be a focusable composite widget:
+The `<canvas>` is opaque to assistive tech and the graph is virtualized to visible rows, so there
+are **no per-row DOM elements** and there never will be. The graph is therefore **not** an ARIA
+composite widget: it is a single labelled, focusable container whose selection is announced through a
+live region.
 
-- The scroller (`.graph-scroll`) is the single tab stop: `tabIndex={0}`, `role="grid"`,
-  `aria-label="Commit graph"`, `aria-rowcount={total}`, and
-  `aria-activedescendant="graph-row-{selectedIndex}"` while a row is selected. It shows a
-  `:focus-visible` ring (2px `--accent`, 1px offset, inset so the canvas does not clip it), distinct
-  from the per-row `--accent` selection ring above.
-- **Keyboard nav must be able to START with no prior selection.** When the graph has focus and
-  nothing is selected, the first ArrowDown/ArrowUp/Home/End/PageUp/PageDown selects an anchor —
-  `headIndex` if it is in loaded history, else `0` (Down/Home) or the last row (Up/End). Thereafter
-  Arrow = ±1 row, PageUp/Down = ±visible-row-count (`getVisibleRowCount`), Home/End = first/last.
-  Selection scroll-into-view already exists (`viewport.ts:scrollRowIntoView`).
-- A permanently-mounted polite live region (the RevealAnnouncer / §9–§10 split) announces the
-  settled selection: `"{summary} — {author}, {relative date}. Row {n+1} of {N}. {ref summary}"`,
-  debounced ~150 ms so a held arrow key does not flood the reader.
-- **Row counts are display rows (amended 2026-08-26, spec 004).** With fold active, model rows lie
-  to assistive tech: `aria-rowcount`, active-descendant row ids, and the announcer's
-  `"Row {n} of {N}"` all use **display** indices (`foldModel.displayRowCount`; display == model
-  when fold is off, so pre-fold behaviour is unchanged). Fold-pill rows are navigable
-  active-descendant targets with their own accessible name — see `spec-004-ui.md` §3.
+- The scroller (`.graph-scroll`) is the single tab stop and carries **exactly**: `tabIndex={0}`,
+  `role="group"`, `aria-label="Commit graph"`, and `aria-describedby` pointing at the keyboard hint
+  below. It shows a `:focus-visible` ring (2px `--accent`, 1px offset, inset so the canvas does not
+  clip it), distinct from the per-row `--accent` selection ring above.
+- **`role="grid"`, `aria-rowcount` and `aria-activedescendant` are forbidden here.** A `grid` with no
+  `role="row"` children is malformed, and `aria-activedescendant` would have to reference a row
+  element that does not exist (and, if one were rendered per visible row, would dangle the moment
+  the active row scrolled out of the rendered window). There is no `graph-row-{i}` ID scheme.
+  The rejected alternatives — visually-hidden rows per visible row, and a one-option `listbox` —
+  are recorded in `docs/contracts/P95-a11y-ui.md` §1.1 with the reasons.
+- A visually-hidden `.sr-only` span (id from `useId`, so multiple repo tabs do not collide) is the
+  described-by target and reads: **"Use the arrow keys to move between commits. Press the Menu key
+  or Shift+F10 for actions on the selected commit."**
+- A permanently-mounted polite live region is the **sole** announcement channel — one utterance per
+  settled selection, never two. `GraphSelectionAnnouncer` (mounted by `WorkspaceGraphPane`, wrapping
+  the P84 `RevealAnnouncer`) announces
+  `"{summary} — {author}, {relative date}. Row {n+1} of {N}. {ref summary}"`, debounced ~150 ms so a
+  held arrow key does not flood the reader. The `Row {n+1} of {N}` clause is what `aria-rowcount`
+  used to attempt, delivered where the user actually hears it.
+- **The row counts the announcer speaks are display rows (amended 2026-08-26, spec 004).** With
+  "Fold linear runs" on, model row indices lie to assistive tech, so the `Row {n+1} of {N}` clause
+  is computed from **display** indices and `foldModel.displayRowCount` (display == model when fold
+  is off, so unfolded behaviour is unchanged). A fold-pill row is a normal selectable row for
+  keyboard nav and announces its own accessible name instead of a commit summary — see
+  `spec-004-ui.md` §3.
+- **Keyboard nav must be able to START with no prior selection.** The nav keys live on a
+  **window-level** handler (`useWorkspaceKeyboard`), deliberately, so arrows work without first
+  tabbing to the graph. When nothing is selected, the first
+  ArrowDown/ArrowUp/Home/End/PageUp/PageDown selects an anchor — `headIndex` if it is in loaded
+  history, else `0` (Down/Home) or the last row (Up/End). Thereafter Arrow = ±1 row, PageUp/Down =
+  ±visible-row-count (`getVisibleRowCount`), Home/End = first/last. Selection scroll-into-view
+  already exists (`viewport.ts:scrollRowIntoView`).
+- **Focus follows consumption (P95).** Whenever that window-level handler *consumes* a nav key to
+  change the graph selection — precisely the branches that call `e.preventDefault()` — it must also
+  call `GraphCanvasHandle.focusScroller()` (`scroller.focus({ preventScroll: true })`;
+  `preventScroll` is required so the browser does not fight `scrollRowIntoView`). Without this, a
+  user can select a row while focus sits on `<body>`, and every key the scroller owns — the row menu
+  below — is unreachable. The handler's existing `typing` guard and its
+  dialog/palette/search/composer bail-out run first, so the graph never steals focus from an open
+  overlay.
+- **Menu key / Shift+F10** on the focused graph scroller opens the **selected** row's context menu,
+  anchored at the ref band's left edge just under that row (clamped to the scroller's box). This is
+  the keyboard route to the P92 ref picker, and therefore to every ref on a multi-ref commit. Esc
+  restores focus to the scroller.
+- Clicking a commit in the graph leaves focus in the scroller, including while a centre overlay is
+  open (P93) — the click path is unchanged by P95.
 
 ### 4.2 Graph right-edge overlay stack (added 2026-08-26, spec 005)
 
@@ -401,6 +570,72 @@ CI dot glyphs are unchanged: `✓` success · `✕` failure/error · pending dot
 
 **A11y:** the canvas is opaque, so the settled row live-region announcement (§4.1) appends the
 forge signal when present: `" PR #{n} {state}."` and `" Checks {rollup}."`.
+
+### 6.2 Overflow "+N" chip and the ref-picker menu (P92)
+
+Full contract: `docs/contracts/P92-multi-ref-commit-ui.md`. When a commit carries more refs than the
+180px band fits, the trailing `+N` chip is **interactive**, not a dead label.
+
+- **Chip styling is unchanged** — `--bg-2` fill, `--text-2` label, 1px `--border`, `pillHeight` tall.
+  No new token. Hovering keeps the existing tooltip (the hidden ref names, one per line).
+- **Hover reads, click acts.** Left-click and right-click both open a `ContextMenu` anchored to the
+  chip, headed `{n} more refs`, with one row per hidden ref entity; each row's flyout is that ref's
+  own menu (branch / tag / stash), identical to what its pill would open. Chip right-click no longer
+  falls through to the first branch on the row.
+- **Same pattern in the commit menu.** When a commit carries ≥2 actionable refs, the row's context
+  menu prepends the same one-row-per-ref picker above the commit actions, so a branch-scoped verb
+  (Merge, Rebase, Reset, Delete…) always names the branch the user chose. With ≤1 candidate the menu
+  stays flat and byte-identical to before — the picker level never appears for the common case.
+  Ordering is `groupRefs` order (HEAD, locals, remote-only, tags, stashes), so the menu and the pills
+  always agree; a local branch and its same-commit remote are one row, not two.
+- **Picker rows have no default action** — they omit `onSelect` (`ContextMenu.activate()` fires
+  `onSelect` and closes when one is present, and only otherwise toggles the flyout), so clicking one
+  opens its flyout and never mutates.
+- **Context menus are height-clamped, app-wide** — and the clamp only works together with its
+  companion rules below. The first shipped version had the clamp alone and was broken (P92 review
+  2026-08-31); this is what ships now, in `src/styles/context-menu.css`:
+  ```css
+  .context-menu, .context-menu--sub {
+    max-height: min(60vh, 480px);
+    overflow-y: auto;
+    overflow-x: hidden;          /* `overflow-y: auto` alone computes overflow-x to `auto` */
+    overscroll-behavior: contain;
+  }
+  .context-menu--sub { position: fixed; }
+  ```
+  Previously an unclamped menu (12+ refs, or any long list) could run off-screen. The clamp requires
+  all four of:
+  1. **`overflow-x: hidden` is explicit, not incidental.** `overflow-y: auto` computes `overflow-x`
+     to `auto`, which gave every clamped menu a spurious horizontal scrollbar.
+  2. **The scroll-dismiss handler must ignore scrolls originating inside the menu root.**
+     `window.addEventListener('scroll', …, true)` receives the menu's own scroll box even though
+     `scroll` does not bubble, so an unguarded handler closed the menu the instant the user wheeled
+     it — and also on `focusRow`'s `scrollIntoView` during arrow-key navigation. Guard with
+     `rootRef.current.contains(e.target as Node)`, as the pointerdown handler already does.
+  3. **Flyouts escape the scroll box via `position: fixed`.** A scroll container clips
+     absolutely-positioned descendants, so an `absolute` `.context-menu--sub` inside a
+     `.context-menu-row` was clipped and made the browser scroll the parent sideways to reveal it.
+     The flyout is positioned from the anchor row's `getBoundingClientRect()`: `left = rowRect.right`,
+     right-flipping to `max(4, rowRect.left - width)` when `rowRect.right + width > innerWidth - 4`,
+     and `top = clamp(rowRect.top, 4, innerHeight - 4 - height)`. It is rendered
+     `visibility: hidden` until measured, so it never flashes at the wrong spot.
+  4. **A fixed flyout no longer tracks its row, so the parent closes its own open flyout when the
+     parent's scroll box scrolls** (hover or ArrowRight reopens it). Scrolling a *submenu* never
+     closes it — the guard is scoped to the list's own box.
+
+  Two further invariants of the component, recorded here because they are design contract, not
+  implementation detail:
+  - **Focus restores to the opener on close.** The element focused at first render is captured and
+    refocused on unmount, but only if focus is still inside the menu (never steal focus back from
+    somewhere the user has since moved).
+  - **`separator?: true` is the canonical separator primitive.** A menu item with `separator: true`
+    renders a non-interactive `role="separator"` divider; it is skipped by arrow-key navigation and
+    by index-based row resolution. Do not spec ad-hoc divider rows or blank labels.
+- **Keyboard parity.** The canvas chip is not a tab stop; the keyboard path to every hidden ref is the
+  selected-row context menu (§4.1), which contains the picker. Menu roles/keys are the component's
+  existing `role="menu"` / `aria-haspopup` / Arrow-key behaviour.
+- **Density/theme:** menu chrome is density-invariant (§3); the chip follows the §6 pill metrics. All
+  colours are existing tokens in both themes.
 
 ## 7. File status colors (right panel, M1+)
 
@@ -1082,8 +1317,12 @@ The number input shows a **draft** while focused and commits the clamped value o
   tight for a picker + fields). Same overlay, Esc, and overlay-click-cancels behaviour as
   `ConfirmDialog`. Structure top→bottom: `dialog-title` → lead summary paragraph (names consequence +
   irreversibility) → a method **radiogroup** (`SettingsSegmented`, `role="radiogroup"`, options
-  filtered to `SUPPORTED_MERGE_METHODS[kind]`, with a one-line `.pr-merge-method-desc` in `--text-3`
-  updated per selection) → optional commit title/message fields (`.pr-input` / `.pr-textarea`, shown
+  filtered to `SUPPORTED_MERGE_METHODS[kind]`, with a one-line `.pr-merge-method-desc` in
+  **`--text-2`** updated per selection — **amended by P98**: it was `--text-3` at 3.38:1 dark /
+  2.96:1 light on the `.dialog-card` `--bg-1` surface, which fails the §2 text bar; it is the only
+  sentence telling the user what the selected method will do to their branch, immediately above an
+  irreversible action, so it is read text and now measures **7.25:1** dark / **7.45:1** light) →
+  optional commit title/message fields (`.pr-input` / `.pr-textarea`, shown
   only for methods that consume them) → a delete-source-branch checkbox (`.pr-draft-toggle` idiom,
   default OFF, **hidden when `kind === 'gitHub'`** since GitHub ignores it on merge) → `.dialog-buttons`
   Cancel + confirm. The merge confirm is `btn-primary` (constructive happy path; irreversibility is

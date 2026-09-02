@@ -71,7 +71,8 @@
 
 .diff-tree-count {
   flex: none;
-  color: var(--text-3);
+  /* P98 §3: read text — --text-3 fails 4.5:1 AA; --text-2 clears it in both themes. */
+  color: var(--text-2);
   font-size: 11px;
 }
 

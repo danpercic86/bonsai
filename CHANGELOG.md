@@ -6,10 +6,56 @@ All notable changes to Bonsai are documented here. The format is based on
 
 ## [Unreleased]
 
-## [1.4.0] — 2026-08-26
+### Fixed
+
+- **Brand-new files could be destroyed by a branch switch.** A dirty-tree switch auto-stashes with
+  untracked files included and pops the stash on the far side. libgit2's untracked-restore phase can
+  silently fail to write those files back — the target branch tracks that path (a binary is replaced
+  by the branch's version, a text file gets conflict markers) or a directory now occupies it — while
+  recording no index conflict. Bonsai read that as a clean apply and **dropped the stash**, deleting
+  the only remaining copy. Every apply/pop now verifies each carried untracked blob against the
+  worktree and keeps the stash unless all of them landed byte-identically, reporting the paths it
+  could not restore. Regression tests cover the binary, file-vs-directory, and text-collision cases.
+- **A failed re-apply after a branch switch no longer looks like data loss.** If popping the
+  auto-stash fails once the switch has already happened, the operation now succeeds with a
+  structured "not applied" outcome that names `stash@{0}`, instead of surfacing a bare error next to
+  a working directory that suddenly looks empty.
+
+### Changed
+
+- **Two stash actions instead of three.** The commit-panel `⋯` menu now offers **Stash** — the whole
+  working directory, staged, unstaged and brand-new files alike — and **Stash staged**. The old
+  "Stash all" (which quietly left untracked files behind) and "Stash all + untracked" are gone.
+
+- **Dependency refresh (maintenance).** Frontend majors: ESLint 9 → 10, Vite 7 → 8,
+  TypeScript 5.9 → 6.0, jsdom 26 → 30, `@testing-library/jest-dom` 6 → 7, and
+  `@vitejs/plugin-react` 5 → 6. Rust: `criterion` 0.5 → 0.8, `rand` 0.9 → 0.10,
+  `reqwest` 0.12 → 0.13, `rmcp` 3.0 → 3.1, plus a full lockfile refresh. CI action pins moved to
+  their current majors, including `tauri-action` v0 → v1.
+- **Forge HTTPS now trusts the operating system's certificate store** rather than a root set
+  bundled into the binary. This comes with `reqwest` 0.13, which replaced the bundled-roots
+  feature with the platform verifier. In practice this is more compatible, not less — forge
+  requests should now work behind a corporate TLS-inspecting proxy whose root is installed in the
+  OS store. The trade-off: a stripped-down Linux environment with no system CA bundle at all can
+  no longer fall back to roots baked into the binary. The TLS stack stays pure-Rust (rustls with
+  the ring provider) and no OpenSSL is linked on any platform, as before.
+- `keyring` stays on 3.x. Version 4 restructures onto `keyring-core` with renamed per-backend
+  features and explicit credential-store registration, which changes how Bonsai selects each
+  platform's native store — that is its own increment, not a dependency bump.
+- The `pnpm lint:ci` warning budget moved from `--max-warnings 40` to `--max-warnings 50`
+  (the tree reports 42 warnings, 0 errors).
+- TypeScript **7 is deliberately not adopted**: `typescript-eslint` 8.68 hard-errors against the
+  TypeScript 7 API, so the toolchain stays on TypeScript 6 until that is resolved upstream.
+
+## [1.5.0] — 2026-08-26
 
 Accurate pull-request diffs computed locally, a per-branch CI checks view, and a dedicated forge
 column in the graph — plus a large git-action performance round and an internal file-size cleanup.
+
+> **There is no 1.4.0 release.** This work was first cut as `1.4.0` (commit `5a0bf11`), but the
+> release workflow had to be reworked mid-cut (`4abab3d`, `713dc6d`) and GitHub releases are
+> immutable, so the same content was re-cut and published as `1.5.0` (`40949e1`). No `v1.4.0` tag
+> exists; `v1.5.0` is the shipped artifact.
 
 ### Added
 
@@ -496,7 +542,8 @@ The MVP and first productization phase. Highlights:
 - Tauri v2 auto-update scaffolding (behind Bonsai IPC) and a first-run onboarding overlay.
 - An embedded MCP server exposing structured Git data (graph, diffs, conflicts) to AI tools.
 
-[Unreleased]: https://github.com/danpercic86/bonsai/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/danpercic86/bonsai/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/danpercic86/bonsai/compare/v1.3.0...v1.5.0
 [1.3.0]: https://github.com/danpercic86/bonsai/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/danpercic86/bonsai/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/danpercic86/bonsai/compare/v1.0.0...v1.1.0

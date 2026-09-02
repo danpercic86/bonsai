@@ -187,14 +187,17 @@ export function CommitOptionsMenu({
       ? 'Review staged'
       : 'Review changes';
 
+  // Two stash actions only. "Stash" means the whole working directory —
+  // staged, unstaged AND brand-new files — because a stash that quietly leaves
+  // some of your work behind is the surprise this menu used to ship. The
+  // narrow variant stays explicit in its own label.
   const stashItems: StashItem[] = [
-    { scope: 'all', label: 'Stash all', enabled: hasTrackedChanges },
     {
       scope: 'allWithUntracked',
-      label: 'Stash all + untracked',
+      label: 'Stash',
       enabled: hasTrackedChanges || hasUntracked,
     },
-    { scope: 'staged', label: 'Stash staged only', enabled: stagedCount > 0 },
+    { scope: 'staged', label: 'Stash staged', enabled: stagedCount > 0 },
   ];
 
   function choose(fn: () => void) {

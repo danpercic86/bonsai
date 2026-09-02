@@ -18,7 +18,10 @@
 //   pnpm gate --rust     # rust steps only
 //   pnpm gate --frontend # frontend steps only
 // Flags: --bail (stop at first failure), --list (print steps and exit),
-//        --ci-parity (add the cross-target compile checks to any tier).
+//        --ci-parity (add the cross-target compile checks to any tier),
+//        --e2e-bundle (run e2e against a BUILT mock-mode bundle instead of the
+//                      Vite dev server: ~2x faster, but one spec currently
+//                      diverges — see the E2E_BUNDLE note at the e2e step).
 //
 // CI-parity notes (both classes bit the 1.1.0 release — see TODO.md / the
 // release memory):
@@ -32,10 +35,34 @@
 // Zero dependencies, plain Node ESM — same behaviour on Windows/macOS/Linux.
 
 import { spawnSync } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
 
 const argv = new Set(process.argv.slice(2));
 const has = (f) => argv.has(f);
 const isWin = process.platform === 'win32';
+
+// --- keep compile intermediates out of Defender-scanned space ---------------
+// Measured 2026-09-01: agent/dev shells here run with TMP=TEMP=C:\Temp, but
+// D:\Data is the Defender-excluded volume on this machine (see the global
+// rule + CLAUDE.md). rustc and the linker write their intermediates to TMP, so
+// every gate run was handing MsMpEng a few thousand files to scan. Point the
+// child processes at the excluded volume instead.
+//
+// Deliberately NOT in .cargo/config.toml: cargo's `[env]` table has no
+// per-target conditional, so a hardcoded D:\ path would also be exported on
+// the ubuntu/macos CI legs. Windows-only, and only when the dir is available.
+const SCRATCH_WIN = String.raw`D:\Data\Temp\bonsai-build`;
+function scratchEnv() {
+  if (!isWin) return {};
+  try {
+    mkdirSync(SCRATCH_WIN, { recursive: true });
+    return { TMP: SCRATCH_WIN, TEMP: SCRATCH_WIN };
+  } catch {
+    // No D: volume (another machine, or a contributor's checkout) — stock TMP.
+    return {};
+  }
+}
+const scratch = scratchEnv();
 
 // --- resolve tier -----------------------------------------------------------
 const quick = has('--quick');
@@ -94,12 +121,23 @@ const RUSTDOC_DENY = { RUSTDOCFLAGS: '-D warnings' };
 // prop_* suites (crates/bonsai-core/tests/prop_*.rs) hardcode a per-suite
 // `cases: N` literal, but proptest's PROPTEST_CASES env var OVERRIDES that
 // literal at runtime — verified empirically: prop_graph_layout runs its baked
-// 64 cases in ~89s when unset vs ~7s at PROPTEST_CASES=4. So --quick just sets
-// it to 16 for the test-running step; the default / --full / CI tiers leave it
-// UNSET, so the suites run their full baked-in counts (64/64/64/48/32) and CI
+// 64 cases in ~89s when unset vs ~7s at PROPTEST_CASES=4. The default / --full /
+// CI tiers leave it UNSET, so the suites run their full baked-in counts and CI
 // thoroughness is unchanged. Only the test step needs it (doctests/clippy run
 // no proptests). Determinism is preserved — a smaller run is still a subset.
-const proptestEnv = quick ? { PROPTEST_CASES: '16' } : {};
+//
+// Why 4 and not 16 (changed 2026-09-01): PROPTEST_CASES is a FLAT per-test-fn
+// override, and prop_graph_layout is now 8 banded test fns partitioning the
+// commit-count axis (so nextest can parallelize what used to be one 57s test).
+// A flat N therefore costs that suite 8×N cases, not N. Measured per-suite wall
+// at full baked counts: prop_status 23.5s (one fn — now the workspace's slowest
+// test), prop_stash_roundtrip 14.3s, prop_graph_layout 13.9s, the other two
+// <0.2s. At N=16 the banded suite balloons to 128 cases / ~41s, which would
+// make --quick SLOWER than before the split; at N=4 it runs 32 cases in ~10s —
+// still twice the total cases the old N=16 flat override gave this suite, and
+// faster. The quick-tier floor then falls back to submodule_cli (~14s), which
+// is not a proptest and needs a separate fix.
+const proptestEnv = quick ? { PROPTEST_CASES: '4' } : {};
 const rustTest = hasNextest
   ? { name: 'cargo nextest', cmd: 'cargo', args: ['nextest', 'run', '--workspace'], group: 'rust', env: proptestEnv }
   // nextest never runs doctests; the fallback cargo test does, so deny there too.
@@ -127,7 +165,34 @@ const steps = [
     group: 'frontend',
   },
   { name: 'tsc + vite build', cmd: 'pnpm', args: ['build'], group: 'frontend' },
-  { name: 'playwright e2e', cmd: 'pnpm', args: ['test:e2e'], group: 'e2e' },
+  // `--e2e-bundle` (E2E_BUNDLE=1) serves a BUILT mock-mode bundle instead of
+  // the Vite dev server — see scripts/e2e-server.mjs. It is ~2x faster on
+  // summed test time (326-363s vs 485-685s over two full runs each), because
+  // the dev server's per-request transform pipeline is what the suite is
+  // bottlenecked on.
+  //
+  // It is OPT-IN, not the default, and deliberately so. Equivalence was
+  // measured, not assumed: the full 161-test suite ran twice in each mode and
+  // 160/161 tests matched every time — but `e2e/24-settings-shell.spec.ts:238`
+  // ("Esc dismisses the menu and hands global shortcuts back") does NOT match.
+  // Isolated with `-g … --repeat-each=3 --workers=1` it fails 3/3 in bundle
+  // mode against 1/3 in dev mode — i.e. reproducible on a built bundle, merely
+  // flaky on the dev server. The mechanism was NOT identified; two hypotheses
+  // fit: (a) a genuine dev/prod behavioural gap in the Esc → shortcut-
+  // suppression handoff that StrictMode's double-mount masks (the P99 shape),
+  // or (b) a load-timing race the bundle's much faster page load exposes more
+  // often. Either way, flipping the default would turn a dev-only flake into a
+  // hard gate failure. Root-cause that test first, then flip.
+  //
+  // NOTE: the `tsc + vite build` step above is REAL mode; it cannot be reused
+  // here, because the specs need `VITE_MOCK_IPC=1` from `--mode mock`.
+  {
+    name: 'playwright e2e',
+    cmd: 'pnpm',
+    args: ['test:e2e'],
+    group: 'e2e',
+    env: has('--e2e-bundle') ? { E2E_BUNDLE: '1' } : {},
+  },
   { name: 'cargo-deny', cmd: 'cargo', args: ['deny', '--all-features', 'check'], group: 'audit' },
   { name: 'pnpm audit', cmd: 'pnpm', args: ['audit', '--audit-level', 'high'], group: 'audit' },
 ].filter(Boolean);
@@ -175,7 +240,7 @@ for (const step of selected) {
   const r = spawnSync(step.cmd, step.args, {
     stdio: 'inherit',
     shell: isWin,
-    env: step.env ? { ...process.env, ...step.env } : process.env,
+    env: { ...process.env, ...scratch, ...(step.env ?? {}) },
   });
   const dur = Number(process.hrtime.bigint() / 1000000n) - start;
   const ok = r.status === 0 && !r.error;

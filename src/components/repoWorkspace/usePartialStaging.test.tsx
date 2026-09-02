@@ -85,6 +85,7 @@ function makeDeps(over: Partial<Deps> = {}): Deps {
     stageableRef: { current: 'stage' },
     diffViewModeRef: { current: 'diff' },
     intralineRef: { current: false },
+    prOverlayCtxRef: { current: null },
     setDiffViewMode: vi.fn(),
     setIntraline: vi.fn(),
     setPendingHunkDiscard: vi.fn(),
@@ -162,6 +163,71 @@ describe('handleToggleIntraline', () => {
     mount(deps).handleToggleIntraline(true);
     expect(deps.setIntraline).toHaveBeenCalledWith(true);
     expect(deps.fetchDiffSlot).not.toHaveBeenCalled();
+  });
+});
+
+/* ── P93: pr slot refetch ────────────────────────────────────────────────── */
+
+/** A `pr:` slot + its ctx side-channel (the key alone loses status/origPath). */
+const PR_SLOT_KEY = `pr:${'a'.repeat(40)}:${'b'.repeat(40)}:src/app.ts`;
+function prDeps(over: Partial<Deps> = {}): Deps {
+  return makeDeps({
+    overlayMetaRef: { current: meta('pr', 'src/old.ts') },
+    diffSlotRef: { current: { ...slot(), key: PR_SLOT_KEY } },
+    prOverlayCtxRef: {
+      current: {
+        prNumber: 42,
+        baseOid: 'a'.repeat(40),
+        headOid: 'b'.repeat(40),
+        path: 'src/app.ts',
+        origPath: 'src/old.ts',
+        status: 'renamed',
+      },
+    },
+    ...over,
+  });
+}
+
+describe('pr slot toggles (P93 §5.3)', () => {
+  it('File view refetches forgePrFileDiff under the SAME key with fullContext', async () => {
+    const get = vi.spyOn(mockIpc, 'forgePrFileDiff').mockResolvedValue(mkDiff());
+    const deps = prDeps();
+    mount(deps).handleSetViewMode('file');
+    expect(deps.fetchDiffSlot).toHaveBeenCalledWith(PR_SLOT_KEY, expect.any(Function));
+    await Promise.resolve();
+    expect(get).toHaveBeenCalledWith(
+      REPO,
+      'a'.repeat(40),
+      'b'.repeat(40),
+      'src/app.ts',
+      'src/old.ts',
+      true,
+      false,
+    );
+  });
+
+  it('Highlight changes refetches with the new intraline flag', async () => {
+    const get = vi.spyOn(mockIpc, 'forgePrFileDiff').mockResolvedValue(mkDiff());
+    const deps = prDeps({ diffViewModeRef: { current: 'file' } });
+    mount(deps).handleToggleIntraline(true);
+    await Promise.resolve();
+    expect(get).toHaveBeenCalledWith(
+      REPO,
+      'a'.repeat(40),
+      'b'.repeat(40),
+      'src/app.ts',
+      'src/old.ts',
+      true,
+      true,
+    );
+  });
+
+  it('a pr slot with no ctx never refetches (and never as a workdir diff)', () => {
+    const workdir = vi.spyOn(mockIpc, 'getWorkdirFileDiff');
+    const deps = prDeps({ prOverlayCtxRef: { current: null } });
+    mount(deps).handleSetViewMode('file');
+    expect(deps.fetchDiffSlot).not.toHaveBeenCalled();
+    expect(workdir).not.toHaveBeenCalled();
   });
 });
 

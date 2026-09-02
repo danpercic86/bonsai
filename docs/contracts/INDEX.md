@@ -15,7 +15,7 @@ and `ui-designer`.**
   session that greps `docs/contracts/` pays only for in-flight work. A pending USER CHECKPOINT
   means the contract stays active.
 - **Status here is a pointer, not an independent verification.** It mirrors the board (`TODO.md`)
-  and the archives (`docs/history/todo-archive-2026-08.md`, `docs/history/todo-archive.md`). A
+  and the archives (`docs/history/todo-archive-2026-09.md`, `docs/history/todo-archive-2026-08.md`, `docs/history/todo-archive.md`). A
   `done` status means the milestone shipped, **not** that the file is free of drift; known drift is
   tracked under the follow-ups in `TODO.md`.
 - `ui-reference.md` is the canonical design system and is **owned by `ui-designer`** — no other
@@ -38,6 +38,15 @@ carries open, tracked work).
 | `P68-user-checklist.md` | P68 | Native checklist (real CLI past 90 s, cancel, mid-run question, read-only tools, bulk, settings, consent copy). | done — kept with the P68 cluster |
 | `P75-ipc-codegen.md` | P75 | Generate the IPC boundary from Rust with tauri-specta v2 (all 173 commands, no call-site churn). | HALTED 2026-08-21 — tauri-specta breaks Win10 app launch (`kernel32!WaitOnAddress`); reverted, findings + pins kept |
 | `P76-native-checkpoint-automation.md` | P76 | tauri-driver + WebdriverIO harness to automate ~60–70% of the native USER CHECKPOINT backlog. | deferred — HELD as contract-only per user (2026-08-20) |
+| `P95-a11y-ui.md` | P95 | Graph scroller semantics (live-region-only ARIA), keyboard reachability, toolbar/control contrast; AC1–AC17. | awaiting USER CHECKPOINT (AC8/AC14/AC15/AC16) — implemented `f9a9209` |
+| `checkout-commit-backend.md` | — | Dirty-safe "checkout an arbitrary commit → detached HEAD" command + IPC surface + frontend handler. | implementation appears shipped (`7036fef` covers detached-HEAD checkout) — kept active: no checkpoint record mapped |
+| `checkout-commit-ui.md` | — | Commit & branch menu structure for checkout-commit across graph rows, ref pills, sidebar rows. | implementation appears shipped (`7036fef` covers detached-HEAD checkout) — kept active: no checkpoint record mapped |
+| `hook-disclosure.md` | — | First-time per-repo git-hook execution disclosure (`hooks_enabled` defaults true). | spec — implementation status unverified |
+| `icon-system-ui.md` | — | Replace Unicode/emoji glyphs used as icons with the inline-SVG idiom; verdict + tiers. | superseded in part by `lucide-icons-ui.md` |
+| `lucide-icons-ui.md` | — | Full migration of chrome icons to `lucide-react` (decision LOCKED). | ready for senior-dev — implementation status unverified |
+| `novel-content-gate.md` | P68 #7 / H1 | Novel-content gate: demote auto-resolved files containing lines absent from base/ours/theirs. | open — P68 security follow-up 7 (TODO.md) |
+| `pr-badge-placement-ui.md` | — | Move the forge PR badge + CI dot out of the ref-column band into a right-aligned forge column. | spec — implementation status unverified |
+| `settings-ai-autonomy-disabled-ui.md` | — | "Why is the autonomy choice disabled?" single-row variant of the disabled-group pattern. | spec, not yet implemented |
 
 > **Why the P68 cluster stays active despite `done`.** `TODO.md` §"P68 contract debt" schedules edits
 > *to these files* (apply the `P68g-ui.md` §3.1–3.5 splice into `P68e-ai-activity-dock.md`, then
@@ -47,9 +56,12 @@ carries open, tracked work).
 
 ## Archived contracts — `docs/contracts/archive/`
 
-**161 files** (contracts + `*-user-checklist` scripts) for milestones that shipped **and** had their
-native USER CHECKPOINT confirmed or explicitly waived. Moved out of the live path on **2026-08-21**
-with `git mv` (history preserved). Board history for these milestones is in
+**177 files** (contracts + `*-user-checklist` scripts) for milestones that shipped **and** had their
+native USER CHECKPOINT confirmed or explicitly waived — **with the four documented exceptions in the
+second 2026-09-01 sweep note below, which were archived on explicit user instruction and NOT because
+a checkpoint passed**. 161 were moved out of the live path on
+**2026-08-21**; a further 12 + 4 on **2026-09-01** (see the sweep notes below). All moved with `git mv`
+(history preserved). Board history for these milestones is in
 `docs/history/todo-archive.md` and `docs/history/todo-archive-2026-08.md`; the MVP AI-gate vs
 USER-CHECKPOINT split is in `docs/history/milestones-mvp.md`. Coverage:
 
@@ -62,6 +74,27 @@ USER-CHECKPOINT split is in `docs/history/milestones-mvp.md`. Coverage:
   color-coded identity profiles, submodule-force, refetch-coalescing, commit-panel UX) +
   `design-review-2026-08-19-p73-submodules.md`
 - **Testing campaign** T1, T2, T4, T5
+- **2026-09-01 sweep** (12 files, all checkpoint-confirmed per `docs/history/todo-archive-2026-09.md`):
+  `P85-refresh-perf.md` · `P86-refresh-caching.md` · `P87-git-observability.md` · `P87-ui.md`
+  (checkpoints verified 2026-08-25, archive Part 27) · `P88-git-action-perf.md` (2026-08-25,
+  Part 26) · `P89-pr-local-diff.md` · `P89-ui.md` · `P90-ci-checks.md` · `P90-ci-checks-ui.md`
+  (2026-08-25, Part 25) · `P92-multi-ref-commit-ui.md` · `P92-review-2026-08-31-addendum.md`
+  (its owed `ui-reference.md` §6.2 edit is applied — verified at `ui-reference.md:394-406`) ·
+  `P93-pr-diff-center-overlay-ui.md` (both 2026-08-31, Part 23).
+- **No contract file** exists for **P94** (e2e parallel-worker isolation) — board-only.
+- **2026-09-01 second sweep** (4 files, moved on the user's explicit "archive history" instruction —
+  **not** on a confirmed checkpoint; dispositions in `docs/history/todo-archive-2026-09.md`
+  Parts 33 and 35):
+  - `P84-sidebar-reveal-and-tag-autosync.md` and `P84-reveal-in-graph-ui.md` — P84's code shipped
+    (`cce9eb9`/`90b315c`/`1803391`/`6868be6`). Its USER CHECKPOINT was never recorded at the time,
+    but **the user confirmed on 2026-09-01 that it DID pass**. Status: `done + verified`
+    (checkpoint confirmed by USER 2026-09-01, not from a contemporaneous 2026-08 record).
+  - `graph-design-review-2026-08-22.md` — **M1 (`role="grid"` + `aria-rowcount` +
+    `aria-activedescendant`) is SUPERSEDED by P95 and forbidden by `ui-reference.md` §4.1
+    (`:250-252`) — do not implement.** M2/M3/M4/S2/S3/N1/N2 resolution unverified (live line in
+    `TODO.md`).
+  - `review-2026-08-22-ui.md` — MUST-1/2/3, SHOULD-1/2/4 and NIT-3 verified resolved at HEAD
+    `ed5bb11`; SHOULD-3 (= P69 A9), NIT-1 and NIT-2 remain open as live lines in `TODO.md`.
 
 > **Known label collisions in the archive** (kept as-is, resolve on next touch): **P82** names two
 > milestones — color-coded identity profiles (`P82-color-profiles.md`, `P82-ui.md`) and

@@ -235,6 +235,11 @@ export function useWorkspaceKeyboard(deps: {
         return;
       }
 
+      // P95 §2.1: another focused widget with its own arrow handling already consumed
+      // this key (it called preventDefault without stopPropagation). Do not move the
+      // graph selection, and above all do not yank focus out of that widget.
+      if (e.defaultPrevented) return;
+
       // Spec-004 (UI contract §3): while fold is active, graph nav operates on
       // DISPLAY rows. Arrows LAND on fold-pill rows (active-descendant only —
       // the commit selection never changes); Enter/Space/ArrowRight expand the
@@ -296,6 +301,7 @@ export function useWorkspaceKeyboard(deps: {
           } else {
             fold!.setActivePill(null);
             setSelectedIndex(at.row);
+            graphRef.current?.focusScroller();
           }
           return;
         }
@@ -318,6 +324,7 @@ export function useWorkspaceKeyboard(deps: {
         if (seed !== null) {
           e.preventDefault();
           setSelectedIndex(seed);
+          graphRef.current?.focusScroller();
           return;
         }
       }
@@ -330,6 +337,7 @@ export function useWorkspaceKeyboard(deps: {
           const next = e.key === 'ArrowDown' ? cur + 1 : cur - 1;
           return Math.max(0, Math.min(next, graph.nodes.length - 1));
         });
+        graphRef.current?.focusScroller();
         return;
       }
 
@@ -342,6 +350,7 @@ export function useWorkspaceKeyboard(deps: {
           const next = e.key === 'PageDown' ? cur + n : cur - n;
           return Math.max(0, Math.min(next, graph.nodes.length - 1));
         });
+        graphRef.current?.focusScroller();
         return;
       }
 
@@ -349,6 +358,7 @@ export function useWorkspaceKeyboard(deps: {
         if (selectedIndex === null || graph === null) return;
         e.preventDefault();
         setSelectedIndex(e.key === 'Home' ? 0 : graph.nodes.length - 1);
+        graphRef.current?.focusScroller();
         return;
       }
     };

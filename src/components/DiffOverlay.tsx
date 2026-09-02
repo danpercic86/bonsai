@@ -26,7 +26,9 @@ const BADGES: Record<FileStatus, string> = {
   conflicted: 'C',
 };
 
-const KIND_LABEL: Record<DiffOverlayMeta['kind'], string> = {
+// P93: `pr` is deliberately absent — its chip is computed from the PR number
+// (the one kind whose label is not a static string), see `kindChip` below.
+const KIND_LABEL: Record<Exclude<DiffOverlayMeta['kind'], 'pr'>, string> = {
   staged: 'Staged',
   unstaged: 'Unstaged',
   untracked: 'Untracked',
@@ -47,7 +49,17 @@ export interface DiffOverlayMeta {
   status: FileStatus | null;
   /** Drives the header context label. `aiProposal` (P13 §8.3) reuses the
    *  conflict editor, seeded with the AI-proposed markerless body. */
-  kind: 'staged' | 'unstaged' | 'untracked' | 'commit' | 'conflict' | 'compare' | 'aiProposal';
+  kind:
+    | 'staged'
+    | 'unstaged'
+    | 'untracked'
+    | 'commit'
+    | 'conflict'
+    | 'compare'
+    | 'aiProposal'
+    /** P93: one changed file of a pull request, base…head (slot key
+     *  `pr:<baseOid>:<headOid>:<path>`). Read-only. */
+    | 'pr';
 }
 
 // P3c §8.3 (locked): the marker view is a plain highlighted <pre>, NOT
@@ -238,6 +250,10 @@ export interface DiffOverlayProps {
   /** P45: set ONLY for unstaged tracked diffs (same gate as onDiscardHunk);
    *  forwarded to the DiffSlotView branch only. */
   onDiscardLines?(selection: LineSelection[]): void;
+  /** P93: PR number for the `pr` kind's computed header chip. null/undefined =>
+   *  the generic `Pull request` fallback. Context, not file identity — hence a
+   *  prop and not part of DiffOverlayMeta. */
+  prNumber?: number | null;
 }
 
 export function DiffOverlay({
@@ -259,13 +275,19 @@ export function DiffOverlay({
   imageDiff = null,
   imageLoading = false,
   imageError = null,
+  prNumber = null,
 }: DiffOverlayProps) {
   const lang = detectLanguage(meta.path);
   // P61b: image slots (D4) replace the text diff with DiffImageView. Never for
   // conflict/ai-proposal slots (those are the CodeMirror editor). SVG is a text
   // diff (excluded by isImagePath). `imageMode` is the switcher's local state.
+  // P93 §4.3: `pr` is excluded too — the image-diff effect only serves workdir
+  // kinds, so a PR image slot would render a permanently empty image pane.
   const isImage =
-    meta.kind !== 'conflict' && meta.kind !== 'aiProposal' && isImagePath(meta.path);
+    meta.kind !== 'conflict' &&
+    meta.kind !== 'aiProposal' &&
+    meta.kind !== 'pr' &&
+    isImagePath(meta.path);
   const [imageMode, setImageMode] = useState<ImageMode>('sideBySide');
   return (
     <div className="diff-overlay" role="region" aria-label={`Diff: ${meta.path}`}>
@@ -286,7 +308,20 @@ export function DiffOverlay({
         {lang !== null && (
           <span className="lang-chip" data-lang={lang.id}>{lang.label}</span>
         )}
-        <span className="diff-overlay-kind">{KIND_LABEL[meta.kind]}</span>
+        {meta.kind === 'pr' ? (
+          <span
+            className="diff-overlay-kind"
+            title={
+              prNumber !== null && prNumber !== undefined
+                ? `Diff against the merge base of pull request #${prNumber}`
+                : "Diff against the pull request's merge base"
+            }
+          >
+            {prNumber !== null && prNumber !== undefined ? `PR #${prNumber}` : 'Pull request'}
+          </span>
+        ) : (
+          <span className="diff-overlay-kind">{KIND_LABEL[meta.kind]}</span>
+        )}
         {onExplain !== undefined && (
           <button
             type="button"

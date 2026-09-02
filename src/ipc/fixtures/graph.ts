@@ -1,5 +1,7 @@
 import type { GraphEdge, GraphLayout, GraphNode, RefLabel, StashEntry } from '../types';
 
+import { MULTI_REF_ROW_REFS } from './multiRefRow';
+
 const HOUR = 3600;
 
 /** P51: rows whose committer time is 1h AFTER the author time (as after a
@@ -95,12 +97,20 @@ export function buildMockGraph(): GraphLayout {
   // lives here on row 4, so the two render as SEPARATE labels (no collapse):
   // row 1 = laptop-only `feat`, row 4 = cloud-only `feat`.
   push('feat: start', 1, [6], [{ name: 'origin/feat', kind: 'remoteBranch', isHead: false }]);
-  push('core work 3', 0, [6]);
+  // P92 §5: the 12-hidden case — 14 refs on one row, so the "+N" chip reads
+  // "+12" and its picker menu exercises the §1.3 height clamp + scroll. Table
+  // lives in fixtures/multiRefRow.ts (with the matching branches entries).
+  // Spec-004 constraint: this row must stay OUTSIDE the foldable linear run
+  // (model rows 10..29) — refs make a row unfoldable, and parking these 14 on
+  // `core work 1` split the run into {start: 11, count: 19}. `core work 3`
+  // already has multi-in-degree, so it can never join a run.
+  push('core work 3', 0, [6], MULTI_REF_ROW_REFS);
   // P10 §3.1: base-row stash pills removed — `core work 2` is the plain base for
   // stash@{1} and stash@{2}, which now render as their own offshoot nodes
   // (withStashNodes) rather than pills on this row.
   push('core work 2', 0, [7]);
-  // P7 §9: v0.9 moved to row 0 (collapse/overflow case); row 7 now ref-less.
+  // P7 §9: v0.9 moved to row 0 (collapse/overflow case); this row stays
+  // ref-less — it is the first row of the spec-004 foldable run.
   push('core work 1', 0, [8]);
 
   edges.push(

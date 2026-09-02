@@ -69,13 +69,13 @@ pub(super) fn have_git() -> bool {
     ok
 }
 
-/// Scratch dir under `D:\Temp\bonsai-scratch` on Windows (MEMORY rule —
+/// Scratch dir under `D:\Data\Temp\bonsai-scratch` on Windows (MEMORY rule —
 /// never C:, never the system temp). On macOS/Linux there is no such
 /// constraint, so scratch dirs fall back to
 /// `std::env::temp_dir()/bonsai-scratch`.
 #[cfg(windows)]
 pub(super) fn scratch_root() -> std::path::PathBuf {
-    std::path::PathBuf::from("D:\\Temp\\bonsai-scratch")
+    std::path::PathBuf::from("D:\\Data\\Temp\\bonsai-scratch")
 }
 
 #[cfg(not(windows))]
@@ -209,6 +209,12 @@ pub(super) fn parse_sse(body: &str) -> Vec<Value> {
 }
 
 pub(super) fn no_proxy_client() -> reqwest::Client {
+    // reqwest resolves to `rustls-no-provider` workspace-wide (tauri and
+    // bonsai-forge both select it), so a crypto provider must be installed
+    // before any Client is built. `ring` keeps the TLS stack pure-Rust; the
+    // result is ignored because installation is process-global and only the
+    // first caller wins.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     reqwest::Client::builder()
         .no_proxy()
         .build()

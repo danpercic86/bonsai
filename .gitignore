@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-mock/
 /target/
 src-tauri/target/
 crates/*/target/

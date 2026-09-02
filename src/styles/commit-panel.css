@@ -68,12 +68,12 @@
 }
 
 .commit-author-email {
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .commit-date {
   font-size: 12px;
-  color: var(--text-3);
+  color: var(--text-2);
   margin-top: 4px;
 }
 
@@ -103,11 +103,11 @@
   color: var(--badge-unknown);
 }
 .commit-signature-signer {
-  color: var(--text-3);
+  color: var(--text-2);
   overflow-wrap: anywhere;
 }
 .commit-signature-key {
-  color: var(--text-3);
+  color: var(--text-2);
   font-size: 11px;
 }
 
@@ -136,11 +136,11 @@
 }
 
 .compare-endpoint-summary {
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .compare-arrow {
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .compare-empty {
@@ -157,7 +157,7 @@
 }
 
 .commit-parents-label {
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .commit-parent-link {
@@ -179,7 +179,7 @@
 .commit-merge-note {
   margin-top: 8px;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .commit-panel-error {
@@ -225,6 +225,6 @@
 }
 
 .file-count-bin {
-  color: var(--text-3);
+  color: var(--text-2);
 }
 

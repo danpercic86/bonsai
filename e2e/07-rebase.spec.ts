@@ -4,7 +4,7 @@
  */
 import { test, expect } from './fixtures';
 import {
-  clickGraphRow,
+  clickGraphRowUntilVisible,
   confirm,
   graphScrollHeight,
   openBranchContextMenu,
@@ -42,10 +42,13 @@ test.describe('07 rebase @destructive', () => {
     await expect(banner(page)).toHaveCount(0);
     // 3 replayed rows appear atop the graph.
     await expect.poll(() => graphScrollHeight(page)).toBe(before + 3 * 32);
-    await clickGraphRow(page, 4); // wip(1) + stashes(3) + newest replayed row
-    await expect(
+    // wip(1) + stashes(3) + newest replayed row; retry the click while the WIP
+    // row can still shift the map (see clickGraphRowUntilVisible).
+    await clickGraphRowUntilVisible(
+      page,
+      4,
       page.getByTestId('commit-details').getByText('pick: replayed 3').first(),
-    ).toBeVisible();
+    );
   });
 
   test('abort clears the paused rebase after confirm', async ({ page }) => {
@@ -72,10 +75,11 @@ test.describe('07 rebase @destructive', () => {
       page.locator('.toast-stack').getByText('Rebased onto feature/sidebar (3 commit(s))'),
     ).toBeVisible();
     await expect.poll(() => graphScrollHeight(page)).toBe(before + 3 * 32);
-    await clickGraphRow(page, 4);
-    await expect(
+    await clickGraphRowUntilVisible(
+      page,
+      4,
       page.getByTestId('commit-details').getByText('pick: replayed 3').first(),
-    ).toBeVisible();
+    );
   });
 
   test('plain-rebase conflict route pauses at 1/3, Skip completes it', async ({ page }) => {

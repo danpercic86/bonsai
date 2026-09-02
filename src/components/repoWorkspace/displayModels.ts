@@ -6,7 +6,6 @@ import type {
   GraphLayout,
   GraphPrefs,
 } from '../../ipc';
-import type { ComboboxOption } from '../Combobox';
 import type { GraphDisplayOptions } from '../../graph/rightColumns';
 import type { PrBrowserView } from './usePrDiffBrowser';
 import { shortOid } from '../workspaceUtils';
@@ -47,18 +46,6 @@ export function graphDisplayOf(
     prByBranch,
     ciBySha,
   };
-}
-
-/** PR "compare branch" combobox options (local branches). Extracted verbatim. */
-export function prCompareOptionsOf(branches: BranchesSnapshot | null): ComboboxOption[] {
-  return (branches?.local ?? []).map((b) => ({ value: b.name, label: b.name }));
-}
-
-/** PR "base branch" combobox options (local + remote). Extracted verbatim. */
-export function prBaseOptionsOf(branches: BranchesSnapshot | null): ComboboxOption[] {
-  const locals = (branches?.local ?? []).map((b) => ({ value: b.name, label: b.name }));
-  const remotes = (branches?.remote ?? []).map((b) => ({ value: b.name, label: b.name }));
-  return [...locals, ...remotes];
 }
 
 /** Default PR base: current upstream, else main/master, else empty. Extracted

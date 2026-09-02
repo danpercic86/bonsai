@@ -7,6 +7,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import type { TooltipState } from './hitTest';
 import { clampTooltipPos } from './viewport';
+import { GraphTooltip } from './GraphTooltip';
 
 export function GraphTooltipOverlay({
   tooltip,
@@ -42,22 +43,7 @@ export function GraphTooltipOverlay({
   }, [tooltip, hostRef]);
 
   if (tooltip === null) return null;
-  return (
-    <div
-      ref={tipRef}
-      className="graph-tooltip"
-      role="tooltip"
-      style={{
-        left: `${tipPos?.left ?? tooltip.anchor.left}px`,
-        top: `${tipPos?.top ?? tooltip.anchor.top + tooltip.anchor.height + 4}px`,
-      }}
-    >
-      {tooltip.kind === 'overflow' ||
-      tooltip.kind === 'date' ||
-      tooltip.kind === 'pr' ||
-      tooltip.kind === 'ci'
-        ? tooltip.lines.map((l, i) => <div key={i}>{l}</div>)
-        : tooltip.text}
-    </div>
-  );
+  // The tooltip DOM itself lives in GraphTooltip.tsx (P95 extraction); this
+  // overlay owns only the clamped position and the ref.
+  return <GraphTooltip tooltip={tooltip} pos={tipPos} tipRef={tipRef} />;
 }

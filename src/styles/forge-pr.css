@@ -20,7 +20,7 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--text-3);
+  color: var(--text-2);
   cursor: pointer;
 }
 
@@ -136,7 +136,7 @@
 .pr-row-num {
   flex: none;
   font-size: 12px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-row-meta {
@@ -144,7 +144,7 @@
   align-items: center;
   gap: 10px;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-row-branches {
@@ -237,7 +237,7 @@
 
 .pr-detail-num {
   font-size: 13px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-detail-meta {
@@ -269,7 +269,7 @@
 }
 
 .pr-stat-files {
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-mergeable {
@@ -363,7 +363,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-comment-kind-review {
@@ -372,13 +372,13 @@
 
 .pr-comment-date {
   margin-left: auto;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-comment-loc {
   margin-top: 4px;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-comment-body {
@@ -433,7 +433,7 @@
 
 .pr-create-arrow {
   padding-bottom: 8px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-field {
@@ -453,7 +453,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .pr-input {
@@ -545,7 +545,11 @@
 .pr-merge-method-desc {
   margin: 4px 0 0;
   font-size: 12px;
-  color: var(--text-3);
+  /* P98 (orchestrator addition to the contract's seven): a merge-method description is
+     text the user reads in order to choose, i.e. read text by the contract's own test, and
+     ui-reference §2 now asserts the --text-3 read-text family is closed — leaving this one
+     would make that claim false. Was 3.38:1 dark / 2.96:1 light on --bg-1. */
+  color: var(--text-2);
 }
 
 .forge-connect-sub {
@@ -557,7 +561,7 @@
 .forge-connect-note {
   margin: 0;
   font-size: 12px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 /* P64c: per-provider token-scope hint + "create a token" help link. */
@@ -621,7 +625,7 @@
 .forge-account-host {
   flex: none;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -672,14 +676,14 @@
 .forge-account-caret {
   flex: none;
   font-size: 10px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 /* P80: muted "why this account is active" caption between host and the badge. */
 .forge-account-source {
   flex: none;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -706,7 +710,7 @@
   display: block;
   margin-top: 4px;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 /* Avatar: mirrors .identity-avatar (22px cozy / 20px compact), object-fit for
@@ -798,22 +802,18 @@
 
 .pr-changes-count {
   font-size: 12px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
-/* Push View-diffs / Retry to the row end. */
-.pr-changes-view-diffs,
+/* Push Retry to the row end. */
 .pr-changes-retry {
   margin-left: auto;
 }
 
 /* Compact rows (no expand chevron/body): keep .diff-card-header geometry but
-   as standalone list rows; the non-interactive variant drops the pointer. */
+   as standalone list rows. */
 .pr-file-row {
   margin: 0 0 2px;
-}
-.pr-file-row > div.diff-card-header {
-  cursor: default;
 }
 
 .pr-changes-loading {
@@ -825,4 +825,30 @@
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+/* P93: the row whose diff is showing in the center overlay. Verbatim the
+   .file-row-expanded recipe (diff.css) — the house "the overlay is showing this
+   row" marker: --selection fill + a 2px --accent inset rail + a bolded label.
+   Hover must not override it, hence the doubled selector. */
+.pr-file-row-active .diff-card-header,
+.pr-file-row-active .diff-card-header:hover {
+  background: var(--selection);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.pr-file-row-active .diff-card-path {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+/* P93 §4.3: a binary changed file has no text diff, so its row is a
+   non-interactive <span> — no pointer affordance, no hover feedback. The fill is
+   RESTATED as the `.diff-card-header` base `--bg-1` (not `none`, which would
+   strip the row's own fill and let the card's `--bg-0` show through), and the
+   selector is doubled so the result is independent of cascade order. */
+.pr-file-row-binary,
+.pr-file-row-binary:hover {
+  cursor: default;
+  background: var(--bg-1);
 }

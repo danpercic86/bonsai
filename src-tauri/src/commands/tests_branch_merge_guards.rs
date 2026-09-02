@@ -122,7 +122,7 @@ fn forge_commands_require_an_open_repo() {
     // P79: the inner fns take a settings-file path for the known-hosts index
     // sync. `repo_path` rejects MISSING_ID before the file is ever touched, so a
     // non-existent temp path is fine here.
-    let settings_file = std::path::Path::new("D:/Temp/bonsai-nonexistent-settings.json");
+    let settings_file = std::path::Path::new("D:/Data/Temp/bonsai-nonexistent-settings.json");
 
     let err =
         tauri::async_runtime::block_on(forge_repo_context_inner(&state, settings_file, MISSING_ID))

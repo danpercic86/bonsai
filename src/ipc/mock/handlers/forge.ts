@@ -273,12 +273,14 @@ export const forgeHandlers = {
     _headOid: string,
     path: string,
     origPath: string | null,
-    _fullContext: boolean,
-    _intraline: boolean,
+    fullContext: boolean,
+    intraline: boolean,
   ): Promise<FileDiff> {
     await delay(120);
     requireRepo(repoId);
-    return mockPrFileDiff(path, origPath);
+    // P93: the fixture honours both flags (File view / Highlight changes) and
+    // rejects for the `fail` path sentinel.
+    return mockPrFileDiff(path, origPath, fullContext, intraline);
   },
 
   async forgeListReviewComments(repoId: string, _number: number): Promise<ReviewComment[]> {

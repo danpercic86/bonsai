@@ -5,7 +5,7 @@
  * stage/unstage button labels (section membership drives the label).
  */
 import { test, expect } from './fixtures';
-import { clickGraphRow, confirm, graphScrollHeight, openRepo } from './helpers';
+import { clickGraphRowUntilVisible, confirm, graphScrollHeight, openRepo } from './helpers';
 import type { Page } from '@playwright/test';
 
 async function openWithStatus(page: Page, flags?: Record<string, string>): Promise<void> {
@@ -106,10 +106,14 @@ test.describe('04 working-dir @smoke @destructive', () => {
     await expect(page.getByTitle('vs origin/main')).toHaveText('↑1');
     // The graph gained exactly one row; its details carry the new summary.
     await expect.poll(() => graphScrollHeight(page)).toBe(before + 32);
-    await clickGraphRow(page, 4); // wip(1) + stashes(3) + new commit at layout row 3
-    await expect(
+    // wip(1) + stashes(3) + new commit at layout row 3. Retry the CLICK: the
+    // WIP row can still toggle as the same refresh round's status slice lands,
+    // shifting every display row by one (see clickGraphRowUntilVisible).
+    await clickGraphRowUntilVisible(
+      page,
+      4,
       page.getByTestId('commit-details').getByText('e2e: happy commit').first(),
-    ).toBeVisible();
+    );
   });
 
   test('identity gap: commit with no git identity surfaces configMissing', async ({ page }) => {

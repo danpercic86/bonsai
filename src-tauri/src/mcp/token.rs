@@ -2,7 +2,7 @@
 //! generation, base64url encoding, and the persisted-vs-bound-port rotation
 //! rule (audit §3.7).
 
-use rand::RngCore;
+use rand::Rng;
 
 /// Token to serve on the ACTUAL bound port (audit §3.7): reuse the persisted
 /// token only when the server came up on the persisted port — the one the

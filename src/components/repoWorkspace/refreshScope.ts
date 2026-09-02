@@ -19,8 +19,15 @@
 // the hide-set change), and the stash list (→ stashes). No HEAD move ⇒ openRepo:false.
 //
 // refsOnly / remoteMeta / worktree skip `openRepo` because they never move HEAD
-// (HEAD-moving ops go through `full`) — the header HEAD label + watcher self-heal
-// are unaffected. The matrix is conservative: an unsure handler uses `full`.
+// (HEAD-moving ops go through `full`) — so they lose nothing: since P99 the header
+// HEAD comes from the BRANCHES snapshot, and `openRepo`'s result is used only for
+// the usability check (repo went away/unreadable) + the watcher self-heal. The
+// matrix is conservative: an unsure handler uses `full`.
+//
+// P99 invariant (load-bearing — preserve it when editing the matrix below): every
+// scope with `openRepo: true` also has `branches: true`, and every `openRepo: false`
+// scope never moves HEAD. That is exactly why single-sourcing the header HEAD from
+// the branches snapshot cannot go stale.
 
 export type RefreshScope = 'full' | 'refsOnly' | 'remoteMeta' | 'worktree' | 'stash';
 

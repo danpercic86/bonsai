@@ -189,7 +189,7 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .command-palette-option {
@@ -204,8 +204,10 @@
   cursor: pointer;
 }
 .command-palette-option.is-active {
-  background: var(--accent);
-  color: #fff;
+  /* P100: see dialogs-forms.css .combobox-option--active — same recipe, same reason. */
+  background: var(--selection);
+  color: var(--text-1);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .command-palette-option.is-disabled {
   color: var(--text-3);
@@ -214,6 +216,7 @@
 .command-palette-option.is-disabled.is-active {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
   color: var(--text-3);
+  box-shadow: none; /* P100 */
 }
 
 .command-palette-option-title {
@@ -225,11 +228,20 @@
 .command-palette-option-hint {
   flex: none;
   font-size: 11px;
-  color: var(--text-3);
+  /* P98 §3: the bound shortcut is read in order to choose — read text, needs AA. */
+  color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
 .command-palette-option.is-active .command-palette-option-hint {
-  color: rgba(255, 255, 255, 0.8);
+  /* P100: was var(--accent-text); --text-2 on --selection = 5.01:1 / 6.42:1. */
+  color: var(--text-2);
+}
+
+/* P98 AC19 (§8.4): the disabled exemption applies to the hint too — the child rule would
+   otherwise re-brighten half a disabled row. Must stay after the .is-active hint override
+   (equal specificity, 0,3,0 — source order decides the disabled+active tie). */
+.command-palette-option.is-disabled .command-palette-option-hint {
+  color: var(--text-3);
 }
 
 .graph-search-fab {
@@ -289,7 +301,7 @@
 .search-result-oid {
   flex: none;
   font-family: var(--font-mono);
-  color: var(--text-3);
+  color: var(--text-2);
 }
 .search-result-summary {
   flex: 1;
@@ -317,7 +329,7 @@
 }
 .search-result-date {
   flex: none;
-  color: var(--text-3);
+  color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
 .search-result-badge {

@@ -127,19 +127,80 @@ export function IdentityMenu({
 
   const menuOpen = anchor !== null;
   const open = menuOpen || confirm !== null;
+
+  // P103. The lift MUST happen inside the discrete event that opens or closes
+  // the menu, never only from the effect below. React assigns an update the lane
+  // of the event that scheduled it: a `setState` called from a passive effect
+  // gets the DEFAULT (interruptible) lane, so in a production build App's
+  // re-render — and with it the re-subscription of `useAppShortcuts`' window
+  // keydown listener — can be deferred past the NEXT keypress. The measured
+  // symptom: Esc closed this menu, the effect ran with `open=false`, and the
+  // very next `Ctrl+,` was still swallowed by a listener closed over the stale
+  // `menuOpen=true`; App re-rendered only afterwards. (StrictMode's extra work
+  // in dev usually flushes it in time, which is why dev was merely flaky.)
+  // Lifting from the handler puts the update on the discrete lane, which React
+  // flushes before the next event is dispatched. Mirrored refs are what make the
+  // next value computable synchronously — `ContextMenu` calls `onClose()` in the
+  // same tick as `onSelect()`, so a plain `false` in `closeMenu` would briefly
+  // unsuppress the shortcuts underneath the confirm dialog.
+  const anchorRef = useRef<{ x: number; y: number } | null>(null);
+  const confirmRef = useRef<IdentityProfile | null>(null);
+  const liftedRef = useRef(false);
+  // Latest callback without making the lift depend on its identity (the unmount
+  // hand-back must not re-run when the parent re-creates the prop).
+  const onMenuOpenChangeRef = useRef(onMenuOpenChange);
+  onMenuOpenChangeRef.current = onMenuOpenChange;
+
+  /** Idempotent — the reconcile effect and the handlers both call it. */
+  const lift = useCallback((next: boolean) => {
+    if (liftedRef.current === next) return;
+    liftedRef.current = next;
+    onMenuOpenChangeRef.current(next);
+  }, []);
+
+  const syncLift = useCallback(() => {
+    lift(anchorRef.current !== null || confirmRef.current !== null);
+  }, [lift]);
+
+  const applyAnchor = useCallback(
+    (next: { x: number; y: number } | null) => {
+      anchorRef.current = next;
+      setAnchor(next);
+      syncLift();
+    },
+    [syncLift],
+  );
+
+  const applyConfirm = useCallback(
+    (next: IdentityProfile | null) => {
+      confirmRef.current = next;
+      setConfirm(next);
+      syncLift();
+    },
+    [syncLift],
+  );
+
+  // Safety net only: reconciles the lift with the rendered state (a path that
+  // changed `open` without going through the helpers above), and hands the
+  // suppression back if this control unmounts while open — otherwise App's
+  // global shortcuts would stay dead for the rest of the session.
   useEffect(() => {
-    onMenuOpenChange(open);
-    // Unmount (or transition) while open must hand the suppression back, or
-    // App's global shortcuts stay dead for the rest of the session.
-    return () => {
-      if (open) onMenuOpenChange(false);
-    };
-  }, [open, onMenuOpenChange]);
+    lift(open);
+  }, [open, lift]);
+  useEffect(
+    () => () => {
+      if (liftedRef.current) {
+        liftedRef.current = false;
+        onMenuOpenChangeRef.current(false);
+      }
+    },
+    [],
+  );
 
   const closeMenu = useCallback(() => {
     if (applyingRef.current !== null) return;
-    setAnchor(null);
-  }, []);
+    applyAnchor(null);
+  }, [applyAnchor]);
 
   const toggle = () => {
     if (menuOpen) {
@@ -148,7 +209,7 @@ export function IdentityMenu({
     }
     const rect = triggerRef.current?.getBoundingClientRect();
     if (rect === undefined) return;
-    setAnchor({ x: rect.right, y: rect.bottom + 2 });
+    applyAnchor({ x: rect.right, y: rect.bottom + 2 });
   };
 
   const runApply = useCallback(
@@ -178,11 +239,11 @@ export function IdentityMenu({
       } finally {
         applyingRef.current = null;
         setApplyingId(null);
-        setAnchor(null);
-        setConfirm(null);
+        applyAnchor(null);
+        applyConfirm(null);
       }
     },
-    [repoId, pushToast],
+    [repoId, pushToast, applyAnchor, applyConfirm],
   );
 
   /**
@@ -212,7 +273,7 @@ export function IdentityMenu({
       (identity.source === 'local' || identity.emailSource === 'local');
     if (matchProfile(identity, [profile]) !== null) return;
     if (hasLocal) {
-      setConfirm(profile);
+      applyConfirm(profile);
       return;
     }
     void runApply(profile, true);
@@ -308,7 +369,7 @@ export function IdentityMenu({
           confirmVariant="primary"
           busy={applyingId !== null}
           onConfirm={() => void runApply(confirm, false)}
-          onCancel={() => setConfirm(null)}
+          onCancel={() => applyConfirm(null)}
         >
           <p className="dialog-body">
             {`This repository commits as ${confirmOld}, set in its own Git config. Using ${profileDisplayName(confirm)} replaces that with ${confirmNew}.`}

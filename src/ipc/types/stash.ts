@@ -16,7 +16,15 @@ export type ApplyStashOutcome =
   /** Applied everything except the listed Windows-reserved paths, which could
    *  not be restored. For pop, the stash is KEPT (not dropped) so the reserved
    *  blobs are not lost. */
-  | { kind: 'appliedSkippingReserved'; skipped: string[] };
+  | { kind: 'appliedSkippingReserved'; skipped: string[] }
+  /** Applied, but these brand-new (untracked) files were NOT restored
+   *  byte-identically — the target ref tracks that path, or a directory now
+   *  occupies it. The stash is KEPT: it holds the only copy of that content. */
+  | { kind: 'appliedPartially'; unrestored: string[] }
+  /** The re-apply failed after the surrounding operation (e.g. a branch switch)
+   *  had already succeeded. Nothing was dropped — the work is intact at
+   *  stash@{0}. */
+  | { kind: 'notApplied'; message: string };
 
 export interface CreateStashResult {
   created: boolean;

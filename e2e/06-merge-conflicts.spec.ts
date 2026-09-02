@@ -7,7 +7,7 @@
  */
 import { test, expect } from './fixtures';
 import {
-  clickGraphRow,
+  clickGraphRowUntilVisible,
   confirm,
   graphScrollHeight,
   openBranchContextMenu,
@@ -111,10 +111,13 @@ test.describe('06 merge & conflicts @destructive', () => {
     await expect(banner(page)).toHaveCount(0); // OpBanner cleared
     // Graph gained one merge row; wait for the refreshed layout before clicking.
     await expect.poll(() => graphScrollHeight(page)).toBe(before + 32);
-    await clickGraphRow(page, 4); // wip(1) + stashes(3) + merge commit at row 3
-    await expect(
+    // wip(1) + stashes(3) + merge commit at row 3; retry the click while the
+    // WIP row can still shift the map (see clickGraphRowUntilVisible).
+    await clickGraphRowUntilVisible(
+      page,
+      4,
       page.getByTestId('commit-details').getByText("Merge branch 'feature/login'").first(),
-    ).toBeVisible();
+    );
   });
 
   test('abort merge: confirm-gated, opState and conflicts clear', async ({ page }) => {
@@ -139,10 +142,11 @@ test.describe('06 merge & conflicts @destructive', () => {
     await menu.getByRole('menuitem', { name: 'Merge demo-clean into main' }).click();
     await expect(page.locator('.toast-stack').getByText(/Merged demo-clean/)).toBeVisible();
     await expect.poll(() => graphScrollHeight(page)).toBe(before + 32);
-    await clickGraphRow(page, 4);
-    await expect(
+    await clickGraphRowUntilVisible(
+      page,
+      4,
       page.getByTestId('commit-details').getByText("Merge branch 'demo-clean'").first(),
-    ).toBeVisible();
+    );
   });
 
   test('fresh conflicted merge surfaces the paused outcome (render-only)', async ({ page }) => {

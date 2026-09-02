@@ -70,9 +70,16 @@
 }
 
 .tab-close {
+  /* P95 §3.2 #5: icon-only control — the accessible name lives on the button
+     (`aria-label`); the >=24px hit target is enforced here. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
   border: none;
   background: transparent;
-  color: var(--text-3);
+  color: var(--text-2);
   font-size: 14px;
   line-height: 1;
   padding: 2px 8px 2px 4px;

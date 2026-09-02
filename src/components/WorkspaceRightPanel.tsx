@@ -8,6 +8,8 @@ import { CommitPanel } from './CommitPanel';
 import { ComparePanel } from './ComparePanel';
 import { OpBanner } from './OpBanner';
 import { PrPanel } from './PrPanel';
+import type { PrFileDiffOpen } from './prPanel/PrChangesSection';
+import type { PrRestoreFocus } from './repoWorkspace/usePrFileOverlay';
 import { StatusPanel } from './StatusPanel';
 import { shortOid } from './workspaceUtils';
 import { useRenderCount } from '../obs/react';
@@ -21,7 +23,6 @@ import type {
   ListView,
   PanelDensity,
   PrimaryCommitAction,
-  PrDiffStats,
   PrNavRequest,
   RepoOpState,
   SigningStatus,
@@ -41,6 +42,14 @@ export interface WorkspaceRightPanelProps {
   repoId: string;
   /** P62c/P90: active right-pane tab (owned by RepoWorkspace). */
   rightPaneTab: 'work' | 'prs' | 'checks';
+  /** P93: open one PR changed file's diff in the center overlay. */
+  onOpenPrFileDiff(ctx: PrFileDiffOpen): void;
+  /** P93 §6: collapse the center PR overlay (stable identity required). */
+  onClosePrFileDiff(): void;
+  /** P93: path of the PR file open in the center overlay (null = none). */
+  prOverlayPath: string | null;
+  /** P93 §6.1: dismissal-event focus restore for the PR changed-files list. */
+  prRestoreFocusTo: PrRestoreFocus | null;
   onSelectRightPaneTab(tab: 'work' | 'prs' | 'checks'): void;
   /** P90: the branch resolved from the last sidebar reveal (or HEAD) → Checks tab. */
   checksTarget: ChecksTarget | null;
@@ -62,10 +71,6 @@ export interface WorkspaceRightPanelProps {
   /** P63: external "open PR N" request from a graph PR-badge click (bumped
    *  `seq` re-opens the same PR). Threaded into PrPanel's `openToPr`. */
   prNav: PrNavRequest | null;
-  /** PR-diff center browser: open with a resolved PrDiffStats / close it.
-   *  Threaded into PrPanel → PrDetailContainer (auto-open on diff resolve). */
-  onOpenPrDiff(stats: PrDiffStats, prNumber: number, title: string): void;
-  onClosePrDiff(): void;
 
   opState: RepoOpState;
   conflicts: StatusPanelProps['conflicts'];
@@ -245,14 +250,16 @@ export function WorkspaceRightPanel({
   onShowGitActivity,
   repoId,
   rightPaneTab,
+  onOpenPrFileDiff,
+  onClosePrFileDiff,
+  prOverlayPath,
+  prRestoreFocusTo,
   onSelectRightPaneTab,
   prDefaultHead,
   prDefaultBase,
   prBaseOptions,
   prCompareOptions,
   prNav,
-  onOpenPrDiff,
-  onClosePrDiff,
   checksTarget,
   checksRefreshSeq,
   onPushChecksBranch,
@@ -449,10 +456,12 @@ export function WorkspaceRightPanel({
           baseOptions={prBaseOptions}
           compareOptions={prCompareOptions}
           openToPr={prNav}
-          onOpenPrDiff={onOpenPrDiff}
-          onClosePrDiff={onClosePrDiff}
           aiEligible={aiEligible}
           onManageAccounts={onOpenAccountSettings}
+          onOpenFileDiff={onOpenPrFileDiff}
+          onClosePrFileDiff={onClosePrFileDiff}
+          prOverlayPath={prOverlayPath}
+          prRestoreFocusTo={prRestoreFocusTo}
         />
       )}
       {rightPaneTab === 'checks' && (

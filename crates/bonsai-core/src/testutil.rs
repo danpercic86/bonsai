@@ -1,7 +1,7 @@
 //! Test-only helpers (compiled under `#[cfg(test)]` only).
 //!
 //! HARD RULE (M3 contract §6.0): on Windows, C: is critically full — all
-//! scratch repos and temp dirs live under `D:\Temp\bonsai-scratch`, never
+//! scratch repos and temp dirs live under `D:\Data\Temp\bonsai-scratch`, never
 //! the system temp. On macOS/Linux there is no such constraint, so scratch
 //! dirs fall back to `std::env::temp_dir()/bonsai-scratch`.
 //! Integration tests have their own copy in `tests/common/mod.rs` (a
@@ -9,7 +9,7 @@
 
 #[cfg(windows)]
 fn scratch_root() -> std::path::PathBuf {
-    std::path::PathBuf::from("D:\\Temp\\bonsai-scratch")
+    std::path::PathBuf::from("D:\\Data\\Temp\\bonsai-scratch")
 }
 
 #[cfg(not(windows))]

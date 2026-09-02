@@ -1,6 +1,7 @@
 import { ipc } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
 import { currentTrace } from '../../obs/trace';
+import { describeCarry } from './carryOutcome';
 import type { BranchesSnapshot } from '../../ipc';
 import type { RefreshScope } from './refreshScope';
 import type { TraceId } from '../../obs/types';
@@ -60,11 +61,9 @@ export function useBranchActions(
     try {
       const res = await ipc.checkoutBranch(repoId, name);
       await refreshAll('full', trace);
-      if (res.apply?.kind === 'conflicts') {
-        pushToast(
-          'warning',
-          `Switched to ${name}; your changes were carried over with conflicts and kept safe at stash@{0} — resolve them in the status panel`,
-        );
+      const notice = describeCarry(res.apply);
+      if (notice) {
+        pushToast(notice.level, `Switched to ${name}; ${notice.text}`);
       } else {
         let msg = `Switched to ${name}`;
         const extras: string[] = [];
@@ -91,15 +90,13 @@ export function useBranchActions(
     try {
       const res = await ipc.createBranchHere(repoId, name, oid);
       await refreshAll('full', trace);
+      const notice = describeCarry(res.apply);
       if (!res.stashed) {
         pushToast('success', `Created and checked out ${name}`);
-      } else if (res.apply?.kind === 'applied') {
-        pushToast('success', `Created ${name} and carried your changes over`);
+      } else if (notice) {
+        pushToast(notice.level, `Created ${name}; ${notice.text}`);
       } else {
-        pushToast(
-          'warning',
-          `Created ${name}; your changes were carried over with conflicts — resolve them in the status panel`,
-        );
+        pushToast('success', `Created ${name} and carried your changes over`);
       }
     } catch (e) {
       pushToast('error', errorMessage(e));
@@ -169,11 +166,9 @@ export function useBranchActions(
     try {
       const res = await ipc.checkoutCommit(repoId, oid);
       await refreshAll('full', trace);
-      if (res.apply?.kind === 'conflicts') {
-        pushToast(
-          'warning',
-          `Detached HEAD at ${short}; your changes were carried over with conflicts and kept safe at stash@{0} — resolve them in the status panel`,
-        );
+      const notice = describeCarry(res.apply);
+      if (notice) {
+        pushToast(notice.level, `Detached HEAD at ${short}; ${notice.text}`);
       } else if (res.stashed) {
         pushToast('success', `Detached HEAD at ${short} (stashed & re-applied)`);
       } else {

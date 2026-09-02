@@ -16,7 +16,7 @@ bonsai-core = { path = "../bonsai-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
-rmcp = { version = "3.0.1", features = ["server", "transport-io", "macros"] }
+rmcp = { version = "3.1", features = ["server", "transport-io", "macros"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

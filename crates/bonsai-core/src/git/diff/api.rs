@@ -38,6 +38,7 @@ fn commit_details(commit: &git2::Commit) -> CommitDetails {
 /// root commit, the commit's own tree)`. `pub(crate)` so `image_diff` (P61b)
 /// can resolve the old/new blob for the Commit request without a diff walk.
 pub(crate) fn commit_trees<'r>(
+    repo: &'r git2::Repository,
     commit: &git2::Commit<'r>,
 ) -> Result<(Option<git2::Tree<'r>>, git2::Tree<'r>), AppError> {
     let old = if commit.parent_count() == 0 {
@@ -45,7 +46,14 @@ pub(crate) fn commit_trees<'r>(
     } else {
         Some(commit.parent(0)?.tree()?)
     };
-    Ok((old, commit.tree()?))
+    // A stash commit's brand-new files live in a THIRD parent, invisible to a
+    // plain first-parent diff — overlay them so they render as Adds (see
+    // `stash_tree`). Every other commit takes its own tree unchanged.
+    let new = match super::stash_tree::stash_untracked_overlay(repo, commit)? {
+        Some(overlaid) => overlaid,
+        None => commit.tree()?,
+    };
+    Ok((old, new))
 }
 
 /// P61a: when `intraline` is set (and the file has renderable hunks), run the
@@ -124,7 +132,7 @@ pub fn commit_diff(workdir: &Path, oid: &str) -> Result<CommitDiff, AppError> {
     let repo = open_workdir_repo(workdir)?;
     let commit = repo.find_commit(git2::Oid::from_str(oid)?)?;
     let details = commit_details(&commit);
-    let (old_tree, new_tree) = commit_trees(&commit)?;
+    let (old_tree, new_tree) = commit_trees(&repo, &commit)?;
     let mut opts = build_diff_options(&[], false);
     let mut diff = repo.diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut opts))?;
     apply_find_similar(&mut diff)?;
@@ -149,7 +157,7 @@ pub fn commit_file_diff(
     }
     let repo = open_workdir_repo(workdir)?;
     let commit = repo.find_commit(git2::Oid::from_str(oid)?)?;
-    let (old_tree, new_tree) = commit_trees(&commit)?;
+    let (old_tree, new_tree) = commit_trees(&repo, &commit)?;
     let paths = pathspecs(path, orig_path);
     let mut opts = build_diff_options(&paths, full_context);
     let mut diff = repo.diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut opts))?;

@@ -30,7 +30,7 @@
 .settings-section-desc {
   margin: 4px 0 10px;
   font-size: 12px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .settings-control {
@@ -87,7 +87,7 @@
   flex: none;
   width: 48px;
   font-size: 12px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .settings-toggle-btn {
@@ -132,7 +132,7 @@
 .settings-config-hint {
   margin: 2px 0 0;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .settings-config-warn {
@@ -196,7 +196,7 @@
   margin: 2px 0 0;
   font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--text-3);
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -222,7 +222,7 @@
 }
 
 .settings-account-state.is-disconnected .settings-account-dot {
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .settings-account-kebab {
@@ -333,7 +333,7 @@
 }
 
 .settings-account-default--static {
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 /* Locked provider row in the add-another form (static badge, not radios). */
@@ -396,7 +396,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-3);
+  color: var(--text-2);
   cursor: pointer;
   list-style: none;
   user-select: none;

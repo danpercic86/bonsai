@@ -3,11 +3,25 @@ import type { PushToast } from '../../ToastContext';
 import type {
   BlameLine,
   FileHistoryEntry,
+  FileStatus,
   LineSelection,
   ReflogEntry,
   ResetMode,
 } from '../../ipc';
 import type { RefreshScope } from './refreshScope';
+
+/** P93: the pull-request changed file whose diff is open in the center overlay.
+ *  The `pr:<baseOid>:<headOid>:<path>` slot key cannot carry the status, the
+ *  rename origin or the PR number, so the container keeps this side-channel for
+ *  the lifetime of the slot (cleared on every collapse). */
+export interface PrOverlayCtx {
+  prNumber: number;
+  baseOid: string;
+  headOid: string;
+  path: string;
+  origPath: string | null;
+  status: FileStatus;
+}
 
 /** Convenience alias for a `useState` setter. */
 export type Setter<T> = Dispatch<SetStateAction<T>>;
