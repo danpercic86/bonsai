@@ -732,6 +732,71 @@ also the more interesting half: P106 makes the letter *legible*; P109 is about t
 
 ---
 
+## ✅ P108 — hue-as-text on neutral surfaces — SHIPPED `42206fd`, ⏳ AC12/13/14 USER CHECKPOINT, ⚠ AC11 OWED
+
+Contract `8027cef` → impl `42206fd`. **17 CSS files, no TS/TSX, no DOM change, no new tokens.**
+All five residue rows matched, and **all five pre-fix baselines were re-measured in this tree rather
+than inherited**: raw hue-as-text 54→**26**, `-strong` 5→**35**, `var(--warn)` 1→**0**, hex outside
+the token file 12→**6**, `--badge-unknown` 3→**2**. Post-fix minimum anywhere is **5.10**
+(`--danger-strong` on `--bg-3`, light), matching the predicted family minimum exactly.
+
+**The count was 62, not the 48 handed over — the FIFTH wrong count in this programme.** 48 predated
+`settings-dev.css` and ignored three `border-color` matches the pattern catches.
+
+### Two defects a grep structurally could not find
+- **`settings-legacy-sections.css:134` was `color: var(--warn, #b8860b)` and `--warn` is defined
+  NOWHERE** — verified independently by grep *and* live
+  (`getComputedStyle(:root).getPropertyValue('--warn')` is `""` in both themes). So it had **always**
+  painted its hardcoded fallback: a theme-invariant literal at **3.25:1** in light. **A `var()`
+  fallback masking a missing token is invisible to any hue-name search, because the hue name appears
+  only in the fallback.** Fixed by pointing at a token that exists, with **no** fallback.
+- **`commit-panel.css:98-100` served ONE declaration to TWO selectors**, icon half a compliant glyph,
+  text half failing at **4.41 dark**. Split, so each is judged on what it actually is. Bucketing per
+  *declaration* rather than per *selector* would have got both wrong.
+
+### A third alias — and it makes P101 a SIXTH failed app-wide claim
+**`--badge-unknown` is byte-identical to `--text-3`**, which is how a **2.96 light** glyph escaped
+P101's *exhaustive* `--text-3` audit — a family recorded as **CLOSED**. Token aliasing has now hidden
+instances three times (`--badge-good`/`--badge-warn` ≡ `--success`/`--danger` was the first pair).
+**An audit scoped by token NAME cannot see an alias; scope by resolved VALUE.**
+
+### The canvas pass found zero — and that is still evidence
+7 draw sites in `src/graph/**`, all glyph, all ≥3:1 on both canvas backdrops. **0 fixes, but only
+because it was measured.** Assuming a pass would find nothing is precisely how the earlier counts
+went wrong.
+
+### Two corrections to the orchestrator's brief, both caught by the implementer
+1. I **accepted D1** but then quoted the **D1-rejected** residue arithmetic (29/32). The accepted
+   figures are **26/35**, which is what shipped. Flagged rather than silently resolved.
+2. I wrote "leave `.op-worktree-warning` **exactly as-is**" when my reasoning was only about D3's
+   **tone** change (repaint danger→warning). The contrast fix keeps the danger hue and changes only
+   legibility, so it belongs in scope — and the contract's own count of 18 `--danger-strong`
+   includes it. Over-broad phrasing on my part.
+
+### ⚠ AC11 is OWED — recorded, not quietly dropped
+Two states could not be reached: `.file-count-del` selected (3.05) and
+`.context-menu-item[data-tone='danger']` hovered (3.05). **The orchestrator also tried and failed**,
+across ~8 harness rounds: keyboard nav focuses `.graph-scroll` but never mounts the diff panes;
+`?forge=auth` does not render `.file-count-*`; and synthetic `contextmenu` events do not open the
+menu because React requires **trusted** input. Both figures are source-derived and unverified.
+Recording it as owed rather than manufacturing a pass — the same call the implementing agent made,
+and the standard this programme applies to its agents applies to the orchestrator too.
+
+### Also flagged
+- **`--warning-text` is undefined** (only `--accent-text`/`--danger-text`/`--success-text` exist), so
+  a naive probe of it returns the **inherited** colour (13.54/15.42), not the 1.09/1.07 the contract
+  cites. **Same undefined-property trap class as `--warn`** — worth knowing before anyone re-measures
+  that row.
+- Contract §3.1 records `--badge-unknown` on `--bg-0` as 3.68; measured **3.67**. No verdict changes.
+- **D3 `.op-worktree-warning` is a warning painted danger** — a *tone/semantics* question, not a
+  contrast one. Deliberately **not** folded in: changing it alters what the UI means, not whether it
+  can be read. Filed for the user.
+- §9's four mock fixture states were **not** added: three are already reachable (the mock maps verify
+  status off the oid's first nibble), only the long-error and `dev-status-write-failed` states would
+  need new mock code.
+
+---
+
 ## 📋 P108 — hue-as-text over NEUTRAL surfaces — PROPOSED, not enumerated (filed 2026-09-02)
 
 Proposed by `ui-designer` while enumerating P107, and deliberately filed **without** a count or a
