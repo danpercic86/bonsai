@@ -141,16 +141,48 @@ pub fn git_ok(dir: &Path, args: &[&str]) -> bool {
 }
 
 /// `git init -b main` + deterministic local config in a fresh scratch dir.
+///
+/// WALL-CLOCK NOTE: this used to spawn FIVE `git` processes — `init` plus four
+/// `git config`. Process spawn dominates the cost of a fixture repo on Windows
+/// (~50 ms each), and this helper is called by hundreds of tests across every
+/// CLI-oracle suite, so the four `config` spawns are now four in-process
+/// libgit2 writes against the same `.git/config` file. `git init` itself stays
+/// a CLI spawn so the repo layout (templates, hooks, `init.defaultBranch`
+/// handling) remains exactly what the real `git` produces.
+///
+/// EQUIVALENCE: libgit2 and git share the config file format and both insert
+/// into an existing section, so the resulting `git config --local --list` is
+/// identical to the 4-spawn version — asserted by
+/// `misc/fixture_config_equivalence.rs`, which diffs this helper's local config
+/// against a control repo built with the literal `git config` invocations. None
+/// of these four keys is path-valued or conditionally included, so there are no
+/// `git config` side effects (path normalisation, `includeIf`) to reproduce.
 pub fn init_repo() -> tempfile::TempDir {
     let dir = scratch_dir();
     let path = dir.path();
     git(path, &["init", "-b", "main"]);
-    git(path, &["config", "user.name", "Test User"]);
-    git(path, &["config", "user.email", "test@example.com"]);
-    git(path, &["config", "status.renames", "true"]);
-    git(path, &["config", "core.autocrlf", "false"]);
+    write_fixture_config(path);
     dir
 }
+
+/// The local config every fixture repo gets, written in-process. Exactly the
+/// key/value pairs the four `git config` invocations used to set.
+pub fn write_fixture_config(repo: &Path) {
+    let mut cfg = git2::Config::open(&repo.join(".git").join("config"))
+        .expect("open fixture repo config");
+    for (key, value) in FIXTURE_CONFIG {
+        cfg.set_str(key, value)
+            .unwrap_or_else(|e| panic!("set {key}: {e}"));
+    }
+}
+
+/// The fixture config contract, shared with the equivalence guard test.
+pub const FIXTURE_CONFIG: &[(&str, &str)] = &[
+    ("user.name", "Test User"),
+    ("user.email", "test@example.com"),
+    ("status.renames", "true"),
+    ("core.autocrlf", "false"),
+];
 
 /// Write an executable `#!/bin/sh` `pre-push` hook into `repo/.git/hooks` with
 /// LF endings (git's bundled `sh` runs it on Windows too — the point of

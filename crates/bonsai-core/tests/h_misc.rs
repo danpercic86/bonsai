@@ -9,6 +9,9 @@
 
 mod common;
 
+#[path = "misc/fixture_config_equivalence.rs"]
+mod fixture_config_equivalence;
+
 #[path = "misc/cli_crosscheck.rs"]
 mod cli_crosscheck;
 #[path = "misc/graph_adversarial.rs"]

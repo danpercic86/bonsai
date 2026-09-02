@@ -21,6 +21,15 @@
 //! is what equalizes per-band wall time, and proportional-to-width allocation
 //! also keeps the marginal distribution over op count exactly uniform, as the
 //! single fn had it.
+//!
+//! REGRESSION SEEDS: `prop_status.proptest-regressions` was deleted. proptest
+//! keys that file per SOURCE FILE, so every band replayed all 3 `cc` seeds
+//! (3 replays -> 12, ~25% of each band's wall time), and a `cc` seed only stores
+//! an RNG seed — it regenerates through the CURRENT strategy, which changed when
+//! op kind 5 (fs-rename) came back, so the seeds no longer reproduced the inputs
+//! in their own `# shrinks to` comments. Those recorded inputs are now pinned
+//! verbatim as explicit cases in `prop_status_pinned.rs`, which makes the
+//! regression coverage exact instead of notional.
 
 use std::path::Path;
 
@@ -150,6 +159,60 @@ fn apply(repo: &git2::Repository, root: &Path, known: &mut Vec<String>, op: &Raw
     }
 }
 
+/// Build a fixture repo from `initial`, apply `ops`, and return the
+/// `(read_status, git-porcelain-oracle)` pair. This is the original
+/// `status_matches_porcelain` body verbatim, lifted out of the `band!` macro so
+/// the randomized bands AND the pinned regression cases in `prop_status_pinned`
+/// exercise byte-identical setup, mutation and observation code.
+fn run_case(
+    initial: &[(String, u32)],
+    ops: &[RawOp],
+) -> (
+    std::collections::BTreeSet<crate::prop_common::StatusTuple>,
+    std::collections::BTreeSet<crate::prop_common::StatusTuple>,
+) {
+    let dir = common::init_repo();
+    let root = dir.path();
+
+    // Commit an initial tree of distinct multi-line files. Best-effort:
+    // a generated path can clash with another as a dir/file (e.g. "z" and
+    // "z/a") — a state git itself cannot hold — so a failing path is simply
+    // skipped rather than panicking the harness.
+    let mut known: Vec<String> = Vec::new();
+    for (p, seed) in initial {
+        if known.contains(p) {
+            continue;
+        }
+        let full = root.join(p);
+        if let Some(parent) = full.parent() {
+            if std::fs::create_dir_all(parent).is_err() {
+                continue;
+            }
+        }
+        if std::fs::write(&full, content_for(p, *seed)).is_ok() {
+            known.push(p.clone());
+        }
+    }
+    // Guarantee at least one committed file so the base commit is non-empty.
+    if known.is_empty() {
+        std::fs::write(root.join("seed.txt"), content_for("seed.txt", 0)).expect("seed write");
+        known.push("seed.txt".to_string());
+    }
+    common::git(root, &["add", "-A"]);
+    common::commit_fixed(root, "initial");
+
+    let repo = git2::Repository::open(root).expect("open");
+    for op in ops {
+        apply(&repo, root, &mut known, op);
+    }
+
+    let snapshot = read_status(root).expect("read_status");
+    let read = flatten_snapshot(&snapshot);
+    let oracle = porcelain_tuples(root);
+    drop(dir);
+    (read, oracle)
+}
+
 /// One band of the op-count partition: `$lo..=$hi` ops, `$cases` cases. The
 /// body is the original `status_matches_porcelain` body, verbatim: build a repo
 /// with a committed initial tree, apply the random op sequence, then assert
@@ -165,48 +228,12 @@ macro_rules! band {
                 ops in ops_strat_sized($lo, $hi),
             ) {
                 require_git!();
-                let dir = common::init_repo();
-                let root = dir.path();
-
-                // Commit an initial tree of distinct multi-line files. Best-effort:
-                // a generated path can clash with another as a dir/file (e.g. "z" and
-                // "z/a") — a state git itself cannot hold — so a failing path is simply
-                // skipped rather than panicking the harness.
-                let mut known: Vec<String> = Vec::new();
-                for (p, seed) in &initial {
-                    if known.contains(p) {
-                        continue;
-                    }
-                    let full = root.join(p);
-                    if let Some(parent) = full.parent() {
-                        if std::fs::create_dir_all(parent).is_err() {
-                            continue;
-                        }
-                    }
-                    if std::fs::write(&full, content_for(p, *seed)).is_ok() {
-                        known.push(p.clone());
-                    }
-                }
-                // Guarantee at least one committed file so the base commit is non-empty.
-                if known.is_empty() {
-                    std::fs::write(root.join("seed.txt"), content_for("seed.txt", 0)).expect("seed write");
-                    known.push("seed.txt".to_string());
-                }
-                common::git(root, &["add", "-A"]);
-                common::commit_fixed(root, "initial");
-
-                let repo = git2::Repository::open(root).expect("open");
-                for op in &ops {
-                    apply(&repo, root, &mut known, op);
-                }
-
-                let snapshot = read_status(root).expect("read_status");
+                let (read, oracle) = run_case(&initial, &ops);
                 prop_assert_eq!(
-                    flatten_snapshot(&snapshot),
-                    porcelain_tuples(root),
+                    read,
+                    oracle,
                     "read_status disagrees with git porcelain oracle"
                 );
-                drop(dir);
             }
         }
     };
@@ -218,6 +245,9 @@ band!(status_matches_porcelain_b1_01_03, 1, 3, 8);
 band!(status_matches_porcelain_b2_04_06, 4, 6, 8);
 band!(status_matches_porcelain_b3_07_09, 7, 9, 8);
 band!(status_matches_porcelain_b4_10_12, 10, 12, 8);
+
+#[path = "prop_status_pinned.rs"]
+mod prop_status_pinned;
 
 // ---- F-T5-3: worktree rename to an UNTRACKED target (FIXED) -----------------
 //

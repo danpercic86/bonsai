@@ -9,6 +9,17 @@
 //! instead of wedging the suite; the read surfaces additionally run through
 //! the F-T5-4 `git::timeout` wrapper (the production composition), so a spin
 //! there resolves to a clean `Err`.
+//!
+//! WALL-CLOCK NOTE: the 13 corruption cells used to live in ONE `#[test] fn`
+//! (`corrupt_repo_matrix_never_panics`), run sequentially. nextest parallelizes
+//! across test *functions*, so that single fn was the workspace's critical-path
+//! floor (~24.6s isolated / ~41.6s under gate contention). Each cell already
+//! built its OWN `healthy_repo()` and ran its own 5 surfaces with no shared
+//! state, so each is now its own `#[test] fn`: same cells, same surfaces, same
+//! assertions, no shared setup duplicated. C1 still deliberately burns the
+//! `TEST_DEADLINE` on three timeout-wrapped surfaces plus the 10s watchdog on
+//! the unwrapped mutation — that IS the F-T5-4 pin and is left intact, which
+//! makes C1 the (now much lower) floor.
 
 // Test-only: several cells clear a read-only bit to overwrite a git object.
 #![allow(clippy::permissions_set_readonly_false)]
@@ -156,205 +167,239 @@ fn healthy_repo() -> (tempfile::TempDir, PathBuf) {
     (dir, root)
 }
 
+// C1 — truncate a loose object. FINDING F-T5-4 (FIXED, audit #2 §3.2):
+// truncating the HEAD COMMIT object makes libgit2 spin forever inflating
+// the truncated zlib stream on every surface that peels HEAD. The command-
+// layer timeout wrapper (`git::timeout`) now converts that spin into a
+// clean `AppError::Git` for the READ surfaces (read_status, compute_graph,
+// stream_graph) — asserted as `Err` here with a test-shortened deadline.
+// `create_commit` is a MUTATION and stays deliberately unwrapped (a false
+// timeout could race a late-landing commit), so its hang remains the
+// pinned, documented behavior. Truncating a TREE or BLOB is handled
+// cleanly (probed ⇒ Ok).
 #[test]
-fn corrupt_repo_matrix_never_panics() {
+fn corrupt_repo_c1_truncated_head_commit_object() {
     require_git!();
 
-    // C1 — truncate a loose object. FINDING F-T5-4 (FIXED, audit #2 §3.2):
-    // truncating the HEAD COMMIT object makes libgit2 spin forever inflating
-    // the truncated zlib stream on every surface that peels HEAD. The command-
-    // layer timeout wrapper (`git::timeout`) now converts that spin into a
-    // clean `AppError::Git` for the READ surfaces (read_status, compute_graph,
-    // stream_graph) — asserted as `Err` here with a test-shortened deadline.
-    // `create_commit` is a MUTATION and stays deliberately unwrapped (a false
-    // timeout could race a late-landing commit), so its hang remains the
-    // pinned, documented behavior. Truncating a TREE or BLOB is handled
-    // cleanly (probed ⇒ Ok).
-    {
-        let (dir, root) = healthy_repo();
-        let head = common::git(&root, &["rev-parse", "HEAD"]);
-        let obj = root.join(".git/objects").join(&head[..2]).join(&head[2..]);
-        let bytes = std::fs::read(&obj).expect("read HEAD commit object");
-        let mut perms = std::fs::metadata(&obj).unwrap().permissions();
-        perms.set_readonly(false);
-        let _ = std::fs::set_permissions(&obj, perms);
-        std::fs::write(&obj, &bytes[..bytes.len() / 2]).unwrap();
+    let (dir, root) = healthy_repo();
+    let head = common::git(&root, &["rev-parse", "HEAD"]);
+    let obj = root.join(".git/objects").join(&head[..2]).join(&head[2..]);
+    let bytes = std::fs::read(&obj).expect("read HEAD commit object");
+    let mut perms = std::fs::metadata(&obj).unwrap().permissions();
+    perms.set_readonly(false);
+    let _ = std::fs::set_permissions(&obj, perms);
+    std::fs::write(&obj, &bytes[..bytes.len() / 2]).unwrap();
 
-        let out = surfaces(&root);
-        eprintln!("[C1 truncated-HEAD-commit] {out:?}");
-        // No PANIC anywhere (a panic would be a worse, separate finding).
-        for (name, o) in &out {
-            assert_ne!(*o, Outcome::Panicked, "PANIC in [C1] surface {name}");
-        }
-        // `open` does not read the HEAD commit ⇒ it stays responsive.
-        assert_ne!(outcome(&out, "open"), Outcome::Hung, "C1 open must not hang");
-        // F-T5-4 FIX: the timeout-wrapped read surfaces return a clean error
-        // instead of hanging (the wedged worker thread is abandoned).
-        for name in ["read_status", "compute_graph", "stream_graph"] {
-            assert_eq!(
-                outcome(&out, name),
-                Outcome::Err,
-                "F-T5-4 fix: {name} must time out with a clean error on a \
-                 truncated HEAD commit object"
-            );
-        }
-        // Residual pin: the unwrapped mutation still hangs (watchdog-abandoned).
+    let out = surfaces(&root);
+    eprintln!("[C1 truncated-HEAD-commit] {out:?}");
+    // No PANIC anywhere (a panic would be a worse, separate finding).
+    for (name, o) in &out {
+        assert_ne!(*o, Outcome::Panicked, "PANIC in [C1] surface {name}");
+    }
+    // `open` does not read the HEAD commit ⇒ it stays responsive.
+    assert_ne!(outcome(&out, "open"), Outcome::Hung, "C1 open must not hang");
+    // F-T5-4 FIX: the timeout-wrapped read surfaces return a clean error
+    // instead of hanging (the wedged worker thread is abandoned).
+    for name in ["read_status", "compute_graph", "stream_graph"] {
         assert_eq!(
-            outcome(&out, "create_commit"),
-            Outcome::Hung,
-            "create_commit is deliberately not timeout-wrapped (mutation)"
+            outcome(&out, name),
+            Outcome::Err,
+            "F-T5-4 fix: {name} must time out with a clean error on a \
+             truncated HEAD commit object"
         );
-        drop(dir);
     }
+    // Residual pin: the unwrapped mutation still hangs (watchdog-abandoned).
+    assert_eq!(
+        outcome(&out, "create_commit"),
+        Outcome::Hung,
+        "create_commit is deliberately not timeout-wrapped (mutation)"
+    );
+    drop(dir);
+}
 
-    // C2 — corrupt a pack (needs `git gc` to produce one).
-    {
-        let (dir, root) = healthy_repo();
-        let _ = std::process::Command::new("git")
-            .args(["gc", "--quiet"])
-            .current_dir(&root)
-            .output();
-        let pack = std::fs::read_dir(root.join(".git/objects/pack"))
-            .ok()
-            .and_then(|rd| {
-                rd.filter_map(|e| e.ok())
-                    .map(|e| e.path())
-                    .find(|p| p.extension().map(|x| x == "pack").unwrap_or(false))
-            });
-        if let Some(pack) = pack {
-            let mut bytes = std::fs::read(&pack).unwrap();
-            for b in bytes.iter_mut().take(8) {
-                *b = 0xFF;
-            }
-            let mut perms = std::fs::metadata(&pack).unwrap().permissions();
-            perms.set_readonly(false);
-            let _ = std::fs::set_permissions(&pack, perms);
-            std::fs::write(&pack, &bytes).unwrap();
-            assert_no_panic("C2 corrupt-pack", &root);
-        } else {
-            eprintln!("[C2] no pack produced by git gc — skipped");
+// C2 — corrupt a pack (needs `git gc` to produce one).
+#[test]
+fn corrupt_repo_c2_corrupt_pack() {
+    require_git!();
+
+    let (dir, root) = healthy_repo();
+    let _ = std::process::Command::new("git")
+        .args(["gc", "--quiet"])
+        .current_dir(&root)
+        .output();
+    let pack = std::fs::read_dir(root.join(".git/objects/pack"))
+        .ok()
+        .and_then(|rd| {
+            rd.filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .find(|p| p.extension().map(|x| x == "pack").unwrap_or(false))
+        });
+    if let Some(pack) = pack {
+        let mut bytes = std::fs::read(&pack).unwrap();
+        for b in bytes.iter_mut().take(8) {
+            *b = 0xFF;
         }
-        drop(dir);
+        let mut perms = std::fs::metadata(&pack).unwrap().permissions();
+        perms.set_readonly(false);
+        let _ = std::fs::set_permissions(&pack, perms);
+        std::fs::write(&pack, &bytes).unwrap();
+        assert_no_panic("C2 corrupt-pack", &root);
+    } else {
+        eprintln!("[C2] no pack produced by git gc — skipped");
     }
+    drop(dir);
+}
 
-    // C3 — HEAD points at a non-existent branch (dangling symref, unborn-like).
-    {
-        let (dir, root) = healthy_repo();
-        std::fs::write(root.join(".git/HEAD"), "ref: refs/heads/does-not-exist\n").unwrap();
-        assert_no_panic("C3 dangling-symref-HEAD", &root);
-        drop(dir);
-    }
+// C3 — HEAD points at a non-existent branch (dangling symref, unborn-like).
+#[test]
+fn corrupt_repo_c3_dangling_symref_head() {
+    require_git!();
 
-    // C4 — HEAD = raw 40-hex oid of a missing object.
-    {
-        let (dir, root) = healthy_repo();
-        std::fs::write(root.join(".git/HEAD"), format!("{}\n", "0".repeat(39) + "a")).unwrap();
-        assert_no_panic("C4 HEAD-missing-oid", &root);
-        drop(dir);
-    }
+    let (dir, root) = healthy_repo();
+    std::fs::write(root.join(".git/HEAD"), "ref: refs/heads/does-not-exist\n").unwrap();
+    assert_no_panic("C3 dangling-symref-HEAD", &root);
+    drop(dir);
+}
 
-    // C5 — refs/heads/x contains garbage (not hex, not a symref).
-    {
-        let (dir, root) = healthy_repo();
-        std::fs::create_dir_all(root.join(".git/refs/heads")).unwrap();
-        std::fs::write(root.join(".git/refs/heads/x"), b"\x00\x01garbage not a ref\xFF").unwrap();
-        assert_no_panic("C5 garbage-ref", &root);
-        drop(dir);
-    }
+// C4 — HEAD = raw 40-hex oid of a missing object.
+#[test]
+fn corrupt_repo_c4_head_missing_oid() {
+    require_git!();
 
-    // C6 — .git/objects removed entirely.
-    {
-        let (dir, root) = healthy_repo();
-        let _ = std::fs::remove_dir_all(root.join(".git/objects"));
-        assert_no_panic("C6 objects-dir-removed", &root);
-        drop(dir);
-    }
+    let (dir, root) = healthy_repo();
+    std::fs::write(root.join(".git/HEAD"), format!("{}\n", "0".repeat(39) + "a")).unwrap();
+    assert_no_panic("C4 HEAD-missing-oid", &root);
+    drop(dir);
+}
 
-    // C7 — .git/index truncated to 10 bytes.
-    {
-        let (dir, root) = healthy_repo();
-        let idx = root.join(".git/index");
-        let bytes = std::fs::read(&idx).unwrap();
-        std::fs::write(&idx, &bytes[..10.min(bytes.len())]).unwrap();
-        assert_no_panic("C7 truncated-index", &root);
-        drop(dir);
-    }
+// C5 — refs/heads/x contains garbage (not hex, not a symref).
+#[test]
+fn corrupt_repo_c5_garbage_ref() {
+    require_git!();
 
-    // C8 — .git/index = 4 KiB of random-ish bytes.
-    {
-        let (dir, root) = healthy_repo();
-        let junk: Vec<u8> = (0..4096u32).map(|i| (i.wrapping_mul(2654435761) >> 24) as u8).collect();
-        std::fs::write(root.join(".git/index"), &junk).unwrap();
-        assert_no_panic("C8 garbage-index", &root);
-        drop(dir);
-    }
+    let (dir, root) = healthy_repo();
+    std::fs::create_dir_all(root.join(".git/refs/heads")).unwrap();
+    std::fs::write(root.join(".git/refs/heads/x"), b"\x00\x01garbage not a ref\xFF").unwrap();
+    assert_no_panic("C5 garbage-ref", &root);
+    drop(dir);
+}
 
-    // C9 — .git/config with invalid syntax.
-    {
-        let (dir, root) = healthy_repo();
-        std::fs::write(root.join(".git/config"), "[unclosed\n\tbroken = = =\n").unwrap();
-        assert_no_panic("C9 invalid-config", &root);
-        drop(dir);
-    }
+// C6 — .git/objects removed entirely.
+#[test]
+fn corrupt_repo_c6_objects_dir_removed() {
+    require_git!();
 
-    // C10 — binary COMMIT_EDITMSG (should be a no-op for all ops).
-    {
-        let (dir, root) = healthy_repo();
-        std::fs::write(root.join(".git/COMMIT_EDITMSG"), [0u8, 159, 146, 150, 255, 0, 1]).unwrap();
-        let out = assert_no_panic("C10 binary-COMMIT_EDITMSG", &root);
-        // Pin: a stray COMMIT_EDITMSG is a no-op for the read surfaces.
-        assert_eq!(outcome(&out, "open"), Outcome::Ok, "C10 open unaffected");
-        assert_eq!(outcome(&out, "read_status"), Outcome::Ok, "C10 status unaffected");
-        assert_eq!(outcome(&out, "compute_graph"), Outcome::Ok, "C10 graph unaffected");
-        drop(dir);
-    }
+    let (dir, root) = healthy_repo();
+    let _ = std::fs::remove_dir_all(root.join(".git/objects"));
+    assert_no_panic("C6 objects-dir-removed", &root);
+    drop(dir);
+}
 
-    // Extra 1 — bogus .git/rebase-merge/ dir (garbage msgnum/onto).
-    {
-        let (dir, root) = healthy_repo();
-        let rm = root.join(".git/rebase-merge");
-        std::fs::create_dir_all(&rm).unwrap();
-        std::fs::write(rm.join("msgnum"), b"not-a-number\n").unwrap();
-        std::fs::write(rm.join("onto"), b"\xFF\xFFnot-an-oid\n").unwrap();
-        std::fs::write(rm.join("end"), b"garbage\n").unwrap();
-        assert_no_panic("X1 bogus-rebase-merge", &root);
-        drop(dir);
-    }
+// C7 — .git/index truncated to 10 bytes.
+#[test]
+fn corrupt_repo_c7_truncated_index() {
+    require_git!();
 
-    // Extra 2 — bogus BISECT_LOG.
-    {
-        let (dir, root) = healthy_repo();
-        std::fs::write(root.join(".git/BISECT_LOG"), b"\x00garbage bisect log\xFF\n").unwrap();
-        assert_no_panic("X2 bogus-BISECT_LOG", &root);
-        drop(dir);
-    }
+    let (dir, root) = healthy_repo();
+    let idx = root.join(".git/index");
+    let bytes = std::fs::read(&idx).unwrap();
+    std::fs::write(&idx, &bytes[..10.min(bytes.len())]).unwrap();
+    assert_no_panic("C7 truncated-index", &root);
+    drop(dir);
+}
 
-    // Extra 3 — an index entry with an invalid-UTF-8 path (lossy, no panic).
+// C8 — .git/index = 4 KiB of random-ish bytes.
+#[test]
+fn corrupt_repo_c8_garbage_index() {
+    require_git!();
+
+    let (dir, root) = healthy_repo();
+    let junk: Vec<u8> = (0..4096u32).map(|i| (i.wrapping_mul(2654435761) >> 24) as u8).collect();
+    std::fs::write(root.join(".git/index"), &junk).unwrap();
+    assert_no_panic("C8 garbage-index", &root);
+    drop(dir);
+}
+
+// C9 — .git/config with invalid syntax.
+#[test]
+fn corrupt_repo_c9_invalid_config() {
+    require_git!();
+
+    let (dir, root) = healthy_repo();
+    std::fs::write(root.join(".git/config"), "[unclosed\n\tbroken = = =\n").unwrap();
+    assert_no_panic("C9 invalid-config", &root);
+    drop(dir);
+}
+
+// C10 — binary COMMIT_EDITMSG (should be a no-op for all ops).
+#[test]
+fn corrupt_repo_c10_binary_commit_editmsg() {
+    require_git!();
+
+    let (dir, root) = healthy_repo();
+    std::fs::write(root.join(".git/COMMIT_EDITMSG"), [0u8, 159, 146, 150, 255, 0, 1]).unwrap();
+    let out = assert_no_panic("C10 binary-COMMIT_EDITMSG", &root);
+    // Pin: a stray COMMIT_EDITMSG is a no-op for the read surfaces.
+    assert_eq!(outcome(&out, "open"), Outcome::Ok, "C10 open unaffected");
+    assert_eq!(outcome(&out, "read_status"), Outcome::Ok, "C10 status unaffected");
+    assert_eq!(outcome(&out, "compute_graph"), Outcome::Ok, "C10 graph unaffected");
+    drop(dir);
+}
+
+// Extra 1 — bogus .git/rebase-merge/ dir (garbage msgnum/onto).
+#[test]
+fn corrupt_repo_x1_bogus_rebase_merge_dir() {
+    require_git!();
+
+    let (dir, root) = healthy_repo();
+    let rm = root.join(".git/rebase-merge");
+    std::fs::create_dir_all(&rm).unwrap();
+    std::fs::write(rm.join("msgnum"), b"not-a-number\n").unwrap();
+    std::fs::write(rm.join("onto"), b"\xFF\xFFnot-an-oid\n").unwrap();
+    std::fs::write(rm.join("end"), b"garbage\n").unwrap();
+    assert_no_panic("X1 bogus-rebase-merge", &root);
+    drop(dir);
+}
+
+// Extra 2 — bogus BISECT_LOG.
+#[test]
+fn corrupt_repo_x2_bogus_bisect_log() {
+    require_git!();
+
+    let (dir, root) = healthy_repo();
+    std::fs::write(root.join(".git/BISECT_LOG"), b"\x00garbage bisect log\xFF\n").unwrap();
+    assert_no_panic("X2 bogus-BISECT_LOG", &root);
+    drop(dir);
+}
+
+// Extra 3 — an index entry with an invalid-UTF-8 path (lossy, no panic).
+#[test]
+fn corrupt_repo_x3_invalid_utf8_index_path() {
+    require_git!();
+
+    let (dir, root) = healthy_repo();
     {
-        let (dir, root) = healthy_repo();
-        {
-            let repo = git2::Repository::open(&root).unwrap();
-            let blob = repo.blob(b"invalid utf8 path payload\n").unwrap();
-            let mut index = repo.index().unwrap();
-            let entry = git2::IndexEntry {
-                ctime: git2::IndexTime::new(0, 0),
-                mtime: git2::IndexTime::new(0, 0),
-                dev: 0,
-                ino: 0,
-                mode: 0o100_644,
-                uid: 0,
-                gid: 0,
-                file_size: 0,
-                id: blob,
-                flags: 0,
-                flags_extended: 0,
-                path: b"bad\xFF\xFEname.txt".to_vec(),
-            };
-            // add_frombuffer writes the blob content for this entry directly.
-            let _ = index.add_frombuffer(&entry, b"invalid utf8 path payload\n");
-            let _ = index.write();
-        }
-        assert_no_panic("X3 invalid-utf8-index-path", &root);
-        drop(dir);
+        let repo = git2::Repository::open(&root).unwrap();
+        let blob = repo.blob(b"invalid utf8 path payload\n").unwrap();
+        let mut index = repo.index().unwrap();
+        let entry = git2::IndexEntry {
+            ctime: git2::IndexTime::new(0, 0),
+            mtime: git2::IndexTime::new(0, 0),
+            dev: 0,
+            ino: 0,
+            mode: 0o100_644,
+            uid: 0,
+            gid: 0,
+            file_size: 0,
+            id: blob,
+            flags: 0,
+            flags_extended: 0,
+            path: b"bad\xFF\xFEname.txt".to_vec(),
+        };
+        // add_frombuffer writes the blob content for this entry directly.
+        let _ = index.add_frombuffer(&entry, b"invalid utf8 path payload\n");
+        let _ = index.write();
     }
+    assert_no_panic("X3 invalid-utf8-index-path", &root);
+    drop(dir);
 }
