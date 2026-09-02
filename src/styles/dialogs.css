@@ -104,7 +104,7 @@
 .dialog-error {
   margin: 6px 0 0;
   font-size: 12px;
-  color: var(--danger);
+  color: var(--danger-strong);
   overflow-wrap: anywhere;
 }
 
@@ -117,7 +117,7 @@
 .hook-output-heading {
   margin: 0;
   font-weight: 600;
-  color: var(--danger);
+  color: var(--danger-strong);
   overflow-wrap: anywhere;
 }
 /* The hook's own stdout+stderr, verbatim: monospace, newlines preserved, and
@@ -235,7 +235,7 @@
 .op-worktree-warning {
   margin: 0;
   font-size: 12px;
-  color: var(--danger);
+  color: var(--danger-strong);
   overflow-wrap: anywhere;
 }
 
@@ -273,7 +273,7 @@
 .branch-name-suggest-error {
   margin: 0;
   font-size: 12px;
-  color: var(--danger);
+  color: var(--danger-strong);
   overflow-wrap: anywhere;
 }
 

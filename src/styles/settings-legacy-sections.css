@@ -130,14 +130,19 @@
   color: var(--text-2);
 }
 
+/* P108 A23: this read a --warn custom property with a hardcoded gold fallback, and
+   --warn is defined nowhere in the app, so the fallback was never a fallback — it
+   was the value, theme-invariant, measuring 3.25:1 as ink on the settings body's
+   --bg-0 in light. Replaced with a token that actually exists: --warning-strong is
+   9.13 dark / 7.13 light as ink on that --bg-0. */
 .settings-config-warn {
-  color: var(--warn, #b8860b);
+  color: var(--warning-strong);
 }
 
 .settings-config-error {
   margin: 2px 0 0;
   font-size: 11px;
-  color: var(--danger, #d9534f);
+  color: var(--danger-strong);
 }
 
 .settings-config-advanced-row {

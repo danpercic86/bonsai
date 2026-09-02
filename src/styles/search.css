@@ -123,14 +123,14 @@
 .commit-search-truncated {
   flex: none;
   font-size: 11px;
-  color: var(--warning);
+  color: var(--warning-strong);
   white-space: nowrap;
 }
 
 .commit-search-error {
   padding: 0 10px 8px;
   font-size: 12px;
-  color: var(--danger);
+  color: var(--danger-strong);
 }
 
 /* P50c: Ctrl/Cmd-K command palette — a centered modal near the top of the

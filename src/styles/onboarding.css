@@ -136,7 +136,7 @@
 }
 
 .onboarding-error {
-  color: var(--danger);
+  color: var(--danger-strong);
   font-size: 12px;
   margin: 0;
   overflow-wrap: anywhere;

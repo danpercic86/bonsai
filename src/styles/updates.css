@@ -75,7 +75,7 @@
 
 .update-error {
   margin: 0;
-  color: var(--danger);
+  color: var(--danger-strong);
   overflow-wrap: anywhere;
 }
 

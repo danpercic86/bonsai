@@ -256,7 +256,7 @@
 }
 
 .branch-create-error {
-  color: var(--danger);
+  color: var(--danger-strong);
   font-size: 11px;
   overflow-wrap: anywhere;
 }

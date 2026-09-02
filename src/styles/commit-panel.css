@@ -95,12 +95,23 @@
 .commit-signature-good .commit-signature-icon {
   color: var(--badge-good);
 }
-.commit-signature-warn .commit-signature-icon,
-.commit-signature-warn .commit-signature-text {
+/* P108 A14/B15: one declaration used to paint both halves of the warn verdict.
+   The icon keeps the badge-warn alias — a glyph at 4.41 dark / 4.60 light as ink
+   on the right panel's --bg-1, clear of the 3:1 graphics bar. The prose beside it
+   is read text and failed the 4.5 text bar at 4.41 dark, so it takes the -strong
+   ink: 7.62 dark / 6.01 light as ink on that same --bg-1. */
+.commit-signature-warn .commit-signature-icon {
   color: var(--badge-warn);
 }
+.commit-signature-warn .commit-signature-text {
+  color: var(--danger-strong);
+}
+/* P108 C1: was the badge-unknown alias, which is byte-identical to --text-3 and
+   measured 3.38 dark / 2.96 light as ink on the right panel's --bg-1 — under even
+   the 3:1 graphics bar, so it failed as a pure glyph. --text-2 is 7.25 / 7.45 as
+   ink on that --bg-1. The alias is why P101's --text-3 sweep never saw this line. */
 .commit-signature-unknown .commit-signature-icon {
-  color: var(--badge-unknown);
+  color: var(--text-2);
 }
 .commit-signature-signer {
   color: var(--text-2);
@@ -218,11 +229,11 @@
 }
 
 .file-count-add {
-  color: var(--success);
+  color: var(--success-strong);
 }
 
 .file-count-del {
-  color: var(--danger);
+  color: var(--danger-strong);
 }
 
 .file-count-bin {

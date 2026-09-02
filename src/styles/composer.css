@@ -141,7 +141,7 @@
 
 .composer-message-hint {
   font-size: 11px;
-  color: var(--warning);
+  color: var(--warning-strong);
   margin-bottom: 6px;
 }
 

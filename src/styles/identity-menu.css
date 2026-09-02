@@ -121,7 +121,7 @@
 }
 
 .settings-profile-danger {
-  color: var(--danger);
+  color: var(--danger-strong);
 }
 
 .settings-profile-confirm {

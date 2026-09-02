@@ -176,7 +176,7 @@
 }
 
 .wt-copy-warn {
-  color: var(--warning, var(--danger));
+  color: var(--warning-strong);
 }
 
 /* New-worktree dialog: wider card so long copy-candidate paths stay readable

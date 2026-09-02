@@ -275,12 +275,12 @@
 }
 
 .pr-stat-add {
-  color: var(--success);
+  color: var(--success-strong);
   font-weight: 600;
 }
 
 .pr-stat-del {
-  color: var(--danger);
+  color: var(--danger-strong);
   font-weight: 600;
 }
 
@@ -557,7 +557,7 @@
 
 .btn-secondary-danger:hover:not(:disabled),
 .btn-secondary-danger:focus-visible:not(:disabled) {
-  color: var(--danger);
+  color: var(--danger-strong);
   border-color: var(--danger);
 }
 

@@ -252,7 +252,7 @@ button.asset-row-clickable:hover {
 .stale-force-hint {
   margin: 2px 0 0 24px;
   font-size: 11px;
-  color: var(--warning);
+  color: var(--warning-strong);
 }
 
 /* §6.2: per-row outcome of the last delete (skipped/failed rows that came back). */
@@ -262,11 +262,11 @@ button.asset-row-clickable:hover {
 }
 
 .stale-outcome-warn {
-  color: var(--warning);
+  color: var(--warning-strong);
 }
 
 .stale-outcome-error {
-  color: var(--danger);
+  color: var(--danger-strong);
 }
 
 /* Exact-name list inside the delete ConfirmDialog (the safety gate). */

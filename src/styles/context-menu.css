@@ -95,9 +95,14 @@
 
 /* Destructive actions (Delete, hard reset): red icon + label. The icon inherits
    currentColor, so the glyph reddens with the label; hover keeps the --selection
-   background (--danger text stays legible on it in both themes). */
+   background. P108 A24: the parenthetical here used to assert the base danger hue
+   stayed legible on that background in both themes. It does not — as ink on
+   --selection it measures 3.05 dark / 3.96 light, i.e. weakest exactly while the
+   pointer is on the item, and this hue is the only pre-click signal that the item
+   is destructive. The -strong ink measures 6.72 / 5.55 as ink on the menu's --bg-2
+   at rest and 5.27 / 5.18 as ink on --selection when hovered or focused. */
 .context-menu-item[data-tone='danger'] {
-  color: var(--danger);
+  color: var(--danger-strong);
 }
 
 /* Row wrapper: the position anchor for a flyout submenu. Column flex so the

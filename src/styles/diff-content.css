@@ -130,7 +130,7 @@
 
 .diff-hunk-discard-btn:hover {
   border-color: var(--danger);
-  color: var(--danger);
+  color: var(--danger-strong);
 }
 
 .diff-line {

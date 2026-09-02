@@ -79,7 +79,7 @@
   color: var(--danger);
 }
 .dev-status-write-failed .dev-status-state {
-  color: var(--danger);
+  color: var(--danger-strong);
   font-weight: 600;
 }
 .dev-status-file {

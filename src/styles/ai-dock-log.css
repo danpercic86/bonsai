@@ -189,7 +189,7 @@
   flex: 1 1 auto;
   min-width: 0;
   font-size: 11px;
-  color: var(--danger);
+  color: var(--danger-strong);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -42,11 +42,11 @@
 }
 
 .section-action-discard .section-action-glyph {
-  color: var(--danger, #e5534b);
+  color: var(--danger);
 }
 
 .section-action-discard:hover:not(:disabled) {
-  color: var(--danger, #e5534b);
+  color: var(--danger-strong);
 }
 
 /* P68f: "Resolve all with AI" in the conflicts header. It is a LOAD-BEARING action
@@ -65,7 +65,7 @@
 }
 
 .section-action-ai-bulk[data-state='cancel'] {
-  color: var(--danger, #e5534b);
+  color: var(--danger-strong);
 }
 
 /* Hover-revealed row buttons (M3 §4.2): invisible until the row is hovered or
@@ -135,7 +135,7 @@
 
 /* P20 §4.3: discard control sits beside the stage (+) button on tracked rows. */
 .row-action-discard:hover:not(:disabled) {
-  color: var(--danger, #e5534b);
+  color: var(--danger);
 }
 
 /* P80 §2b: the `⋯` overflow trigger + menu. Reused verbatim inside the commit
@@ -355,7 +355,7 @@
 }
 
 .commit-counter-over {
-  color: var(--warning);
+  color: var(--warning-strong);
 }
 
 .commit-sign-fix {
