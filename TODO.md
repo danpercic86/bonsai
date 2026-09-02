@@ -344,6 +344,56 @@ Treat as the next hue item after P107.
 
 ---
 
+## 🐞 P91 — SHOULD-FIX follow-ups from the increment-4-7 review (filed 2026-09-02, non-blocking)
+
+Both are **documentation-accuracy** defects: the prose claims more completeness than the code
+delivers. Filed rather than routed back, per velocity mode.
+
+- **`SAVE_LOCK` orders the rename pair but NOT the snapshot** (`metrics.rs:379-382`, `:409-425`).
+  `(path, file, dirty)` is read under the `MetricsState` mutex and the guard is *released* before
+  `metrics_file::save`. Two savers can therefore snapshot in order A→B but acquire `SAVE_LOCK` in
+  order B→A, so the older bytes land last. **The dangerous instance is exactly the pair the new
+  `SAVE_LOCK` doc cites as its motivation:** `reset()` snapshots the emptied file, an in-flight
+  flush holding an older non-empty snapshot commits after it, and **the reset is silently undone on
+  disk**. Both paths then set `dirty = false`, so nothing reschedules a corrective write until the
+  next counter bump. The reasoning behind choosing a mutex over a unique tmp name is sound as far as
+  it goes; the doc at `metrics_file.rs:52-66` just overstates it as "serializes the whole commit
+  sequence". Fix: take `SAVE_LOCK` around snapshot+save, or add a generation stamp, or amend the doc
+  to name the residual staleness. **No deadlock risk** — verified both call sites drop the guard
+  before `save`, `save` never re-enters `MetricsState`, and it is a plain sync fn.
+- **The `last_fire` prune is answer-preserving on the window axis but assumes non-decreasing `ts`**
+  (`window.rs:52-63`), and the comment states it unconditionally. Record `ts` comes from two
+  **unsynchronised clocks** — `Date.now()` on the frontend (`src/obs/log.ts:43`) and `now_ms()` in
+  Rust (`sink.rs:385`) — merged into one writer stream via batched `log_append`, with no monotonic
+  clamp anywhere. If `ts` regresses by more than the window, a pruned entry that would have
+  debounced a fire is gone and the rule can double-emit. **Blast radius is a duplicate anomaly
+  record, never a missed one**, and `events` already carried the same exposure — so this is a
+  comment fix stating the monotonic-`ts` premise, unless a `cutoff` guard is wanted.
+
+**NIT worth keeping:** `dup_ipc_debounce_map_stays_bounded_over_a_long_session` spaces events 100 ms
+apart against a 300 ms window, which makes `len <= 4` nearly tautological. It proves pruning happens,
+not the bound — a dense burst of distinct keys inside one window still grows the map to that burst's
+cardinality. Unlike `open_calls` (FIFO 1024) and `slow` (LRU 200), `last_fire` has **no numeric cap**,
+so §11's "bounded" is genuinely weaker for this map than for its neighbours.
+
+### Also filed 2026-09-02
+- **`.forge-connect-link:hover` is now a no-op** — the resting-underline MUST-FIX means hover declares
+  the same underline, so the link has **no hover feedback at all**. A thickness bump is the
+  contrast-safe option; the implementer correctly declined to invent a treatment. → `ui-designer`.
+- **`docs/contracts/pr-badge-placement-ui.md:106,116,156`** still documents the canvas merged pill as
+  `#8957e5`, now stale after the `--merged` token landed. → contract owner.
+- **`.settings-toggle-btn.is-active` — the investigation CLOSED it as (b), dead styling, NOT a
+  product bug.** Git history pins it: the rule was introduced in `cf174ff` for the git-config
+  **Local | Global** level toggle, which `7354aca` (P69h) then replaced with `SettingsSegmented`
+  (`role="radiogroup"`, styled via `.settings-segment.is-selected` — a different class). `is-active`
+  was orphaned at that moment and has matched nothing since. All 29 surviving call sites are one-shot
+  **action** buttons (Refresh, Edit, Delete, Activate…) that should *not* carry a selected state. So
+  **no settings control is missing a state indicator** — the earlier "possible product bug" reading is
+  retracted. The honest close is to delete both rules and optionally rename the misnamed class. CSS
+  left in place (correct but unreachable); deletion is a trivial follow-up.
+
+---
+
 ## 📋 P107 — the 16 hue-over-own-tint instances `ui-reference.md` §2 undercounted as 6 — PENDING (filed 2026-09-02)
 
 **The fourth app-wide claim in this programme to fail on inspection**, after P95's enabled-control
@@ -1558,7 +1608,8 @@ verification evidence → `docs/history/todo-archive-2026-09.md` Part 35.
   item** as the live P69 **A9** follow-up below — A9 is the canonical entry.
 
 ### Known load-flake (still open) — timing-sensitive, not a correctness bug
-`ai::session_tests::watchdog_does_not_fire_while_awaiting_input` failed once under load and passed on
+`ai::session_tests::watchdog_tests::watchdog_does_not_fire_while_awaiting_input` (path updated
+2026-09-02 by the size-ratchet split; was `ai::session_tests::…`) failed once under load and passed on
 immediate re-run.
 
 `src/App.test.tsx > App shell > an Arrow-key pane nudge persists the POST-nudge width` — same shape
