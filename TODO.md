@@ -115,6 +115,38 @@ P95/P98/P74 skipped.
    contract gap, not scope creep — **a contrast fix that is out-specified by an existing rule is a
    no-op that still passes a grep**, which is worth remembering as a review heuristic.
 
+### Review round 1 — both reviewers say **request changes**, one MUST-FIX each
+
+**Code review MUST-FIX — the D4 fix was DEAD CSS, and this is the finding that justifies the whole
+method.** `.diff-float-discard` is a `<button>` inside `.diff-stage-float`, so the generic descendant
+rule `.diff-stage-float button` **(0,1,1)** out-specifies the modifier **(0,1,0)**: `--accent` beat
+`--danger`, and `--accent-text` beat the new `--danger-text`. The hover was *newly* dead — the old
+`filter` did not compete (different property), whereas `background` does. **The destructive discard
+button was rendering in accent blue with no danger hue at all**, while passing every AC grep. The
+contract had recorded D4 as "no visual change — ink on a `--danger` fill," which is not what rendered.
+**Heuristic worth keeping: a contrast fix that is out-specified by an existing rule is a no-op that
+still passes a grep.** Routed to senior-dev with the fix (`.diff-stage-float button.diff-float-discard`)
+plus a requirement to prove it in the harness, in both themes.
+
+**Design-review findings routed with it:** the "last colour literal" claim is **false** —
+`src/graph/forgeBadges.ts:22` still holds `PR_MERGED_COLOR = '#8957e5'`, and light theme now visibly
+**diverges** (CSS pill `#8250df` vs canvas badge `#8957e5`, same concept, same screen). And the C5
+comment claims "matching specificity" when the selector is (0,4,0), not (0,3,0) — it works *only*
+because it is strictly higher, so the comment as written invites a silent revert.
+
+**Open question sent back for evidence, not guessed at:** `.settings-toggle-btn` may never render
+with `is-active` at all (all 29 call sites look static). If so, C5's recipe change **and** the added
+hover rule are unreachable — and the more interesting possibility is that the settings toggles never
+indicate their active state to the user, which would be a **product bug, not a CSS one**. Asked for a
+verdict with evidence before anything is changed.
+
+**Confirmed good by independent recomputation** (worth recording, since the claims were the point):
+all five tokens exist in **both** themes — no silent dark-value inheritance; all seven residue counts
+reproduce exactly; the 7 `--accent` survivors are genuinely glyphs with a named non-colour carrier;
+`--accent-strong` worst case **4.93** dark / **4.87** light really is surface-independent. Deviation 1
+(6 chips not 4) **upheld** — `.asset-chip-drifted` is the *most* widely rendered chip in the app, so
+fixing 4 of 6 would have left the worst-exposed one broken. Deviation 2's specificity claim is real.
+
 **AC16 partial / AC17 half-open, stated plainly rather than rounded up:** AC16's stylelint clause is
 **unsatisfiable — no stylelint exists in this repo**; tsc, build, eslint and 235 targeted tests pass.
 AC17's fixtures are added and verified, but the implementing agent had **no browser tooling**, so the
@@ -220,6 +252,26 @@ P106 should be cheap once this lands.
 
 ---
 
+## 🔀 DX — flipping the e2e bundle default — READY, HELD FOR THE USER (2026-09-02)
+
+P104 is cleared, so nothing blocks the flip. **I did not make it**, and the reason is a measurement
+gap rather than caution for its own sake: the reported figures are **162 s dev server vs 122 s
+bundle**, but it is not established that the 122 s includes the **bundle build step**. If it does
+not, the default gate could get *slower*, which is the opposite of the change's purpose. Flipping a
+default the user runs on every gate, on a number that might exclude its own dominant cost, is not
+mine to do while they are away.
+
+Everything else favours it: bundle mode is equally green (181 passed / 1 skipped, 0 failed in both
+modes) and has **higher fidelity** — P103 was a real product bug that only the bundle-vs-dev
+equivalence check exposed, because `import.meta.env.DEV` code is absent from a production bundle.
+
+**The change is one line each**, trivially reversible:
+`playwright.config.ts:38` → `const BUNDLE = process.env.E2E_BUNDLE !== '0'`, plus inverting the
+`--e2e-bundle` flag in `gate.mjs`. **To decide: time one `E2E_BUNDLE=1` run from a cold build** and
+compare against the 162 s dev figure including build.
+
+---
+
 ## 📋 P107 — the 16 hue-over-own-tint instances `ui-reference.md` §2 undercounted as 6 — PENDING (filed 2026-09-02)
 
 **The fourth app-wide claim in this programme to fail on inspection**, after P95's enabled-control
@@ -248,8 +300,11 @@ residue exactly on every metric; that is the standard P107 inherits.
 
 ## 🔧 GATE BLOCKER — `pnpm lint:size` fails on files this branch grew — PENDING (found 2026-09-02)
 
-**Independently confirmed by two agents**, the second by stashing its own CSS changes and re-running
-to prove the failure was not its own: `crates/bonsai-core/src/ai/session.rs` (505 → **538**) and
+**Independently confirmed by three agents**, the second by stashing its own CSS changes and
+re-running to prove the failure was not its own. ⚠ **One agent misattributed this to "the concurrent
+hue-audit/P91 work" and called it "the P107 blocker" — both wrong**, and recorded here so the error
+does not propagate: it predates today's session entirely, and P107 is the hue-over-own-tint
+enumeration, a different item. The cause is: `crates/bonsai-core/src/ai/session.rs` (505 → **538**) and
 `crates/bonsai-core/src/ai/session_tests.rs` (509 → **540**) breach the size ratchet. Both grew in
 commit **`734b310`** ("test(ai): drive the session watchdog from an injectable clock, not wall
 time") **on this branch**, and the baseline was never updated.
