@@ -33,13 +33,15 @@ export function RawNamesConfirmDialog({
       onCancel={onCancel}
     >
       <p>
-        New log files will contain the real names of your branches, tags, files and repository —
-        instead of placeholders like <span className="mono">ref#3</span> and{' '}
-        <span className="mono">path#7</span>.
+        New log files will contain the real names in your repository: the folder it lives in, your
+        branches, tags and files, your remote addresses, and full commit IDs — instead of
+        placeholders like <span className="mono">ref#3</span> and{' '}
+        <span className="mono">path#7</span>. A folder path may include your computer account name.
       </p>
       <p>
-        Commit messages, file contents, author names and email addresses are still never written,
-        and passwords and access tokens are never written in any mode.
+        It never adds anything you typed. Commit messages, search text and other text you write
+        stay out of the log in every mode — as do the contents of your files, the name and email
+        address you commit under, and any password, access token or key.
       </p>
       <p>
         Bonsai starts a new log file now, so the file you are recording into does not mix the two
@@ -81,14 +83,17 @@ export function ExportConfirmDialog({
           <span className="dev-warning-glyph" aria-hidden="true">
             ⚠
           </span>
-          Raw names are on: this log contains your real branch, tag, file and repository names.
-          Commit messages, file contents, names and email addresses, passwords and tokens are still
-          not in the file.
+          Raw names are on: this log contains the folder your repository lives in, your real
+          branch, tag and file names, your remote addresses and full commit IDs. Commit messages,
+          search text and anything else you typed are not in the file, and neither are file
+          contents, the name and email address you commit under, or any password or access token.
         </p>
       ) : (
         <p>
-          Branch, file and repository names are replaced with placeholders. Commit messages, file
-          contents, names and email addresses, passwords and tokens are not in the file.
+          Branch, file, remote and repository names are replaced with placeholders, and commit IDs
+          are shortened. Commit messages, search text and anything else you typed are not in the
+          file, and neither are file contents, the name and email address you commit under, or any
+          password or access token.
         </p>
       )}
       <p>Open the file and read it before sending it to anyone.</p>

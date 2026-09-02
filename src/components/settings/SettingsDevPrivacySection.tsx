@@ -28,21 +28,25 @@ export function SettingsDevPrivacySection({ rawNames }: { rawNames: boolean }) {
           flagged along the way.
         </p>
         <p>
-          <strong>A log file never contains — in any mode:</strong> your commit messages, the
-          contents of your files or diffs, your name or email address, your search text, or any
-          password, access token or key.
+          <strong>A log file never contains — in any mode:</strong> your commit messages, your
+          search text or anything else you type, the contents of your files or diffs, the name and
+          email address you commit under, or any password, access token or key. Bonsai drops these
+          where the file is written, so the rule holds in both modes.
         </p>
         <p>
-          <strong>Names are replaced by default.</strong> Your branches, tags, files and repository
-          appear as <span className="mono">ref#3</span>, <span className="mono">path#7</span>,{' '}
-          <span className="mono">repo#1</span>. The same name keeps the same number inside one file,
-          so a problem can still be followed — and the numbers change next time, so two files cannot
-          be matched up.
+          <strong>Names are replaced by default.</strong> Your branches, tags, files, remotes and
+          repository appear as <span className="mono">ref#3</span>,{' '}
+          <span className="mono">path#7</span>, <span className="mono">remote#1</span>,{' '}
+          <span className="mono">repo#1</span>, and commit IDs are shortened. The same name keeps
+          the same number inside one file, so a problem can still be followed — and the numbers
+          change next time, so two files cannot be matched up.
         </p>
         <p>
-          <strong>If you turn on &ldquo;Include raw repository names&rdquo;</strong>, that
-          replacement stops: new log files contain your real branch, tag, file and repository names.
-          Everything in the &ldquo;never contains&rdquo; list above stays excluded.
+          <strong>If you turn on &ldquo;Include raw repository names&rdquo;</strong>, those
+          placeholders stop: new log files contain the folder your repository lives in, your real
+          branch, tag and file names, your remote addresses (with any username or password removed)
+          and full commit IDs. That is the whole difference — raw names add identifiers, never
+          anything you typed, and the &ldquo;never contains&rdquo; list above is unchanged.
         </p>
         <p>
           <strong>Log files stay on this computer until you delete them.</strong> They are kept when
