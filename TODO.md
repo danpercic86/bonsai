@@ -92,8 +92,33 @@ target), `App.tsx` 602 (launch effect needs 6 of App's own setters threaded in).
 
 ## 🎨 P102 + P105 — hue audit (`--danger` fills, `--accent`-as-text) — IN PROGRESS (started 2026-09-02)
 
-**Current step:** ✅ contract DONE + committed `7c623d8` → `docs/contracts/P102-P105-hue-audit-ui.md`
-(20 ACs, per-call-site enumeration). ⏳ senior-dev implementing. Branch: `feat/p91-observability`
+**Current step:** ✅ contract `7c623d8` → ✅ **impl DONE + committed `0e5dcab`** → ⏳ reviewer +
+ui-designer reviewing concurrently (workflow step 4). Then tester + full gate.
+
+**The predicted grep residue matched reality on every line** — this is the milestone's central
+claim, and it held: `color: var(--accent)` 30→**7**, `--accent-strong` 0→**18**, hex ink 3→**0**,
+`filter: brightness` 4→**1**, `background: var(--danger)` 4→**4**, `--danger-text` 0→**4**,
+`--success-text` 0→**1**. (Raw greps return 4 hex / 5 brightness; both extras are *comment* lines at
+`dialogs-forms.css:164` and `controls.css:96` — declaration counts match.) Predicting the residue
+*before* implementing is what makes "closed" checkable instead of asserted, and it is the practice
+P95/P98/P74 skipped.
+
+**Two implementer deviations, both flagged rather than buried (verdicts pending review):**
+1. **Six `.asset-chip-*` modifiers fixed, not four.** `.asset-chip-sync` (4.02 dark / 3.61 light)
+   and `.asset-chip-drifted` (4.86 / 3.50) are the same hue-over-own-tint defect inside the same
+   rule block and render *beside* the fixed chips in `ProfileActivateDialog` /
+   `StaleBranchesDialog`; fixing 4 of 6 would leave exactly the split the contract's own C3b
+   reasoning forbids.
+2. **One rule added that the contract missed:** `.settings-toggle-btn.is-active:hover:not(:disabled)`.
+   `.btn-secondary:hover:not(:disabled)` is specificity (0,3,0) and out-specifies C5's (0,2,0), so
+   the selected `--selection` fill vanished on hover. If the specificity claim holds this is a
+   contract gap, not scope creep — **a contrast fix that is out-specified by an existing rule is a
+   no-op that still passes a grep**, which is worth remembering as a review heuristic.
+
+**AC16 partial / AC17 half-open, stated plainly rather than rounded up:** AC16's stylelint clause is
+**unsatisfiable — no stylelint exists in this repo**; tsc, build, eslint and 235 targeted tests pass.
+AC17's fixtures are added and verified, but the implementing agent had **no browser tooling**, so the
+visual half went to the ui-designer review pass. Branch: `feat/p91-observability`
 (USER decision 2026-09-02 — everything this session lands on that one branch; no push, local
 commits only).
 
@@ -192,6 +217,51 @@ P106 should be cheap once this lands.
 - **`src/styles/forge-pr.css` is ~710 lines** and over the ~500-line soft limit. This milestone adds
   no new rule block there, so the split is **not** in scope — hand it to `refactorer` as a
   standalone behavior-preserving pass.
+
+---
+
+## 📋 P107 — the 16 hue-over-own-tint instances `ui-reference.md` §2 undercounted as 6 — PENDING (filed 2026-09-02)
+
+**The fourth app-wide claim in this programme to fail on inspection**, after P95's enabled-control
+class (3 escapes found by P101), P98's "`--text-3` family closed" (122 declarations never
+classified), and P74's hue-as-text sweep (which became P105). `ui-reference.md` §2 asserted **6**
+live hue-over-own-tint instances. A full scan during the P102/P105 implementation found **16**
+outside that milestone's scope:
+
+`.pr-mergeable-clean` / `-conflict` / `-pending`, `.asset-badge-ok` / `-warn`,
+`.danger-badge.safe` / `.caution` / `.destructive`, `.asset-readonly-banner`,
+`.asset-issue-error` / `-warning`, `.conflict-kind`, `.error-banner`, `.graph-truncated-banner`,
+`.settings-ai-status-warn`, `.wt-copy-chip`.
+
+The list is recorded here **and** in the reference so the next session inherits an enumeration
+rather than a number. `ui-designer` is correcting §2 in the current review pass; **this entry is the
+remediation of the 16 call sites, which is NOT in P102/P105's scope.**
+
+**The pattern is now established well enough to state as a rule.** Every one of the four failures
+had the same shape: a sentence claiming an app-wide property, with a call-site count that nobody
+enumerated. P101 §3 is the template — enumerate, bucket, record a verdict per site, predict the
+post-fix residue, then verify the prediction. **Do not accept a "~N call sites and it's fine"
+sentence as evidence.** P102/P105 is the first milestone in the programme to hit its predicted
+residue exactly on every metric; that is the standard P107 inherits.
+
+---
+
+## 🔧 GATE BLOCKER — `pnpm lint:size` fails on files this branch grew — PENDING (found 2026-09-02)
+
+**Independently confirmed by two agents**, the second by stashing its own CSS changes and re-running
+to prove the failure was not its own: `crates/bonsai-core/src/ai/session.rs` (505 → **538**) and
+`crates/bonsai-core/src/ai/session_tests.rs` (509 → **540**) breach the size ratchet. Both grew in
+commit **`734b310`** ("test(ai): drive the session watchdog from an injectable clock, not wall
+time") **on this branch**, and the baseline was never updated.
+
+**The fix is a split, not a baseline bump.** Per CLAUDE.md the ratchet is a deliberate work queue,
+so raising the baseline would discard the signal rather than answer it. Route to `refactorer` as a
+strictly behavior-preserving pass (identical before/after test counts). Held until the P104 e2e
+investigation finishes, because `refactorer` proves equivalence by running tests and P104 is
+measuring wall-clock timings on the same machine.
+
+**This blocks the full `pnpm gate`**, so it must land before the hue-audit milestone's step-7 gate
+can be called green.
 
 ---
 
@@ -714,7 +784,7 @@ pass: 1299 → **1322** lines, **13** sections throughout, untouched regions byt
 pointer preserved. **This deviates from CLAUDE.md's "no other agent edits `ui-reference.md`" —
 raise with the user whether to give the designer `Edit` or split the file.**
 
-## ✅ DX — built-bundle e2e — DELIVERED opt-in; default gated on P104 only (2026-09-01)
+## ✅ DX — built-bundle e2e — DELIVERED opt-in; P104 cleared, default flip is now a free choice
 
 P94's stated reason for abandoning this ("the built bundle is not behaviour-equivalent to dev") no
 longer holds for the reason P94 gave — but the equivalence check **found a real difference**, so the
@@ -770,26 +840,70 @@ one-swallowed-keypress shape. **Three write-offs of this one bug** — P95's tes
 mechanism. The lesson is on the board at P105: a flake that reproduces deterministically in a
 production bundle is not a flake.
 
-**Flipping the e2e bundle default is still gated on P104** (the 4-worker post-suite hang, present in
-*both* modes), which is independent of this fix.
+**Flipping the e2e bundle default was gated on P104**, which is now cleared — see below: there was
+never a hang, only Playwright's silent Edge-teardown phase degrading under machine load.
 
-### 🚨 P104 — the 4-worker e2e suite hangs after the last test — PENDING, PRE-EXISTING
+### ✅ P104 — the "4-worker post-suite hang" — DIAGNOSED + NARRATED (it is not a hang)
 
-**Reproducible in BOTH modes and observed before any DX change** (the very first run, stock config on
-`pnpm dev:mock`, hit a 10-min timeout having reached test 161). The suite completes all 161 tests then
-**hangs before printing the summary line**; both full runs had to be killed. Does **not** happen
-single-worker. The board's 407-566s gate baseline implies e2e used to complete, so this is a
-regression from something outside the DX change. **Consequence: full-suite e2e wall clock is
-currently unverifiable, so the "5.8 min -> 1.3 min" claim cannot be confirmed either way.** Run e2e
-single-worker until fixed.
+**It never hung. It goes silent.** Playwright prints *nothing* between the last test result and
+the summary line, and on Windows that gap is Edge teardown. On an idle box it is 0.2 s per browser;
+on an oversubscribed box it is minutes of dead air, which is what got read as a hang and cost two
+10-minute timeouts. Every run always completed with the correct results and exit code.
 
-Two costs already isolated, so P104 does not start from zero: **Edge teardown is ~116s per browser**
-(30s graceful-close timeout, then 85s force-kill to process exit; timestamped under
-`DEBUG=pw:browser`) — a fixed per-run floor that caps the "1.3 min" target regardless of bundle mode.
-And one hang variant is **already fixed** in this pass: the old `command: 'pnpm dev:mock'` orphaned
-the server on Windows (port stayed bound, Playwright waited on it) — 446s wall for 178s of testing.
-In-process server + `gracefulShutdown` cut teardown to 0.3s, which accounted for ~4.5 min of the
-original "e2e is 5.8 min" figure.
+**Not reproducible idle — the suite is fast and finishes cleanly.** Four full 4-worker runs on this
+tree, both invocation paths (`pnpm exec playwright test`, `pnpm test:e2e`) and both temp drives
+(`C:\Temp`, `D:\Data\Temp` — the temp-volume theory was tested and is *not* it):
+
+| mode | wall | result | teardown |
+| --- | --- | --- | --- |
+| dev server (default) | **162 s** | 177 passed / 4 failed / 1 skipped | 0.2-0.8 s per browser |
+| built bundle (`E2E_BUNDLE=1`) | **122 s** | **181 passed / 1 skipped, 0 failed** | 0.2-0.8 s per browser |
+
+So the "5.8 min → 1.3 min" claim is now verifiable and roughly holds: **2.7 min → 2.0 min**, with
+bundle mode additionally the only *green* arm.
+
+**Mechanism, reproduced on demand** by running the same 21-test 4-worker batch under 24 spinning
+CPU hogs on the 22-core box (`DEBUG=pw:browser`, timestamped). Three costs stack, all in Playwright's
+`launchProcess` teardown, none of them ours:
+
+```
+t+47s   last test result printed
+t+47s   <gracefully close start>  x4     one Edge tree per worker
+t+77s   <kill> +30s               x4     CDP `Browser.close` never answered. The window is a
+                                         HARDCODED 30 s (DEFAULT_PLAYWRIGHT_TIMEOUT in
+                                         playwright-core) — there is no config lever.
+t+183s  taskkill returns          x4     `spawnSync('taskkill /pid N /T /F', {shell:true})` BLOCKS
+                                         the worker ~106 s under load, and still reports
+                                         "PID <n> could not be terminated" for part of the tree
+                                         (the msedge network-service / gpu-process utilities —
+                                         named by polling Win32_Process during the stall)
+t+232s  <process did exit>        x4     Playwright awaits the browser process `close` before the
+                                         run may finish
+t+233s  "21 passed"                      summary + correct exit code
+```
+
+**185 s of total silence, then a correct result.** That explains every reported symptom: worker-count
+dependent (N workers = N Edge trees, all missing the same 30 s window; single-worker keeps the one
+browser responsive enough to close in 0.2 s), present in *both* modes (it is browser teardown, not
+the server), "before the summary line" (worker shutdown precedes `reporter.onEnd`), and the earlier
+"30 s then 85 s" reading is this same shape with a smaller tree.
+
+**Fix shipped — `scripts/e2e-teardown-reporter.mjs`** (always on, both tiers): once every expected
+result is in *and* nothing is executing, it names the phase and ticks every 15 s, so the silence can
+never be misread again. Diagnostic only; its interval is `unref()`d so it can never itself hold the
+runner open. Guarded by `E2E_TEARDOWN_REPORTER=0`, grace via `E2E_TEARDOWN_GRACE_MS`. Six unit tests
+in `scripts/e2e-teardown-reporter.test.mjs` cover the two hazards (never cry teardown while a test
+is running; never hold a handle); vitest's node project now also picks up `scripts/**/*.test.mjs`.
+
+**Residual, not fixable from this repo:** the 30 s close window and the blocking `taskkill` are
+inside playwright-core. The operational rule is therefore: **do not run the e2e suite concurrently
+with other heavy jobs** (a second suite, a `cargo` build, the harness). `gate.mjs` is already strictly
+serial, so the gate itself is safe. Rejected as too risky for the value: `--disable-gpu` to shrink
+the Edge tree (several specs assert painted colours, so changing the rasterizer is not free).
+
+**Bundle default is now unblocked.** Nothing else gates it; the flip is one line in
+`playwright.config.ts` (`const BUNDLE = process.env.E2E_BUNDLE !== '0'`) plus the `gate.mjs` flag
+inversion — left to the orchestrator, since it is a default-behaviour decision, not a bug fix.
 
 ### Dev/prod gaps found by step 3 (recorded so P103 has a suspect list)
 
