@@ -207,9 +207,23 @@ Measured for the four sites that have a state-dependent backdrop. Rows marked �
 | `.dev-mode-pill-glyph` | 3.78 / 3.76 | 3.39 / 3.33 → still passes | n/a | n/a |
 | `.file-status-added .file-badge` (P106) | 5.26 / 4.38 (staged tint) | `--bg-2`: 5.06 / 4.37 | `--selection`: — (P106 to measure) | n/a |
 
-After the Bucket A fix the same states measure, with `--text-1`: `.pr-mergeable-conflict` 11.61 /
-12.59 default, 10.30 / 11.68 hover, **9.99 / 10.92** selected; `.pr-mergeable-clean` 9.24 / 11.16
-selected. **Every state of every fixed site clears 4.5:1 in both themes with headroom ≥5.4.**
+After the Bucket A fix the same states measure, with `--text-1`:
+
+| Site (post-fix, `--text-1`) | default | hover (`--bg-2`) | selected (12% accent) |
+|---|---|---|---|
+| `.pr-mergeable-conflict` | 11.61 / 12.59 | 10.30 / 11.68 | **9.99 / 10.92** |
+| `.pr-mergeable-clean` | 10.90 / 12.82 | — (not recorded) | **9.24 / 11.16** |
+| `.pr-mergeable-pending` | 10.49 / 12.91 | — (not recorded) | **8.94 / 11.23** |
+
+**Every state of every fixed site clears 4.5:1 in both themes**; the lowest single figure across all
+states and both themes is **8.94** (`.pr-mergeable-pending`, dark, selected) — just under 2× the bar.
+
+> **ERRATUM 2026-09-03 (post-landing).** The `.pr-mergeable-pending` row was missing from this
+> paragraph as originally written, and the summary sentence read "headroom ≥5.4", which does not hold
+> for any of the selected-state figures (`.pr-mergeable-clean` selected is 9.24 → 4.74 above the bar,
+> pending is 8.94 → 4.44). The table above is the corrected form; the pending figures were measured by
+> the P107 implementation, which reproduced the other two exactly. See the AC2 erratum in §12 — the
+> AC's ≥9.0/≥11.6 threshold was a default-state figure misapplied to all three states.
 
 **Disabled note:** if any of these chips ever gains a disabled state, the §2 `.55` dim applied to
 `--text-1` over a 12% danger tint measures **4.69 dark / 3.50 light** — below the text bar in light.
@@ -273,7 +287,16 @@ box-shadow: inset 3px 0 0 var(--<hue>);   /* omit for .error-boundary-title — 
 .error-dismiss:hover  { background: color-mix(in srgb, currentcolor 12%, transparent); }
 ```
 - Measured after: ink on the hovered wash **8.48 / 10.30**. (Keeping `--danger` ink on that same wash
-  measures **2.76 / 3.07** — the ink must move, the wash alone is not enough.)
+  measures **3.37 / 3.30** on `--bg-1` — still under 4.5:1, so the ink must move; the wash alone is
+  not enough.)
+
+  > **ERRATUM 2026-09-03 (post-landing).** This parenthesis originally read **"2.76 / 3.07"**. That
+  > pair does not reproduce on any single base. The correct figure for `--danger` ink on the new
+  > `currentcolor` 12% wash, composited over **`--bg-1`** — the same basis every other number in §5
+  > uses — is **3.37 / 3.30**; 2.76 / 3.07 appears to have been a cross-base pairing (a dark reading
+  > and a light reading taken over different backdrops). **No verdict changes**: the variant it
+  > describes was rejected and never shipped, and it fails 4.5:1 on either set of numbers. Corrected
+  > so a later reader does not inherit an unreproducible measurement.
 - `color-mix(in srgb, currentcolor 12%, transparent)` is the existing house hover for a borderless
   glyph button — `.graph-filter-clear` (`graph-filter.css:84`). Reuse, don't invent.
 - The 24×24 hit target, `border-radius: 4px` and the global `:focus-visible` ring
@@ -378,6 +401,20 @@ noted incidentally:
 - `ai-dock-log.css:192` `.ai-run-queue-reason` — 11px danger text on `--bg-1`/`--bg-2`.
 - `forge-pr.css:278/283` `.pr-stat-add` / `.pr-stat-del` — success/danger `+n`/`−n` counts.
 
+**Three more seeds added 2026-09-03**, found incidentally by the P107 implementation and correctly
+judged out of P107 scope (hue ink over a **neutral** surface, not over its own tint) — all in
+`ai-assets.css`:
+
+- `.stale-force-hint` — hue text on a neutral card surface.
+- `.stale-outcome-warn` — ditto.
+- `.stale-outcome-error` — ditto.
+
+**These six bullets are seeds, not scope.** P108 remains deliberately **un-enumerated**: it must run
+the full three-pass search of §1 over `--danger` / `--success` / `--warning` / `--merged` / `--accent`
+and produce its own per-declaration table. Treating this seed list as the population would repeat
+exactly the failure §2 of `ui-reference.md` tallies — a bare list standing in for an enumeration. No
+count is claimed here and none should be quoted from here.
+
 Recommend filing **P108 — hue-as-text over neutral surfaces** with the same enumerate/bucket/predict
 discipline. Do **not** fold it into P107: mixing two defect classes in one diff is how the residue
 prediction stops being checkable.
@@ -444,8 +481,29 @@ must not self-declare it.**
 `color` on the base rules `.pr-mergeable`, `.asset-badge`, `.danger-badge`, `.asset-issue` with the
 per-variant `color` deleted.
 
-**AC2** — Measured in the harness with the §2 method, both themes: every Bucket A site ≥ **9.0:1**
-dark and ≥ **11.6:1** light on its own tint, in default, hover and selected states.
+**AC2** — Measured in the harness with the §2 method, both themes: every Bucket A site clears
+**4.5:1 in both themes on its own tint, in default, hover and selected states**, and meets these
+**per-state** floors:
+
+| State | Dark ≥ | Light ≥ | Binding site |
+|---|---|---|---|
+| default | **9.0** | **11.6** | A5 dark (9.06), A8 light (11.68) |
+| hover | **10.3** | **11.6** | `.pr-mergeable-conflict` on `--bg-2` (10.30 / 11.68) |
+| selected | **8.9** | **10.9** | `.pr-mergeable-pending` dark (8.94), `.pr-mergeable-conflict` light (10.92) |
+
+Only the three `.pr-mergeable-*` chips have a state-dependent backdrop (§4); for every other Bucket A
+site the default figure holds in all three states.
+
+> **ERRATUM 2026-09-03 (post-landing).** As first written, AC2 demanded ≥9.0 dark / ≥11.6 light "in
+> default, hover **and selected** states" — but those two numbers are the **default-state** minima
+> (A5 dark, A8 light) and were never valid as a selected-state bar. §4 of this same contract already
+> recorded `.pr-mergeable-conflict` selected at **9.99 / 10.92** and `.pr-mergeable-clean` selected at
+> **9.24 / 11.16**, both under the light figure; the P107 implementation reproduced both exactly and
+> measured a third, **`.pr-mergeable-pending` selected at 8.94 / 11.23**, which was missing from §4.
+> All three clear the substantive 4.5:1 bar with roughly 2× headroom, and no fix changes this short of
+> abandoning `--text-1` — the ink the whole contract selects. **This is an erratum in the acceptance
+> criterion, not an implementation divergence.** The table above is the corrected, per-state form; the
+> shipped code satisfies it. Do not re-open P107 against the original wording.
 
 **AC3** — `.error-dismiss` is `color: var(--text-1)`; its `:hover` background is
 `color-mix(in srgb, currentcolor 12%, transparent)`; the `color-mix(… var(--danger) 20% …)` hover fill
@@ -466,6 +524,22 @@ is gone. Measured ≥ **8.4:1** dark / ≥ **10.3:1** light on the hovered wash.
 
 A deviation in any row means the implementation diverged from §5 — investigate before accepting, do
 not adjust the number.
+
+**RESULT 2026-09-02 (`2168057`): all seven predicted rows matched exactly.** 35→27, 12→9, 24→17,
+159→171, `--h:` unchanged, 9 files, 0 outside `src/styles`, 0 `.tsx`.
+
+> **Grep-baseline notes 2026-09-03 — two rows read differently than the table implies. Both are
+> benign; recorded so a future audit does not chase them.**
+>
+> - **`--h:\s*var\(` returns 16 matches, not 15.** The 16th is a **comment**, not a declaration
+>   (`graph-filter.css:87`). The real declaration count is **15**, before and after, exactly as the
+>   table states. If you re-run the baseline and see 16, you have not found a regression.
+> - **`color:\s*(#|white)` returns 2 matches, not 0.** Both are **comments documenting removed code**
+>   (`dialogs-forms.css:165`, `forge-pr.css:178`) — residue of the P102 hardcoded-ink sweep, kept
+>   deliberately as provenance. The real declaration count is **0**, before and after.
+>
+> Neither grep is comment-aware. When re-pinning either baseline, filter comment lines before
+> comparing, or compare against 16 / 2 rather than 15 / 0.
 
 **AC5** — The 19 Bucket B keeps are byte-identical: `.toast-glyph`, `.submodule-badge-glyph`,
 `.ai-dock-status-glyph`, `.git-run-pill-glyph`, `.checks-rollup-pill--{good,warn,pending}
@@ -514,3 +588,29 @@ dialog A16, `ErrorBoundary` A17) are visually confirmed in the native window, bo
    it because it retracts guidance a prior contract may have been written against.
 5. **P108 proposed** (§9) — hue-as-text over neutral surfaces, including P91 §8.4's own
    `.dev-status-write-failed .dev-status-state` at 4.41 dark. Not enumerated; not claimed closed.
+
+---
+
+## 14. Post-landing follow-ups owed (added 2026-09-03, after `2168057`)
+
+P107 shipped clean — all seven AC4 rows matched. These are debts the increment consciously did not
+pay, recorded so they are not lost. **None is a regression; none re-opens P107.**
+
+**F1 — stale comment in `ai-dock-log.css:273` (`.ai-dock-ask-guard-glyph`).** The comment beside the
+rule claims **"5.4:1 dark / 3.6:1 light"**. Those are the ratios against `--bg-1`, not against the
+tint the glyph actually sits on. The true values on its own tint are **5.64 / 3.80**. **The verdict
+is unchanged** — this is a Bucket B glyph judged at the 3:1 graphics bar, and 3.80 light clears it —
+so nothing about the shipped pixel changes; only the annotation is wrong.
+
+**The implementer was right not to fix it, and this is the precedent to follow.** Touching
+`ai-dock-log.css` would have made a 10th changed file (breaking AC4's `9` prediction) and put an AC5
+byte-identical keep-file in the diff. **Numbered acceptance criteria outrank a table note**: never
+trade a checkable residue prediction for an in-passing comment fix. Correct F1 in the next increment
+that legitimately opens `ai-dock-log.css`, or as a standalone comment-only commit — not folded into a
+sweep with a residue prediction.
+
+**F2 — `.wt-copy-chip` renders `unchecked` in danger styling** (§10, `WorktreeCopyCandidates.tsx:107`).
+Component change; recommended `.wt-copy-chip--unknown` at `--text-2` on a 12% `--text-2` tint
+(5.80 / 6.22). Still open.
+
+**F3 — P108 seeds** (§9). Six seeds recorded, scope deliberately un-enumerated.

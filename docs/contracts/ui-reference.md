@@ -97,7 +97,30 @@ milestone's scope, plus **2 inside its own rule block** that the P105 enumeratio
 (`.asset-chip-sync`, `.asset-chip-drifted`). The count is replaced below by an enumerated list with
 `file:line`, so the next pass inherits evidence instead of a number. **A claim of app-wide closure
 is worthless without a per-declaration table behind it — and a bare count with no list behind it is
-the same failure in miniature.** The accent-fill shortfall is **closed** (P100); the accent-as-text
+the same failure in miniature.**
+
+**A SECOND FAILURE MODE, recorded 2026-09-03 (P107 landing). It does not increment the five above —
+the count of five means specifically "app-wide closure claimed without an enumeration", and diluting
+it would blunt what it teaches.** This one is the opposite shape: an item that *was* enumerated with
+`file:line`, and was still wrong. **`.settings-toggle-btn.is-active`
+(`settings-legacy-sections.css:101`) was credited below as a fixed-and-shipped P105 site, but the
+rule never matched anything** — the class had been orphaned in `7354aca` when `SettingsSegmented`
+replaced the one real toggle — and it was deleted outright in `2168057`. A grep enumeration proves a
+**declaration exists**; it does not prove the declaration **renders**.
+
+**The aggravating detail: this was known and then lost.** P105's own contract recorded the deadness
+three times — `docs/contracts/P102-P105-hue-audit-ui.md` **:543-544** ("matches nothing in the app
+today"), **:572-573** ("dead rule — probed, not rendered") and **:591** ("could not be verified in the
+harness"). The caveat was dropped when the result was summarised into *this* file, where it became an
+unqualified shipped-fix credit. So the root cause is not only "asserted without checking" but
+**evidence lost in transcription**: a hedge in a source contract must survive into the canonical doc,
+because the canonical doc is what the next pass actually reads.
+
+**The discipline is therefore three-part: (1) enumerate with `file:line`; (2) confirm each enumerated
+selector has a live DOM match** — grep the class in `src/**/*.tsx`, or see it in the harness —
+**before recording it as fixed; (3) carry every "unverified" / "dead rule" / "could not confirm"
+qualifier verbatim into this file.** An unverified fix on dead CSS is worse than no fix: it consumes
+the audit budget and leaves a false green in the record. The accent-fill shortfall is **closed** (P100); the accent-as-text
 (P105) and hardcoded-ink-on-hue-fill (P102) shortfalls **shipped 2026-09-02** in commit `0e5dcab`,
 enumerated in `docs/contracts/P102-P105-hue-audit-ui.md` §2–§3 and verified in the browser harness
 in both themes. All 93
@@ -221,13 +244,30 @@ A/M/D/U/R status-badge hue family (**P106**, §7):
   → `--text-1` at **11.46 / 13.25**); `.asset-chip-canonical`, `-new`, `-active`, and — found during
   implementation, in the same rule block and rendering in the same row — `-sync` (**4.02 / 3.61**)
   and `-drifted` (**4.86 / 3.50**), all six now `--text-1` on the tint (**8.99–9.67** dark /
-  **11.29–11.85** light) with a 35% hue border as the identity carrier (`ai-assets.css:122-162`);
+  **11.29–11.85** light), the word carrying the meaning and a 35% hue border as **decorative
+  delineation only** (`ai-assets.css:122-162`) — see the CORRECTION below; the sentence that stood
+  here called that border "the identity carrier", which is retracted and was never true (35%
+  measures **1.58 / 1.69**);
   `.right-pane-tab.active` (`forge-pr.css:37`, was **4.17 / 3.64** → P100 recipe 1: `--selection`
-  fill, `--text-1` at **9.36 / 13.29**, `inset 0 -2px 0 var(--accent)` bar);
-  `.settings-toggle-btn.is-active` (`settings-legacy-sections.css:101`, same recipe).
+  fill, `--text-1` at **9.36 / 13.29**, `inset 0 -2px 0 var(--accent)` bar).
 
-  **STILL LIVE — 16 sites, filed as P107 (enumerated 2026-09-02; this list is the evidence, do not
-  replace it with a count).** Every one is `color: var(--hue)` over a 12–16% tint of that same hue:
+  **CORRECTION 2026-09-03 (P107 landing) — this list was 8, and is now 7.** The eighth entry,
+  `.settings-toggle-btn.is-active` (`settings-legacy-sections.css:101`), was credited above as a
+  fixed and shipped P105 site. **That rule never matched anything.** The class was orphaned in
+  `7354aca`, when `SettingsSegmented` replaced the one real toggle that used it; the "fix" was applied
+  to dead CSS and never rendered a pixel. The rule was **deleted** in `2168057`. It is struck from the
+  shipped-fix list. See the second failure mode recorded in §2's tally — this is its first instance.
+
+  **P107 SHIPPED 2026-09-02 in `2168057` — this section is now history, not a work queue.** The
+  16-site list below is what P107's *first* pass surfaced; **the real population, once the full
+  three-pass search of `docs/contracts/P107-hue-over-own-tint-ui.md` §1 was run, was 38** — 17 fixed
+  (Bucket A), 19 judged compliant and kept untouched (Bucket B, glyph/bar at the 3:1 graphics bar),
+  1 fixed glyph (Bucket C, `.error-dismiss`), 1 handed to P106. **Quote 38, never 16.** The 16 below
+  is preserved only as the evidence trail showing how the count moved; the authoritative
+  per-declaration table with bucket, verdict and measured ratio is P107 §3.
+
+  **Was: "STILL LIVE — 16 sites, filed as P107."** Every one is `color: var(--hue)` over a 12–16%
+  tint of that same hue; all are now fixed or explicitly sanctioned in P107 §3:
 
   | # | File:line | Selector | Hue | Tint |
   |---|---|---|---|---|
@@ -252,9 +292,10 @@ A/M/D/U/R status-badge hue family (**P106**, §7):
   same-rule-block search structurally could not see) on 2026-09-02 — see
   `docs/contracts/P107-hue-over-own-tint-ui.md` §3, which supersedes the estimates that stood here.**
   Range: **3.35–6.46** dark / **3.48–4.17** light. **Every one fails 4.5:1 in the light theme**; 8
-  fail in both. The fix for all of them is the §11 pill recipe already applied to the `.asset-chip`
-  family: keep the tint, label to `--text-1` (**9.06–12.47** dark / **11.68–14.26** light on those
-  same tints), and carry the hue in a leading bar or glyph.
+  fail in both. **The fix shipped in `2168057`** — the §11 pill recipe already applied to the
+  `.asset-chip` family: keep the tint, label to `--text-1` (**9.06–12.47** dark / **11.68–14.26**
+  light on those same tints), and carry the hue in a leading bar or glyph. This remains the recipe for
+  any new hue-tinted chip; reach for it before inventing anything.
 
   **CORRECTION 2026-09-02 (P107 §7) — a 35% hue border does NOT clear the 3:1 graphics bar.** The
   sentence that stood here offered "a 35% border **or** a leading bar/glyph at the 3:1 graphics bar",
@@ -415,6 +456,9 @@ A/M/D/U/R status-badge hue family (**P106**, §7):
   `color-mix(in srgb, var(--selection) 92%, var(--text-1))` so hover still gives feedback
   (**7.55:1** dark / **11.42:1** light for a `--text-1` label). Check the base component's hover,
   focus, active and disabled rules — not just its default.
+  **The lesson is live; the example selector is not.** `.settings-toggle-btn.is-active` was deleted in
+  `2168057` (it had matched nothing since `7354aca`) — do not grep for it. The rule generalises to any
+  selected/active state rule, e.g. `.right-pane-tab.active` over `.right-pane-tab:hover`.
 - **A `var(--x)` that is not defined silently deletes its declaration.** `var(--border-0)` — never a
   real token — appeared 5× in `src/styles/conflicts.css` and computed to
   `border-style: none; border-width: 0px`, so the merge editor's split-label dividers simply did not
