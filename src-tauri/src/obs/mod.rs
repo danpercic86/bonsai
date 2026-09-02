@@ -23,6 +23,7 @@ pub mod metrics_file;
 mod metrics_keys;
 mod metrics_map;
 pub mod phase;
+pub mod raw_args;
 pub mod record;
 pub mod redact;
 pub mod scrub;
@@ -53,6 +54,10 @@ mod tests_purge;
 #[cfg(test)]
 #[path = "tests_strict.rs"]
 mod tests_strict;
+
+#[cfg(test)]
+#[path = "tests_raw_args.rs"]
+mod tests_raw_args;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};

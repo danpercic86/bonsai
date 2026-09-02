@@ -223,14 +223,32 @@ describe('redaction at the boundary (§12 row 2)', () => {
     expect(jsonl).not.toMatch(/(^|[^:\w])(ref|path|repo|remote|other)#\d/);
   });
 
-  it('includes values only in raw mode', async () => {
+  // A26 — raw mode widens IDENTIFIER fidelity only, and only for allow-listed
+  // positions keyed by parameter NAME (`src/obs/rawArgPolicy.json`).
+  it('includes allow-listed values, name-keyed, only in raw mode', async () => {
     const api = makeApi();
     const ipc = instrumentIpc(api);
     await enable({ ...DEV_ON, includeRawNames: true });
     await ipc.openRepo('D:/repos/x');
     await flushNow();
     const call = sunk.find((r) => r.kind === 'ipc.call');
-    expect(call?.args).toEqual({ '0': 'D:/repos/x' });
+    expect(call?.args).toEqual({ path: 'D:/repos/x' });
+    expect(call?.argsOmitted).toBeUndefined();
+  });
+
+  it('emits no args at all for a command the policy does not list (AC3)', async () => {
+    const api = makeApi();
+    const ipc = instrumentIpc(api);
+    await enable({ ...DEV_ON, includeRawNames: true });
+    // `getStatus` is a real IpcApi method, deliberately unlisted ⇒ default DENY.
+    await ipc.getStatus('r1');
+    await flushNow();
+    const call = sunk.find((r) => r.kind === 'ipc.call');
+    expect(call?.args).toBeUndefined();
+    expect(call?.argsOmitted).toBe(1);
+    // …and the record is still joinable: hash + shape survive (§B.5).
+    expect(call?.argsHash).toBeTruthy();
+    expect(call?.argsShape).toEqual({ '0': 'str' });
   });
 });
 

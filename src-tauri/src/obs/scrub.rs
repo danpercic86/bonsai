@@ -64,7 +64,7 @@ const TOKEN_PREFIXES: &[(&str, usize)] = &[
 /// `author` carrying a value is already a bug at the emit site; collapsing it to
 /// `<redacted:token>` is the fail-safe outcome. Narrowing the pattern to spare
 /// `author` would trade a harmless over-redaction for a real leak.
-fn is_sensitive_key(key: &str) -> bool {
+pub(super) fn is_sensitive_key(key: &str) -> bool {
     let k = key.to_ascii_lowercase();
     k.contains("token")
         || k.contains("secret")

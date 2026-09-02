@@ -20,13 +20,13 @@ import { attachSink, type LogSink } from './batcher';
 import { logRecord } from './log';
 import {
   argsShape,
-  canonicalJson,
   hashArgs,
   objectShape,
   redactionReady,
 } from './redact';
+import { buildRawArgs } from './rawArgPolicy';
 import { bindTrace, currentTrace, newSpan, withIpcSpan } from './trace';
-import type { ArgShape, IpcOutcome, SpanId } from './types';
+import type { ArgShape, IpcCallPayload, IpcOutcome, SpanId } from './types';
 
 /**
  * §2.3 — commands excluded from instrumentation because logging them would log
@@ -95,6 +95,19 @@ function errCodeOf(err: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * A26 — the raw-mode `args` fragment, or `{}` when the allow-list yields
+ * nothing. `argsOmitted` is emitted only when positive so a fully-included call
+ * stays byte-identical to before.
+ */
+function rawArgs(cmd: string, args: readonly unknown[]): Partial<IpcCallPayload> {
+  const { args: kept, omitted } = buildRawArgs(cmd, args);
+  return {
+    ...(kept ? { args: kept } : {}),
+    ...(omitted > 0 ? { argsOmitted: omitted } : {}),
+  };
+}
+
 function wrapMethod(target: object, cmd: string, fn: AnyFn): AnyFn {
   return function instrumented(this: unknown, ...args: unknown[]): unknown {
     const span = newSpan();
@@ -111,16 +124,12 @@ function wrapMethod(target: object, cmd: string, fn: AnyFn): AnyFn {
       argsShape: shape,
       span,
       ...(trace ? { trace } : {}),
-      // §7.1: argument VALUES only ever appear in `raw` mode. In `strict` the
-      // record carries the hash + shape and nothing else — a path argument
-      // leaves no substring behind.
-      ...(raw
-        ? {
-            args: JSON.parse(
-              canonicalJson(Object.fromEntries(args.map((v, i) => [String(i), v]))),
-            ) as Record<string, unknown>,
-          }
-        : {}),
+      // §7.1 + A26: argument VALUES only ever appear in `raw` mode, and even
+      // there only the allow-listed IDENTIFIER scalars of `rawArgPolicy.json`,
+      // keyed by parameter NAME. Free text (commit messages, search strings) and
+      // credentials are outside both modes; an unlisted command is DENY, so it
+      // behaves exactly like strict — hash + shape and nothing else.
+      ...(raw ? rawArgs(cmd, args) : {}),
     });
 
     latestSpan.set(cmd, span);

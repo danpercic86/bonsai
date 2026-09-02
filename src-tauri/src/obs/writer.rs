@@ -23,6 +23,7 @@ use std::sync::Arc;
 
 use bonsai_core::error::AppError;
 
+use super::raw_args;
 use super::record::{LogLevel, LogPayload, LogRecord, LogSource, RedactionMode, OBS_SCHEMA_VERSION};
 use super::redact::{self, Redactor};
 use super::strict;
@@ -275,6 +276,12 @@ impl LogWriter {
         if self.cfg.redaction == RedactionMode::Strict {
             strict::enforce(&mut value, &self.redactor);
         }
+        // A26 — raw-mode `args` is an allow-list, not a blanket include. Runs
+        // UNCONDITIONALLY (both modes) and BEFORE the credential scrubber, so a
+        // violating object is gone before anything can partially "rescue" it.
+        // The writer decides this alone, without the producer's table — see
+        // `obs/raw_args.rs`.
+        raw_args::enforce(&mut value);
         redact::scrub_value(&mut value);
         let mut line = serde_json::to_string(&value)
             .map_err(|e| AppError::Other(format!("cannot encode log record: {e}")))?;

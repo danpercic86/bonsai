@@ -59,8 +59,14 @@ export interface IpcCallPayload {
   cmd: string;
   argsHash: string;
   argsShape?: ArgShape;
-  /** Only ever populated when redaction === 'raw' (§7.1). */
+  /** Raw mode only; keyed by PARAM NAME, allow-listed IDENTIFIER scalars only
+   *  (A26, `src/obs/rawArgPolicy.json`). Never free text, never a credential. */
   args?: Record<string, unknown>;
+  /** Raw mode only, emitted only when > 0: positions the policy elided. */
+  argsOmitted?: number;
+  /** WRITER-SET ONLY. A producer must never emit it; Rust's serde struct has no
+   *  such field, so a forged one is dropped at deserialisation (A26 §D). */
+  argsPolicyViolation?: boolean;
 }
 
 export type IpcOutcome = 'ok' | 'err' | 'aborted' | 'superseded';
