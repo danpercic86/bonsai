@@ -382,14 +382,15 @@ export function RepoWorkspace({
   // Set when a restore is armed from the reflog overlay, so the completion
   // effect knows to re-fetch the (now stale) reflog after refreshAll.
   const reflogRestoreRef = useRef(false);
-  // Close mirrors (`*OpenRef` pattern) for the state-rendered overlays whose
-  // hooks sit BELOW `runRefreshRound` — history-search panel (P57c),
-  // commit-search bar (P50b), replay overlay (spec-007) — assigned during render
-  // further down. `null` = unwired, which the went-unusable teardown reports
-  // LOUDLY (it throws) rather than leaking the overlay: unusableRepoTeardown.ts.
-  const historySearchCloseRef = useRef<(() => void) | null>(null);
-  const commitSearchCloseRef = useRef<(() => void) | null>(null);
-  const replayExitRef = useRef<(() => void) | null>(null);
+  // Close mirrors (`*OpenRef` pattern) for the state-rendered overlays whose hooks
+  // sit BELOW `runRefreshRound`; each is assigned during render further down, and
+  // `null` = unwired, which the went-unusable teardown reports LOUDLY (it throws)
+  // rather than leaking the overlay — see repoWorkspace/unusableRepoTeardown.ts.
+  const historySearchCloseRef = useRef<(() => void) | null>(null); // P57c panel
+  const commitSearchCloseRef = useRef<(() => void) | null>(null); // P50b bar
+  const replayExitRef = useRef<(() => void) | null>(null); // spec-007 overlay
+  const composerCloseRef = useRef<(() => void) | null>(null); // P54c composer
+  const paletteCloseRef = useRef<(() => void) | null>(null); // P50c palette
   const [graph, setGraph] = useState<GraphLayout | null>(null);
   // P65b: the stream assembler's incremental edge index + total row count for the
   // active graph, threaded into GraphCanvas alongside `graph` (set together with
@@ -878,13 +879,13 @@ export function RepoWorkspace({
           const { info } = await ipc.openRepo(repoPath);
           if (!isUsableRepo(info)) {
             // Empty every slice AND close every state-rendered overlay — this
-            // component stays MOUNTED, so anything open lingers over the emptied
-            // pane. Body + rationale: repoWorkspace/unusableRepoTeardown.ts.
+            // component stays MOUNTED. Rationale: unusableRepoTeardown.ts.
             tearDownUnusableRepo({
               clearStatus, clearGraph, clearBranches, clearStashes, clearSubmodules,
               clearWorktrees, clearRemotes, clearTagSync, clearOpState, clearCompare,
               setBlame, setHistory, setReflog, blameReqId, historyReqId, reflogReqId,
-              closeAiPanel, historySearchCloseRef, commitSearchCloseRef, replayExitRef,
+              closeAiPanel, collapseDiffSlot, historySearchCloseRef, commitSearchCloseRef,
+              replayExitRef, composerCloseRef, paletteCloseRef,
             });
             return;
           }
@@ -916,7 +917,7 @@ export function RepoWorkspace({
       repoPath, refetchStatus, refetchGraph, refetchBranches, refetchStashes, refetchSubmodules,
       refetchWorktrees, refetchRemotes, refetchOpState, refetchCompare, refetchTagSync,
       clearStatus, clearGraph, clearBranches, clearStashes, clearSubmodules, clearWorktrees,
-      clearRemotes, clearTagSync, clearOpState, clearCompare, closeAiPanel, pushToast,
+      clearRemotes, clearTagSync, clearOpState, clearCompare, closeAiPanel, collapseDiffSlot, pushToast,
     ],
   );
 
@@ -1514,12 +1515,10 @@ export function RepoWorkspace({
     (path: string): Promise<FileDiff> => composerPreviewFileDiff(statusRef.current, repoId, path),
     [repoId],
   );
-  const composer = useCommitComposer({
-    repoId,
-    refreshAll,
-    pushToast,
-    previewFileDiff: previewComposerFileDiff,
-  });
+  const composer = useCommitComposer({ repoId, refreshAll, pushToast,
+    previewFileDiff: previewComposerFileDiff });
+  // `close`, not `escClose` (which only pops the preview layer); it self-guards while an apply runs.
+  composerCloseRef.current = composer.close;
   // Status badge per changed path for the composer file rows.
   const composerStatusByPath = useMemo(() => {
     const m = new Map<string, FileStatus>();
@@ -1538,6 +1537,7 @@ export function RepoWorkspace({
   // entry registry is assembled ONLY while open (its tag lookup scans the whole
   // graph) and merges the repo-scoped actions with App's `appCommands`.
   const palette = usePalette({ active });
+  paletteCloseRef.current = palette.close;
 
   // New-branch/new-worktree/search openers + dynamic palette rows — moved
   // verbatim to paletteCallbacks.ts (spec-007 size offset).

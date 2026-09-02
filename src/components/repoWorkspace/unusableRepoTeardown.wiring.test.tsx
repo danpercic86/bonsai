@@ -79,12 +79,42 @@ describe('runRefreshRound — the repo went unusable while open', () => {
     expect(deps.historySearchCloseRef.current).toBeTypeOf('function');
     expect(deps.commitSearchCloseRef.current).toBeTypeOf('function');
     expect(deps.replayExitRef.current).toBeTypeOf('function');
-
+    expect(deps.composerCloseRef.current).toBeTypeOf('function');
+    expect(deps.paletteCloseRef.current).toBeTypeOf('function');
     // …and the observable consequence: the open search bar is closed.
     await waitFor(() => expect(screen.queryByRole('search')).not.toBeInTheDocument());
     // The refresh did not fail on the way (an unwired mirror would toast this).
     expect(screen.queryByText(/Refresh failed/)).not.toBeInTheDocument();
     // Generous timeout: a whole-App mount under a loaded CI machine outruns
     // vitest's 5 s default (cf. Sidebar.churn.test.tsx).
+  }, 20_000);
+
+  it('closes the open center diff overlay', async () => {
+    // The center overlay is state-rendered too (`diffSlot !== null` in
+    // WorkspaceGraphPane, and `deriveOverlayMeta` NEVER returns null, so the
+    // second half of that gate never collapses it). Today the container's
+    // `clearStatus` collapses it transitively; this case pins the observable
+    // outcome at the real call site so a narrowing of that transitive call —
+    // which would leave `conflict:`/`ai-proposal:`/`pr:` slots up — fails here.
+    render(<App />);
+
+    // The status row's own expander button (badge + path text, no aria-label) —
+    // the sibling Stage/Blame/Discard buttons also carry the path in theirs.
+    const isReadmeRow = (_n: string, el: Element): boolean =>
+      el.classList.contains('file-row-main') && /README\.md/.test(el.textContent ?? '');
+    const row = await screen.findByRole('button', { name: isReadmeRow }, { timeout: 10_000 });
+    fireEvent.click(row);
+    expect(await screen.findByRole('region', { name: 'Diff: README.md' })).toBeInTheDocument();
+
+    vi.spyOn(mockIpc, 'openRepo').mockResolvedValue(GONE);
+    const refresh = await screen.findByRole('button', { name: 'Refresh' });
+    await waitFor(() => expect(refresh).toBeEnabled());
+    fireEvent.click(refresh);
+
+    await waitFor(() => expect(tearDownUnusableRepo).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Diff: README.md' })).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/Refresh failed/)).not.toBeInTheDocument();
   }, 20_000);
 });

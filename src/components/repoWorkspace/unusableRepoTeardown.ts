@@ -58,14 +58,42 @@ export interface UnusableRepoTeardownDeps {
   /** Spec-007 replay overlay (`useReplayController.onExit`) — rendered off the
    *  entry SNAPSHOT state, not the live graph, so it too survives `clearGraph()`. */
   replayExitRef: CloseMirror;
+  /** P3a center diff overlay (`collapseDiffSlot`): bumps `fileDiffReqId`, nulls
+   *  `diffSlot` and drops the P93 `prOverlayCtx`. Not a mirror — it is declared
+   *  above `runRefreshRound`. Listed EXPLICITLY even though the container's
+   *  `clearStatus` happens to call it too: that call is a status-panel concern
+   *  (a workdir slot must not outlive its snapshot), and the overlay's other
+   *  kinds — `conflict:` / `ai-proposal:` / `pr:` — do not depend on `status` at
+   *  all, so narrowing that transitive call would silently re-open this leak.
+   *  Idempotent, so the double call is harmless. */
+  collapseDiffSlot: () => void;
+  /** P54c commit composer (`useCommitComposer.close` — NOT `escClose`, which
+   *  only pops the preview layer). Refuses while an apply is in flight, which is
+   *  correct — a teardown must not force-close mid-write. Residual: only the
+   *  apply SUCCESS path closes the dialog and runs its own refresh round; on
+   *  failure it sets the error and leaves the dialog open with no refresh, so a
+   *  teardown racing a failing apply does leave it up (Esc works by then).
+   *  Rendered off `composer.open` in WorkspaceOverlays, so it survives every
+   *  slice clear. */
+  composerCloseRef: CloseMirror;
+  /** P50c command palette (`usePalette.close`). Closed even though a few of its
+   *  entries are repo-independent (open a repo, switch tab): the registry is
+   *  merged with the REPO-scoped actions, so an open palette over a dead repo
+   *  offers ops that would run against it. `close` is a bare `setOpen(false)`
+   *  with no side effects, and the hook already force-closes on tab deactivation
+   *  — an involuntary close is established behaviour here, and Ctrl/Cmd-K
+   *  reopens with the global entries intact. */
+  paletteCloseRef: CloseMirror;
 }
 
-/** The mirrored close helpers, in teardown order. Listed once so the loop and
- *  the error message stay in sync. */
-const CLOSE_MIRRORS = [
+/** The mirrored close helpers, in teardown order. Listed once so the loop, the
+ *  error message and the test that asserts every mirror fires stay in sync. */
+export const CLOSE_MIRRORS = [
   'historySearchCloseRef',
   'commitSearchCloseRef',
   'replayExitRef',
+  'composerCloseRef',
+  'paletteCloseRef',
 ] as const;
 
 /** Close every mirrored overlay, then fail LOUDLY if any mirror was never
@@ -96,10 +124,11 @@ function closeMirroredOverlays(deps: UnusableRepoTeardownDeps): void {
 }
 
 /** Empty every repo-scoped slice and close every overlay. Order is
- *  slices → read overlays → AI panel → mirrored overlays (history search,
- *  commit search, replay); each close helper invalidates its own in-flight
- *  request, so nothing pops back open. (Replay has nothing in flight — it
- *  animates the entry snapshot locally — so dropping the snapshot is enough.) */
+ *  slices → center diff overlay → read overlays → AI panel → mirrored overlays
+ *  (history search, commit search, replay, composer, palette); each close helper
+ *  invalidates its own in-flight request, so nothing pops back open. (Replay and
+ *  the palette have nothing in flight — replay animates the entry snapshot
+ *  locally and the palette issues no IPC — so dropping their state is enough.) */
 export function tearDownUnusableRepo(deps: UnusableRepoTeardownDeps): void {
   deps.clearStatus();
   deps.clearGraph();
@@ -111,6 +140,9 @@ export function tearDownUnusableRepo(deps: UnusableRepoTeardownDeps): void {
   deps.clearTagSync();
   deps.clearOpState();
   deps.clearCompare();
+  // The center diff overlay: `clearStatus` above already collapses it today, but
+  // only as a side effect of the workdir snapshot going away — see the field doc.
+  deps.collapseDiffSlot();
   // All three read-overlay siblings go together — an open reflog is just as
   // stale as an open blame once the repo is unusable.
   clearReadOverlays({

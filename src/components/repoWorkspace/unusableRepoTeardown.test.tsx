@@ -22,13 +22,16 @@ import { DEFAULT_UI_SETTINGS } from '../../settings/defaults';
 import { effectiveMetrics } from '../../graph/metrics';
 import { graphDisplayOf } from './displayModels';
 import { mockIpc } from '../../ipc/mock';
-import { tearDownUnusableRepo } from './unusableRepoTeardown';
+import { CLOSE_MIRRORS, tearDownUnusableRepo } from './unusableRepoTeardown';
 import { useAiPanel } from './useAiPanel';
 import { useCommitSearch } from './useCommitSearch';
+import { useCommitComposer } from './useCommitComposer';
 import { useHistorySearch } from './useHistorySearch';
+import { usePalette } from './usePalette';
 import { useReplayController } from './replayProps';
 import { stateSetter } from '../../test/actionHookKit';
 import type {
+  ComposeProposal,
   GraphLayout,
   GraphNode,
   HistoryAnswer,
@@ -80,6 +83,8 @@ function makeDeps(over: Partial<UnusableRepoTeardownDeps> = {}) {
   const historySearchClose = vi.fn();
   const commitSearchClose = vi.fn();
   const replayExit = vi.fn();
+  const composerClose = vi.fn();
+  const paletteClose = vi.fn();
   const deps: UnusableRepoTeardownDeps = {
     clearStatus: vi.fn(),
     clearGraph: vi.fn(),
@@ -98,12 +103,18 @@ function makeDeps(over: Partial<UnusableRepoTeardownDeps> = {}) {
     historyReqId: { current: 0 },
     reflogReqId: { current: 0 },
     closeAiPanel: vi.fn(),
+    collapseDiffSlot: vi.fn(),
     historySearchCloseRef: { current: historySearchClose },
     commitSearchCloseRef: { current: commitSearchClose },
     replayExitRef: { current: replayExit },
+    composerCloseRef: { current: composerClose },
+    paletteCloseRef: { current: paletteClose },
     ...over,
   };
-  return { deps, blame, history, reflog, historySearchClose, commitSearchClose, replayExit };
+  return {
+    deps, blame, history, reflog,
+    historySearchClose, commitSearchClose, replayExit, composerClose, paletteClose,
+  };
 }
 
 describe('tearDownUnusableRepo — state slices', () => {
@@ -142,12 +153,37 @@ describe('tearDownUnusableRepo — AI output panel', () => {
 });
 
 describe('tearDownUnusableRepo — mirrored overlays', () => {
-  it('calls every ref-mirrored close helper (history search, commit search, replay)', () => {
-    const { deps, historySearchClose, commitSearchClose, replayExit } = makeDeps();
+  it('calls every ref-mirrored close helper', () => {
+    const { deps } = makeDeps();
     tearDownUnusableRepo(deps);
-    expect(historySearchClose).toHaveBeenCalledTimes(1);
-    expect(commitSearchClose).toHaveBeenCalledTimes(1);
-    expect(replayExit).toHaveBeenCalledTimes(1);
+    // Two halves, because driving purely off CLOSE_MIRRORS would make DELETING
+    // an entry invisible (the loop would just iterate less): pin the list
+    // contents, then assert every listed mirror actually fired. A 6th mirror
+    // added to the module fails the first half until it is wired here too.
+    expect([...CLOSE_MIRRORS]).toEqual([
+      'historySearchCloseRef',
+      'commitSearchCloseRef',
+      'replayExitRef',
+      'composerCloseRef',
+      'paletteCloseRef',
+    ]);
+    for (const name of CLOSE_MIRRORS) {
+      expect(deps[name].current, name).toHaveBeenCalledTimes(1);
+    }
+  });
+});
+
+describe('tearDownUnusableRepo — center diff overlay', () => {
+  it('collapses the diff slot in its OWN right, not via clearStatus', () => {
+    // The container's `clearStatus` also calls `collapseDiffSlot` today, so the
+    // overlay is not currently leaking (see the module doc). This asserts the
+    // teardown does not DEPEND on that: `makeDeps`'s `clearStatus` is a bare
+    // spy — the status-only contract this interface actually promises — and the
+    // slot still collapses. `conflict:` / `ai-proposal:` / `pr:` slots read
+    // nothing from `status`, so without this call they would outlive the repo.
+    const { deps } = makeDeps();
+    tearDownUnusableRepo(deps);
+    expect(deps.collapseDiffSlot).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -350,5 +386,83 @@ describe('the replay-overlay leak (real useReplayController.onExit)', () => {
     act(() => tearDownUnusableRepo(deps));
     expect(result.current.mode).toBeNull();
     expect(result.current.open).toBe(false);
+  });
+});
+
+describe('the commit-composer leak (real useCommitComposer.close)', () => {
+  type ComposerDeps = Parameters<typeof useCommitComposer>[0];
+
+  const proposal: ComposeProposal = {
+    groups: [{ files: ['a.ts'], message: 'feat: a' }],
+    unassigned: [],
+    notes: [],
+    costUsd: null,
+  };
+
+  it('closes the dialog and drops the in-flight proposal', async () => {
+    const d = deferred<ComposeProposal>();
+    vi.spyOn(mockIpc, 'aiComposeCommits').mockReturnValue(d.promise);
+    const initial: ComposerDeps = {
+      repoId: '/mock/repo',
+      refreshAll: vi.fn(),
+      pushToast: vi.fn(),
+      previewFileDiff: vi.fn(),
+    };
+    const { result } = renderHook((p: ComposerDeps) => useCommitComposer(p), {
+      initialProps: initial,
+    });
+
+    act(() => result.current.openComposer());
+    // Reachable: WorkspaceOverlays renders ComposerDialog off `composer.open`.
+    expect(result.current.open).toBe(true);
+    expect(result.current.loading).toBe(true);
+
+    // The hook reads NO repo slice — it takes only repoId + callbacks, and has
+    // no effect that could close it — so no slice clear can reach it. A dialog
+    // offering "Create N commits" against a dead repo is exactly the leak; only
+    // the teardown's close call ends it. (No adversarial rerender here: no prop
+    // change could close this dialog, so one would be theater.)
+
+    const { deps } = makeDeps({ composerCloseRef: { current: result.current.close } });
+    act(() => tearDownUnusableRepo(deps));
+    expect(result.current.open).toBe(false);
+    expect(result.current.loading).toBe(false);
+
+    // close() -> resetState() bumped reqIdRef, so the late proposal is dropped.
+    // `groups` is the load-bearing half — the propose resolver never calls
+    // setOpen, so reopening was never the risk here.
+    await act(async () => {
+      d.resolve(proposal);
+      await d.promise;
+    });
+    expect(result.current.open).toBe(false);
+    expect(result.current.groups).toEqual([]);
+  });
+});
+
+describe('the command-palette leak (real usePalette.close)', () => {
+  it('closes an open palette on an ACTIVE tab', () => {
+    const { result, rerender } = renderHook((p: { active: boolean }) => usePalette(p), {
+      initialProps: { active: true },
+    });
+
+    act(() => result.current.toggle());
+    // Reachable: WorkspaceOverlays passes `paletteOpen` straight to CommandPalette.
+    expect(result.current.open).toBe(true);
+
+    // The hook's ONE force-close path is deactivation — prove that, then prove
+    // it does not cover this case: reopen on a tab that stays active and the
+    // palette survives, registry still merging the repo-scoped actions with
+    // App's global ones.
+    rerender({ active: false });
+    expect(result.current.open).toBe(false);
+    rerender({ active: true });
+    act(() => result.current.toggle());
+    expect(result.current.open).toBe(true);
+
+    const { deps } = makeDeps({ paletteCloseRef: { current: result.current.close } });
+    act(() => tearDownUnusableRepo(deps));
+    expect(result.current.open).toBe(false);
+    expect(result.current.openRef.current).toBe(false);
   });
 });
