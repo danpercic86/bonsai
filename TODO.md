@@ -115,6 +115,41 @@ P95/P98/P74 skipped.
    contract gap, not scope creep — **a contrast fix that is out-specified by an existing rule is a
    no-op that still passes a grep**, which is worth remembering as a review heuristic.
 
+### Design review — **APPROVE** with one MUST-FIX, and the designer named it as its OWN defect
+
+`ui-designer` verified the grep invariants independently (7 / 18 / 0 / 1, tokens in both blocks,
+all five ratios recomputed to ±0.01) and did the visual half the implementing agent could not:
+**both themes, 1440×900, computed styles with tints flattened to their composited backdrop.** Every
+measured pair clears its bar — pills 4.80-6.24 dark / 4.93-5.08 light, `.right-pane-tab.active`
+9.36/13.29, the six `.asset-chip` modifiers 8.99-9.67 / 11.29-11.85. **AC12 confirmed by
+measurement:** all seven chip variants *and* the bare base measure exactly **19.9375 px**, so the
+transparent base border really does hold outer height.
+
+**MUST-FIX — `.forge-connect-link` (`forge-pr.css:592`) lost its RESTING distinction.** It is an
+inline `<a>` in a `--text-2` `<p>` with `text-decoration: none` at rest. Because `--accent-strong` is
+tuned to sit *near* `--text-2`, the swap drove link-vs-prose luminance **1.43 → 1.02** dark and
+**1.72 → 1.28** light; WCAG G183 wants ≥3:1 when colour is the only resting carrier. **The designer
+attributed this to its own contract** — B6 claimed "the underline is the second carrier and stays",
+which was wrong about the resting state, while the implementer's code comment ("hover underline") was
+accurate. Fix is `text-decoration: underline` at rest; routed to the in-flight senior-dev.
+
+**Both deviations ACCEPTED, and both traced to contract gaps rather than implementer licence.**
+(1) The six-chip expansion was **mandatory**: `ProfileActivateDialog.tsx:225-229` renders "new file"
+beside "changed" and "unchanged" *in one row*, so fixing 4 of 6 would have shipped two label
+treatments inside a single line of a single dialog. The miss was the contract keying its enumeration
+on `color: var(--accent)`, so C3b was hand-added rather than swept. (2) The added hover rule closed a
+real gap — §3.6 claimed per-call-site hover coverage but never walked the base component's cascade.
+Both are now generalised into `ui-reference.md` §2 as **the specificity trap**, sibling to the
+child-rule trap.
+
+**The methodological correction behind the wrong count is the durable part.** §2's "6 live instances"
+is replaced by a **16-row table carrying `file:line`, selector, hue and tint percentage**, plus a
+note on `.checks-rollup-pill--pending` / `.graph-filter-chip-stale`: **descendant-selector cases
+where the ink and the tint live in different rules — which a same-rule-block grep can never find.**
+That is why the count was wrong, and it is the search that P107 must actually run. The failed-claim
+tally in §2 is now **FIVE**, the fifth being that file's own figure, and the "no AA colour shortfall
+remains" line is replaced with an explicit prohibition on ever writing it again.
+
 ### Review round 1 — both reviewers say **request changes**, one MUST-FIX each
 
 **Code review MUST-FIX — the D4 fix was DEAD CSS, and this is the finding that justifies the whole
@@ -269,6 +304,43 @@ equivalence check exposed, because `import.meta.env.DEV` code is absent from a p
 `playwright.config.ts:38` → `const BUNDLE = process.env.E2E_BUNDLE !== '0'`, plus inverting the
 `--e2e-bundle` flag in `gate.mjs`. **To decide: time one `E2E_BUNDLE=1` run from a cold build** and
 compare against the 162 s dev figure including build.
+
+---
+
+## 🧭 DEAD CSS — `.settings-toggle-btn.is-active` matches nothing — DECISION NEEDED (found 2026-09-02)
+
+Found independently by **both** the code reviewer and the designer, which is why it is recorded as
+established rather than suspected: no component composes `is-active` onto `.settings-toggle-btn`.
+All 29 call sites are static `className="btn-secondary settings-toggle-btn"`. The `is-active`
+consumers are `.conflict-editor-mode-btn`, `.search-toggle` and `.command-palette-option` only.
+
+So P105's C5 recipe change **and** the hover rule added in `0e5dcab` are both **correct and both
+currently dead**, and AC6/AC17 cannot be closed for C5 by observation.
+
+**Two dispositions, and they are not equivalent:**
+- **(a) Wire it up** — `ui-designer` recommends this: several `settings-toggle-btn` call sites
+  (`ProfileManager`, `SettingsMcpSection`) are segmented controls that clearly *want* a selected
+  state. If so, **the real defect is that those toggles never indicate their state to the user** —
+  a product bug, not a CSS one.
+- **(b) Delete both rules** as dead styling.
+
+**Held for the user**: (a) changes what the app does and is not a contrast fix, so it does not
+belong inside this milestone. The CSS stays (it is correct, and harmless while unmatched).
+
+---
+
+## 📋 P106 — priority RAISED (2026-09-02, on measurement)
+
+Filed earlier from `--danger`/`--success`/`--warning` letter badges being *text* at the 4.5:1 bar.
+The design review then measured `.file-status-deleted .file-badge` at **4.41 dark on `--bg-1`** —
+**it fails at rest, not merely on hover**, which is worse than §3.5 implied when P106 was filed.
+Treat as the next hue item after P107.
+
+### Also filed from the design review (non-blocking)
+- The 90-char branch-name chip becomes a 50 px two-line stadium at `border-radius: 999px`.
+  Pre-existing; newly *visible* because the milestone added the fixture that reaches it.
+- `ui-reference.md` is growing fast (§2 now carries a 16-row evidence table). Worth a
+  `docs-curator` pass; `TODO.md` is also past 1400 lines against its ~300-line target.
 
 ---
 

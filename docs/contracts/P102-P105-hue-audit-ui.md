@@ -509,6 +509,86 @@ Two independently reviewable increments on `feat/p91-observability`:
 - **Both** — AC14–AC17 and the three USER CHECKPOINT criteria (AC18–AC20) run once, at the end.
 
 Follow-ups to file, not to fix here: **P106** (status-badge hue family as text, §3.5), the
-`settings-primitives.css` switch-track `filter` NIT (§2.3), `.wt-copy-chip` (`dialogs-forms.css:135`
-— `--danger` on its own 16% tint, the sixth hue-over-own-tint instance, out of both sections' greps),
-and the `forge-pr.css` split (§9).
+`settings-primitives.css` switch-track `filter` NIT (§2.3), **P107** (the 16 remaining
+hue-over-own-tint sites, enumerated in `ui-reference.md` §2 — `.wt-copy-chip` is one of them), and
+the `forge-pr.css` split (§9).
+
+---
+
+## 11. Implementation deviations — adjudicated (ui-designer, 2026-09-02)
+
+Both deviations the implementer flagged are **ACCEPTED**. Neither was overreach; both are gaps in
+this contract.
+
+**D-1 — six `.asset-chip-*` modifiers fixed instead of four. ACCEPTED; it was mandatory, not
+optional.** `.asset-chip-sync` (`--success`, **4.02 dark / 3.61 light**) and `.asset-chip-drifted`
+(`--warning`, **4.86 / 3.50**) are the same hue-over-own-tint defect, in the same rule block, and
+they render **in the same row** as the chips §3.4 did fix: `ProfileActivateDialog.tsx:225-229`
+prints "new file" (`-new`, fixed) beside "changed" (`-drifted`) and "unchanged" (`-sync`), and
+`ProfileManager.tsx:251-254` prints "active" (`-active`, fixed) beside a `-muted` chip. Fixing 4 of
+6 would have shipped two label treatments **inside one line of one dialog** — precisely the split
+§3.4's own C3b reasoning forbids. The miss is this contract's: §3.1's enumeration keyed on
+`color: var(--accent)`, so C3b was hand-added rather than swept, and a hue-family sweep of the block
+was never run. Recorded in `ui-reference.md` §2 as failed-claim #5.
+
+**D-2 — the added `.settings-toggle-btn.is-active:hover:not(:disabled)` rule. ACCEPTED; the gap is
+in this contract, not in the implementation.** The specificity arithmetic is correct and verified:
+`.btn-secondary:hover:not(:disabled)` (`updates.css:107`) is **(0,3,0)** and out-specifies C5's
+`.settings-toggle-btn.is-active` at **(0,2,0)**, so the moment C5 replaced `color: var(--accent)`
+with `background: var(--selection)`, the selected fill would have been overwritten by `--bg-3` on
+hover and the state would have hung on the border alone. §3.6 claimed to cover "default / hover /
+active / selected" per call site and did not walk the base component's cascade for C5. Generalised
+into `ui-reference.md` §2 as **the specificity trap**, sibling to the child-rule trap.
+
+**Caveat, found during the design review and not known to either party:** `.settings-toggle-btn.is-active`
+**matches nothing in the app today** — no component composes `is-active` onto `.settings-toggle-btn`
+(the `is-active` consumers are `.conflict-editor-mode-btn`, `.search-toggle` and
+`.command-palette-option`). Both the C5 rule and the new hover rule are therefore correct but
+currently dead, and AC17 cannot reach them in the harness. Keep the rules — they are right for when
+the class is wired up — and file the dead-CSS question separately.
+
+---
+
+## 12. AC17 — harness verification record (ui-designer, 2026-09-02)
+
+`pnpm dev:mock`, viewport 1440×900, both themes, computed styles read from the live DOM with the
+composited backdrop resolved (translucent tints flattened before measuring).
+
+| Surface | Dark | Light | Verdict |
+|---|---|---|---|
+| `.pr-state-open` | 6.24 | 5.08 | ✓ |
+| `.pr-state-merged` | 5.30 | 5.05 | ✓ |
+| `.pr-state-closed` | 4.80 | 4.93 | ✓ |
+| `.pill-detached` | 4.80 | 4.93 | ✓ |
+| `.btn-danger` default | 4.80 | 4.93 | ✓ |
+| `.btn-danger` hover (92% mix) | 5.18 | 5.49 | ✓ |
+| `.diff-stage-float button` hover | 5.99 | 5.15 | ✓ |
+| `.right-pane-tab.active` (C4) | 9.36 | 13.29 | ✓ + `inset 0 -2px 0 --accent` bar present |
+| `.branch-name-chip` (C1) | 11.46 | 13.25 | ✓ |
+| `.file-status-renamed .file-badge` (B16) | 7.13 | 5.81 | ✓ |
+| `.forge-connect-link` (B6) vs `--bg-1` | 7.13 | 5.81 | ✓ (but see MUST-FIX below) |
+| `.asset-chip-*` ink, all six | 8.99–9.67 | 11.29–11.85 | ✓ |
+| `.asset-chip-muted` ink | 5.32 | 5.88 | ✓ |
+| `.settings-toggle-btn.is-active` (C5) | 9.36 | 13.29 | ✓ *(dead rule — probed, not rendered)* |
+| `.settings-toggle-btn.is-active:hover` | 7.55 | 11.42 | ✓ *(dead rule — probed, not rendered)* |
+
+**AC12 (chip height) PASSES:** all seven `.asset-chip` variants plus the bare base measure exactly
+**19.9375 px** in both themes — the `border: 1px solid transparent` base works.
+
+**Chip border visibility:** the 35% hue border measures **1.69–1.98:1** vs `--bg-2` dark and
+**1.37–1.59:1** light. That is *above* the app's own hairline baseline (`--border` on `--bg-1` is
+**1.25:1** in both themes), and each chip carries a word label, so the border is decorative
+delineation and this is compliant. Recorded so it is not re-litigated.
+
+**Fixtures verified reachable.** The closed-PR fixture (`src/ipc/fixtures/forge.ts:218`) makes all
+three state pills render simultaneously under the PR panel's **All** filter — confirmed. Its
+~200-char title ellipsizes on one line (`white-space: nowrap` + `text-overflow: ellipsis`,
+scrollWidth 301 vs width 269) and the `flex: none` pill beside it does not shrink. The 90-char
+branch-name fixture (`src/ipc/mock/handlers/ai.ts:283`) wraps `.branch-name-chip` at the container
+(328 px) and breaks at a `/`, not mid-token — but the chip grows to a **50 px two-line stadium**,
+which reads oddly at `border-radius: 999px`. NIT, pre-existing, not introduced here.
+
+**Could not be verified in the harness:** `.settings-toggle-btn.is-active` (dead class, §11);
+the updater panel (`updates.css` — Tauri-only, AC18); `.asset-chip` in situ (the AI-assets and
+profile dialogs were not reachable in the time budget — the chips were measured via a probe node
+under a `--bg-2` host, which is the same cascade).
