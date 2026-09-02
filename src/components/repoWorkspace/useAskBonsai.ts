@@ -28,6 +28,10 @@ export interface UseAskBonsai {
   cancelAskBonsai: () => void;
   confirmProposedOp: () => Promise<void>;
   cancelProposedOp: () => void;
+  /** P38: drop BOTH armed surfaces (the NL input and the proposal dialog) for the
+   *  repo-went-unusable teardown. Mirrored into a ref by the container because
+   *  this hook sits BELOW `runRefreshRound`. */
+  tearDownAsk: () => void;
 }
 
 export function useAskBonsai({
@@ -117,6 +121,20 @@ export function useAskBonsai({
     // Ignore cancel while the confirmed op is dispatching (keep the modal up).
     if (!opDispatching) setPendingProposedOp(null);
   }, [opDispatching]);
+
+  // P38: the repo went unusable while this pipeline was armed. Both surfaces are
+  // rendered purely off state, so neither is touched by any slice clear: the NL
+  // input goes (its in-flight plan invalidated by the req-id bump in
+  // `cancelAskBonsai`), and so does the proposal — a ProposedOpDialog is a git op
+  // one click from dispatch, the highest-value thing here NOT to leave up over a
+  // dead repo. Reuses `cancelProposedOp`'s guard: while a CONFIRMED op is
+  // dispatching the modal stays up (a teardown must not force-close mid-write) —
+  // `confirmProposedOp`'s own `finally` clears it.
+  const tearDownAsk = useCallback(() => {
+    cancelAskBonsai();
+    cancelProposedOp();
+  }, [cancelAskBonsai, cancelProposedOp]);
+
   return {
     askOpen,
     askBusy,
@@ -127,5 +145,6 @@ export function useAskBonsai({
     cancelAskBonsai,
     confirmProposedOp,
     cancelProposedOp,
+    tearDownAsk,
   };
 }

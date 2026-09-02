@@ -9,7 +9,8 @@
 //
 // Extracted verbatim from RepoWorkspace; the container destructures the returned
 // object under the ORIGINAL names, so no call site changed.
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { COMMIT_PUSH_CANCELED } from '../commitPushSignal';
 import type { Dispatch, SetStateAction } from 'react';
 import type { LineSelection, RebaseTodoOp, ResetMode, UndoPlan } from '../../ipc';
 import type { PendingForceSubmodule } from '../dialogs/SubmoduleDialogs';
@@ -166,6 +167,11 @@ export interface UseWorkspaceDialogState {
    *  with the armed flags declared outside it to derive `dialogOpen`, which
    *  suppresses the workspace keyboard shortcuts. */
   anyDialogArmed: boolean;
+  /** P38: return every member above to its initial value AND settle the parked
+   *  Commit & Push promise — the repo-went-unusable teardown
+   *  (`unusableRepoTeardown.ts`). See the implementation for the resolver's
+   *  settle choice and for the residual re-arm race. */
+  resetArmedDialogs: () => void;
 }
 
 export function useWorkspaceDialogState(): UseWorkspaceDialogState {
@@ -293,6 +299,79 @@ export function useWorkspaceDialogState(): UseWorkspaceDialogState {
     worktreeContextOpen ||
     rebasePlan !== null;
 
+  /** P38: return EVERY flag this hook owns to its initial value. Called from the
+   *  repo-went-unusable teardown (`unusableRepoTeardown.ts`): RepoWorkspace stays
+   *  MOUNTED when `.git` disappears under it, so an armed confirm would otherwise
+   *  sit over the emptied pane still offering a DESTRUCTIVE op — reset, discard,
+   *  force-push, delete-branch/remote, drop-stash — against a repo that is gone.
+   *
+   *  ONE reset instead of 39 teardown fields: a required-field deps bag buys
+   *  call-site completeness, not DISCOVERY, and the call site cannot enumerate
+   *  members it does not own. The forcing function lives in
+   *  `useWorkspaceDialogState.reset.test.tsx`, which enumerates this hook's
+   *  returned keys — a 40th flag added later fails THERE instead of silently
+   *  escaping the teardown, which is how three rounds of this bug happened.
+   *
+   *  Residual (same class as the commit composer, 338d71f): a MUTATION reply that
+   *  arms a dialog AFTER this ran — `setPendingNonFfPull`, `setRebasePlan`,
+   *  `setPendingReservedStash`, `setPendingUndo`, `setPendingForceSubmodule` —
+   *  can re-arm one. Each is a user-initiated op's own reply rather than a poll,
+   *  and Esc closes it; a stale-guard per flow would need a reqId per flow. The
+   *  prefill-style flows are already immune: cherry-pick's late reply is a
+   *  functional update guarded on `prev !== null`, so it no-ops after this. */
+  const resetArmedDialogs = useCallback(() => {
+    setAbortConfirmOpen(false);
+    setPendingDeleteBranch(null);
+    setPendingRebase(null);
+    setPendingDeleteRemote(null);
+    setPendingDropStash(null);
+    setPendingReservedStash(null);
+    setPendingReset(null);
+    setPendingDiscard(null);
+    setPendingDiscardForce(null);
+    setPendingCommitPush(null);
+    setPendingForcePush(false);
+    setPendingHunkDiscard(null);
+    setPendingLineDiscard(null);
+    setPendingCreateBranch(null);
+    setPendingRenameBranch(null);
+    setPendingAddSubmodule(false);
+    setPendingDeinitSubmodule(null);
+    setPendingRemoveSubmodule(null);
+    setPendingForceSubmodule(null);
+    setPendingNonFfPull(null);
+    setPendingUndo(null);
+    setPendingCherrypick(null);
+    setPendingCreateTag(null);
+    setPendingDeleteTag(null);
+    setPendingDeleteRemoteTag(null);
+    setPendingForceMoveTag(null);
+    setPendingAddRemote(false);
+    setPendingRenameRemote(null);
+    setPendingEditUrl(null);
+    setPendingRemoveRemote(null);
+    setStaleCleanupOpen(false);
+    setNewWorktreeOpen(false);
+    setWhatChangedOpen(false);
+    setChangelogOpen(false);
+    setPendingWorktreeRemove(null);
+    setPendingWorktreeLock(null);
+    setWorktreeContextOpen(false);
+    setRebasePlan(null);
+    setRebasePlanError(null);
+    // The one paired resolver in this hook (the workspace's other two parked
+    // promises — the hook gate and the hook disclosure — own their own cancels).
+    // Dropping `pendingCommitPush` alone would leave CommitBox awaiting a promise
+    // NOTHING can settle any more: only that dialog's own buttons resolve it.
+    // Settle it exactly as Cancel does (`handleCancelCommitPush`) — REJECT with
+    // COMMIT_PUSH_CANCELED, not resolve: nothing was committed, and the sentinel
+    // is what makes CommitBox keep the typed message and show no error banner.
+    // Resolving would read as "commit succeeded" and clear the user's draft.
+    const resolver = commitPushResolver.current;
+    commitPushResolver.current = null;
+    resolver?.reject(COMMIT_PUSH_CANCELED);
+  }, []);
+
   return {
     abortConfirmOpen,
     setAbortConfirmOpen,
@@ -374,5 +453,6 @@ export function useWorkspaceDialogState(): UseWorkspaceDialogState {
     rebasePlanError,
     setRebasePlanError,
     anyDialogArmed,
+    resetArmedDialogs,
   };
 }

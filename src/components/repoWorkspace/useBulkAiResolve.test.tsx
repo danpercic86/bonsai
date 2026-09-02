@@ -253,3 +253,44 @@ describe('useBulkAiResolve — cancel-all is ONE cancel', () => {
     expect(result.current.bulk.control.shown).toBe(false);
   });
 });
+
+describe('useBulkAiResolve — the P38 repo-went-unusable teardown', () => {
+  it('survives the conflicts list emptying, so ONLY the mirrored onCancel closes it', () => {
+    // Why this hook needs a close mirror in `unusableRepoTeardown.ts`: the confirm
+    // is rendered UNCONDITIONALLY by WorkspaceDialogs and gated purely on
+    // hook-local `pending`, so the teardown's `clearOpState()` — which empties the
+    // container's `conflicts` — does NOT close it. Left up over a dead repo, its
+    // Confirm starts an AI run that reads and STAGES files on the stale snapshot.
+    const deps = makeDeps({ conflictPaths: THREE.map((c) => c.path) });
+    const { result, rerender } = renderHook(
+      ({ conflicts }: { conflicts: ConflictEntry[] }) => {
+        const runs = useAiRuns(deps);
+        return useBulkAiResolve({
+          conflicts,
+          aiEligible: true,
+          aiConflictAutonomy: 'proposeReview',
+          aiRuns: runs,
+        });
+      },
+      { initialProps: { conflicts: THREE } },
+    );
+    act(() => result.current.control.onClick());
+    expect(result.current.confirm.open).toBe(true);
+
+    rerender({ conflicts: [] });
+    // The BUTTON goes with the conflicts; the modal does not — that is the leak.
+    expect(result.current.control.shown).toBe(false);
+    expect(result.current.confirm.open).toBe(true);
+    // And it still holds the STALE snapshot, which is what `onConfirm` would
+    // hand to `startBulkRun` — the paths, not just the open flag, are the risk.
+    // 2, not 3: `paths` is the AI-RESOLVABLE subset, so THREE's `deletedByThem`
+    // entry was never in the snapshot (isAiResolvableKind filters it).
+    expect(result.current.confirm.paths).toEqual(['src/auth.ts', 'src/locales/de.json']);
+
+    // `onCancel` is what the teardown calls through `bulkAiCancelRef`: a bare
+    // `setPending(null)` — nothing parked, nothing in flight (a run only starts on
+    // Confirm), so dropping the snapshot is the whole job.
+    act(() => result.current.confirm.onCancel());
+    expect(result.current.confirm.open).toBe(false);
+  });
+});

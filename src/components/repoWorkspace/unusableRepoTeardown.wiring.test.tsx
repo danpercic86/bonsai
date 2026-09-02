@@ -81,12 +81,47 @@ describe('runRefreshRound — the repo went unusable while open', () => {
     expect(deps.replayExitRef.current).toBeTypeOf('function');
     expect(deps.composerCloseRef.current).toBeTypeOf('function');
     expect(deps.paletteCloseRef.current).toBeTypeOf('function');
+    expect(deps.askTeardownRef.current).toBeTypeOf('function');
+    expect(deps.bulkAiCancelRef.current).toBeTypeOf('function');
     // …and the observable consequence: the open search bar is closed.
     await waitFor(() => expect(screen.queryByRole('search')).not.toBeInTheDocument());
     // The refresh did not fail on the way (an unwired mirror would toast this).
     expect(screen.queryByText(/Refresh failed/)).not.toBeInTheDocument();
     // Generous timeout: a whole-App mount under a loaded CI machine outruns
     // vitest's 5 s default (cf. Sidebar.churn.test.tsx).
+  }, 20_000);
+
+  it('disarms an armed DESTRUCTIVE confirm (Discard changes)', async () => {
+    // The armed-dialog half of the teardown, pinned at the real call site the way
+    // the search bar and the diff overlay are. `pendingDiscard` lives in
+    // `useWorkspaceDialogState`, which nothing in `runRefreshRound` touched before
+    // `resetArmedDialogs`: the ConfirmDialog is rendered purely off that flag, so
+    // it survived every slice clear and sat over the emptied pane still offering
+    // to permanently revert files in a repo that no longer exists.
+    render(<App />);
+
+    const discard = await screen.findByRole(
+      'button',
+      { name: 'Discard changes to README.md' },
+      { timeout: 10_000 },
+    );
+    fireEvent.click(discard);
+    expect(screen.getByRole('dialog', { name: 'Discard changes' })).toBeInTheDocument();
+
+    vi.spyOn(mockIpc, 'openRepo').mockResolvedValue(GONE);
+    const refresh = await screen.findByRole('button', { name: 'Refresh' });
+    await waitFor(() => expect(refresh).toBeEnabled());
+    fireEvent.click(refresh);
+
+    await waitFor(() => expect(tearDownUnusableRepo).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Discard changes' })).not.toBeInTheDocument(),
+    );
+    // …and the workspace is still MOUNTED, so the dialog is gone because the
+    // teardown disarmed it — not because the whole pane went away (RepoWorkspace
+    // deliberately stays mounted on a C4-class event; that is the premise).
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+    expect(screen.queryByText(/Refresh failed/)).not.toBeInTheDocument();
   }, 20_000);
 
   it('closes the open center diff overlay', async () => {

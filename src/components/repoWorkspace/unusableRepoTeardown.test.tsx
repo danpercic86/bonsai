@@ -85,6 +85,7 @@ function makeDeps(over: Partial<UnusableRepoTeardownDeps> = {}) {
   const replayExit = vi.fn();
   const composerClose = vi.fn();
   const paletteClose = vi.fn();
+  const askTeardown = vi.fn();
   const deps: UnusableRepoTeardownDeps = {
     clearStatus: vi.fn(),
     clearGraph: vi.fn(),
@@ -104,16 +105,26 @@ function makeDeps(over: Partial<UnusableRepoTeardownDeps> = {}) {
     reflogReqId: { current: 0 },
     closeAiPanel: vi.fn(),
     collapseDiffSlot: vi.fn(),
+    resetArmedDialogs: vi.fn(),
+    setPendingBisectBad: vi.fn(),
+    setCommitBrowserOpen: vi.fn(),
+    closeContextMenu: vi.fn(),
+    setAmend: vi.fn(),
+    setAmendMessage: vi.fn(),
+    closeHookGate: vi.fn(),
+    closeHookDisclosure: vi.fn(),
     historySearchCloseRef: { current: historySearchClose },
     commitSearchCloseRef: { current: commitSearchClose },
     replayExitRef: { current: replayExit },
     composerCloseRef: { current: composerClose },
     paletteCloseRef: { current: paletteClose },
+    askTeardownRef: { current: askTeardown },
+    bulkAiCancelRef: { current: vi.fn() },
     ...over,
   };
   return {
     deps, blame, history, reflog,
-    historySearchClose, commitSearchClose, replayExit, composerClose, paletteClose,
+    historySearchClose, commitSearchClose, replayExit, composerClose, paletteClose, askTeardown,
   };
 }
 
@@ -158,7 +169,7 @@ describe('tearDownUnusableRepo — mirrored overlays', () => {
     tearDownUnusableRepo(deps);
     // Two halves, because driving purely off CLOSE_MIRRORS would make DELETING
     // an entry invisible (the loop would just iterate less): pin the list
-    // contents, then assert every listed mirror actually fired. A 6th mirror
+    // contents, then assert every listed mirror actually fired. A NEW mirror
     // added to the module fails the first half until it is wired here too.
     expect([...CLOSE_MIRRORS]).toEqual([
       'historySearchCloseRef',
@@ -166,10 +177,30 @@ describe('tearDownUnusableRepo — mirrored overlays', () => {
       'replayExitRef',
       'composerCloseRef',
       'paletteCloseRef',
+      'askTeardownRef',
+      'bulkAiCancelRef',
     ]);
     for (const name of CLOSE_MIRRORS) {
       expect(deps[name].current, name).toHaveBeenCalledTimes(1);
     }
+  });
+});
+
+describe('tearDownUnusableRepo — armed dialogs', () => {
+  it('disarms every dialog surface: the 39-flag reset, menu, amend, bisect, hook gates', () => {
+    const { deps } = makeDeps();
+    tearDownUnusableRepo(deps);
+    // The one hook-owned reset (its own completeness is enforced inside
+    // useWorkspaceDialogState.reset.test.tsx) …
+    expect(deps.resetArmedDialogs).toHaveBeenCalledTimes(1);
+    // … plus every armed surface that lives OUTSIDE that hook.
+    expect(deps.setPendingBisectBad).toHaveBeenCalledWith(null);
+    expect(deps.setCommitBrowserOpen).toHaveBeenCalledWith(false);
+    expect(deps.closeContextMenu).toHaveBeenCalledTimes(1);
+    expect(deps.setAmend).toHaveBeenCalledWith(false);
+    expect(deps.setAmendMessage).toHaveBeenCalledWith(null);
+    expect(deps.closeHookGate).toHaveBeenCalledTimes(1);
+    expect(deps.closeHookDisclosure).toHaveBeenCalledTimes(1);
   });
 });
 

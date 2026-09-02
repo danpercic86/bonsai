@@ -238,86 +238,47 @@ export function RepoWorkspace({
   // (extracted to useWorkspaceDialogState.ts). Destructured under the
   // original names, so every handler / hook call site below is unchanged.
   const {
-    abortConfirmOpen,
-    setAbortConfirmOpen,
-    pendingDeleteBranch,
-    setPendingDeleteBranch,
-    pendingRebase,
-    setPendingRebase,
-    pendingDeleteRemote,
-    setPendingDeleteRemote,
-    pendingDropStash,
-    setPendingDropStash,
-    pendingReservedStash,
-    setPendingReservedStash,
-    pendingReset,
-    setPendingReset,
-    pendingDiscard,
-    setPendingDiscard,
-    pendingDiscardForce,
-    setPendingDiscardForce,
-    pendingCommitPush,
-    setPendingCommitPush,
+    abortConfirmOpen, setAbortConfirmOpen,
+    pendingDeleteBranch, setPendingDeleteBranch,
+    pendingRebase, setPendingRebase,
+    pendingDeleteRemote, setPendingDeleteRemote,
+    pendingDropStash, setPendingDropStash,
+    pendingReservedStash, setPendingReservedStash,
+    pendingReset, setPendingReset,
+    pendingDiscard, setPendingDiscard,
+    pendingDiscardForce, setPendingDiscardForce,
+    pendingCommitPush, setPendingCommitPush,
     commitPushResolver,
-    pendingForcePush,
-    setPendingForcePush,
-    pendingHunkDiscard,
-    setPendingHunkDiscard,
-    pendingLineDiscard,
-    setPendingLineDiscard,
-    pendingCreateBranch,
-    setPendingCreateBranch,
-    pendingRenameBranch,
-    setPendingRenameBranch,
-    pendingAddSubmodule,
-    setPendingAddSubmodule,
-    pendingDeinitSubmodule,
-    setPendingDeinitSubmodule,
-    pendingRemoveSubmodule,
-    setPendingRemoveSubmodule,
-    pendingForceSubmodule,
-    setPendingForceSubmodule,
-    pendingNonFfPull,
-    setPendingNonFfPull,
-    pendingUndo,
-    setPendingUndo,
-    pendingCherrypick,
-    setPendingCherrypick,
-    pendingCreateTag,
-    setPendingCreateTag,
-    pendingDeleteTag,
-    setPendingDeleteTag,
-    pendingDeleteRemoteTag,
-    setPendingDeleteRemoteTag,
-    pendingForceMoveTag,
-    setPendingForceMoveTag,
-    pendingAddRemote,
-    setPendingAddRemote,
-    pendingRenameRemote,
-    setPendingRenameRemote,
-    pendingEditUrl,
-    setPendingEditUrl,
-    pendingRemoveRemote,
-    setPendingRemoveRemote,
-    staleCleanupOpen,
-    setStaleCleanupOpen,
-    newWorktreeOpen,
-    setNewWorktreeOpen,
-    whatChangedOpen,
-    setWhatChangedOpen,
-    changelogOpen,
-    setChangelogOpen,
-    pendingWorktreeRemove,
-    setPendingWorktreeRemove,
-    pendingWorktreeLock,
-    setPendingWorktreeLock,
-    worktreeContextOpen,
-    setWorktreeContextOpen,
-    rebasePlan,
-    setRebasePlan,
-    rebasePlanError,
-    setRebasePlanError,
-    anyDialogArmed,
+    pendingForcePush, setPendingForcePush,
+    pendingHunkDiscard, setPendingHunkDiscard,
+    pendingLineDiscard, setPendingLineDiscard,
+    pendingCreateBranch, setPendingCreateBranch,
+    pendingRenameBranch, setPendingRenameBranch,
+    pendingAddSubmodule, setPendingAddSubmodule,
+    pendingDeinitSubmodule, setPendingDeinitSubmodule,
+    pendingRemoveSubmodule, setPendingRemoveSubmodule,
+    pendingForceSubmodule, setPendingForceSubmodule,
+    pendingNonFfPull, setPendingNonFfPull,
+    pendingUndo, setPendingUndo,
+    pendingCherrypick, setPendingCherrypick,
+    pendingCreateTag, setPendingCreateTag,
+    pendingDeleteTag, setPendingDeleteTag,
+    pendingDeleteRemoteTag, setPendingDeleteRemoteTag,
+    pendingForceMoveTag, setPendingForceMoveTag,
+    pendingAddRemote, setPendingAddRemote,
+    pendingRenameRemote, setPendingRenameRemote,
+    pendingEditUrl, setPendingEditUrl,
+    pendingRemoveRemote, setPendingRemoveRemote,
+    staleCleanupOpen, setStaleCleanupOpen,
+    newWorktreeOpen, setNewWorktreeOpen,
+    whatChangedOpen, setWhatChangedOpen,
+    changelogOpen, setChangelogOpen,
+    pendingWorktreeRemove, setPendingWorktreeRemove,
+    pendingWorktreeLock, setPendingWorktreeLock,
+    worktreeContextOpen, setWorktreeContextOpen,
+    rebasePlan, setRebasePlan,
+    rebasePlanError, setRebasePlanError,
+    anyDialogArmed, resetArmedDialogs, // P38: the went-unusable teardown disarms all 39 at once
   } = useWorkspaceDialogState();
   const commitBoxRef = useRef<CommitBoxHandle>(null);
   // First-time per-repo git-hook execution disclosure — sits at the TOP of the
@@ -391,6 +352,8 @@ export function RepoWorkspace({
   const replayExitRef = useRef<(() => void) | null>(null); // spec-007 overlay
   const composerCloseRef = useRef<(() => void) | null>(null); // P54c composer
   const paletteCloseRef = useRef<(() => void) | null>(null); // P50c palette
+  const askTeardownRef = useRef<(() => void) | null>(null); // P55c ask + proposal
+  const bulkAiCancelRef = useRef<(() => void) | null>(null); // P68f bulk-AI confirm
   const [graph, setGraph] = useState<GraphLayout | null>(null);
   // P65b: the stream assembler's incremental edge index + total row count for the
   // active graph, threaded into GraphCanvas alongside `graph` (set together with
@@ -881,11 +844,13 @@ export function RepoWorkspace({
             // Empty every slice AND close every state-rendered overlay — this
             // component stays MOUNTED. Rationale: unusableRepoTeardown.ts.
             tearDownUnusableRepo({
-              clearStatus, clearGraph, clearBranches, clearStashes, clearSubmodules,
-              clearWorktrees, clearRemotes, clearTagSync, clearOpState, clearCompare,
-              setBlame, setHistory, setReflog, blameReqId, historyReqId, reflogReqId,
-              closeAiPanel, collapseDiffSlot, historySearchCloseRef, commitSearchCloseRef,
-              replayExitRef, composerCloseRef, paletteCloseRef,
+              clearStatus, clearGraph, clearBranches, clearStashes, clearSubmodules, clearWorktrees,
+              clearRemotes, clearTagSync, clearOpState, clearCompare, setBlame, setHistory, setReflog,
+              blameReqId, historyReqId, reflogReqId, closeAiPanel, collapseDiffSlot, resetArmedDialogs,
+              setPendingBisectBad, setCommitBrowserOpen, setAmend, setAmendMessage,
+              closeContextMenu: () => setMenu(null), closeHookGate: hookGate.onHookCancel,
+              closeHookDisclosure: hookDisclosure.onHookDiscloseCancel, historySearchCloseRef,
+              commitSearchCloseRef, replayExitRef, composerCloseRef, paletteCloseRef, askTeardownRef, bulkAiCancelRef,
             });
             return;
           }
@@ -918,6 +883,7 @@ export function RepoWorkspace({
       refetchWorktrees, refetchRemotes, refetchOpState, refetchCompare, refetchTagSync,
       clearStatus, clearGraph, clearBranches, clearStashes, clearSubmodules, clearWorktrees,
       clearRemotes, clearTagSync, clearOpState, clearCompare, closeAiPanel, collapseDiffSlot, pushToast,
+      resetArmedDialogs, hookGate.onHookCancel, hookDisclosure.onHookDiscloseCancel,
     ],
   );
 
@@ -1241,6 +1207,7 @@ export function RepoWorkspace({
 
   // P68f §6.4: "Resolve all with AI" — ONE run over every AI-eligible conflict, confirm-gated.
   const aiBulk = useBulkAiResolve({ conflicts, aiEligible, aiConflictAutonomy, aiRuns });
+  bulkAiCancelRef.current = aiBulk.confirm.onCancel; // P38 mirror: hook-local `pending`
 
   const { handleCreateStash, handleApplyStash, handlePopStash, handleDropStash } = useStashActions({
     repoId,
@@ -1395,7 +1362,9 @@ export function RepoWorkspace({
     cancelAskBonsai,
     confirmProposedOp,
     cancelProposedOp,
+    tearDownAsk,
   } = useAskBonsai({ repoId, pushToast, refreshAll, setMutating });
+  askTeardownRef.current = tearDownAsk; // P38 mirror: input + proposal dialog
 
   // P68e: all of the dock's container-side glue lives in the hook (§9). It sits HERE,
   // after `openChangelog`/`openAskBonsai`, so those two stable `useCallback`s can be
