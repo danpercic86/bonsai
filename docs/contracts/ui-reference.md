@@ -60,18 +60,51 @@ CSS custom properties on `:root` (dark, default) and `[data-theme="light"]`.
 | `--border` | `#2c313a` | `#dcdfe5` | 1px pane/row borders |
 | `--accent` | `#4f8cff` | `#2f6fe4` | primary buttons, links, focus ring |
 | `--accent-text` | `#16181d` | `#ffffff` | text on a solid `--accent` fill (**5.52:1** dark / **4.65:1** light) — the two themes differ deliberately, P100 |
-| `--accent-strong` | `#7fabff` | `#2a5cbe` | **the accent used as read text** (P105 — **shipped 2026-09-02**, commit `0e5dcab`). Clears 4.5:1 on `--bg-0`…`--bg-3`, `--selection` **and** an accent tint, in both themes: **7.76/7.13/6.29/5.46/4.93** dark, **6.23/5.81/5.36/4.93/5.01** light. Never a fill, never a border, never the focus ring — those stay `--accent` |
+| `--accent-strong` | `#7fabff` | `#2a5cbe` | **the accent used as read text** (P105 — **shipped 2026-09-02**, commit `0e5dcab`). Clears 4.5:1 on `--bg-0`/`--bg-1`/`--bg-2`/`--bg-3`/`--selection` in both themes: **7.76/7.13/6.29/5.46/4.93** dark, **6.23/5.81/5.36/4.93/5.01** light; and on a **14% accent tint over `--bg-1`** **5.85 / 4.87** (over `--bg-2` it is 5.16 / 4.52 — see BASE, below). Never a fill, never a border, never the focus ring — those stay `--accent` |
 | `--selection` | `#2a3b57` | `#dbe7ff` | selected row background |
 | `--danger` | `#e5534b` | `#d13438` | errors, destructive |
-| `--danger-text` | `#16181d` | `#ffffff` | ink on a solid `--danger` fill (**4.80:1** dark / **4.93:1** light) — P102, **shipped 2026-09-02** |
+| `--danger-text` | `#16181d` | `#ffffff` | ink on a solid `--danger` fill (**4.80:1** dark / **4.93:1** light) — P102, **shipped 2026-09-02**. **Fill-ink only — see the `--*-text` trap below** |
+| `--danger-strong` | `#ff938c` | `#b3282e` | **the danger hue used as read text** (P106 — **shipped 2026-09-03**, commit `10ce967`). **Ink only**: never a fill, never a border, never the focus ring — those stay `--danger`. Measured live over the six composited backdrops the status-badge family reaches: `--bg-0` 8.29/6.44 · `--bg-1` 7.62/6.01 · `--bg-2` 6.72/5.55 · `--selection` **5.27/5.18** · staged 6% `--success` tint over `--bg-1` 6.99/5.56 · changes 5% `--text-3` tint over `--bg-1` 7.25/5.74. **MIN 5.27 / 5.18** |
 | `--success` | `#57ab5a` | `#1a7f37` | staged/added |
-| `--success-text` | `#16181d` | `#ffffff` | ink on a solid `--success` fill (**6.24:1** dark / **5.08:1** light) — P102, **shipped 2026-09-02** |
+| `--success-text` | `#16181d` | `#ffffff` | ink on a solid `--success` fill (**6.24:1** dark / **5.08:1** light) — P102, **shipped 2026-09-02**. **Fill-ink only** |
+| `--success-strong` | `#7fc98a` | `#116329` | **the success hue used as read text** (P106 — **shipped 2026-09-03**, `10ce967`). Same ink-only restriction. `--bg-0` 8.98/7.39 · `--bg-1` 8.26/6.90 · `--bg-2` 7.29/6.36 · `--selection` **5.71/5.94** · staged tint 7.57/6.38 · changes tint 7.86/6.59. **MIN 5.71 / 5.94** |
 | `--merged` | `#a371f7` | `#8250df` | PR "merged" hue — **Option A was chosen** (orchestrator call, 2026-09-02) and **shipped**: it replaces the theme-invariant `#8957e5` literal, makes the "no colour literal outside `tokens-and-base.css`" grep a clean **zero**, and gives the light theme a purple tuned for a white page instead of the dark value reused |
-| `--merged-text` | `#16181d` | `#ffffff` | ink on `--merged` (**5.30:1** dark / **5.05:1** light) — P102, **shipped 2026-09-02** |
-| `--warning` | `#d4a72c` | `#9a6700` | modified/dirty |
+| `--merged-text` | `#16181d` | `#ffffff` | ink on `--merged` (**5.30:1** dark / **5.05:1** light) — P102, **shipped 2026-09-02**. **Fill-ink only** |
+| `--warning` | `#d4a72c` | `#9a6700` | modified/dirty. **As a letterform it is dark-only** — see the letterform note below |
+| `--warning-strong` | `#e3b341` | `#7a4f01` | **the warning hue used as read text** (P106 — **shipped 2026-09-03**, `10ce967`). Same ink-only restriction. `--bg-0` 9.13/7.13 · `--bg-1` 8.39/6.65 · `--bg-2` 7.40/6.14 · `--selection` **5.80/5.73** · staged tint 7.69/6.15 · changes tint 7.98/6.36. **MIN 5.80 / 5.73**. There is deliberately **no `--warning-text`** — see the trap below |
 | `--graph-canvas-bg` | `#16181d` | `#ffffff` | graph-pane surface behind the canvas (container div, load skeleton, empty state) — keeps the DOM behind the canvas seamless with the canvas fill. Aliases `--bg-0` by default; the **Bonsai graph style** (spec 002) overrides it via `[data-graph-style='bonsai']` to a warm backdrop: **`#17140f`** dark / **`#f4efe6`** light. See §5.1. |
 
 Focus: 2px `--accent` outline, offset 1px, keyboard only (`:focus-visible`).
+
+**THE `--*-strong` FAMILY — four tokens, one rule (completed by P106, shipped 2026-09-03 `10ce967`).**
+`--accent-strong` (P105) · `--danger-strong` · `--success-strong` · `--warning-strong` (P106).
+Each is its hue **lifted in dark, deepened in light**, and each exists for exactly one job: **the hue
+used as read text**. They are **ink only** — never a fill, never a border, never a bar or glyph edge,
+never the focus ring; the fill/bar/border keeps the base hue (`--danger`/`--success`/`--warning`/
+`--accent`), whose ≥3:1 graphics figures are untouched by this family. **Fixed-family minimum across
+every backdrop any of the four reaches: 5.18** (`--danger-strong`, light, `--selection`) — 0.68 above
+the text bar. The four minima sit in a **4.93–5.94** band (`--accent-strong` 4.93/5.01,
+`--danger-strong` 5.27/5.18, `--warning-strong` 5.80/5.73, `--success-strong` 5.71/5.94), so a surface
+mixing them reads as one system rather than four unrelated colours. **Reach for a `-strong` token
+before inventing a hex or demoting a hue to `--text-1`.** Candidates measured and rejected during
+P106, recorded so they are not re-derived: `#ef7c74` (danger dark, MIN 4.19 — fails), `#f5877f`
+(4.65 — passes on 0.15 of headroom, too thin for a reused token), `#c0272d` (danger light, 4.73 —
+same objection), `#855800` (warning light, 4.98 — compliant but out of band with its siblings), and
+`#6e4600` (warning light, floor 6.65 — **not** the shipped value; if a future pass sees 6.65
+attributed to `#7a4f01`, that is P106's caught first-draft error, not a measurement).
+
+**THE `--*-text` TRAP — the single most likely misuse of the hue tokens, and it is now measured.**
+`--danger-text` / `--success-text` / `--merged-text` are **inks for solid fills only**. They are
+near-black in dark and white in light, i.e. exactly inverted from what a letterform on a *tint or a
+neutral panel* needs. **The `--*-text` family must never sit on a tint.** Measured: `--danger-text`
+on a 14% `--danger` tint is **1.27 / 1.31** (P107) and **1.43 / 1.41** on the status-badge backdrops
+(P106); a hypothetical `--warning-text` (which by construction resolves to `--bg-0`) measures
+**1.19 / 1.16** on the staged tint, **1.09 / 1.07** on `--bg-1`, **1.57 / 1.24** on `--selection` —
+invisible. **Never reach for a `--*-text` token because the hue name matches**; on anything that is
+not a solid fill of that hue, the answer is the `-strong` token. This is why **no `--warning-text`
+token exists and none should be added**: the only compliant solid-`--warning` ink in the app is
+`--bg-0` (7.92 dark / 4.87 light, `.ai-dock-ask-glyph`), and a `--warning-text` would immediately be
+mistaken for the tint answer.
 
 **Contrast notes (measured 2026-08-17, P68e design pass; toast rows updated 2026-08-20, P74;
 `--text-3` swept in two enumerated passes, 2026-08-31 P95 and 2026-09-01 P98).**
@@ -120,7 +153,28 @@ because the canonical doc is what the next pass actually reads.
 selector has a live DOM match** — grep the class in `src/**/*.tsx`, or see it in the harness —
 **before recording it as fixed; (3) carry every "unverified" / "dead rule" / "could not confirm"
 qualifier verbatim into this file.** An unverified fix on dead CSS is worse than no fix: it consumes
-the audit budget and leaves a false green in the record. The accent-fill shortfall is **closed** (P100); the accent-as-text
+the audit budget and leaves a false green in the record.
+
+**A THIRD FAILURE MODE, recorded 2026-09-03 (P106 landing) — the grep counts TEXT, not declarations,
+and this has now bitten three times.** An acceptance-criterion grep is a string search over source
+bytes: **prose comments and `var(--x, #hex)` fallbacks inflate it**, and a stale baseline invalidates
+the delta it was supposed to prove. Both halves went wrong in P106 and were caught only by measuring
+the real pre-fix state instead of inferring it: its `R2` baseline was recorded as **50 and was
+actually 53** (post-fix 48, so the predicted delta of −5 was exactly right and P106's own contribution
+was 0 — the prediction was fine, the baseline was not), and its `R10` — `#[0-9a-fA-F]{6}` outside
+`tokens-and-base.css` — was recorded as **0 and was actually 12**, unchanged by P106 and entirely in
+files it never touched: **7 hex literals quoted inside prose CSS comments** (`updates.css`,
+`forge-pr.css`, `controls.css`) and **5 `var(--x, #hex)` fallbacks**
+(`settings-legacy-sections.css:134,140`, `commit-box.css:45,49,68,138`, `ai-dock.css:65`). The
+implementer had to deliberately avoid literal token strings in its own new comments; without that
+care `R8` would have read 11 instead of 8 and `R9` 2 instead of 1. Earlier passes hit the identical
+thing — the `--h:` grep counted a comment at `graph-filter.css:87`, and two `color: #` hits were
+comments. **The rules: (1) a residue prediction must state whether it counts *declarations* or *raw
+matches*, and if declarations, the grep must exclude comments and `var()` fallbacks or the criterion
+must say what the expected non-declaration matches are; (2) a baseline is measured against the real
+pre-fix tree, never inherited from a prior contract or inferred; (3) when a grep and a prediction
+disagree, re-measure the baseline before touching the code — the next pass will otherwise "fail" a
+correct fix.** The accent-fill shortfall is **closed** (P100); the accent-as-text
 (P105) and hardcoded-ink-on-hue-fill (P102) shortfalls **shipped 2026-09-02** in commit `0e5dcab`,
 enumerated in `docs/contracts/P102-P105-hue-audit-ui.md` §2–§3 and verified in the browser harness
 in both themes. All 93
@@ -133,7 +187,18 @@ hue-over-own-tint residue (the list below was **16**; a descendant- and inherita
 raised the population to **38 instances — 17 failing text, 1 failing glyph state, 19 compliant glyph
 keeps, 1 owned by P106** — enumerated with per-site measured ratios in
 `docs/contracts/P107-hue-over-own-tint-ui.md`, which is now the record for this class) and the
-A/M/D/U/R status-badge hue family (**P106**, §7):
+A/M/D/U/R status-badge hue family (**P106**, §7 — **this one shipped 2026-09-03 in `10ce967`**;
+its two USER CHECKPOINTs remain **pending**, see §7).
+
+**Still open after P106, so that no one reads the `-strong` family as app-wide closure:**
+**P108 — hue-as-text over NEUTRAL surfaces**, deliberately **un-enumerated and with no count claimed**
+(seeds in `P107-hue-over-own-tint-ui.md` §9; the P106 measurement puts its real inventory at **48**
+`color: var(--danger|success|warning)` declarations in `src/styles/`, corrected from the 45 P106
+first recorded — see the THIRD FAILURE MODE above). P108 must run P106's **four-pass** search
+(same-rule-block, descendant combinator, tinted-parent child + `--h` indirection, **and imperative
+canvas**) and produce its own per-declaration table; the three `-strong` tokens are its tool, and it
+must **not** re-derive different hexes. Also open: **P109** — the status badge has no accessible name
+and `added`/`untracked` both render `A` (§7).
 
 - **The full `--text-3` / `--text-2` matrix (P98 measured; the `--bg-3` row added by P101).** Read
   this before choosing either token on any surface.
@@ -175,6 +240,23 @@ A/M/D/U/R status-badge hue family (**P106**, §7):
   because it is what the user reads *in order to choose*. Where the same element has
   hover/selected/active states, **each state's backdrop is measured separately** — `--text-3` on a
   `--selection` row fill was the worst case found (2.33:1).
+  - **BASE — always record the composited base with the number (rule added 2026-09-03, P106 landing).
+    A contrast figure is meaningless without its composited base.** A tint is translucent, so "on a
+    14% accent tint" names only half of the stack; the ratio moves with whatever the tint sits on.
+    Worked example, and the reason the rule exists: `--accent-strong` on a 14% accent tint measures
+    **6.42 / 5.19** over `--bg-0`, **5.85 / 4.87** over `--bg-1`, **5.16 / 4.52** over `--bg-2` — a
+    spread of 1.26 in dark from the base alone. P106 and P107 recorded **5.16/4.52** and
+    **5.85/4.87** for what read as the same measurement and were carried in this file and in
+    `TODO.md` as two contracts disagreeing on a measured value. They never disagreed: **neither
+    stated its base**, P106 had used `--bg-2` and P107 `--bg-1`, and both reproduce exactly under one
+    method. Resolved 2026-09-03; both contracts corrected. **This is the same class as the
+    transcription failure mode above** — a number survives into the canonical doc without the
+    qualifier that makes it interpretable, and the next pass then spends a milestone re-deriving it
+    or, worse, "corrects" a correct figure. So: **every ratio recorded anywhere in this file, in a
+    contract, or in a CSS comment names the ink, the tint and percentage if any, AND the base**
+    (`ink on N% hue over --bg-X`). A figure that names only the tint is incomplete evidence and may
+    not be used to close an AC. The existing per-site tables in `P107-hue-over-own-tint-ui.md` §3 and
+    `P106-status-badge-ink-ui.md` §4/§6.1 carry a base column; copy that shape.
   - **The eight selectors P98 swept to `--text-2`** — a new `--text-3` on any of these is a defect:
     `.diff-overlay-kind`, `.diff-tree-count`, `.conflict-editor-split-label`, `.wtctx-branch`,
     `.wtctx-blocked`, `.combobox-option-hint`, `.command-palette-option-hint`,
@@ -308,15 +390,22 @@ A/M/D/U/R status-badge hue family (**P106**, §7):
   `--warning` bar **6.46 / 4.17** on its own 12% tint and **7.92 / 4.87** on `--bg-0`; `--danger` bar
   **3.87 / 3.87** on its own 12% tint and **4.41 / 4.60** on `--bg-1`.
 
-  **`--warning` as a letterform, measured at last (P107 §6 — this closes §2's open note).** On its own
-  12–15% tint it is **4.87–6.46** dark / **3.49–4.17** light → **fails 4.5:1 in light**, which is the
-  A3/A5/A7/A9/A11/A14/A15 failure. On a **solid** `--warning` fill, `color: var(--bg-0)` is
-  **7.92** dark / **4.87** light → compliant, and it is what `.ai-dock-ask-glyph` already ships.
-  **No `--warning-text` token is needed**: there is no non-compliant solid-warning fill in the app,
-  and `--bg-0` already resolves to exactly the values a `--warning-text` would carry
-  (`#16181d` / `#ffffff`). Note also that the `--*-text` tokens are inks for **solid fills only** —
-  `--danger-text` on a 14% `--danger` tint measures **1.27 / 1.31**, i.e. invisible. Never reach for
-  `--danger-text` / `--success-text` / `--merged-text` on a tint because the hue name matches.
+  **`--warning` as a letterform — measured in BOTH roles, and the note is now closed** (P107 §6 took
+  the tint, P106 §5 took neutral chrome — **the first time in this design system that `--warning` was
+  measured as a letterform on a neutral surface**). Net: **dark `--warning` is an adequate letterform
+  on neutral surfaces; light `--warning` is not.**
+  - **On neutral chrome** (P106): `--bg-0` **7.92 / 4.87** · `--bg-1` **7.28 / 4.54** (light passes by
+    0.04 — no headroom, treat as a fail for any new use) · `--bg-2` **6.42 / 4.19** ✗ · `--selection`
+    **5.03 / 3.91** ✗ · staged 6% `--success` tint over `--bg-1` **6.67 / 4.20** ✗ · changes 5%
+    `--text-3` tint over `--bg-1` **6.93 / 4.34** ✗. Range **5.03–7.92** dark, **3.91–4.87** light.
+  - **On its own 12–15% tint** (P107, A3/A5/A7/A9/A11/A14/A15): **4.87–6.46** dark / **3.49–4.17**
+    light → fails 4.5:1 in light.
+  - **As a solid fill's ink**, `color: var(--bg-0)` on solid `--warning` is **7.92 / 4.87** →
+    compliant, and it is what `.ai-dock-ask-glyph` already ships.
+
+  **So `--warning` as read text is `--warning-strong` everywhere** (MIN 5.80 / 5.73, §2 table). The
+  `--*-text` trap that used to be recorded here has moved up to its own block under the token table —
+  read it before choosing any ink for a hue surface.
 
   **Same shape, glyph bar, NOT on the P107 list — recorded so a future sweep does not re-litigate
   them.** `.checks-rollup-pill--pending .checks-rollup-glyph` (`checks-panel.css:119`, on the
@@ -345,9 +434,13 @@ A/M/D/U/R status-badge hue family (**P106**, §7):
   hue.
 
   **The rule, after P105: the only hue ink permitted over its own tint is `--accent-strong`**
-  (`.conflict-action-ai:hover`, `conflicts.css:99`, measured **5.86 / 4.87** on the 14% tint), and
-  only because it is measured at ≥4.5:1 *on that tint*. Any other hue-as-text-over-its-own-tint is
-  a defect.
+  (`.conflict-action-ai:hover`, `conflicts.css:99`, measured **5.85 / 4.87** on a **14% accent tint
+  over `--bg-1`** — base stated per the BASE rule above; the figure is 5.16 / 4.52 over `--bg-2`, so
+  the sanction is base-specific, not blanket), and only because it is measured at ≥4.5:1 *on that
+  tint over that base*. Any other hue-as-text-over-its-own-tint is a defect. **The three P106
+  `-strong` tokens do not extend this sanction** — they were measured on neutral and near-neutral
+  backdrops (§2 table), not on their own 12–16% tints, so putting `--danger-strong` on a `--danger`
+  tint is unmeasured and therefore not permitted until someone measures it and records the base.
 - **ACCENT FILL — two recipes, and the retracted "white is the ceiling" claim (P98, revised and
   closed 2026-09-01, P100).** `--accent-text` on `background: var(--accent)` was `#ffffff` in both
   themes and measured **3.22:1** dark / **4.65:1** light, putting a sub-AA primary label on every
@@ -417,7 +510,8 @@ A/M/D/U/R status-badge hue family (**P106**, §7):
   | `--bg-2` | **4.48** / **4.00** ✗ | 6.29 / 5.36 ✓ |
   | `--bg-3` | **3.89** / **3.68** ✗ | 5.46 / 4.93 ✓ |
   | `--selection` | **3.51** / **3.74** ✗ | 4.93 / 5.01 ✓ |
-  | own 12–15% tint | **4.29–3.68** / **3.74–3.38** ✗ | 5.86 / 4.87 ✓ |
+  | own 12–15% tint **over `--bg-1`** | **4.29–3.68** / **3.74–3.38** ✗ | 5.85 / 4.87 ✓ |
+  | own 14% tint **over `--bg-2`** | — | 5.16 / 4.52 ✓ |
 
   **`--accent` clears the 4.5:1 text bar on `--bg-0` only.** `--bg-1` passes in dark and fails in
   light, which is not a shippable rule. It clears the **3:1 graphics bar everywhere**, so `--accent`
@@ -876,25 +970,89 @@ Full contract: `docs/contracts/P92-multi-ref-commit-ui.md`. When a commit carrie
 
 ## 7. File status colors (right panel, M1+)
 
-Added/staged `--success`, modified `--warning`, deleted `--danger`, untracked `--text-3` italic,
-renamed **`--accent-strong`** (P105, shipped `0e5dcab` — it was `--accent`). Letter badge (A/M/D/U/R)
-in mono 11px before the path.
+**Current, as shipped (P106, `10ce967`, 2026-09-03).** The A/M/D/U/R letter badge is mono 11px / 600,
+12px wide, before the path, in **both** densities (it does not scale with `--rp-row-font`). Its ink is
+a `--*-strong` token in every case — the base hues remain correct for fills, bars and glyphs, but
+**not for this letter**:
+
+| Status | Letter | Ink | Declaration |
+|---|---|---|---|
+| added | `A` | `--success-strong` | `status-panel.css:193` |
+| untracked | `A` | `--success-strong` (italic path) | `status-panel.css:220` |
+| modified | `M` | `--warning-strong` | `status-panel.css:198` |
+| typechange | `T` | `--warning-strong` | same rule |
+| deleted | `D` | `--danger-strong` | `status-panel.css:203` |
+| conflicted | `C` | `--danger-strong` | same rule |
+| renamed | `R` | `--accent-strong` (P105, `0e5dcab` — unchanged by P106) | `status-panel.css:214` |
+| — | `Conflicts` section label | `--danger-strong` (**7.62 / 6.01** on `--bg-1`) | `status-panel.css:231` |
 
 **Never let color be the only carrier of meaning** — the A/M/D/U/R letter badge is the house
 precedent. Every new status indicator pairs its hue with a letter, word, or glyph. A **digit** counts
 as a carrier too (§12.5's rail counts: `0` vs `N` is what makes the colour lift optional).
 
-**But the letter badge is TEXT, so it is judged at 4.5:1, not 3:1** (P105, 2026-09-02). The letter
-carrying the meaning does not exempt the colour from the text bar. The **renamed** badge
-(`status-panel.css:210`) measured **3.51 / 3.74** on a selected row and **shipped as
-`--accent-strong` in `0e5dcab`** — re-measured in the running app at **7.13** dark / **5.81** light
-on `--bg-1`, **4.93 / 5.01** on `--selection`. Its three siblings are worse than they look —
-re-measured on `--bg-1`, `--danger` is **4.41** dark (**already failing 4.5:1 at rest**), `--success`
-**5.73 / 4.74**, `--warning` **7.28 / 4.54** — and all three fail further on the `--bg-2` hover and
-`--selection` states. **Filed as
-P106 — "status-badge hue family as text"**; it needs either `-strong` variants for
-`--danger`/`--success`/`--warning` or a demotion to `--text-1` + shape, which is a survey of its own.
-Do not close it by assertion.
+**But the letter badge is TEXT, so it is judged at 4.5:1, not 3:1** (P105, 2026-09-02; the whole
+family closed by P106, 2026-09-03). The letter carrying the meaning does not exempt the colour from
+the text bar. **P106 determined that at all 8 render sites the letter is the *sole* non-colour carrier
+of the status** — shape and position are identical across statuses, no word in the row names the
+status, and 11px/600 is far below the large-text threshold — so **nothing in this family is exempt**,
+and a `Conflicts` section header does *not* excuse the `C` letter.
+
+**The pre-fix state, kept as the evidence trail** (dark / light, per composited backdrop). Bold = below
+4.5:1:
+
+| Pre-fix ink | `--bg-0` | `--bg-1` | `--bg-2` hover | `--selection` | staged tint | changes tint | MIN |
+|---|---|---|---|---|---|---|---|
+| `--success` (`A`, `A`) | 6.24 / 5.08 | 5.73 / 4.74 | 5.06 / **4.37** | **3.96 / 4.08** | 5.26 / **4.38** | 5.46 / 4.53 | **3.96 / 4.08** |
+| `--warning` (`M`, `T`) | 7.92 / 4.87 | 7.28 / 4.54 | 6.42 / **4.19** | 5.03 / **3.91** | 6.67 / **4.20** | 6.93 / **4.34** | **5.03 / 3.91** |
+| `--danger` (`D`, `C`) | 4.80 / 4.93 | **4.41** / 4.60 | **3.89 / 4.24** | **3.05 / 3.96** | **4.04 / 4.26** | **4.19 / 4.40** | **3.05 / 3.96** |
+| `--accent-strong` (`R`) | 7.76 / 6.23 | 7.13 / 5.81 | 6.29 / 5.36 | 4.93 / 5.01 | 6.54 / 5.37 | 6.78 / 5.55 | 4.93 / 5.01 ✓ |
+
+**Resolve the backdrop PER STATE — this family is the strongest evidence for that rule anywhere in the
+app.** `D` measured **4.41 at rest, 3.89 hovered, 3.05 selected**: the worst figure in the app was the
+state the user is in *while reading the diff*. `M` was compliant in dark everywhere and failed in
+**4 of 6** backdrops in light. The six live backdrops are `--bg-0`, `--bg-1`, `--bg-2`, `--selection`,
+the staged section's 6% `--success` tint over `--bg-1`, and the changes section's 5% `--text-3` tint
+over `--bg-1` — `.file-row:hover` and `.file-row-expanded` are **opaque**, so they replace the section
+tint entirely, which is what keeps the matrix small.
+
+**Post-fix: MIN 5.18 across the whole family** (§2's `-strong` block). Measured live in a real browser
+across all **8** render sites, both themes, compositing the full ancestor stack rather than assuming
+the nearest declared background. `--text-1`-for-everything was measured (MIN 9.36 / 13.29) and
+**rejected**: only *states* demote to neutral, an identity the user *scans by* keeps its hue and flips
+the ink — five grey letters would delete a working scanning aid (find the deletions by colour in a
+200-file list, then read the letter to confirm).
+
+**A FOURTH search pass was added by P106 over P107's three — imperative canvas rendering**
+(`rg "FileStatus" src/graph` → 0). Run it on any visual family from now on; "the search could not see a
+whole class" is how both prior counts in this programme went wrong.
+
+**Carried qualifiers (per §2's transcription rule — do not quietly upgrade these).** P106 §11 AC10
+required each of the six declarations under verdict to be confirmed as *rendered*, and named four
+sites unconfirmed at contract time: `C` conflicted, S5 `DiffBrowser.tsx:404`, S6
+`prPanel/PrFileRow.tsx:37`, S8 `ComposerGroupCard.tsx:129`. The implementation reports measuring all
+8 render sites live. **If its per-declaration record does not name those four individually, they
+remain "unverified" here** — a grep proves a declaration exists, not that it renders
+(§2, second failure mode).
+
+**Still open on this family — it is NOT fully closed:**
+- **AC14 (USER CHECKPOINT, pending).** Native-window read: `pnpm tauri dev` on a real repo with staged
+  and unstaged changes — the badge column legible at arm's length in both themes and both densities,
+  and the brighter dark letters must not read as "selected"/"highlighted" rows. 11px mono at these
+  luminances is not judgeable from the headless harness.
+- **AC15 (USER CHECKPOINT, pending).** Hue identity: `--danger-strong` still reads as
+  *red-for-deleted* and `--warning-strong` as *yellow-for-modified* rather than drifting to
+  pink/olive, and the five badge colours stay mutually distinguishable — including under deuteranopia,
+  where `--success-strong` vs `--warning-strong` is the risky pair (the letters carry the meaning
+  regardless, so this is a quality judgement, not a compliance one).
+- **AC9's real-repo half (USER CHECKPOINT, pending).** A genuine `typechange` (symlink → regular file)
+  cannot be produced in the mock harness; the fixture proves the *rule*, the native app proves the
+  *pipeline*.
+- **P109 (open).** The badge has **no accessible name**, and `added` and `untracked` both render `A`
+  (`StatusFileRow.tsx:15`) — indistinguishable to a screen reader and ambiguous visually. P106 made
+  the letter *legible*; P109 is about the letter being *insufficient*.
+
+**No agent may self-declare the three checkpoint items** — the user's checkpoint authority did not
+reach this work, and no agent message closes them.
 
 **House glyph vocabulary** (use these, do not invent synonyms): `✓` good/ready/checked ·
 `⚠` warning/failed · `⊘` blocked/refused/cancelled · `●` neutral/informational ·

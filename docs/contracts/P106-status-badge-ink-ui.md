@@ -15,6 +15,12 @@ P107 does not touch `status-panel.css`. This contract is the only diff on that f
 
 ## 0. Result in one screen
 
+> **SHIPPED 2026-09-03 in commit `10ce967`.** `ui-reference.md` §2 / §7 were written from the shipped
+> result (AC13), not from this contract. Post-landing corrections are inline below: §2's calibration
+> hedge is **resolved** (base ambiguity, both contracts corrected), and §10's **R2** and **R10**
+> baselines were both wrong (53 not 50; 12 not 0). **AC14, AC15 and the real-repo half of AC9 remain
+> USER CHECKPOINTs and stay PENDING** (§12) — no agent closes them.
+
 - **The search found 8 render sites** (not the 2 the inherited measurements name) across 7 files,
   **7 status classes**, **5 hue ink declarations** and **6 distinct composited backdrops**. Two render
   sites carry **no hue at all** — a class the `.file-status-*` grep structurally cannot see.
@@ -138,13 +144,17 @@ dark-theme figure by ≈0.8 and invalidates the run.
 | `--success` on the staged 6% tint | 5.26 / 4.38 (P107 §3 D) | **5.26 / 4.38** | ✓ |
 | `--danger`/`--success`/`--warning` on own 14% tint / `--bg-2` | 3.35/3.48, 4.07/3.66, 4.96/3.53 (ui-ref §2) | **identical** | ✓ |
 
-> **Carry this hedge forward.** One calibration item did **not** reproduce: P107 §2 records
-> `--accent-strong` on a 14% accent tint as 5.85 / 4.87; this run gets **5.16 / 4.52** with `--bg-2` as
-> the base. The gap is a **base ambiguity** — P107's row does not state which surface the tint sits on
-> — not a method disagreement, and it touches nothing in P106 (no accent tint exists in this family).
-> It is recorded here rather than silently dropped, per §2's "evidence lost in transcription" rule.
-> **Do not** transcribe it into `ui-reference.md` as a discrepancy; transcribe it as *base
-> unspecified*.
+> **RESOLVED 2026-09-03 — it was a base ambiguity, and it was a defect in BOTH contracts.** One
+> calibration item did not reproduce at contract time: P107 §2 recorded `--accent-strong` on a 14%
+> accent tint as 5.85 / 4.87; this run got **5.16 / 4.52** with **`--bg-2`** as the base. The
+> implementation pass measured all three bases under one method: over `--bg-0` **6.42 / 5.19**, over
+> **`--bg-1` 5.85 / 4.87** (P107's figure), over **`--bg-2` 5.16 / 4.52** (this contract's figure).
+> **The two contracts never disagreed — neither stated its base.** Both are correct and both were
+> incompletely recorded. P107 §2 now reads "on a 14% accent tint **over `--bg-1`**"; this row's base is
+> **`--bg-2`**, stated here. The general rule is now in `ui-reference.md` §2 under **BASE**:
+> *a contrast figure is meaningless without its composited base; always record the base with the
+> number.* It is the same class as the transcription failure mode — a number surviving into the
+> canonical doc without the qualifier that makes it interpretable.
 
 ---
 
@@ -449,7 +459,7 @@ finding, not a rounding error.
 | # | Command | Now | Predicted after |
 |---|---|---|---|
 | R1 | `rg -n "color:\s*var\(--(danger\|success\|warning)\)" src/styles/status-panel.css` | **5** | **0** |
-| R2 | `rg -n "color:\s*var\(--(danger\|success\|warning)\)" src/styles` | **50** | **45** — all outside `status-panel.css`; this is the P108 population and P106 must not shrink it further |
+| R2 | `rg -n "color:\s*var\(--(danger\|success\|warning)\)" src/styles` | ~~50~~ → **53** (corrected: measured against the real pre-fix tree; the 50 was inferred and wrong) | ~~45~~ → **48** — all outside `status-panel.css`; this is the P108 population and P106 must not shrink it further. **The predicted delta of −5 was exactly right**; only the baseline was wrong, so P106's own contribution is **0** |
 | R3 | `rg -n -- "--(danger\|success\|warning)-strong:" src/styles/tokens-and-base.css` | **0** | **6** (3 in `:root`, 3 in `[data-theme='light']`) |
 | R4 | `rg -n -- "var\(--(danger\|success\|warning)-strong\)" src/styles` | **0** | **5**, all in `status-panel.css` (`193`, `198`, `203`, `216`, `227`) |
 | R5 | `rg -n -- "(background\|border\|box-shadow\|outline\|fill)[^;]*--(danger\|success\|warning\|accent)-strong" src/styles` | **0** | **0** — the `-strong` family is ink-only |
@@ -457,7 +467,22 @@ finding, not a rounding error.
 | R7 | `rg -n "className=\"file-badge mono\"" src/components` | **8** | **8** — no render site added or removed |
 | R8 | `rg -n "file-status-" src/components` (excl. tests) | **6** | **6**, or **8** if D1 is taken |
 | R9 | `rg -n "typechange" src/ipc/fixtures` | **0** | **1** |
-| R10 | `rg -n "#[0-9a-fA-F]{6}" src/components src/styles --glob '!tokens-and-base.css'` | **0** | **0** |
+| R10 | `rg -n "#[0-9a-fA-F]{6}" src/components src/styles --glob '!tokens-and-base.css'` | ~~0~~ → **12** (corrected: this grep was **never** 0) | **12** — unchanged by P106; all 12 are in files P106 never touched. **7 are hex literals quoted inside prose CSS comments** (`updates.css`, `forge-pr.css`, `controls.css`) and **5 are `var(--x, #hex)` fallbacks** (`settings-legacy-sections.css:134,140`; `commit-box.css:45,49,68,138`; `ai-dock.css:65`) |
+
+**POST-IMPLEMENTATION, 2026-09-03 — two of the ten baselines were wrong, and both failures are the
+same one: an acceptance grep counts TEXT, not declarations.** R2's baseline was recorded as 50 and
+was really **53**; R10's was recorded as 0 and was really **12**. The predicted *deltas* were exact
+(R2 −5, R10 0), so what failed was the baseline, not the prediction. **Prose comments and
+`var(--x, #hex)` fallbacks inflate a raw-match grep** — all 12 R10 matches are one or the other, in
+files this contract never touched. The implementer had to deliberately avoid writing literal token
+strings in its own new CSS comments; without that care **R8 would have read 11 instead of 8 and R9 2
+instead of 1**. This is the third time the programme has hit it (`--h:` counted a comment at
+`graph-filter.css:87`; two `color: #` hits were comments). **Rules, now recorded in
+`ui-reference.md` §2 as the third failure mode: (1) a residue prediction must state whether it counts
+*declarations* or *raw matches* — and if declarations, exclude comments and `var()` fallbacks or name
+the expected non-declaration matches; (2) a baseline is measured against the real pre-fix tree, never
+inherited or inferred; (3) when the grep and the prediction disagree, re-measure the baseline before
+touching code — otherwise the next pass "fails" a correct fix.**
 
 ---
 
@@ -481,8 +506,9 @@ Numbered; each is checkable against §10's residue table or a measured ratio.
 6. **AC6 — No `--*-text` token in `status-panel.css`.** Residue **R6 = 0** (the 1.07–1.57 trap).
 7. **AC7 — No geometry, DOM or copy change.** Badge is 12px wide / 11px / 600 in **both** densities;
    rows remain 24px cozy and 20px compact; zero string changes. Residue **R7 = 8**.
-8. **AC8 — The P108 population is unchanged.** Residue **R2 = 45**, all outside `status-panel.css`;
-   P106 does not opportunistically fix sites it did not enumerate.
+8. **AC8 — The P108 population is unchanged.** Residue **R2 = 48** (baseline **53**, corrected
+   2026-09-03 from the wrongly-recorded 50 — see §10), all outside `status-panel.css`; P106 does not
+   opportunistically fix sites it did not enumerate. **P108's real inventory is 48, not 45.**
 9. **AC9 — The `T` badge becomes harness-verifiable.** A `typechange` row and a ≥180-char path row are
    added to `src/ipc/fixtures/status.ts`. Residue **R9 = 1**. (`typechange` is emitted by
    `crates/bonsai-core/src/git/diff/collect.rs:40` — this closes a *verification* gap, not a dead rule.)
@@ -544,8 +570,11 @@ Everything else — AC1–AC13 — is AI-gate verifiable in the browser harness 
 3. **P109 is created by this contract** (§3): the badge has no accessible name, and `added` and
    `untracked` share the letter `A`, so a screen-reader user cannot distinguish them at all. Eight JSX
    edits + a seven-string set. Not rolled in here on purpose.
-4. **P108's population is unchanged at 45** (R2). P106 hands it the three new tokens as its tool — most
-   of those 45 are hue-as-read-text on neutral backdrops, which is precisely what `--*-strong` exists
-   for. Do not let P108 re-derive different hexes.
+4. **P108's population is unchanged at 48** (R2 — corrected 2026-09-03; the contract first said 45 off
+   a wrong 50 baseline, the real pre-fix figure was 53). P106 hands it the three new tokens as its
+   tool — most of those 48 are hue-as-read-text on neutral backdrops, which is precisely what
+   `--*-strong` exists for. Do not let P108 re-derive different hexes. **48 is a raw-match count from
+   `rg`, not a verified declaration count** — P108 must re-measure its own baseline and say which it
+   is counting (§10).
 5. **`status-panel.css` must appear in exactly one diff** (P107 §8). If P107 follow-ups are in flight,
    land P106 first.

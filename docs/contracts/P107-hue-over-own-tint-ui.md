@@ -106,7 +106,7 @@ tints and inflates every dark-theme ratio by ~0.8. Parse the `color(` form separ
 
 | Check | ui-reference §2 says | This run | |
 |---|---|---|---|
-| `--accent-strong` on 14% accent tint | 5.86 / 4.87 | **5.85 / 4.87** | ✓ |
+| `--accent-strong` on a 14% accent tint **over `--bg-1`** | 5.86 / 4.87 | **5.85 / 4.87** | ✓ |
 | `--danger` on 14% danger tint / `--bg-2` | 3.35 / 3.48 | **3.35 / 3.48** | ✓ |
 | `--warning` on 14% warning tint / `--bg-2` | 4.96 / 3.53 | **4.96 / 3.53** | ✓ |
 | `--success` on 14% success tint / `--bg-2` | 4.07 / 3.66 | **4.07 / 3.66** | ✓ |
@@ -114,6 +114,17 @@ tints and inflates every dark-theme ratio by ~0.8. Parse the `color(` form separ
 | `--text-2` on its own 12% tint / `--bg-1` | 5.79 / 6.22 | **5.80 / 6.22** | ✓ |
 
 Every number below is from the same run. Format is **dark / light**.
+
+> **BASE, added 2026-09-03 (P106 implementation, resolving what looked like a contract disagreement).**
+> The first row above originally read "on 14% accent tint" with **no base stated**. P106 measured the
+> same ink/tint pair over `--bg-2` and got **5.16 / 4.52**, and the two contracts were carried in
+> `ui-reference.md` §2 and `TODO.md` as disagreeing on a measured value. **They never disagreed.**
+> Composited over `--bg-0` the pair is **6.42 / 5.19**, over **`--bg-1` 5.85 / 4.87** (this row), over
+> **`--bg-2` 5.16 / 4.52** (P106's row) — a 1.26 spread in dark from the base alone. Both reproduce
+> exactly under this §2 method. The general rule now lives in `ui-reference.md` §2 ("BASE"):
+> **a contrast figure is meaningless without its composited base; always record the base with the
+> number.** Every ratio in this contract's §3 tables already carries a base column — that is the shape
+> to copy.
 
 ---
 
@@ -173,7 +184,7 @@ hue), so the ink is a graphic and 3:1 is the correct bar. A blanket sweep would 
 | B18 | `controls.css:218` | `.dev-mode-pill-glyph` (rest **and** hover) | danger 14% → 22% | rest 3.78/3.76 · **hover 3.39/3.33** | KEEP — hover is the margin case, still ≥3:1 |
 | B19 | `forge-pr.css:791` | `.forge-reauth-icon` | warning 12% | 5.87 / 3.90 | KEEP |
 | — | `ai-dock-log.css:273` | `.ai-dock-ask-guard-glyph` | warning 14% | 5.64 / **3.80** | KEEP — **but the code comment beside it claims "5.4:1 dark / 3.6:1 light", which is the ratio against `--bg-1`, not against the tint the glyph actually sits on. Correct the comment; the verdict is unchanged.** |
-| — | `conflicts.css:99` | `.conflict-action-ai:hover` (`--accent-strong` on 14% accent) | 5.85 / 4.87 | KEEP — the one sanctioned hue-**text** exception (§2) |
+| — | `conflicts.css:99` | `.conflict-action-ai:hover` (`--accent-strong` on 14% accent **over `--bg-1`**) | 5.85 / 4.87 | KEEP — the one sanctioned hue-**text** exception (§2). The sanction is **base-specific**: the same pair is 5.16 / 4.52 over `--bg-2` |
 
 ### Bucket C — glyph over its own tint that **fails**. **FIX 1.**
 
@@ -205,7 +216,7 @@ Measured for the four sites that have a state-dependent backdrop. Rows marked �
 | `.pr-mergeable-clean` | 4.61 / 3.94 | 4.07 / 3.66 | **3.91 / 3.43** → worst | n/a |
 | `.error-dismiss` glyph | 3.87 / 3.87 | **3.03 / 2.96** → **fails** | n/a | n/a |
 | `.dev-mode-pill-glyph` | 3.78 / 3.76 | 3.39 / 3.33 → still passes | n/a | n/a |
-| `.file-status-added .file-badge` (P106) | 5.26 / 4.38 (staged tint) | `--bg-2`: 5.06 / 4.37 | `--selection`: — (P106 to measure) | n/a |
+| `.file-status-added .file-badge` (P106) | 5.26 / 4.38 (staged tint) | `--bg-2`: 5.06 / 4.37 | `--selection`: **3.96 / 4.08** (measured by P106; worst state) | n/a — **fixed, shipped `10ce967`** as `--success-strong` (5.71 / 5.94 on `--selection`) |
 
 After the Bucket A fix the same states measure, with `--text-1`:
 
@@ -369,6 +380,12 @@ decoration — but it retires a sentence that would otherwise license shipping a
 ---
 
 ## 8. Interaction with P106 (which is higher priority — read this before either lands)
+
+> **CLOSED 2026-09-03 — P106 shipped in `10ce967`.** The hand-off worked as designed: P106 owned
+> `status-panel.css`, measured the extra backdrops this section handed it, and fixed the whole family
+> with three new ink-only tokens (`--danger-strong` / `--success-strong` / `--warning-strong`,
+> family MIN **5.18**). `status-panel.css` appeared in exactly one diff. The record is
+> `ui-reference.md` §7.
 
 **Exactly one call site is claimed by both searches, and P106 owns it.**
 
