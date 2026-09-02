@@ -4,6 +4,9 @@
 
 /* ---------- Graph truncated banner (P1 §7 item 14) ---------- */
 
+/* P107 A14 (R2): warning ink on its own 12% tint over --bg-0 measured 6.46 dark /
+   4.17 light -- the sentence explaining a truncated graph fails 4.5:1 in light. Ink to
+   --text-1 (12.02 / 14.14); the hue becomes the 3px leading bar (7.92 / 4.87 vs --bg-0). */
 .graph-truncated-banner {
   flex: none;
   margin: 8px 12px 0;
@@ -11,7 +14,8 @@
   border-radius: 6px;
   font-size: 13px;
   background: color-mix(in srgb, var(--warning) 12%, transparent);
-  color: var(--warning);
+  box-shadow: inset 3px 0 0 var(--warning);
+  color: var(--text-1);
 }
 
 /* ---------- Header progress bar (P1 §7: remote op / refresh feedback) ---------- */

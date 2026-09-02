@@ -128,13 +128,16 @@
   flex: 0 0 auto;
 }
 
+/* P107 A16 (R1): danger ink on a 16% danger tint measured 3.68 dark / 3.64 light -- fails
+   4.5:1 in both themes. Ink to --text-1 (11.31 / 12.21); hue to a hairline inset edge. */
 .wt-copy-chip {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: var(--danger);
+  color: var(--text-1);
   background: color-mix(in srgb, var(--danger) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 35%, transparent);
   border-radius: 4px;
   padding: 1px 6px;
 }

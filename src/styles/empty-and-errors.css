@@ -72,9 +72,14 @@
   border-radius: 8px;
 }
 
+/* P107 A17 (R2, ink only): "Something went wrong" is the heading the user reads, and it sat
+   as danger ink on the panel's own 8% danger tint -- 4.06 dark / 4.10 light, failing 4.5:1 in
+   both themes. Ink to --text-1 (12.47 / 13.75). NO leading bar here: .error-boundary above
+   already draws a 40% danger border on all four sides and a bar inside it would read as a
+   double rule. (That border is decoration -- 1.98/2.16 -- never the carrier; the words are.) */
 .error-boundary-title {
   margin: 0;
-  color: var(--danger);
+  color: var(--text-1);
   font-size: 14px;
   font-weight: 600;
 }
@@ -87,9 +92,17 @@
   overflow-wrap: anywhere;
 }
 
+/* P107 A13 (R2): danger ink on its own 12% tint measured 3.87 dark / 3.87 light -- every
+   error sentence in the app failed 4.5:1 in both themes, and this one rule is consumed by
+   12+ components (AiOutputPanel, CommitBox, ConflictEditor, ComparePanel, CommitPanel,
+   ComposerDialog, DiffOverlay, DiffBrowser, DiffImageCard, AiAssetsPanel, AgentAssetEditor,
+   ChecksEmptyState, AiActivityPanel). Ink to --text-1 (11.90 / 12.96); the hue becomes the
+   3px leading bar, painted inside the existing padding so no text moves and the bar runs the
+   full height of a wrapped multi-line message. */
 .error-banner {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
-  color: var(--danger);
+  box-shadow: inset 3px 0 0 var(--danger);
+  color: var(--text-1);
   border-radius: 6px;
   padding: 8px 12px;
   max-width: 480px;
@@ -109,7 +122,18 @@
   min-width: 0;
 }
 
-/* P74 §2.4: 24 x 24 hit target around the unchanged 14px glyph. */
+/* P74 §2.4: 24 x 24 hit target around the unchanged 14px glyph.
+   P107 C1: this control was compliant at REST (3.87/3.87 danger ink on the banner's 12%
+   tint, above the 3:1 graphics bar) and non-compliant the moment the pointer touched it --
+   its hover fill was a DEEPER tint of its own ink's hue, stacking 20% danger on the banner's
+   12% for 3.03 dark / 2.96 light. Only a per-state backdrop resolution finds that. Both
+   halves move: the ink to --text-1, and the wash to the house borderless-glyph hover
+   (currentcolor 12%, as .graph-filter-clear). Measured after: 8.48 dark / 10.30 light.
+   Keeping --danger ink on the currentcolor wash would still be 3.37 / 3.30 -- barely over the
+   graphics bar and nowhere near text -- so the wash alone is not enough, the ink has to move.
+   (P107 §5 R3 records 2.76/3.07 for that rejected variant; re-derivation on the same --bg-1
+   basis as every other number in this file gives 3.37/3.30. It is an illustrative number for
+   a variant that was NOT shipped; the verdict is identical either way.) */
 .error-dismiss {
   flex: none;
   width: 24px;
@@ -119,7 +143,7 @@
   justify-content: center;
   border: none;
   background: transparent;
-  color: var(--danger);
+  color: var(--text-1);
   font-size: 14px;
   line-height: 1;
   padding: 0;
@@ -128,6 +152,6 @@
 }
 
 .error-dismiss:hover {
-  background: color-mix(in srgb, var(--danger) 20%, transparent);
+  background: color-mix(in srgb, currentcolor 12%, transparent);
 }
 

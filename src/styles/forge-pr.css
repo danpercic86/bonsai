@@ -288,26 +288,33 @@
   color: var(--text-2);
 }
 
+/* P107 A1-A3 (R1): the hue ink sat on a 14% tint of its own hue -- 4.61/3.94 clean,
+   3.78/3.76 conflict, 5.64/3.80 pending, all failing 4.5:1 in light and two in dark. The
+   word (Clean / Conflicts / Checking) is the read text, so the ink moves to --text-1
+   (>= 9.99:1 in every state, including inside .pr-row.selected) and the hue is demoted to a
+   hairline inset edge -- decoration, NOT an identity carrier (P107 §7). box-shadow,
+   not border: these pills have no border and 1px would add 2px to every box. */
 .pr-mergeable {
   border-radius: 6px;
   padding: 2px 8px;
   font-size: 11px;
   font-weight: 600;
+  color: var(--text-1);
 }
 
 .pr-mergeable-clean {
-  color: var(--success);
   background: color-mix(in srgb, var(--success) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--success) 35%, transparent);
 }
 
 .pr-mergeable-conflict {
-  color: var(--danger);
   background: color-mix(in srgb, var(--danger) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 35%, transparent);
 }
 
 .pr-mergeable-pending {
-  color: var(--warning);
   background: color-mix(in srgb, var(--warning) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 35%, transparent);
 }
 
 .pr-labels {
@@ -595,14 +602,22 @@
      vs surrounding text. The RESTING underline is that carrier (hover adds no second one). */
   color: var(--accent-strong);
   text-decoration: underline;
+  /* P107: pinned so the hover thickness bump below is a deterministic 1px -> 2px rather
+     than depending on the UA resolution of `auto`. */
+  text-decoration-thickness: 1px;
   white-space: nowrap;
   /* P72: explicit, so the affordance can never silently depend on the `href`
      surviving a future refactor (the click is IPC-routed). */
   cursor: pointer;
 }
 
+/* P107: this rule was a no-op -- P105 B6 moved the underline to REST, so hover redeclared
+   the identical underline and the link had no hover feedback at all. A thickness bump is the
+   contrast-safe answer: it keeps the resting underline (the WCAG G183 carrier), adds no
+   colour that would have to clear a ratio, and does not reflow the text around it. */
 .forge-connect-link:hover {
   text-decoration: underline;
+  text-decoration-thickness: 2px;
 }
 
 .forge-connect-submit {

@@ -58,14 +58,19 @@
 
 /* ----- P3c: conflict rows (StatusPanel) ----- */
 
+/* P107 A12 (R1): the conflict kind (both modified / deleted by us) is read text and sat as
+   danger ink on a 12% danger tint -- 3.87 dark / 3.87 light, failing 4.5:1 in both themes.
+   Ink to --text-1 (11.90 / 12.96); the hue stays as a hairline inset edge, which is
+   decoration and never the sole carrier of the state. */
 .conflict-kind {
   flex: none;
   margin-left: 6px;
   padding: 1px 6px;
   border-radius: 8px;
   font-size: 10px;
-  color: var(--danger);
+  color: var(--text-1);
   background: color-mix(in srgb, var(--danger) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 35%, transparent);
   white-space: nowrap;
 }
 

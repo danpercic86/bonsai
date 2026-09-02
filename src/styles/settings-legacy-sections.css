@@ -94,29 +94,6 @@
   min-width: 72px;
 }
 
-/* P105 C5: a selected STATE (§12.3.2 segmented form), so P100 recipe 1. --accent as the
-   label measured 4.48:1 dark / 4.00:1 light on .btn-secondary’s --bg-2; the label now
-   inherits --text-1 from .btn-secondary (9.36 / 13.29 on --selection) and the accent border
-   stays as the non-colour carrier at 3.51:1 dark / 3.74:1 light. */
-.settings-toggle-btn.is-active {
-  border-color: var(--accent);
-  background: var(--selection);
-}
-
-/* P105 C4/C5 state coverage (§3.6): `.btn-secondary:hover:not(:disabled)` is (0,3,0) and
-   would out-specify the (0,2,0) rule above, dropping the selected fill back to --bg-3 on
-   hover — the state would then hang on the border alone. This selector re-asserts
-   --selection at STRICTLY HIGHER specificity — (0,4,0) vs (0,3,0) — which is what makes it
-   win: `settings-legacy-sections.css` is imported BEFORE `updates.css` (styles.css:18 vs
-   :43), so at merely equal specificity the later `.btn-secondary:hover:not(:disabled)` rule
-   would take the cascade and this fix would be a no-op. Do NOT simplify the selector.
-   The fill is lifted 8% toward --text-1 (the same device as .btn-primary/.btn-danger hover)
-   so hovering still gives feedback. --text-1 on the lifted fill is 7.55:1 dark /
-   11.42:1 light. */
-.settings-toggle-btn.is-active:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--selection) 92%, var(--text-1));
-}
-
 /* Hint under a radio, aligned with the radio's label text. A radio group exists
    BECAUSE each option needs a sentence (ui-reference §12.3.2), so that sentence is
    the row's primary help and matches row help at 12px — 11px next to 12px in the
@@ -488,10 +465,13 @@
   color: var(--success);
 }
 
+/* P107 A15 (R2): 6.46 dark / 4.17 light as warning-on-own-tint; the sentence reporting a
+   missing CLI fails 4.5:1 in light. Ink to --text-1, hue to the 3px leading bar. */
 .settings-ai-status-warn {
   padding: 8px 12px;
   border-radius: 6px;
   background: color-mix(in srgb, var(--warning) 12%, transparent);
-  color: var(--warning);
+  box-shadow: inset 3px 0 0 var(--warning);
+  color: var(--text-1);
 }
 

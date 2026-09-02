@@ -21,12 +21,17 @@
   overflow-y: auto;
 }
 
+/* P107 A9 (R2): warning ink on its own 12% tint measured 5.87 dark / 3.90 light -- the
+   sentence fails 4.5:1 in light. Ink to --text-1 (10.92 / 13.25); the hue survives as the
+   3px leading bar already shipped by .dev-warning-bar and the P74 toast edge. The bar is
+   painted inside the existing padding, so no text moves. */
 .asset-readonly-banner {
   margin: 8px 0 0;
   padding: 8px 12px;
   border-radius: 6px;
   background: color-mix(in srgb, var(--warning) 12%, transparent);
-  color: var(--warning);
+  box-shadow: inset 3px 0 0 var(--warning);
+  color: var(--text-1);
   font-size: 12px;
   overflow-wrap: anywhere;
 }
@@ -40,21 +45,26 @@
   gap: 4px;
 }
 
+/* P107 A10-A11 (R2): the issue text is the failure the user must read -- 3.87/3.87 (error)
+   and 5.87/3.90 (warning) as hue-on-own-tint. Ink to --text-1 on the base rule; each variant
+   keeps its tint and gains the 3px leading hue bar, which clears the graphics bar against
+   both the tint (3.87 danger / 6.46 warning) and the page. */
 .asset-issue {
   font-size: 12px;
   padding: 4px 8px;
   border-radius: 4px;
+  color: var(--text-1);
   overflow-wrap: anywhere;
 }
 
 .asset-issue-error {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
-  color: var(--danger);
+  box-shadow: inset 3px 0 0 var(--danger);
 }
 
 .asset-issue-warning {
   background: color-mix(in srgb, var(--warning) 12%, transparent);
-  color: var(--warning);
+  box-shadow: inset 3px 0 0 var(--warning);
 }
 
 .asset-field-hint {

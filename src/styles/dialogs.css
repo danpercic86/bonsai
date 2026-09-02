@@ -159,22 +159,26 @@
   padding: 2px 8px;
   border-radius: 999px;
   border: 1px solid transparent;
+  /* P107 A6-A8 (R1): SAFE / CAUTION / DESTRUCTIVE is the word the user reads before
+     approving a git operation, and each sat as hue ink on a 14% tint of its own hue --
+     4.07/3.66, 4.96/3.53 and 3.35/3.48, the worst ratio in the whole audit. The ink moves
+     here; the variants keep their existing 35% border-color as decoration and gain no
+     box-shadow, so no box grows. NOT --danger-text: that is an ink for a SOLID hue fill and
+     measures 1.43:1 on this rule’s own 14%-over---bg-2 tint. */
+  color: var(--text-1);
 }
 
 .danger-badge.safe {
-  color: var(--success);
   background: color-mix(in srgb, var(--success) 14%, var(--bg-2));
   border-color: color-mix(in srgb, var(--success) 35%, var(--bg-2));
 }
 
 .danger-badge.caution {
-  color: var(--warning);
   background: color-mix(in srgb, var(--warning) 14%, var(--bg-2));
   border-color: color-mix(in srgb, var(--warning) 35%, var(--bg-2));
 }
 
 .danger-badge.destructive {
-  color: var(--danger);
   background: color-mix(in srgb, var(--danger) 14%, var(--bg-2));
   border-color: color-mix(in srgb, var(--danger) 35%, var(--bg-2));
 }
