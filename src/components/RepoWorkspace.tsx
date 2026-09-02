@@ -92,7 +92,7 @@ import { useTagSync } from './repoWorkspace/useTagSync';
 import { useRebaseActions } from './repoWorkspace/useRebaseActions';
 import { useCherrypickRevertActions } from './repoWorkspace/useCherrypickRevertActions';
 import { useBisectActions } from './repoWorkspace/useBisectActions';
-import { useReadOverlays } from './repoWorkspace/useReadOverlays';
+import { clearReadOverlays, useReadOverlays } from './repoWorkspace/useReadOverlays';
 import { useWorkspaceKeyboard } from './repoWorkspace/useWorkspaceKeyboard';
 import { useCommitSearch } from './repoWorkspace/useCommitSearch';
 import { useCommitVerification } from './repoWorkspace/useCommitVerification';
@@ -878,12 +878,18 @@ export function RepoWorkspace({
             clearTagSync();
             clearOpState();
             clearCompare();
-            // P23d: drop any blame/history overlay + invalidate in-flight fetches
-            // so a stale overlay can't linger over the now-empty pane.
-            blameReqId.current += 1;
-            setBlame(null);
-            historyReqId.current += 1;
-            setHistory(null);
+            // P23d + P38: drop any blame/history/reflog overlay + invalidate
+            // in-flight fetches so a stale overlay can't linger over the
+            // now-empty pane. All three siblings go together — an open reflog
+            // is just as stale as an open blame once the repo is unusable.
+            clearReadOverlays({
+              setBlame,
+              setHistory,
+              setReflog,
+              blameReqId,
+              historyReqId,
+              reflogReqId,
+            });
             return;
           }
         }

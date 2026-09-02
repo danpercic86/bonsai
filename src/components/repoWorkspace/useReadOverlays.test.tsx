@@ -4,9 +4,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 
 import { mockIpc } from '../../ipc/mock';
-import { useReadOverlays } from './useReadOverlays';
+import { clearReadOverlays, useReadOverlays } from './useReadOverlays';
 import { appErr, stateSetter } from '../../test/actionHookKit';
-import type { BlameLine, GraphLayout, GraphNode, ReflogEntry } from '../../ipc';
+import type {
+  BlameLine,
+  FileHistoryEntry,
+  GraphLayout,
+  GraphNode,
+  ReflogEntry,
+} from '../../ipc';
 import type { BlameState, HistoryState, ReflogState } from './types';
 
 afterEach(() => vi.restoreAllMocks());
@@ -172,6 +178,80 @@ describe('openReflog', () => {
       await p;
     });
     expect(reflog.box.current).toBeNull();
+  });
+});
+
+describe('clearReadOverlays (repo-went-unusable teardown)', () => {
+  it('closes all three overlays and bumps every reqId', () => {
+    const { deps, blame, history, reflog } = makeDeps({
+      blameReqId: { current: 2 },
+      historyReqId: { current: 5 },
+      reflogReqId: { current: 9 },
+    });
+    clearReadOverlays(deps);
+    expect(blame.set).toHaveBeenCalledWith(null);
+    expect(history.set).toHaveBeenCalledWith(null);
+    expect(reflog.set).toHaveBeenCalledWith(null);
+    expect(deps.blameReqId.current).toBe(3);
+    expect(deps.historyReqId.current).toBe(6);
+    expect(deps.reflogReqId.current).toBe(10);
+  });
+
+  it('drops an in-flight reflog fetch so it cannot pop back open', async () => {
+    const d = deferred<ReflogEntry[]>();
+    vi.spyOn(mockIpc, 'readReflog').mockReturnValue(d.promise);
+    const { deps, reflog } = makeDeps();
+    const { result } = mount(deps);
+    let p!: Promise<void>;
+    act(() => {
+      p = result.current.openReflog('HEAD');
+    });
+    expect(reflog.box.current?.loading).toBe(true);
+    act(() => clearReadOverlays(deps));
+    expect(reflog.box.current).toBeNull();
+    await act(async () => {
+      d.resolve([{ message: 'reset' } as unknown as ReflogEntry]);
+      await p;
+    });
+    expect(reflog.box.current).toBeNull();
+  });
+
+  it('drops an in-flight blame fetch', async () => {
+    const d = deferred<BlameLine[]>();
+    vi.spyOn(mockIpc, 'blameFile').mockReturnValue(d.promise);
+    const { deps, blame } = makeDeps();
+    const { result } = mount(deps);
+    let p!: Promise<void>;
+    act(() => {
+      p = result.current.handleBlame('f.ts');
+    });
+    expect(blame.box.current?.loading).toBe(true);
+    act(() => clearReadOverlays(deps));
+    expect(blame.box.current).toBeNull();
+    await act(async () => {
+      d.resolve([{ path: 'f.ts' } as unknown as BlameLine]);
+      await p;
+    });
+    expect(blame.box.current).toBeNull();
+  });
+
+  it('drops an in-flight file-history fetch', async () => {
+    const d = deferred<FileHistoryEntry[]>();
+    vi.spyOn(mockIpc, 'fileHistory').mockReturnValue(d.promise);
+    const { deps, history } = makeDeps();
+    const { result } = mount(deps);
+    let p!: Promise<void>;
+    act(() => {
+      p = result.current.handleFileHistory('f.ts');
+    });
+    expect(history.box.current?.loading).toBe(true);
+    act(() => clearReadOverlays(deps));
+    expect(history.box.current).toBeNull();
+    await act(async () => {
+      d.resolve([{ oid: 'a' } as unknown as FileHistoryEntry]);
+      await p;
+    });
+    expect(history.box.current).toBeNull();
   });
 });
 

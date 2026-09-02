@@ -6,6 +6,27 @@ import type { GraphLayout } from '../../ipc';
 import type { PushToast } from '../../ToastContext';
 import type { BlameState, HistoryState, ReflogState, Setter } from './types';
 
+/** P23d + P38: drop ALL THREE read overlays at once and invalidate their
+ *  in-flight fetches (each reqId bump makes a pending blameFile/fileHistory/
+ *  readReflog response fail its `reqId.current !== reqId` check, so nothing
+ *  pops back open). Used by the container's repo-went-unusable teardown, which
+ *  must not leave a stale overlay lingering over the now-empty pane. */
+export function clearReadOverlays(refs: {
+  setBlame: Setter<BlameState | null>;
+  setHistory: Setter<HistoryState | null>;
+  setReflog: Setter<ReflogState | null>;
+  blameReqId: { current: number };
+  historyReqId: { current: number };
+  reflogReqId: { current: number };
+}): void {
+  refs.blameReqId.current += 1;
+  refs.setBlame(null);
+  refs.historyReqId.current += 1;
+  refs.setHistory(null);
+  refs.reflogReqId.current += 1;
+  refs.setReflog(null);
+}
+
 /** P23d + P38: the blame / file-history / reflog center-pane read overlays.
  *  Each holds its own loading/error + a req-id stale-guard; opening one cross-
  *  invalidates the siblings so only one overlay is ever pending/open. The
