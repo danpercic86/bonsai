@@ -324,6 +324,75 @@ compare against the 162 s dev figure including build.
 
 ---
 
+## ✅ P91 SECURITY ARC — CODE + CONTRACT COMPLETE (2026-09-03)
+
+**Full `pnpm gate` at `b26833f`:** all 7 non-e2e steps green (nextest 126.0s, doctests 3.0s,
+clippy 9.8s, eslint 10.6s, **file-size ratchet 0.77s**, vitest 58.1s, tsc+build 10.5s). e2e = 179
+passed / 1 skipped / **2 failed**, and **neither failure is a regression** — see the triage below.
+`cargo obs::` went **135 → 146 → 158 → 162** across the arc.
+
+### Commits
+`a287a53` audit → `834f2d1` ruling + raw-args contract → `120cadd` F2-F5 → `c0abbe1` F1 →
+`2523426` review + re-audit follow-ups → `2fb647e` ratification → `0a785b3` copy contract →
+`b26833f` copy implementation.
+
+### Three binding rules are now IN THE CONTRACT, not just in this session's memory
+
+Each was learned by a bug that was green the whole time it was broken:
+
+1. **A writer rule is covered only by a `LogRecord` → `append_record` → read-back round-trip.**
+   Synthetic-`Value` tests are additive, never substitutive. *This is what let W6 ship dead in
+   production while its test passed* — it was the one rule of six that skipped the round-trip.
+2. **A validator's tests must use inputs the REAL producer emits**, and a cross-boundary vocabulary
+   must be pinned by a drift test that re-derives it from the producer's own source. *A predicate
+   that rejects everything is indistinguishable from one that works, unless something asserts a real
+   input is ACCEPTED.* This is the `cmd.*` camelCase bug.
+3. **A negative test must be PROVEN to fail on the unfixed code.** Saying "this must fail on today's
+   code" is not proof. AC6 as originally written specified a payload the scrubber **already caught**,
+   so it would have been green on the buggy code — a negative test that could not go red.
+
+### The writer's limit, recorded honestly in both contracts
+`raw_args.rs` enforces **shape + vocabulary, not semantics**. Content under an identifier-named key,
+≤512 chars, single-line, **survives**. Its only defence is the **positional drift guard** in
+`rawArgPolicy.test.ts` (a reordered signature relabelling a `message` as a `targetOid` is
+structurally invisible to the writer). **Neither guard may be removed citing the other.**
+
+### Architect decision worth not re-opening: NO global cap on metric keys
+Worst case is genuinely per-map-per-bucket, ~**616k keys**, and that is accepted rather than glossed.
+A global cap is **rejected** because it would make *today's* recording depend on *history*: a
+long-lived install would stop minting keys and dump current activity into `meta.overflow`,
+destroying the week-over-week comparison §8.1 exists to serve. 512 sits above a ~212-key reachable
+set, so it is a **runaway stop, not a sizing parameter**. File-size pressure has a different lever
+(size-triggered early roll-up), recorded as a **revisit trigger only, ~8 MB — no work now.**
+
+### ⚠ GATE TRIAGE — the two e2e failures, diagnosed not assumed
+- **`30-graph-rail.spec.ts:56` — a latent DATE-dependent test bug.** `getByText('1/2')` resolved to
+  two elements: the search counter **and** a commit date rendering as `1d · 9/1/2026`, because
+  **`9/1/2026` contains the substring `1/2`**. The clock rolling to 2026-09-03 mid-session exposed
+  it. It passes in isolation again now, which is precisely what makes it dangerous — it will recur
+  and look like a flake.
+- **`29-graph-fold.spec.ts` — an unstable spec, PRE-EXISTING.** Verified, not assumed: it failed a
+  **different** test in isolation (95/137/178) than in the gate (75), and **still fails with today's
+  CSS reverted**. The delta is consistently **32px = exactly one `DEFAULT_ROW_HEIGHT`**, which says
+  the poll is racing the graph's async paint settle. Today's only graph CSS change was `color` +
+  `box-shadow: inset`, neither of which participates in layout.
+- Both routed to `tester` as genuine test-quality defects rather than annotated as flakes.
+
+### Still open from the arc
+- **P91 SHOULD-FIX pair** (unchanged): the `SAVE_LOCK` snapshot race that lets `metrics_reset` be
+  silently undone on disk; the `last_fire` prune's unstated monotonic-`ts` premise.
+- **`P91-observability-ui.md:496` and `:951` are stale** — both still describe
+  `log_export_session(dest)` and a native save dialog **that never existed**. → `ui-designer`.
+- **Contract consolidation (architect recommendation, not yet done):** fold
+  `P91-raw-args-privacy.md` into `P91-observability.md` (≈ −250 active lines) when `docs-curator`
+  archives §13 rows 1-15; keep `P91-privacy-copy-ui.md` standalone since it is `ui-designer`-owned.
+- **NEW, found while implementing the copy: this repo has NO prettier config** — no `.prettierrc*`,
+  no `prettier.config.*`, no `package.json` key, no `.editorconfig`. Running prettier therefore falls
+  back to its defaults and rewrites whole files (74 insertions for a ~20-line edit, double quotes at
+  80 columns against the repo's ~100). **Do not run prettier here** until a config exists.
+
+---
+
 ## 🔐 SECURITY AUDIT of the P91 surface — 2026-09-02 — **F1 IS A SHIP BLOCKER**
 
 Run deliberately *now* because **P91 has never shipped** (absent from `dev`): this is the last point
