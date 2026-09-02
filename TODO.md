@@ -313,6 +313,39 @@ compare against the 162 s dev figure including build.
 
 ---
 
+## 📋 P108 — hue-as-text over NEUTRAL surfaces — PROPOSED, not enumerated (filed 2026-09-02)
+
+Proposed by `ui-designer` while enumerating P107, and deliberately filed **without** a count or a
+closure claim — which is the programme's method working, since five prior claims failed by asserting
+app-wide scope before enumerating.
+
+Distinct from P105 (which covered `color: var(--accent)` specifically) and from P107 (hue text over
+its *own* tint): this is any hue token used as text over a **neutral** `--bg-*` surface.
+
+Seed observation, and it is pointed: **`.dev-status-write-failed .dev-status-state` measures
+4.41 dark** — that is P91 §8.4's own **"▲ Not writing"** string, the indicator whose entire job is to
+stay legible during a disk failure. Do not treat the seed as the scope; run the three-pass search
+P107 established, including the `--h` indirection and the tinted-parent child classes no hue-name
+grep reaches.
+
+---
+
+## 📋 P106 — backdrops now measured for it by P107 (2026-09-02)
+
+P107 found **exactly one** overlap and **left it to P106** rather than both contracts claiming it.
+The hand-off is the set of backdrops P106 had not measured for `.file-status-deleted .file-badge`:
+
+| backdrop | dark | light |
+|---|---|---|
+| `--bg-1` | 4.41 | 4.60 |
+| `--bg-2` hover | **3.89** | **4.24** |
+| `--selection` | **3.05** | **3.96** |
+
+And the *added* badge sits on `.status-section--staged`'s 6% `--success` tint at **5.26 / 4.38** —
+**success ink on a success tint, failing in light at rest.** P107 does not touch `status-panel.css`.
+
+---
+
 ## 🧭 DEAD CSS — `.settings-toggle-btn.is-active` matches nothing — DECISION NEEDED (found 2026-09-02)
 
 Found independently by **both** the code reviewer and the designer, which is why it is recorded as
@@ -400,7 +433,7 @@ so §11's "bounded" is genuinely weaker for this map than for its neighbours.
 
 ---
 
-## 📋 P107 — the 16 hue-over-own-tint instances `ui-reference.md` §2 undercounted as 6 — PENDING (filed 2026-09-02)
+## 📋 P107 — hue-over-own-tint: 38 call sites (§2 had claimed 6) — CONTRACT DONE, IMPL PENDING
 
 **The fourth app-wide claim in this programme to fail on inspection**, after P95's enabled-control
 class (3 escapes found by P101), P98's "`--text-3` family closed" (122 declarations never
@@ -413,9 +446,42 @@ outside that milestone's scope:
 `.asset-issue-error` / `-warning`, `.conflict-kind`, `.error-banner`, `.graph-truncated-banner`,
 `.settings-ai-status-warn`, `.wt-copy-chip`.
 
-The list is recorded here **and** in the reference so the next session inherits an enumeration
-rather than a number. `ui-designer` is correcting §2 in the current review pass; **this entry is the
-remediation of the 16 call sites, which is NOT in P102/P105's scope.**
+**CONTRACT DELIVERED 2026-09-02 — `docs/contracts/P107-hue-over-own-tint-ui.md` (`59061b2`), and
+the population is 38, not 16.** The brief required a *broader* search rather than a reconfirmation,
+on the grounds that a count agreeing with the wrong count is not evidence. It moved:
+
+- **Pass (i)** same-rule-block — the search that produced the wrong 6.
+- **Pass (ii)** a multiline descendant-combinator grep — recovers cases where ink and tint live in
+  different rules (the `.pr-state-open` pattern).
+- **Pass (iii)** two classes even (ii) cannot see, and this is the durable lesson: **unqualified
+  child classes whose only parent is tinted** (found by *reading the 25 tinted containers'
+  components*, not by grepping), and **custom-property indirection via `--h`** — 11 instances across
+  4 families that **no hue-name grep can ever reach**. A fifth family was hidden by **token
+  aliasing**: `--badge-good`/`--badge-warn` are byte-identical to `--success`/`--danger`.
+
+**Buckets: 17 failing text · 19 compliant glyph KEEPS · 1 failing glyph state · 1 owned by P106.**
+The 19 keeps matter as much as the fixes — a blanket sweep would have wrecked the toast, submodule,
+ai-dock and git-dock pill recipes. The single glyph-state failure, `.error-dismiss:hover` at
+**2.96 light**, is **compliant at rest** and surfaced only because the contract resolves each call
+site's backdrop *per state*.
+
+**Zero new tokens**, and `--warning-text` is explicitly **not needed** — no non-compliant
+solid-warning fill exists, and `--bg-0` already resolves to exactly what such a token would carry.
+**Recorded trap: `--danger-text` on a 14% danger tint is 1.27:1 — the `--*-text` tokens are
+fill-inks and must never be put on a tint.**
+
+**A `ui-reference.md` §2 recipe was retracted, not patched:** it offered "a 35% border **or** a
+leading bar/glyph at the 3:1 bar". A 35% hue edge measures **1.58/1.69** — decoration, never an
+identity carrier. Solid-hue bars do pass (4.41-7.92) and stay.
+
+**13 ACs with a predicted post-fix residue** (`--danger` 35→27, `--success` 12→9, `--warning` 24→17,
+`--text-1` 159→171, `--h:` unchanged at 15, 9 files, 0 outside `src/styles`, 0 `.tsx`).
+**AC11/AC12/AC13 are USER CHECKPOINT and stay PENDING.** Implementation NOT started; it edits 9
+files under `src/styles/`, so it must not overlap another CSS pass.
+
+**Method note worth carrying forward:** measurement was calibrated by reproducing six independently
+recorded historical values *before* trusting any new number, and a `color(srgb …)` vs `rgba()`
+serialization trap invalidated the first run outright. Both are recorded in the contract.
 
 **The pattern is now established well enough to state as a rule.** Every one of the four failures
 had the same shape: a sentence claiming an app-wide property, with a call-site count that nobody
