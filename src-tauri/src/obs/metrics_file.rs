@@ -81,7 +81,7 @@ pub fn save(path: &Path, file: &MetricsFile) -> Result<(), AppError> {
     // anyway rather than propagating the poison.
     let _guard = SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
+        super::fs_perm::create_dir_private(parent)
             .map_err(|e| AppError::Io(format!("cannot create metrics dir: {e}")))?;
     }
     let json = serde_json::to_vec_pretty(file)
@@ -89,7 +89,9 @@ pub fn save(path: &Path, file: &MetricsFile) -> Result<(), AppError> {
 
     let tmp = tmp_path(path);
     {
-        let mut f = std::fs::File::create(&tmp)
+        // Owner-only (`0600` on unix). The temp is what gets renamed onto
+        // `usage.json`, so the primary (and later its `.bak`) inherits the mode.
+        let mut f = super::fs_perm::create_file_private(&tmp)
             .map_err(|e| AppError::Io(format!("cannot create metrics temp: {e}")))?;
         f.write_all(&json)
             .map_err(|e| AppError::Io(format!("cannot write metrics temp: {e}")))?;

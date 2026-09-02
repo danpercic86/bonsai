@@ -14,11 +14,14 @@
 //!    (decision 4) — see [`stop`].
 
 pub mod anomaly;
+pub mod fs_perm;
 pub mod histogram;
 pub mod invoke_shim;
 pub mod metrics;
+mod metrics_cmds;
 pub mod metrics_file;
 mod metrics_keys;
+mod metrics_map;
 pub mod phase;
 pub mod record;
 pub mod redact;

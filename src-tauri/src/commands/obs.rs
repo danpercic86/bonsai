@@ -320,7 +320,7 @@ pub(crate) fn count_exports(exports_dir: &Path) -> (Option<u32>, Option<u64>) {
 pub async fn log_reveal_dir(app: tauri::AppHandle) -> Result<(), AppError> {
     let dir = obs::logs_dir(&app)?;
     let for_create = dir.clone();
-    tauri::async_runtime::spawn_blocking(move || std::fs::create_dir_all(&for_create))
+    tauri::async_runtime::spawn_blocking(move || obs::fs_perm::create_dir_private(&for_create))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
         .map_err(|e| AppError::Io(format!("cannot create log dir: {e}")))?;
@@ -333,11 +333,14 @@ pub async fn log_reveal_dir(app: tauri::AppHandle) -> Result<(), AppError> {
 /// is not a liberty: the UI contract's user story is *enable → reproduce → turn
 /// Dev mode OFF → find the file → send it*, so refusing to export without a live
 /// session would break the milestone's own workflow at its second-to-last step.
+///
+/// Takes NO destination: the zip always lands in the app-managed `exports/`
+/// directory — see [`export_session`] for why a webview-supplied path is not a
+/// user-chosen path (audit F4).
 #[tauri::command]
 pub async fn log_export_session(
     app: tauri::AppHandle,
     obs_state: tauri::State<'_, ObsState>,
-    dest: Option<String>,
 ) -> Result<String, AppError> {
     let dir = obs::logs_dir(&app)?;
     let exports = obs::exports_dir(&app)?;
@@ -350,7 +353,7 @@ pub async fn log_export_session(
         s.request_flush();
     }
     let session_id = obs_state.sink().map(|s| s.session_id().to_string());
-    tauri::async_runtime::spawn_blocking(move || export_session(&dir, &exports, session_id, dest))
+    tauri::async_runtime::spawn_blocking(move || export_session(&dir, &exports, session_id))
         .await
         .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
@@ -361,7 +364,6 @@ pub(crate) fn export_session(
     dir: &Path,
     exports_dir: &Path,
     session_id: Option<String>,
-    dest: Option<String>,
 ) -> Result<String, AppError> {
     let all = writer::list_log_files(dir);
     if all.is_empty() {
@@ -383,22 +385,27 @@ pub(crate) fn export_session(
         .map(|(n, _)| n)
         .collect();
 
-    // §6.2: the default destination is `exports/`, NEVER `logs/`. A zip left in
-    // `logs/` would survive `logs_delete_all` (whose scope is `*.jsonl`), so a
-    // user could "delete all log files" and still hold a raw-names archive —
-    // exactly the failure decision 7 exists to prevent. A caller-supplied `dest`
-    // is a privileged write and is taken verbatim: it is the result of the OS
-    // save dialog, i.e. a path the user chose explicitly.
-    let out: PathBuf = match dest {
-        Some(d) => PathBuf::from(d),
-        None => exports_dir.join(format!("{group}.zip")),
-    };
+    // §6.2: the destination is ALWAYS `exports/`, NEVER `logs/` and never a
+    // caller-supplied path. A zip left in `logs/` would survive `logs_delete_all`
+    // (whose scope is `*.jsonl`), so a user could "delete all log files" and still
+    // hold a raw-names archive — exactly the failure decision 7 exists to prevent.
+    //
+    // SECURITY (audit F4): there is deliberately no `dest` parameter. A path
+    // arriving over IPC comes from the WEBVIEW, not from the user — there is no
+    // save dialog in P91 — so honouring it would let any script execution in the
+    // webview create directories and write a zip anywhere the process can write,
+    // and would put exports outside the `logs_delete_all` scope. When a "Save
+    // as…" affordance is built, the path must come from a Tauri dialog invoked
+    // by the BACKEND (whose result the webview never chooses), not from a string
+    // handed to this command.
+    let out: PathBuf = exports_dir.join(format!("{group}.zip"));
     if let Some(parent) = out.parent() {
-        std::fs::create_dir_all(parent)
+        crate::obs::fs_perm::create_dir_private(parent)
             .map_err(|e| AppError::Io(format!("cannot create export folder: {e}")))?;
     }
 
-    let file = std::fs::File::create(&out)
+    // Owner-only (`0600` on unix): the zip holds the same content as the parts.
+    let file = crate::obs::fs_perm::create_file_private(&out)
         .map_err(|e| AppError::Io(format!("cannot create export file: {e}")))?;
     let mut zip = zip::ZipWriter::new(std::io::BufWriter::new(file));
     let opts: zip::write::FileOptions<'_, ()> =

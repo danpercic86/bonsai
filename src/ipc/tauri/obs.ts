@@ -20,8 +20,10 @@ export const obsCommands = {
     return invoke<void>('log_reveal_dir');
   },
 
-  logExportSession(dest?: string | null): Promise<string> {
-    return invoke<string>('log_export_session', { dest: dest ?? null });
+  logExportSession(): Promise<string> {
+    // No `dest`: the backend always writes into its own `exports/` directory
+    // (audit F4 — a webview-supplied path is not a user-chosen path).
+    return invoke<string>('log_export_session');
   },
 
   logsDeleteAll(): Promise<LogsDeleteResult> {

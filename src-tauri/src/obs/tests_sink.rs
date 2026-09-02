@@ -203,7 +203,7 @@ fn the_session_salt_never_reaches_disk() {
     });
     sink.shutdown();
 
-    crate::commands::export_session(&logs, &exports, None, None).expect("export");
+    crate::commands::export_session(&logs, &exports, None).expect("export");
 
     let mut scanned = 0usize;
     for dir in [&logs, &exports] {

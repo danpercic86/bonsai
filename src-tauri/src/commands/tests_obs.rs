@@ -49,7 +49,7 @@ fn exports_every_part_of_the_named_session() {
     seed(&fx.logs, "bonsai-2026-08-27T10-00-00-snew.jsonl", "{\"b\":1}\n");
     seed(&fx.logs, "bonsai-2026-08-27T10-00-00-snew-1.jsonl", "{\"b\":2}\n");
 
-    let out = export_session(&fx.logs, &fx.exports, Some("snew".into()), None).expect("export");
+    let out = export_session(&fx.logs, &fx.exports, Some("snew".into())).expect("export");
     assert_eq!(
         zip_names(&out),
         vec![
@@ -69,7 +69,7 @@ fn default_destination_is_exports_and_never_logs() {
     let fx = fixture();
     seed(&fx.logs, "bonsai-2026-08-27T10-00-00-snew.jsonl", "{}\n");
 
-    let out = export_session(&fx.logs, &fx.exports, None, None).expect("export");
+    let out = export_session(&fx.logs, &fx.exports, None).expect("export");
     assert!(
         Path::new(&out).starts_with(&fx.exports),
         "export landed outside exports/: {out}"
@@ -94,34 +94,39 @@ fn exports_the_newest_session_when_dev_mode_is_off() {
     seed(&fx.logs, "bonsai-2026-08-26T10-00-00-sold.jsonl", "{}\n");
     seed(&fx.logs, "bonsai-2026-08-27T10-00-00-snew.jsonl", "{}\n");
 
-    let out = export_session(&fx.logs, &fx.exports, None, None).expect("export");
+    let out = export_session(&fx.logs, &fx.exports, None).expect("export");
     assert_eq!(zip_names(&out), vec!["bonsai-2026-08-27T10-00-00-snew.jsonl"]);
 }
 
 #[test]
 fn export_rejects_clearly_when_there_is_nothing_to_export() {
     let fx = fixture();
-    let err = export_session(&fx.logs, &fx.exports, None, None).expect_err("no files");
+    let err = export_session(&fx.logs, &fx.exports, None).expect_err("no files");
     assert!(err.to_string().contains("no log files"), "{err}");
 }
 
-/// A caller-supplied `dest` is the result of the OS save dialog — a path the
-/// user chose explicitly — and is honoured verbatim, including outside the app
-/// config directory.
+/// REGRESSION (audit F4) — the export destination is the app-managed `exports/`
+/// directory and NOTHING else. There is no `dest` parameter to redirect it,
+/// because a path arriving over IPC is chosen by the webview, not by the user
+/// (P91 ships no save dialog), and a zip written outside `exports/` would also
+/// escape the `logs_delete_all` scope (§6.2).
+///
+/// The signature itself is the guard — this test pins the OUTPUT LOCATION so a
+/// re-added parameter cannot quietly change where a zip lands.
 #[test]
-fn export_writes_to_the_requested_destination() {
+fn export_always_lands_inside_the_exports_directory() {
     let fx = fixture();
     seed(&fx.logs, "bonsai-2026-08-27T10-00-00-snew.jsonl", "{}\n");
-    let dest = fx.logs.parent().expect("parent").join("saved").join("s.zip");
-    let out = export_session(
-        &fx.logs,
-        &fx.exports,
-        None,
-        Some(dest.to_string_lossy().to_string()),
-    )
-    .expect("export");
-    assert_eq!(out, dest.to_string_lossy());
-    assert!(dest.exists());
+
+    let out = PathBuf::from(export_session(&fx.logs, &fx.exports, None).expect("export"));
+    assert_eq!(
+        out.parent(),
+        Some(fx.exports.as_path()),
+        "the zip must be written into exports/, not anywhere else"
+    );
+    assert!(out.exists());
+    // Nothing was created next to the logs directory (the old `dest` escape).
+    assert!(!fx.logs.parent().expect("parent").join("saved").exists());
 }
 
 /// §6.2 — `log_session_info` reports the export zips so the delete-confirm copy
@@ -132,7 +137,7 @@ fn export_counts_distinguish_missing_from_empty() {
     assert_eq!(count_exports(&fx.exports), (None, None));
 
     seed(&fx.logs, "bonsai-2026-08-27T10-00-00-snew.jsonl", "{}\n");
-    export_session(&fx.logs, &fx.exports, None, None).expect("export");
+    export_session(&fx.logs, &fx.exports, None).expect("export");
     let (files, bytes) = count_exports(&fx.exports);
     assert_eq!(files, Some(1));
     assert!(bytes.expect("bytes") > 0);

@@ -26,8 +26,10 @@ use crate::obs::record::PhaseTiming;
 use crate::obs::writer;
 use crate::perf::PerfCounters;
 
+use super::metrics_cmds::is_known_cmd;
 use super::metrics_file;
 use super::metrics_keys::{is_valid_cmd_name, is_valid_counter_key, is_valid_err_code};
+use super::metrics_map;
 
 /// Current on-disk metrics schema. Bumped only if an EXISTING field changes
 /// shape; additive growth keeps it at 1 (mirrors `OBS_SCHEMA_VERSION`).
@@ -80,25 +82,19 @@ pub struct MetricTotals {
 
 impl MetricTotals {
     /// Folds `other` into `self` — used for the 400-day → `lifetime` roll-up.
+    ///
+    /// Goes through `metrics_map` like every other writer: `lifetime` accumulates
+    /// 400 buckets' key sets, so it is the map most able to grow past the
+    /// cardinality cap (audit F3).
     fn merge(&mut self, other: &MetricTotals) {
         for (k, v) in &other.counters {
-            *self.counters.entry(k.clone()).or_insert(0) = self
-                .counters
-                .get(k)
-                .copied()
-                .unwrap_or(0)
-                .saturating_add(*v);
+            metrics_map::bump(&mut self.counters, k, *v);
         }
         for (k, h) in &other.durations {
-            self.durations.entry(k.clone()).or_default().merge(h);
+            metrics_map::merge_histogram(&mut self.durations, k, h);
         }
         for (k, v) in &other.errors {
-            *self.errors.entry(k.clone()).or_insert(0) = self
-                .errors
-                .get(k)
-                .copied()
-                .unwrap_or(0)
-                .saturating_add(*v);
+            metrics_map::bump(&mut self.errors, k, *v);
         }
         self.session_ms = self.session_ms.saturating_add(other.session_ms);
     }
@@ -257,26 +253,31 @@ impl MetricsState {
             .totals
     }
 
-    /// Increments a counter key. The caller MUST pass an allow-listed
-    /// `<domain>.<action>` literal — the counter map is only bounded, and only
-    /// free of user-derived content, because every call site uses a fixed string
-    /// (today: `fold_perf` and tests).
+    /// Increments a counter key. The caller is expected to pass an allow-listed
+    /// `<domain>.<action>` literal.
     ///
-    /// The `debug_assert` below is the enforcement: a key carrying a path
-    /// separator, whitespace or an uppercase letter is what a branch name, a path
-    /// or a ref would look like, and such a key would be persisted verbatim into
-    /// `usage.json` — a file that carries NO user content by construction (§8).
-    /// Debug-only on purpose: this is a programmer mistake to catch in tests, not
-    /// a runtime condition to branch on, and metrics must never fail the app.
+    /// **No production caller exists today**: `fold_perf` inlines its own
+    /// [`PERF_KEYS`] loop, so this entry point is currently exercised only by
+    /// tests. It stays because it is the intended door for future `<domain>.
+    /// <action>` counters — which is exactly why the guard below must hold at
+    /// runtime rather than in tests only.
+    ///
+    /// The [`is_valid_counter_key`] guard is a REAL `if`, not a `debug_assert`
+    /// (audit F2): `debug-assertions` is off in release and this crate sets no
+    /// `[profile.release]` override, so an assert would vanish from the shipped
+    /// binary and let a key carrying a path separator, whitespace or an uppercase
+    /// letter — i.e. a branch name, a path or a ref — be persisted verbatim into
+    /// `usage.json`, a file that carries NO user content by construction, is not
+    /// covered by `logs_delete_all` and has no redaction pass (§8, decision 25).
+    /// A rejected key DROPS the observation, silently and in every profile —
+    /// identical to `observe_ipc_result`'s two guards; metrics never fail the app.
     pub fn bump_counter(&self, key: &str, n: u64, today: &str) {
-        debug_assert!(
-            is_valid_counter_key(key),
-            "counter keys are `<domain>.<action>` literals, never user-derived: {key:?}"
-        );
+        if !is_valid_counter_key(key) {
+            return;
+        }
         let mut g = self.lock();
         let t = Self::totals_for(&mut g, today);
-        *t.counters.entry(key.to_string()).or_insert(0) =
-            t.counters.get(key).copied().unwrap_or(0).saturating_add(n);
+        metrics_map::bump(&mut t.counters, key, n);
         g.dirty = true;
     }
 
@@ -284,18 +285,24 @@ impl MetricsState {
     /// an error outcome, the `errCode` tally. In-memory ONLY — never touches disk
     /// (so it is safe inside the no-IO `log_append` command).
     pub fn observe_ipc_result(&self, cmd: &str, ms: f64, err_code: Option<&str>, today: &str) {
+        // `cmd` arrives from the WEBVIEW (`log_append` takes its records verbatim),
+        // so two independent guards apply before it can mint a durable key:
+        // the shape predicate, and — authoritatively — membership in the real
+        // `IpcApi` method set (audit F3). Shape alone bounds nothing: a buggy or
+        // hostile frontend can mint unlimited well-shaped names.
+        let known = is_valid_cmd_name(cmd) && is_known_cmd(cmd);
         let mut g = self.lock();
         let t = Self::totals_for(&mut g, today);
-        if is_valid_cmd_name(cmd) {
-            t.durations
-                .entry(format!("cmd.{cmd}"))
-                .or_default()
-                .observe(ms.max(0.0).round() as u64);
+        if known {
+            metrics_map::observe(
+                &mut t.durations,
+                &format!("cmd.{cmd}"),
+                ms.max(0.0).round() as u64,
+            );
         }
         if let Some(code) = err_code {
             if is_valid_err_code(code) {
-                *t.errors.entry(code.to_string()).or_insert(0) =
-                    t.errors.get(code).copied().unwrap_or(0).saturating_add(1);
+                metrics_map::bump(&mut t.errors, code, 1);
             }
         }
         g.dirty = true;
@@ -317,23 +324,22 @@ impl MetricsState {
         };
         let mut g = self.lock();
         let t = Self::totals_for(&mut g, today);
-        t.durations
-            .entry(format!("op.{op}"))
-            .or_default()
-            .observe(ms.max(0.0).round() as u64);
+        metrics_map::observe(
+            &mut t.durations,
+            &format!("op.{op}"),
+            ms.max(0.0).round() as u64,
+        );
         for p in phases {
             if allowed.contains(&p.name.as_str()) {
-                t.durations
-                    .entry(format!("op.{op}.{}", p.name))
-                    .or_default()
-                    .observe(p.ms.max(0.0).round() as u64);
+                metrics_map::observe(
+                    &mut t.durations,
+                    &format!("op.{op}.{}", p.name),
+                    p.ms.max(0.0).round() as u64,
+                );
             }
         }
         if let Some(q) = queued_ms {
-            t.durations
-                .entry("queue.blocking".to_string())
-                .or_default()
-                .observe(q as u64);
+            metrics_map::observe(&mut t.durations, "queue.blocking", q as u64);
         }
         g.dirty = true;
     }
@@ -348,12 +354,7 @@ impl MetricsState {
         for (key, get) in PERF_KEYS {
             let delta = get(snap).saturating_sub(get(&baseline));
             if delta > 0 {
-                *t.counters.entry(key.to_string()).or_insert(0) = t
-                    .counters
-                    .get(key)
-                    .copied()
-                    .unwrap_or(0)
-                    .saturating_add(delta);
+                metrics_map::bump(&mut t.counters, key, delta);
             }
         }
         g.perf_baseline = snap.clone();

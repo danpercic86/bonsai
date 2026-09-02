@@ -22,8 +22,13 @@ export interface IpcApiObs {
   logRevealDir(): Promise<void>;
   /** Zip the current session's parts — or the newest session on disk when Dev
    *  mode is off, which is what the "turn Dev mode off, then export" workflow
-   *  needs — and resolve with the archive path. */
-  logExportSession(dest?: string | null): Promise<string>;
+   *  needs — and resolve with the archive path. The destination is ALWAYS the
+   *  app-managed `exports/` directory: it takes NO path argument, because a path
+   *  crossing this boundary comes from the webview rather than from the user
+   *  (there is no save dialog in P91) and would escape the `logsDeleteAll`
+   *  scope. A future "Save as…" must get its path from a backend-invoked Tauri
+   *  dialog, not from an argument here. */
+  logExportSession(): Promise<string>;
   /** §6.1/§6.2 — delete every in-scope log/export artifact (roll-then-purge when
    *  Dev mode is on, so logging continues into a fresh file). Reports honest
    *  counts including partial failures. The UI MUST confirm before invoking. On

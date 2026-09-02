@@ -16,24 +16,35 @@
 //! rejected, and the caller drops the observation rather than recording it.
 
 /// True for a command name that may become a `cmd.<name>` duration key: a bare
-/// snake_case code identifier. Repo content (paths, refs, messages) carries
-/// slashes, dots, spaces or uppercase and is therefore rejected — this is the
-/// "no user-derived key" guard for the one key family sourced from IPC.
+/// code identifier — `lowerCamelCase` (what `obs/ipcProxy.ts` sends, since `cmd`
+/// IS the `IpcApi` method name) or snake_case. Repo content (paths, refs,
+/// messages) carries slashes, dots, spaces or leading uppercase and is rejected
+/// here.
+///
+/// SHAPE ONLY, and therefore NOT sufficient on its own (audit F3): it accepts
+/// unlimited well-shaped strings, so `metrics::observe_ipc_result` pairs it with
+/// `metrics_cmds::is_known_cmd`, exact membership in the real `IpcApi` method
+/// set. This predicate stays as the cheap first gate and as the documented home
+/// of the shape rule (§8 decision 25).
 pub(super) fn is_valid_cmd_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 40
         && name.starts_with(|c: char| c.is_ascii_lowercase())
-        && name
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// True for a `<domain>.<action>` counter key: lowercase ASCII segments joined by
-/// single dots, no path separator, no whitespace. Used by `bump_counter`'s
-/// `debug_assert` — a user-derived string (branch name, path, ref) fails it.
+/// single dots, no path separator, no whitespace. A user-derived string (branch
+/// name, path, ref) fails it. Enforced by `bump_counter` as a RUNTIME `if` — not
+/// a `debug_assert`, which release builds compile out (audit F2).
 pub(super) fn is_valid_counter_key(key: &str) -> bool {
     !key.is_empty()
         && key.len() <= 60
+        // A counter key is `<domain>.<action>`, so the separator is REQUIRED: a
+        // bare lowercase token (a forge token, an oid, an id) is shape-valid
+        // otherwise, and once the guard runs in release (audit F2) "shape-valid"
+        // is exactly what decides whether it is persisted.
+        && key.contains('.')
         && !key.starts_with('.')
         && !key.ends_with('.')
         && !key.contains("..")

@@ -185,7 +185,7 @@ export const obsHandlers = {
     console.info(`[mock] reveal logs folder: ${MOCK_DIR}`);
   },
 
-  async logExportSession(dest?: string | null): Promise<string> {
+  async logExportSession(): Promise<string> {
     await delay(60);
     // Mirrors the backend refusal VERBATIM (`commands/obs.rs`): with no session
     // recorded and nothing on disk there is nothing to zip, and the harness must
@@ -193,8 +193,9 @@ export const obsHandlers = {
     if (!readUiSettings().dev.enabled && ringStats().records === 0) {
       throw new Error('there are no log files to export');
     }
-    // §6.2: the default destination is exports/, NEVER logs/.
-    return dest ?? `${MOCK_EXPORTS_DIR}/bonsai-2026-08-27T14-03-11-smock0001.zip`;
+    // §6.2: the destination is ALWAYS exports/, NEVER logs/ and never a
+    // caller-supplied path — the command takes no `dest` (audit F4).
+    return `${MOCK_EXPORTS_DIR}/bonsai-2026-08-27T14-03-11-smock0001.zip`;
   },
 
   async metricsSnapshot(): Promise<MetricsSnapshot> {

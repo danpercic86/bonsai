@@ -14,7 +14,7 @@
 //! change for it, and the session `Redactor` is deliberately owned by the sink
 //! (not by this struct) so a roll keeps the session's ordinals.
 
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
@@ -119,7 +119,9 @@ impl LogWriter {
     /// Prunes old sessions (§6) and opens this session's first file, writing the
     /// `session` header as line 1.
     pub fn open(cfg: WriterConfig, redactor: Arc<Redactor>) -> Result<Self, AppError> {
-        std::fs::create_dir_all(&cfg.dir)
+        // §16 privacy: `0700` on unix — log parts carry absolute repo paths and
+        // real branch names, so the directory is owner-only, not umask-default.
+        super::fs_perm::create_dir_private(&cfg.dir)
             .map_err(|e| AppError::Io(format!("cannot create log dir: {e}")))?;
         prune(&cfg.dir, cfg.limits);
         let mut w = LogWriter {
@@ -170,7 +172,8 @@ impl LogWriter {
     fn open_part(&mut self, part: u32, after_purge: bool) -> Result<(), AppError> {
         let name = part_name(&self.cfg.session_id, self.cfg.started_secs, part);
         let path = self.cfg.dir.join(&name);
-        let file = match OpenOptions::new().create(true).append(true).open(&path) {
+        // Owner-only (`0600` on unix): a log part is readable repo content.
+        let file = match super::fs_perm::append_file_private(&path) {
             Ok(f) => f,
             Err(e) => {
                 // §8.4 — a rotation whose next part cannot be opened (permission

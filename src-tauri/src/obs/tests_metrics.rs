@@ -41,7 +41,7 @@ fn counters_survive_restart() {
     {
         let store = MetricsState::for_test(path.clone(), 1_756_000_000);
         store.bump_counter("commit.create", 4, day);
-        store.observe_ipc_result("get_status", 12.0, None, day);
+        store.observe_ipc_result("getStatus", 12.0, None, day);
         store.flush(&perf(0, 0, 0), 1_756_000_000).expect("flush");
     }
     // A fresh store loading the SAME file is the "restart".
@@ -49,7 +49,7 @@ fn counters_survive_restart() {
     let snap = store2.snapshot();
     let today = snap.days.iter().find(|d| d.date == day).expect("day");
     assert_eq!(today.totals.counters.get("commit.create"), Some(&4));
-    assert!(today.totals.durations.contains_key("cmd.get_status"));
+    assert!(today.totals.durations.contains_key("cmd.getStatus"));
     let _ = std::fs::remove_file(&path);
 }
 
@@ -119,12 +119,12 @@ fn no_user_derived_key_reaches_a_histogram() {
     // Repo-content-shaped "command" names must NEVER become a key.
     store.observe_ipc_result("C:/Users/dan/secret-repo", 5.0, None, day);
     store.observe_ipc_result("feature/RED-42", 5.0, None, day);
-    store.observe_ipc_result("get_graph", 5.0, None, day); // the one legit name
+    store.observe_ipc_result("getGraph", 5.0, None, day); // the one legit name
     // A non-allow-listed span op is dropped whole.
     store.observe_span("evil.op", 9.0, &[], None, day);
     let snap = store.snapshot();
     let keys: Vec<&String> = snap.days[0].totals.durations.keys().collect();
-    assert_eq!(keys, vec![&"cmd.get_graph".to_string()]);
+    assert_eq!(keys, vec![&"cmd.getGraph".to_string()]);
     let _ = std::fs::remove_file(&path);
 }
 
@@ -135,7 +135,7 @@ fn histogram_key_set_stays_within_allow_list() {
     let path = scratch("allowlist");
     let store = MetricsState::for_test(path.clone(), 1_756_000_000);
     let day = "2026-08-27";
-    store.observe_ipc_result("get_status", 3.0, None, day);
+    store.observe_ipc_result("getStatus", 3.0, None, day);
     store.observe_span(
         "graph.get",
         20.0,
@@ -154,7 +154,7 @@ fn histogram_key_set_stays_within_allow_list() {
     assert_eq!(
         keys,
         vec![
-            "cmd.get_status".to_string(),
+            "cmd.getStatus".to_string(),
             "op.graph.get".to_string(),
             "op.graph.get.lane".to_string(),
             "op.graph.get.revwalk".to_string(),
@@ -174,10 +174,10 @@ fn stored_size_is_independent_of_observation_count() {
     let store_a = MetricsState::for_test(path_a.clone(), 1_756_000_000);
     let store_b = MetricsState::for_test(path_b.clone(), 1_756_000_000);
     for _ in 0..1_000_000u64 {
-        store_a.observe_ipc_result("get_status", 3.0, None, day);
+        store_a.observe_ipc_result("getStatus", 3.0, None, day);
     }
     for _ in 0..2_000_000u64 {
-        store_b.observe_ipc_result("get_status", 3.0, None, day);
+        store_b.observe_ipc_result("getStatus", 3.0, None, day);
     }
     store_a.flush(&perf(0, 0, 0), 1_756_000_000).expect("flush a");
     store_b.flush(&perf(0, 0, 0), 1_756_000_000).expect("flush b");
@@ -199,12 +199,12 @@ fn percentiles_are_on_snapshot_but_absent_from_disk() {
     let day = "2026-08-27";
     let store = MetricsState::for_test(path.clone(), 1_756_000_000);
     for _ in 0..100 {
-        store.observe_ipc_result("get_status", 42.0, None, day);
+        store.observe_ipc_result("getStatus", 42.0, None, day);
     }
     store.flush(&perf(0, 0, 0), 1_756_000_000).expect("flush");
     // Snapshot: p50/p95 present.
     let snap = store.snapshot();
-    let h = snap.days[0].totals.durations.get("cmd.get_status").unwrap();
+    let h = snap.days[0].totals.durations.get("cmd.getStatus").unwrap();
     assert!(h.p50_ms.is_some() && h.p95_ms.is_some());
     // Disk: neither key appears.
     let raw = std::fs::read_to_string(&path).unwrap();
@@ -290,7 +290,7 @@ fn reset_clears_every_aggregate() {
     let day = "2026-08-27";
     let store = MetricsState::for_test(path.clone(), 1_756_000_000);
     store.bump_counter("commit.create", 9, day);
-    store.observe_ipc_result("get_status", 3.0, None, day);
+    store.observe_ipc_result("getStatus", 3.0, None, day);
     store.reset(1_756_200_000).expect("reset");
     let snap = store.snapshot();
     assert_eq!(snap.days.len(), 0);
@@ -391,15 +391,41 @@ fn scan_obs_for_http(dir: &std::path::Path, banned: &[&str], hits: &mut Vec<Stri
     }
 }
 
-/// `bump_counter` is `pub`, so the "counters are never user-derived" guarantee
-/// (§8: `usage.json` carries no user content) rests entirely on call sites using
-/// `<domain>.<action>` literals. The `debug_assert` is what makes a slip fail
-/// loudly in tests instead of silently persisting a branch name or a path.
+/// REGRESSION (audit F2) — `bump_counter` DROPS a user-derived key at runtime,
+/// in every profile.
+///
+/// This guarantee used to rest on a `debug_assert`, which `debug-assertions =
+/// false` compiles out; the crate defines no `[profile.release]` override, so a
+/// shipped binary had no guard at all and would have persisted a branch name or
+/// a path into `usage.json` — durable, un-redacted, and outside the
+/// `logs_delete_all` scope (§8, decision 25).
+///
+/// The test deliberately asserts the DROP (release-path behaviour) rather than a
+/// panic: were the guard reverted to a `debug_assert`, this test would panic in a
+/// debug build and record the key in a release one — it fails either way.
 #[test]
-#[should_panic(expected = "never user-derived")]
-fn bump_counter_rejects_a_user_derived_key_in_debug() {
+fn bump_counter_drops_a_user_derived_key_in_every_profile() {
     let store = MetricsState::default();
-    store.bump_counter("feature/my-branch", 1, "2026-08-27");
+    let day = "2026-08-27";
+    for key in [
+        "feature/my-branch",
+        "C:/Users/dan/secret-repo",
+        "Fix the parser",
+        "ghp_0123456789abcdef",
+        "",
+    ] {
+        store.bump_counter(key, 1, day);
+    }
+    let snap = store.snapshot();
+    let recorded: Vec<&String> = snap
+        .days
+        .iter()
+        .flat_map(|d| d.totals.counters.keys())
+        .collect();
+    assert!(
+        recorded.is_empty(),
+        "no user-derived key may reach usage.json, got {recorded:?}"
+    );
 }
 
 /// The allow-listed shapes the real call sites use must keep passing.
