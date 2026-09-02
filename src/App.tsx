@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CloneDialog, deriveRepoName, joinRepoPath } from './components/CloneDialog';
-import { ConfirmDialog } from './components/ConfirmDialog';
+import { CloneDialog } from './components/CloneDialog';
 import { ContextMenu } from './components/ContextMenu';
 import { RepoWorkspace } from './components/RepoWorkspace';
 import { SettingsPanel } from './components/SettingsPanel';
 import { externalToolsItems } from './components/workspaceMenus';
 import { AiConsentDialog } from './components/dialogs/AiConsentDialog';
+import { McpConsentDialog } from './components/dialogs/McpConsentDialog';
+import { McpWriteConsentDialog } from './components/dialogs/McpWriteConsentDialog';
 import { AiAssetsPanel } from './components/AiAssetsPanel';
 import { RepoHealthPanel } from './components/RepoHealthPanel';
 import { OnboardingOverlay } from './components/OnboardingOverlay';
@@ -15,57 +16,31 @@ import { HeaderToolbar } from './components/HeaderToolbar';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
 import { TabStrip, type TabMeta } from './components/TabStrip';
 import { Toasts } from './components/Toasts';
-import { applyToastPush } from './components/toastQueue';
-import type { Toast, ToastTone } from './components/Toasts';
 import { UpdateNotification } from './components/UpdateNotification';
 import { UpdateDialog } from './components/UpdateDialog';
+import { useAiAvailability } from './hooks/useAiAvailability';
 import { useAppCommands } from './hooks/useAppCommands';
+import { useCloneFlow } from './hooks/useCloneFlow';
+import { useMcpControls } from './hooks/useMcpControls';
+import { usePaneWidthState } from './hooks/usePaneWidthState';
+import { useRepoTabs } from './hooks/useRepoTabs';
 import { useSettingsRequest } from './hooks/useSettingsRequest';
+import { useToastQueue } from './hooks/useToastQueue';
 import { useUpdateController } from './hooks/useUpdateController';
 import { useGitAvailability } from './hooks/useGitAvailability';
 import { useUiSettings } from './hooks/useUiSettings';
 import { ToastContext } from './ToastContext';
 import { ipc } from './ipc';
-import { isGitNotFound } from './ipc/errors';
-import { gitNotFoundToastText, noteGitNotFound } from './ipc/gitNotFound';
-import type {
-  AiAvailability,
-  CloneProgress,
-  ListView,
-  McpStatus,
-  PaneWidths,
-  RecentRepo,
-  SessionState,
-  Theme,
-} from './ipc';
-import { errorMessage, isAppError } from './utils/errors';
-import {
-  applyGraphStyle,
-  applyTheme,
-  clampLive,
-  DEFAULT_PANE_WIDTHS,
-  folderName,
-  isUsableRepo,
-  unusableRepoMessage,
-} from './appHelpers';
+import type { ListView, RecentRepo, SessionState, Theme } from './ipc';
+import { errorMessage } from './utils/errors';
+import { applyGraphStyle, applyTheme, folderName, isUsableRepo } from './appHelpers';
 import { useAppShortcuts } from './hooks/useAppShortcuts';
 
 export default function App() {
   // ----- App-global state (§5.1) -----
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const toastId = useRef(0);
-
   const [overlayOpen, setOverlayOpen] = useState(false);
   // TabStrip's `+` menu lift — suppresses global shortcuts + the consumed Esc.
   const [menuOpen, setMenuOpen] = useState(false);
-
-  const [recents, setRecents] = useState<RecentRepo[]>([]);
-
-  const [paneWidths, setPaneWidths] = useState<PaneWidths>(DEFAULT_PANE_WIDTHS);
-  const paneWidthsRef = useRef(paneWidths);
 
   const [theme, setTheme] = useState<Theme>('dark');
   const [themeVersion, setThemeVersion] = useState(0);
@@ -89,20 +64,6 @@ export default function App() {
   // is false (or `?onboarding=1`); re-openable from Settings. Dismissal persists
   // `onboardingSeen: true` so it does not reappear.
   const [onboardingOpen, setOnboardingOpen] = useState(false);
-  // CLI health probe result; null while probing. Re-fetched on Settings open and
-  // on repo open (§8.3). A req-id guards against out-of-order probe resolutions.
-  const [aiAvailability, setAiAvailability] = useState<AiAvailability | null>(null);
-  const aiProbeIdRef = useRef(0);
-  // Consent ConfirmDialog (opened by SettingsPanel's enable toggle when consent
-  // has not yet been recorded).
-  const [consentOpen, setConsentOpen] = useState(false);
-  // P16: embedded MCP server. `mcpStatus` is the live runtime state (from the
-  // backend, kept fresh via `mcp-server-changed`); the one-time consent gates
-  // (`mcpConsented` / `mcpWriteConsented`) are persisted settings and live in
-  // useUiSettings — these two flags only track the deferring dialogs.
-  const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
-  const [mcpConsentOpen, setMcpConsentOpen] = useState(false);
-  const [mcpWriteConsentOpen, setMcpWriteConsentOpen] = useState(false);
   // P49b: per-tab "Open externally" context menu (App owns it — the strip spans
   // all tabs). Holds the right-clicked tab's repo path + anchor point.
   const [tabMenu, setTabMenu] = useState<{ path: string; x: number; y: number } | null>(null);
@@ -117,48 +78,8 @@ export default function App() {
   // every App render).
   const gitRecheck = git.recheck;
 
-  // ----- Tab state (§5.2) -----
-  const [tabs, setTabs] = useState<TabMeta[]>([]);
-  const [activeRepo, setActiveRepo] = useState<string | null>(null);
-  const tabsRef = useRef(tabs);
-  tabsRef.current = tabs;
-
-  // ----- Clone/init lifecycle (P21) -----
-  const [cloneOpen, setCloneOpen] = useState(false);
-  const [cloneDest, setCloneDest] = useState<string | null>(null);
-  const [cloneProgress, setCloneProgress] = useState<CloneProgress | null>(null);
-  const [cloneBusy, setCloneBusy] = useState(false);
-  const [cloneError, setCloneError] = useState<string | null>(null);
-  // Session token: a late progress tick / resolution from a cancelled (or
-  // superseded) clone must not write state for the current dialog session.
-  const cloneSessionRef = useRef(0);
-
-  const dismissToast = useCallback((id: number) => {
-    setToasts((cur) => cur.filter((t) => t.id !== id));
-  }, []);
-
-  // `key` (P70, UI §10.1) coalesces a repeatable failure into ONE toast:
-  //   same key + same text -> no-op (no remount, no flicker, no re-announce)
-  //   same key + new  text -> replace IN PLACE, same slot, new id + timer
-  //   no key               -> the pre-P70 behaviour, byte for byte.
-  // Error toasts are sticky, so without this three failed presses would leave
-  // three permanent identical toasts — the exact symptom P70 exists to kill.
-  const pushToast = useCallback(
-    (tone: ToastTone, text: string, key?: string) => {
-      const id = ++toastId.current;
-      const sticky = tone === 'error';
-      // The updater stays PURE — nothing is read back out of it (React may run
-      // it at render time, and StrictMode runs it twice). The timer decision is
-      // therefore made from the arguments alone: a same-key/same-text push is a
-      // no-op inside `applyToastPush`, and arming a timer for its unrendered id
-      // is harmless — `dismissToast` finds nothing to remove, exactly as it
-      // already does for a keyed toast that was replaced in place.
-      setToasts((cur) => applyToastPush(cur, { id, tone, text, sticky, key }));
-      if (!sticky) window.setTimeout(() => dismissToast(id), 5000);
-    },
-    [dismissToast],
-  );
-
+  // P3e §5.5 / P70: the one global toast stack (see hooks/useToastQueue.ts).
+  const { toasts, pushToast, dismissToast } = useToastQueue();
   // P11c §3.2: every persisted setting that rides the debounced `setUiSettings`
   // patch path, plus that path itself (see src/hooks/useUiSettings.ts). Declared
   // after `pushToast` because the debounced write reports failures through it;
@@ -197,40 +118,26 @@ export default function App() {
     applyGraphStyle(graphStyle);
   }, [graphStyle]);
 
-  // ----- Session persistence (§6): debounced whole-session write -----
-  const sessionSaveTimer = useRef<number | null>(null);
-  const sessionReadyRef = useRef(false);
-  const persistSession = useCallback((openRepos: string[], active: string | null) => {
-    if (sessionSaveTimer.current !== null) window.clearTimeout(sessionSaveTimer.current);
-    sessionSaveTimer.current = window.setTimeout(() => {
-      void ipc
-        .setSession({ openRepos, activeRepo: active })
-        .catch((e) => pushToast('error', `Could not save session: ${errorMessage(e)}`));
-    }, 300);
-  }, [pushToast]);
-
-  // Persist on any tab / active change once launch reopen has settled.
-  useEffect(() => {
-    if (!sessionReadyRef.current) return;
-    persistSession(tabs.map((t) => t.repoId), activeRepo);
-  }, [tabs, activeRepo, persistSession]);
-
-  // Tell the backend the focused-tab repoId (P16 §5) so new embedded-MCP
-  // sessions seed from it. Fires on tab activation, open, close, and once on
-  // startup after session restore (all funnel through `activeRepo`).
-  useEffect(() => {
-    void ipc.setActiveRepo(activeRepo).catch(() => {
-      // Non-fatal: only seeds new MCP sessions; the GUI is unaffected.
-    });
-  }, [activeRepo]);
-
-  const refreshRecents = useCallback(async () => {
-    try {
-      setRecents(await ipc.getRecentRepos());
-    } catch {
-      // Non-fatal — recents are best-effort UI sugar.
-    }
-  }, []);
+  // §5.2 / §6: open-repo tabs, recents, the empty-state error/loading pair and
+  // the debounced session persist (see hooks/useRepoTabs.ts).
+  const {
+    error,
+    loading,
+    recents,
+    setRecents,
+    refreshRecents,
+    tabs,
+    setTabs,
+    activeRepo,
+    setActiveRepo,
+    tabsRef,
+    sessionReadyRef,
+    openTab,
+    closeTab,
+    reorderTabs,
+    handleOpenRepository,
+    handleInitRepository,
+  } = useRepoTabs(pushToast);
 
   // P43a: close onboarding (Skip/Finish/Esc/✕) and persist `onboardingSeen` so
   // it does not reappear on the next launch.
@@ -239,86 +146,20 @@ export default function App() {
     queueSettingsWrite({ onboardingSeen: true });
   }, [queueSettingsWrite]);
 
-  /** Open (or focus) a repo as a tab (§5.2). Non-usable opens surface an error
-   *  (empty-state error when no tabs, else a toast) and add no tab. */
-  const openTab = useCallback(
-    async (path: string): Promise<void> => {
-      setError(null);
-      try {
-        const { repoId, info } = await ipc.openRepo(path);
-        if (!isUsableRepo(info)) {
-          const msg = unusableRepoMessage(info);
-          if (tabsRef.current.length > 0) pushToast('error', msg);
-          else setError(msg);
-          return;
-        }
-        void refreshRecents();
-        if (tabsRef.current.some((t) => t.repoId === repoId)) {
-          setActiveRepo(repoId); // focus existing tab
-          return;
-        }
-        setTabs((cur) =>
-          cur.some((t) => t.repoId === repoId) ? cur : [...cur, { repoId, path: info.path }],
-        );
-        setActiveRepo(repoId);
-      } catch (e) {
-        const msg = errorMessage(e);
-        if (isAppError(e) && e.kind === 'io') {
-          void ipc.removeRecentRepo(path).then(setRecents, () => {
-            // Non-fatal: the recents prune is best-effort; the stale entry
-            // simply survives until the next successful open.
-          });
-        }
-        if (tabsRef.current.length > 0) pushToast('error', msg);
-        else setError(msg);
-      }
-    },
-    [pushToast, refreshRecents],
-  );
+  // §5.1 / P69b: the 3-pane split widths (see hooks/usePaneWidthState.ts).
+  const {
+    paneWidths,
+    applyPaneWidths,
+    handleSidebarResize,
+    handleRightPanelResize,
+    handlePaneResizeEnd,
+  } = usePaneWidthState(queueSettingsWrite);
 
-  const closeTab = useCallback((repoId: string) => {
-    void ipc.closeRepo(repoId).catch(() => {
-      // Idempotent teardown — a failure to close is non-fatal for the UI.
-    });
-    const cur = tabsRef.current;
-    const idx = cur.findIndex((t) => t.repoId === repoId);
-    setTabs(cur.filter((t) => t.repoId !== repoId));
-    setActiveRepo((act) => {
-      if (act !== repoId) return act;
-      const next = cur.filter((t) => t.repoId !== repoId);
-      if (next.length === 0) return null;
-      return next[Math.min(idx, next.length - 1)].repoId;
-    });
-  }, []);
-
-  // P3e §5.6 (issue 4): reorder open tabs by drag-and-drop. Immutable array
-  // move; the tabs-change effect persists the new order via setSession.
-  const reorderTabs = useCallback((from: number, to: number) => {
-    setTabs((cur) => {
-      if (
-        from === to ||
-        from < 0 ||
-        to < 0 ||
-        from >= cur.length ||
-        to >= cur.length
-      ) {
-        return cur;
-      }
-      const next = cur.slice();
-      const [moved] = next.splice(from, 1);
-      next.splice(to, 0, moved);
-      return next;
-    });
-  }, []);
-
-  // P69b: these three (plus `closeOnboarding`) each used to fire their own
-  // `ipc.setUiSettings`, racing the hook's debounced merge — disjoint key sets
-  // today, silent field loss the day they overlap. They now update App's state
-  // for the live preview and hand the persist to the ONE coalescing window.
-  const commitPaneWidths = useCallback(() => {
-    queueSettingsWrite({ paneWidths: paneWidthsRef.current });
-  }, [queueSettingsWrite]);
-
+  // P69b: these two (plus `commitPaneWidths` and `closeOnboarding`) each used to
+  // fire their own `ipc.setUiSettings`, racing the hook's debounced merge —
+  // disjoint key sets today, silent field loss the day they overlap. They now
+  // update App's state for the live preview and hand the persist to the ONE
+  // coalescing window.
   const toggleTheme = useCallback(() => {
     const next: Theme = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
@@ -355,237 +196,41 @@ export default function App() {
     [pushToast],
   );
 
-  // P13 §8.3: probe the Claude Code CLI. Re-runnable; a req-id guards against a
-  // stale probe overwriting a newer result. Never throws (the IPC never rejects
-  // for CLI state) — a rejection just leaves the last-known availability.
-  const probeAiAvailability = useCallback(() => {
-    const id = ++aiProbeIdRef.current;
-    void ipc
-      .checkAiAvailability()
-      .then((a) => {
-        if (id === aiProbeIdRef.current) setAiAvailability(a);
-      })
-      .catch(() => {
-        // Non-fatal — keep the last-known availability.
-      });
-  }, []);
-
-  // Probe on Settings open (fresh status for the AI section) and whenever a repo
-  // becomes active (§8.3). Cheap enough to re-run; the req-id dedupes races.
-  useEffect(() => {
-    if (settings.open) probeAiAvailability();
-  }, [settings.open, probeAiAvailability]);
-  useEffect(() => {
-    if (activeRepo !== null) probeAiAvailability();
-  }, [activeRepo, probeAiAvailability]);
-
-  // Consent flow (§8.4): the Settings enable toggle defers here when consent has
-  // not been recorded; confirming records BOTH enable + consent in one patch.
-  const handleConfirmConsent = useCallback(() => {
-    setConsentOpen(false);
-    handleSettingsChange({ aiEnabled: true, aiConsented: true });
-  }, [handleSettingsChange]);
-
-  // P16: load the embedded-MCP status once and stay live via `mcp-server-changed`.
-  useEffect(() => {
-    let unsub: (() => void) | null = null;
-    let cancelled = false;
-    ipc.getMcpStatus().then(
-      (s) => {
-        if (!cancelled) setMcpStatus(s);
-      },
-      () => {
-        // Non-fatal — the Settings section renders a stopped placeholder.
-      },
-    );
-    ipc.onMcpServerChanged((s) => setMcpStatus(s)).then(
-      (u) => {
-        if (cancelled) u();
-        else unsub = u;
-      },
-      () => {},
-    );
-    return () => {
-      cancelled = true;
-      if (unsub !== null) unsub();
-    };
-  }, []);
-
-  // P16: start/stop the embedded MCP server; keep `mcpStatus` in sync (the
-  // `mcp-server-changed` subscription also updates it, but this is immediate).
-  const handleSetMcpEnabled = useCallback(
-    (enabled: boolean) => {
-      ipc.setMcpEnabled(enabled).then(
-        (s) => setMcpStatus(s),
-        (e) => pushToast('error', `Could not ${enabled ? 'start' : 'stop'} MCP server: ${errorMessage(e)}`),
-      );
-    },
-    [pushToast],
+  // §8.3 / §8.4: the Claude Code CLI probe + the one-time AI consent dialog
+  // (see hooks/useAiAvailability.ts).
+  const { aiAvailability, consentOpen, setConsentOpen, handleConfirmConsent } = useAiAvailability(
+    settings.open,
+    activeRepo,
+    handleSettingsChange,
   );
 
-  // P16: run `claude mcp add` for the running server at the chosen scope. Returns
-  // the promise so SettingsPanel can clear its in-flight state when it settles.
-  const handleRegisterMcp = useCallback(
-    (scope: 'user' | 'local'): Promise<void> =>
-      ipc.registerMcpWithClaude(scope, activeRepo).then(
-        () => pushToast('success', `Registered bonsai with Claude Code (${scope})`),
-        (e) => {
-          pushToast('error', `Could not register: ${errorMessage(e)}`);
-        },
-      ),
-    [pushToast, activeRepo],
-  );
+  // P16 / P16c: the embedded MCP server's runtime state and controls
+  // (see hooks/useMcpControls.ts).
+  const {
+    mcpStatus,
+    mcpConsentOpen,
+    setMcpConsentOpen,
+    mcpWriteConsentOpen,
+    setMcpWriteConsentOpen,
+    handleSetMcpEnabled,
+    handleRegisterMcp,
+    handleConfirmMcpConsent,
+    handleSetMcpAllowWrite,
+    handleConfirmMcpWriteConsent,
+  } = useMcpControls(pushToast, activeRepo, handleSettingsChange);
 
-  // Enabling the MCP server the first time records consent, then starts it.
-  const handleConfirmMcpConsent = useCallback(() => {
-    setMcpConsentOpen(false);
-    handleSettingsChange({ mcpConsented: true });
-    handleSetMcpEnabled(true);
-  }, [handleSettingsChange, handleSetMcpEnabled]);
-
-  // P16c: flip the write-gate; the running server BOUNCES (stop+restart on the
-  // same token/port), so `mcpStatus` updates both from this resolve and the
-  // `mcp-server-changed` re-emit.
-  const handleSetMcpAllowWrite = useCallback(
-    (allowWrite: boolean) => {
-      ipc.setMcpAllowWrite(allowWrite).then(
-        (s) => setMcpStatus(s),
-        (e) =>
-          pushToast(
-            'error',
-            `Could not ${allowWrite ? 'enable' : 'disable'} MCP write access: ${errorMessage(e)}`,
-          ),
-      );
-    },
-    [pushToast],
-  );
-
-  // First enabling write records the stronger write consent, then flips the gate.
-  const handleConfirmMcpWriteConsent = useCallback(() => {
-    setMcpWriteConsentOpen(false);
-    handleSettingsChange({ mcpWriteConsented: true });
-    handleSetMcpAllowWrite(true);
-  }, [handleSettingsChange, handleSetMcpAllowWrite]);
-
-  // P69b: `paneWidthsRef` is authoritative AT CALL TIME, not from the next
-  // render — PaneDivider's Arrow-key path calls onResize + onResizeEnd in one
-  // handler, so `commitPaneWidths` would otherwise persist the pre-nudge width.
-  const applyPaneWidths = useCallback((next: PaneWidths) => {
-    paneWidthsRef.current = next;
-    setPaneWidths(next);
-  }, []);
-
-  const handleSidebarResize = useCallback((delta: number) => {
-    const w = paneWidthsRef.current;
-    applyPaneWidths({ ...w, sidebar: clampLive(w.sidebar + delta, 'sidebar', w.rightPanel) });
-  }, [applyPaneWidths]);
-
-  const handleRightPanelResize = useCallback((delta: number) => {
-    const w = paneWidthsRef.current;
-    applyPaneWidths({ ...w, rightPanel: clampLive(w.rightPanel + delta, 'rightPanel', w.sidebar) });
-  }, [applyPaneWidths]);
-
-  const handlePaneResizeEnd = useCallback(() => {
-    commitPaneWidths();
-  }, [commitPaneWidths]);
-
-  // Picker path (Ctrl+O + TabStrip Browse…): pick a folder, open it as a tab.
-  const handleOpenRepository = useCallback(async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const path = await ipc.pickFolder();
-      if (path === null) return; // cancelled
-      await openTab(path);
-    } catch (e) {
-      // openTab handles its own errors; this catches a picker failure so the
-      // rejection never escapes the event handler (non-fatal).
-      pushToast('error', errorMessage(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [openTab, pushToast]);
-
-  // ----- Clone (P21) -----
-  const handleCloneOpen = useCallback(() => {
-    cloneSessionRef.current += 1; // invalidate any in-flight clone's UI updates
-    setCloneDest(null);
-    setCloneProgress(null);
-    setCloneError(null);
-    setCloneBusy(false);
-    setCloneOpen(true);
-  }, []);
-
-  const handleCloneCancel = useCallback(() => {
-    // The backend clone keeps running (no cancellation in v1); we simply stop
-    // updating the UI — invalidate the session so late ticks are ignored.
-    cloneSessionRef.current += 1;
-    setCloneOpen(false);
-  }, []);
-
-  const handleClonePickDest = useCallback(async () => {
-    try {
-      const path = await ipc.pickFolder();
-      if (path !== null) setCloneDest(path);
-    } catch (e) {
-      // Surface in the clone dialog; a picker failure is non-fatal.
-      setCloneError(errorMessage(e));
-    }
-  }, []);
-
-  const handleCloneSubmit = useCallback(
-    async (url: string) => {
-      if (cloneDest === null) return;
-      // Frontend derives the repo name from the URL and computes the full dest
-      // = <parent>/<name>; the backend clones INTO an empty/new dest.
-      const dest = joinRepoPath(cloneDest, deriveRepoName(url));
-      const session = cloneSessionRef.current + 1;
-      cloneSessionRef.current = session;
-      setCloneBusy(true);
-      setCloneError(null);
-      setCloneProgress(null);
-      try {
-        const path = await ipc.cloneRepo(url, dest, (p) => {
-          if (cloneSessionRef.current === session) setCloneProgress(p);
-        });
-        if (cloneSessionRef.current !== session) return; // cancelled/superseded
-        setCloneOpen(false);
-        await openTab(path);
-      } catch (e) {
-        if (cloneSessionRef.current !== session) return;
-        // P70: latch so the notice bar appears, and replace the raw payload with
-        // the plain-language line. NOT toasted: the clone dialog is still open
-        // and owns its own error row — a toast on top would say it twice.
-        if (isGitNotFound(e)) {
-          noteGitNotFound();
-          setCloneError(gitNotFoundToastText('Clone'));
-        } else {
-          setCloneError(errorMessage(e));
-        }
-      } finally {
-        if (cloneSessionRef.current === session) setCloneBusy(false);
-      }
-    },
-    [cloneDest, openTab],
-  );
-
-  // New repository: folder picker → init → openTab (no dialog needed).
-  const handleInitRepository = useCallback(async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const path = await ipc.pickFolder();
-      if (path === null) return; // cancelled
-      const repoPath = await ipc.initRepo(path);
-      await openTab(repoPath);
-    } catch (e) {
-      const msg = errorMessage(e);
-      if (tabsRef.current.length > 0) pushToast('error', msg);
-      else setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  }, [openTab, pushToast]);
+  // P21: the clone dialog's lifecycle (see hooks/useCloneFlow.ts).
+  const {
+    cloneOpen,
+    cloneDest,
+    cloneProgress,
+    cloneBusy,
+    cloneError,
+    handleCloneOpen,
+    handleCloneCancel,
+    handleClonePickDest,
+    handleCloneSubmit,
+  } = useCloneFlow(openTab);
 
   /** Stable wrapper so `SettingsPanel`'s action bag (and anything else that
    *  memoises over it) does not churn on every App render. */
@@ -904,36 +549,16 @@ export default function App() {
           onConfirm={handleConfirmConsent}
           onCancel={() => setConsentOpen(false)}
         />
-        <ConfirmDialog
+        <McpConsentDialog
           open={mcpConsentOpen}
-          title="Enable MCP server?"
-          confirmLabel="Enable"
-          busy={false}
           onConfirm={handleConfirmMcpConsent}
           onCancel={() => setMcpConsentOpen(false)}
-        >
-          <div>
-            Bonsai will run a local MCP server on 127.0.0.1 that lets an external AI client (e.g.
-            Claude Code) read <strong>any repository you have open in Bonsai</strong>. Access
-            requires a secret token shown in Settings; nothing is exposed to the network. The server
-            is read-only. Enable the MCP server?
-          </div>
-        </ConfirmDialog>
-        <ConfirmDialog
+        />
+        <McpWriteConsentDialog
           open={mcpWriteConsentOpen}
-          title="Allow AI to modify repositories?"
-          confirmLabel="Allow write access"
-          busy={false}
           onConfirm={handleConfirmMcpWriteConsent}
           onCancel={() => setMcpWriteConsentOpen(false)}
-        >
-          <div>
-            This grants the connected AI client the ability to <strong>modify</strong> any
-            repository you have open in Bonsai — staging, committing, merging, resolving conflicts,
-            and other write operations run without a per-action prompt. Changing this setting
-            restarts the server and drops any active connection. Allow write access?
-          </div>
-        </ConfirmDialog>
+        />
         <CloneDialog
           open={cloneOpen}
           busy={cloneBusy}

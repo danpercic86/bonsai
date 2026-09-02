@@ -30,6 +30,66 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 
 ---
 
+## 🧹 File-size refactor pass — 2026-09-02 — DONE
+
+Behavior-preserving split of the 9 largest files back toward the ~500-line limit.
+Ratchet baseline: **27 offenders / 6241 excess → 20 / 3528**. Full `pnpm gate` green
+(8/8, 603s) on a quiet tree. 17 files modified, 60 new files, 454 insertions / 9636 deletions.
+
+| File | Before | After |
+|---|---|---|
+| `src/components/RepoWorkspace.tsx` | 2760 | 2309 (77 → 34 `useState`; 9 hooks extracted) |
+| `crates/bonsai-core/src/assets/bundle.rs` | 1366 | → `bundle/`, 9 modules, max 355 |
+| `crates/bonsai-core/src/git/stash/tests.rs` | 1330 | 349 (+4 modules) |
+| `crates/bonsai-core/src/assets/profiles.rs` | 1205 | → `profiles/`, 7 modules, max 353 |
+| `crates/bonsai-core/tests/diff/diff_cli.rs` | 1026 | 307 (+3) |
+| `crates/bonsai-core/tests/rebase_merge/rebase_interactive_cli.rs` | 1021 | 279 (+3) |
+| `crates/bonsai-core/src/graph/tests.rs` | 1012 | 93 (+4) |
+| `src/App.tsx` | 977 | 602 (+6 hooks, 2 dialogs) |
+| `src/graph/GraphCanvas.tsx` | 973 | 784 (+4) |
+| `tests/rebase_merge/{rebase,merge,conflict}_cli.rs` | 923/763/640 | 239/222/147 |
+| `tests/diff/{stage,discard}_partial_cli.rs` | 760/504 | 342/355 |
+
+Equivalence proof per increment: identical before/after test counts (`bonsai-core` 1554,
+`h_diff` 80, `h_rebase_merge` 102, vitest 229 files / 2644 tests, graph e2e 25), plus
+line-multiset diffs showing zero logic-line changes on the Rust splits.
+
+**Three files deliberately stopped short of 500** — each remaining cut would have produced a
+file forwarding 15–100 values to exactly one consumer (an unreadable pair, not a smaller module):
+`RepoWorkspace.tsx` 2309 (render body already fully extracted; rest is state+effects+handlers),
+`GraphCanvas.tsx` 784 (per-frame paint path + a 29-value handler closure — hot path, 20k-commit
+target), `App.tsx` 602 (launch effect needs 6 of App's own setters threaded in).
+
+### Follow-ups spun out of this pass (all filed as tasks, none blocking)
+
+- **Reflog overlay not torn down** when a repo goes unusable — `runRefreshRound` clears blame +
+  history + compare + opState + tagSync, but not reflog. Real bug.
+- **Fold-pill cursor is dead** in `GraphCanvas.handleMouseMove` — P92 §1.4's overflow-cursor write
+  unconditionally clobbers spec-004 §1/§2's `foldCursorFor`, and `computeHoverTarget` returns null
+  on exactly those rows. Real regression; no vitest mounts `GraphCanvas`, so e2e is the only net.
+- **Shortcuts stay live during confirm dialogs** — `pendingForcePush`, `pendingCommitPush`,
+  `pendingBisectBad` are absent from `dialogOpen` (`abortConfirmOpen` is handled separately).
+  Force-push is destructive, so this one matters most.
+- **`ai::session*` is load-flaky** — wall-clock watchdog margins (2s idle timeout vs a ~3s stub)
+  fail under CPU contention, pass in isolation. Hit independently by 3 agents; makes the crate
+  suite unreliable as a gate under load. Needs a clock seam, not wider sleeps.
+- **Contract divergences** the tests document as bugs-in-the-contract (both say "reported to the
+  orchestrator"): rebase §3.1.5/§9.7 unstaged-changes precondition, and the libgit2-vs-CLI
+  rename/delete conflict index-entry count. Plus a near-tautological `expected_presence` oracle.
+- **Duplicated external-tool launchers** — `App.tsx`'s trio is statement-for-statement identical to
+  `repoWorkspace/useExternalTools.ts`; hoist to `src/hooks/`. Also two timers with no unmount
+  cleanup (`sessionSaveTimer`, toast auto-dismiss).
+- **Duplicated helpers left visible, not merged** (behavior risk, not a move): atomic-write helpers
+  across `assets/bundle/write.rs` + `assets/profiles/store.rs`; test helper families across
+  `tests/diff/` and the four `tests/rebase_merge/*_support.rs`.
+- **`image_diff_cli_2.rs`** numbered split remains — renaming changes nextest IDs, so it needs its
+  own increment where that IS the expected diff.
+- **`cargo fmt --check` is not clean at HEAD** repo-wide and is not gated. New files inherit the
+  existing drift deliberately (reformatting would have destroyed the proof-by-diff). Repo-wide
+  `cargo fmt` is a separate decision.
+
+---
+
 ## 📐 P91 — Observability: Dev mode, structured logs, local telemetry & metrics — PLANNING (awaiting user approval)
 
 **Current step:** ✅ **INCREMENT 1 DONE + COMMITTED `1b94529`** on `feat/p91-observability`
