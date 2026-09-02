@@ -3,7 +3,7 @@
 
 use super::AnomalyDetector;
 use crate::obs::record::{
-    AnomalySeverity, IpcOutcome, LogLevel, LogPayload, LogRecord, LogSource, PhaseTiming,
+    AnomalySeverity, FrameDim, IpcOutcome, LogLevel, LogPayload, LogRecord, LogSource, PhaseTiming,
 };
 
 /// A test harness: assigns monotone `seq`s (as the writer does) and accumulates
@@ -209,6 +209,7 @@ pub(super) fn frame(ts: i64, worst_ms: f64) -> LogRecord {
     base(
         ts,
         LogPayload::Frame {
+            dim: FrameDim::Paint,
             paint_ms: worst_ms,
             gap_ms: 0.0,
             over33: 0,

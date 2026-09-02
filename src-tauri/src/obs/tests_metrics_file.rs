@@ -87,3 +87,38 @@ fn stored_histograms_omit_derived_percentiles() {
     assert!(!raw.contains("p95Ms"), "usage.json must not carry p95Ms");
     let _ = std::fs::remove_file(&path);
 }
+
+/// The concurrent-save race (increment-6 review): `save` runs OUTSIDE the
+/// `MetricsState` mutex, so the 60 s flush timer and `metrics_reset` (or the exit
+/// flush) can overlap. Without `SAVE_LOCK` they share one temp name and their two
+/// renames interleave, so the primary can end up torn — i.e. unparseable.
+#[test]
+fn concurrent_saves_never_publish_a_torn_primary() {
+    let path = scratch("concurrent");
+    let _ = std::fs::remove_file(&path);
+    let mut handles = Vec::new();
+    for n in 0..8u64 {
+        let p = path.clone();
+        handles.push(std::thread::spawn(move || {
+            let mut f = sample_file();
+            // Distinct, growing payloads so an interleave would splice two
+            // different byte lengths together.
+            f.sessions = n;
+            f.first_seen = "2026-08-01".repeat(n as usize + 1);
+            for _ in 0..20 {
+                save(&p, &f).expect("save");
+            }
+        }));
+    }
+    for h in handles {
+        h.join().expect("saver thread");
+    }
+    // Every publish was one whole file: the primary parses, and so does `.bak`.
+    let bytes = std::fs::read(&path).expect("primary exists");
+    let primary: MetricsFile =
+        serde_json::from_slice(&bytes).expect("primary is a whole, parseable file");
+    assert_eq!(primary.schema, 1);
+    let bak = path.with_extension("json.bak");
+    let bak_bytes = std::fs::read(&bak).expect("bak exists");
+    serde_json::from_slice::<MetricsFile>(&bak_bytes).expect("bak is a whole file too");
+}

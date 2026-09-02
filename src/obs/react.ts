@@ -11,8 +11,9 @@
  * content (§7 privacy property).
  */
 import { useEffect, useRef } from 'react';
-import { obsEnabled } from './enabled';
+import { obsEnabled, obsRedaction } from './enabled';
 import { logRecord } from './log';
+import { tagPath, tagValue } from './redact';
 import { currentTrace } from './trace';
 import { tallyRender } from './renderTally';
 
@@ -40,6 +41,15 @@ function changedNames(
  * render; `aggregate` routes through `renderTally.ts` (§9.2) — one record per
  * component per 500 ms window, keyed by `component` so every row instance of a
  * list shares one tally key (never one record per row).
+ *
+ * STRICTMODE, DELIBERATE — do NOT "fix" this by moving the emit into an effect.
+ * `each` counts and logs in the RENDER BODY, so React's development-only double
+ * invoke makes a StrictMode container report two renders where the user saw one.
+ * That is the correct trade: the whole point of §9.1 is to make a render that
+ * should not have happened visible, and an effect-based emit would miss renders
+ * that bail out before commit — exactly the ones worth catching. The doubling is
+ * uniform, dev-only, and `render-storm` (§5) thresholds are set against it;
+ * `aggregate` mode collapses it away for the list-heavy surfaces anyway.
  */
 export function useRenderCount(
   component: string,
@@ -114,16 +124,44 @@ export function useTracedEffect(
   }, deps);
 }
 
-/** Cap a stringified state value so a transition record can never carry a large
- *  repo blob. Reports type + a short prefix, not the full value. */
+/** Forward slash or backslash — either makes a string path-shaped. */
+const PATH_SEPARATOR = /[/\\]/;
+
+/** Path-shaped by the same conservative rule the Rust strict pass uses: any
+ *  separator run is treated as a path rather than inspected further. */
+function looksLikePath(s: string): boolean {
+  return PATH_SEPARATOR.test(s);
+}
+
+/**
+ * §7.1 — a state STRING is repo content until proven otherwise (branch name,
+ * path, remote), so in `strict` it never reaches the record verbatim: it is
+ * replaced by a salt-seeded ordinal (`ui:path#3.ts` / `ui:other#5`), which still
+ * makes "this field flipped back and forth" visible without carrying the name.
+ * `raw` is the one mode allowed to log values (§7.1), and even there the length
+ * cap applies so a transition record can never carry a large repo blob.
+ */
+function briefString(s: string): string {
+  const capped = s.length > 48 ? `${s.slice(0, 48)}…` : s;
+  if (obsRedaction() === 'raw') return capped;
+  if (s === '') return '';
+  // Over-classification is the deliberate failure direction: `origin/main`
+  // becoming `ui:path#2` costs nothing, the reverse would leak a ref name.
+  const tagged = looksLikePath(s) ? tagPath(s) : tagValue('other', s);
+  // No salt installed yet (§7.2) ⇒ no redactor ⇒ we cannot even mint an ordinal.
+  // Report the SHAPE; never fall back to the value.
+  return tagged ?? `str:${s.length}`;
+}
+
+/** Cap/redact a stringified state value so a transition record can never carry a
+ *  large repo blob — or, in `strict`, any repo NAME (§7.1). Numbers, booleans and
+ *  container sizes are structural, not content, and are reported as-is. */
 function briefValue(v: unknown): string {
   if (v === null) return 'null';
   if (v === undefined) return 'undefined';
   const t = typeof v;
-  if (t === 'string' || t === 'number' || t === 'boolean') {
-    const s = String(v);
-    return s.length > 48 ? `${s.slice(0, 48)}…` : s;
-  }
+  if (t === 'string') return briefString(v as string);
+  if (t === 'number' || t === 'boolean') return String(v);
   if (Array.isArray(v)) return `arr:${v.length}`;
   return `obj:${Object.keys(v as object).length}`;
 }
@@ -131,14 +169,12 @@ function briefValue(v: unknown): string {
 /**
  * §9.1 — log store-field transitions. Reserved API: it is required by the
  * contract but wired to no target in v1 (§9.2 assigns it none), so it is
- * implemented and unit-tested but instrumented nowhere. Its value strings are
- * brief-formatted (type + short prefix), never a full repo value.
+ * implemented and unit-tested but instrumented nowhere.
  *
- * KNOWN LIMITATION (must fix before wiring): `briefValue` caps length but does
- * NOT run the §7 redactor, so a raw string field (e.g. a branch name) would land
- * in the log verbatim. Before this is wired to any repo-derived store, its
- * `from`/`to` must route through `obs/redact.ts` (or be restricted to
- * non-content fields). It is safe today only because it is called from nowhere.
+ * PRIVACY: `from`/`to` route through [`briefString`] → `obs/redact.ts`, so in
+ * `strict` a repo-derived value (branch name, path) is an ordinal, never the
+ * name. This hook is safe to wire to a repo store BY CONSTRUCTION — it is
+ * deliberately not merely "safe because nothing calls it".
  */
 export function useStateTransitionLog(store: string, values: Record<string, unknown>): void {
   const prev = useRef<Record<string, unknown> | undefined>(undefined);

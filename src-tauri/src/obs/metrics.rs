@@ -27,6 +27,7 @@ use crate::obs::writer;
 use crate::perf::PerfCounters;
 
 use super::metrics_file;
+use super::metrics_keys::{is_valid_cmd_name, is_valid_counter_key, is_valid_err_code};
 
 /// Current on-disk metrics schema. Bumped only if an EXISTING field changes
 /// shape; additive growth keeps it at 1 (mirrors `OBS_SCHEMA_VERSION`).
@@ -115,29 +116,6 @@ fn allowed_phases(op: &str) -> Option<&'static [&'static str]> {
         "diff.compute" => Some(&["hunks"]),
         _ => None,
     }
-}
-
-/// True for a command name that may become a `cmd.<name>` duration key: a bare
-/// snake_case code identifier. Repo content (paths, refs, messages) carries
-/// slashes, dots, spaces or uppercase and is therefore rejected — this is the
-/// "no user-derived key" guard for the one key family sourced from IPC.
-fn is_valid_cmd_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 40
-        && name.starts_with(|c: char| c.is_ascii_lowercase())
-        && name
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
-}
-
-/// True for an error code that may become an `errors` key. Codes are short
-/// identifier-ish tokens; anything else is dropped rather than recorded.
-fn is_valid_err_code(code: &str) -> bool {
-    !code.is_empty()
-        && code.len() <= 48
-        && code
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
 }
 
 /// Accessor for one `PerfCounters` field, paired with its counter key.
@@ -280,10 +258,21 @@ impl MetricsState {
     }
 
     /// Increments a counter key. The caller MUST pass an allow-listed
-    /// `<domain>.<action>` literal — this method does not itself validate, so the
-    /// "no user-derived key" guarantee for counters rests on every call site
-    /// using a fixed string (today only test + `fold_perf` callers do).
+    /// `<domain>.<action>` literal — the counter map is only bounded, and only
+    /// free of user-derived content, because every call site uses a fixed string
+    /// (today: `fold_perf` and tests).
+    ///
+    /// The `debug_assert` below is the enforcement: a key carrying a path
+    /// separator, whitespace or an uppercase letter is what a branch name, a path
+    /// or a ref would look like, and such a key would be persisted verbatim into
+    /// `usage.json` — a file that carries NO user content by construction (§8).
+    /// Debug-only on purpose: this is a programmer mistake to catch in tests, not
+    /// a runtime condition to branch on, and metrics must never fail the app.
     pub fn bump_counter(&self, key: &str, n: u64, today: &str) {
+        debug_assert!(
+            is_valid_counter_key(key),
+            "counter keys are `<domain>.<action>` literals, never user-derived: {key:?}"
+        );
         let mut g = self.lock();
         let t = Self::totals_for(&mut g, today);
         *t.counters.entry(key.to_string()).or_insert(0) =

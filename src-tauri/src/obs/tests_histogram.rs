@@ -65,3 +65,41 @@ fn mean_is_sum_over_count() {
     }
     assert_eq!(h.mean_ms(), Some(20));
 }
+
+/// The `percentile_ms(0.0)` edge (increment-6 nit): with an EMPTY `buckets[0]`,
+/// `next_cum (0) >= target (0)` used to stop in bucket 0 and fall through to the
+/// `max_ms` fallback, so p0 reported the MAXIMUM. Empty buckets are skipped, so
+/// p0 now lands at the lower bound of the first bucket that holds observations.
+/// Inert for the ratified 0.5/0.95 method, but §8.1's percentile helper is shared
+/// code and must be correct across the whole `p` range.
+#[test]
+fn p0_is_the_low_end_not_the_max_when_bucket_zero_is_empty() {
+    let mut h = Histogram::default();
+    for _ in 0..50 {
+        h.observe(900); // all in the coarse (500, 2000] bucket
+    }
+    assert_eq!(h.buckets[0], 0, "bucket 0 is empty by construction here");
+    let p0 = h.percentile_ms(0.0).expect("count > 0");
+    assert_eq!(p0, 500, "p0 is the containing bucket's lower bound");
+    assert!(p0 < h.max_ms as u32, "p0 must not report the maximum");
+    // The ratified §8.1 method is unchanged by the empty-bucket skip.
+    assert_eq!(h.percentile_ms(0.95), Some(900), "p95 still clamps to max_ms");
+    assert_eq!(h.percentile_ms(1.0), Some(900));
+}
+
+/// The only surviving path to the `bucket_count == 0` fallback: a torn/edited
+/// `usage.json` deserialized with `count > 0` but no bucket populated. It must
+/// degrade to `max_ms`, never panic or divide by zero.
+#[test]
+fn a_torn_histogram_falls_back_to_max_ms() {
+    let h = Histogram {
+        count: 7,
+        sum_ms: 700,
+        max_ms: 123,
+        buckets: [0; 8],
+        p50_ms: None,
+        p95_ms: None,
+    };
+    assert_eq!(h.percentile_ms(0.95), Some(123));
+    assert_eq!(h.percentile_ms(0.0), Some(123));
+}

@@ -1,17 +1,21 @@
 import { createFrameRecorder, type FrameStats } from './frameStats';
+import type { FrameDim } from '../obs/types';
 import { useRenderCount } from '../obs/react';
 import { obsEnabled } from '../obs/enabled';
 import { logRecord } from '../obs/log';
 
 /** P91 §9.3 — route a completed frame-timing window to a `frame` log record when
  *  Dev mode is on. `paint` and `gap` are separate recorders (§4.7), so each maps
- *  its own dimension; the other stays 0. `worstMs` is the window's max. */
-function emitFrameRecord(kind: 'paint' | 'gap', s: FrameStats): void {
+ *  its own dimension; the other stays 0 and `dim` says which is which — a
+ *  consumer must never read the filler `0` as "zero measured". `worstMs` is the
+ *  window's max, in the dimension named by `dim`. */
+function emitFrameRecord(dim: FrameDim, s: FrameStats): void {
   if (!obsEnabled()) return;
   logRecord({
     kind: 'frame',
-    paintMs: kind === 'paint' ? s.avgMs : 0,
-    gapMs: kind === 'gap' ? s.avgMs : 0,
+    dim,
+    paintMs: dim === 'paint' ? s.avgMs : 0,
+    gapMs: dim === 'gap' ? s.avgMs : 0,
     over33: s.over33,
     over100: s.over100,
     worstMs: s.maxMs,

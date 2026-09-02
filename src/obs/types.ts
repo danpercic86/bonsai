@@ -139,11 +139,22 @@ export interface StatePayload {
   to: string;
 }
 
+/** §9.3 — which quantity a `frame` window measured. The paint and gap recorders
+ *  are separate (§4.7) and must never be averaged together. */
+export type FrameDim = 'paint' | 'gap';
+
 export interface FramePayload {
+  /** REQUIRED discriminator: exactly one of `paintMs`/`gapMs` is a measurement
+   *  and the other is a filler `0`. Without it, `gapMs: 0` on a paint record
+   *  reads as "zero gap measured", which is a fabricated datum. */
+  dim: FrameDim;
+  /** Mean paint duration over the window. Meaningful only when `dim === 'paint'`. */
   paintMs: number;
+  /** Mean scroll inter-frame gap over the window. Meaningful only when `dim === 'gap'`. */
   gapMs: number;
   over33: number;
   over100: number;
+  /** The window's worst sample, in the dimension named by `dim`. */
   worstMs: number;
 }
 

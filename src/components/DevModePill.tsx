@@ -14,7 +14,14 @@ import { ipc } from '../ipc';
 import { DevModeIndicator } from './DevModeIndicator';
 
 /** Slow poll — the pill only needs to catch a stuck disk within a few seconds,
- *  and this is chrome that is always mounted while Dev mode is on. */
+ *  and this is chrome that is always mounted while Dev mode is on.
+ *
+ *  DELIBERATELY DIFFERENT from the Dev settings card's 2 s (`DevCategory`) — do
+ *  not unify them. This one is always-mounted background chrome reading a single
+ *  bool, so it pays the cheaper cadence; the card is a focused surface whose byte
+ *  counts and file list the user is actively watching, so it refreshes faster.
+ *  Different cadences also keep the two polls from phase-locking into one
+ *  synchronised IPC burst. */
 const POLL_MS = 3000;
 
 export function DevModePill({ onOpen }: { onOpen(): void }) {

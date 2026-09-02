@@ -41,6 +41,7 @@ list. Nothing in this contract is pending an answer.
 | `obs/invoke_shim.rs` | `invoke_handler` wrapper logging every command dispatch |
 | `obs/metrics.rs` | `MetricsStore` (counters/histograms), aggregation cadence |
 | `obs/metrics_file.rs` | atomic load/save of `metrics/usage.json`, daily buckets, retention |
+| `obs/metrics_keys.rs` | key ALLOW-LIST predicates (`cmd.<name>`, `<domain>.<action>`, error codes) — the privacy guard that keeps user-derived strings out of the durable file; split out of `metrics.rs` at the 500-line cap |
 | `commands/obs.rs` | `log_append`, `log_session_info`, `log_reveal_dir`, `log_export_session`, `logs_delete_all`, `metrics_snapshot`, `metrics_reset` |
 
 `perf.rs` is **kept** as the hot-path atomic tally and is *absorbed*: `MetricsStore` reads
@@ -298,8 +299,14 @@ interface EffectPayload   { component: string; effect: string; run: number;
                             changedDeps: string[];         // [] ⇒ ran with no semantic change
                             depCount: number; }
 interface StatePayload    { store: string; field: string; from: string; to: string; }
-interface FramePayload    { paintMs: number; gapMs: number; over33: number; over100: number;
+interface FramePayload    { dim: 'paint' | 'gap';    // which quantity this window measured
+                            paintMs: number; gapMs: number; over33: number; over100: number;
                             worstMs: number; }
+// `dim` (ADDITIVE, increment-4 follow-up): the paint and gap recorders are separate (§4.7), so
+// exactly one of paintMs/gapMs is a measurement and the other is a filler 0. Without the
+// discriminator a consumer reads `gapMs: 0` on a paint record as "zero gap measured".
+// REQUIRED on both sides: the only producer is the frontend's own graphObs.ts and Rust never
+// re-parses log files from disk, so there is no older writer to stay compatible with.
 interface ErrorPayload    { where: string; code?: string; message: string; stackHash?: string; }
 interface AnomalyPayload  { rule: AnomalyRule; severity: 'info'|'warn'|'error';
                             detail: string; refs: number[];  // seq numbers of implicated records
@@ -806,8 +813,11 @@ export interface LogSessionInfo {
    *  permission loss, rotation-open blocked). **A BOOL, never the error string** — an `io::Error`
    *  Display carries the log path, which must not cross IPC (increment 1's leak lesson). The writer
    *  sets it on any failed `write_all`/`flush`/`open_part` and clears it ONLY on a `flush()` that
-   *  reaches disk (a buffered write proves nothing), so a recovered disk clears within ~1 s and a
-   *  persistent failure stays true. The UI (§8.4) shows GENERIC copy with **no `{reason}`
+   *  reaches disk (a buffered write proves nothing) **while rotation is healthy** — after a failed
+   *  `open_part` the writer still holds the PREVIOUS part's working `BufWriter`, whose flush
+   *  succeeds while nothing more can ever be persisted, so the clear is latched off until a part
+   *  opens again (increment-7c follow-up; without the latch the row and the pill flapped every
+   *  idle flush). So a recovered disk clears within ~1 s and a persistent failure stays true. The UI (§8.4) shows GENERIC copy with **no `{reason}`
    *  interpolated** — the errno/path is deliberately dropped for privacy. The §8.4 danger toast
    *  (dedupe key `dev-sink`) is DEFERRED to a follow-up; the always-visible status-card row + the
    *  header pill danger variant already surface the state. */

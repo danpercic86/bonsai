@@ -311,3 +311,26 @@ fn mutation_table_is_shared_and_sane() {
     assert!(!is_mutation_cmd("get_graph"));
     assert!(!is_mutation_cmd("get_status"));
 }
+
+/// §11 "bounded" is a literal claim, and `dup-ipc` is the one rule whose key
+/// (`cmd\0argsHash`) is drawn from an UNBOUNDED space: every distinct argument
+/// set mints a new debounce entry. The `last_fire` map must therefore be pruned
+/// with the event window, or a long Dev-mode session grows it forever.
+#[test]
+fn dup_ipc_debounce_map_stays_bounded_over_a_long_session() {
+    let mut h = H::new();
+    // 2000 distinct arg hashes, each fired as a duplicate pair (so each one
+    // really does stamp `last_fire`), spread across 200 s of session time.
+    for i in 0..2000u64 {
+        let ts = 1000 + i as i64 * 100;
+        let hash = format!("h{i}");
+        h.feed(ipc_call(ts, "get_status", &hash));
+        h.feed(ipc_call(ts + 50, "get_status", &hash));
+    }
+    assert_eq!(h.count("dup-ipc"), 2000, "every pair is a real duplicate");
+    let len = h.detector().ipc_calls.last_fire_len();
+    assert!(
+        len <= 4,
+        "dup-ipc debounce map must stay within one window's worth of keys, got {len}"
+    );
+}

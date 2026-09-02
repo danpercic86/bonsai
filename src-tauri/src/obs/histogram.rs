@@ -89,9 +89,17 @@ impl Histogram {
             // non-empty), so the ratified 0.5/0.95 method is unchanged.
             if (next_cum >= target && bucket_count > 0.0) || i == 7 {
                 if bucket_count == 0.0 {
-                    // Reachable only at i == 7 when every bucket is empty, i.e.
-                    // count == 0 — already handled above — or a torn state; fall
-                    // back to the observed maximum defensively.
+                    // With empty buckets skipped above, the ONLY way in is the
+                    // `i == 7` terminus with an empty top bucket. For any
+                    // `count > 0` that is unreachable (`target <= count`, so the
+                    // last non-empty bucket always satisfies the guard), and
+                    // `count == 0` returned earlier — so what remains is a TORN
+                    // state: a hand-edited or truncated `usage.json` that
+                    // deserialized with `count > 0` and no bucket set. Fall back to
+                    // the observed maximum rather than dividing by zero. Both this
+                    // path and the `p == 0.0` skip are covered by
+                    // `tests_histogram` (`a_torn_histogram_falls_back_to_max_ms`,
+                    // `p0_is_the_low_end_not_the_max_when_bucket_zero_is_empty`).
                     return Some(self.max_ms as u32);
                 }
                 let lower = if i == 0 {

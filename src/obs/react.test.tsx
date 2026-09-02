@@ -203,16 +203,58 @@ describe('render.tally window scheduling (fake timers)', () => {
 });
 
 describe('useStateTransitionLog — reserved API', () => {
-  it('logs a field transition with brief (non-raw) values', async () => {
+  /** §7.1 — a branch name is repo content: `strict` must emit an ordinal, and the
+   *  ordinal must be STABLE per value so a flip-flop is still visible. */
+  it('redacts a branch-name-shaped value instead of logging it', async () => {
     function Store({ v }: { v: string }) {
       useStateTransitionLog('repo', { branch: v });
       return null;
     }
     const { rerender } = render(<Store v="main" />);
-    await act(async () => rerender(<Store v="feature" />));
+    await act(async () => rerender(<Store v="feature/secret-customer" />));
+    await act(async () => rerender(<Store v="main" />));
     await drain();
-    const st = byKind('state').find((r) => r.field === 'branch');
-    expect(st?.from).toBe('main');
-    expect(st?.to).toBe('feature');
+    const transitions = byKind('state').filter((r) => r.field === 'branch');
+    expect(transitions).toHaveLength(2);
+    const values = transitions.flatMap((r) => [r.from, r.to]);
+    for (const v of values) {
+      expect(v).toMatch(/^ui:(other|path)#\d+/);
+    }
+    expect(JSON.stringify(transitions)).not.toContain('secret-customer');
+    expect(JSON.stringify(transitions)).not.toContain('main');
+    // Same value ⇒ same ordinal, so `main → x → main` stays mechanically visible.
+    expect(transitions[0].from).toBe(transitions[1].to);
+  });
+
+  it('redacts a path-shaped value as a path ordinal, keeping the extension', async () => {
+    function Store({ v }: { v: string }) {
+      useStateTransitionLog('diff', { file: v });
+      return null;
+    }
+    const { rerender } = render(<Store v="src/app.ts" />);
+    await act(async () => rerender(<Store v="C:/Users/dana/private/notes.md" />));
+    await drain();
+    const st = byKind('state').find((r) => r.field === 'file');
+    expect(st?.from).toMatch(/^ui:path#\d+\.ts$/);
+    expect(st?.to).toMatch(/^ui:path#\d+\.md$/);
+    expect(JSON.stringify(st)).not.toContain('dana');
+    expect(JSON.stringify(st)).not.toContain('notes');
+  });
+
+  it('keeps structural values and logs raw names only in raw mode', async () => {
+    configureObs({ ...DEV_TRACE, includeRawNames: true });
+    function Store({ v, n }: { v: string; n: number }) {
+      useStateTransitionLog('repo', { branch: v, count: n });
+      return null;
+    }
+    const { rerender } = render(<Store v="main" n={1} />);
+    await act(async () => rerender(<Store v="feature" n={2} />));
+    await drain();
+    const branch = byKind('state').find((r) => r.field === 'branch');
+    expect(branch?.from).toBe('main');
+    expect(branch?.to).toBe('feature');
+    const count = byKind('state').find((r) => r.field === 'count');
+    expect(count?.from).toBe('1');
+    expect(count?.to).toBe('2');
   });
 });

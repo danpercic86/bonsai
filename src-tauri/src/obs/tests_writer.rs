@@ -5,7 +5,7 @@ use std::path::Path;
 
 use super::record::{LogLevel, LogPayload, LogRecord, LogSource, RedactionMode};
 use super::writer::{
-    list_log_files, prune, session_group, utc_stamp, LogWriter, Limits, WriterConfig,
+    list_log_files, part_name, prune, session_group, utc_stamp, LogWriter, Limits, WriterConfig,
 };
 
 /// A fixed-salt redactor so ordinal assertions are reproducible.
@@ -322,4 +322,77 @@ fn raw_mode_keeps_names_but_never_credentials() {
     assert!(!text.contains("hunter2"), "credential reached disk: {text}");
     assert!(text.contains("<redacted:token>"), "{text}");
     assert!(text.contains("github.com"), "raw mode keeps the host: {text}");
+}
+
+/// §8.4 (increment-7c follow-up): a **persistent** rotation-open block must keep
+/// `writeFailed` stuck true across repeated idle flushes.
+///
+/// The disk-full / permission paths (`write_all`, `flush`) were already sticky,
+/// but a blocked `open_part` left the writer holding the PREVIOUS part's healthy
+/// `BufWriter`: every 1 s idle flush succeeded and cleared the flag, so the
+/// §16.9 status row and the header pill flapped between "not writing" and healthy
+/// while nothing could be persisted at all.
+#[test]
+fn a_persistent_rotation_block_keeps_write_failed_sticky() {
+    use std::sync::atomic::Ordering;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let limits = Limits {
+        part_bytes: 400,
+        max_parts: 3,
+        flush_bytes: 1,
+        ..Limits::default()
+    };
+    let c = cfg(dir.path(), limits);
+    let started = c.started_secs;
+    let session = c.session_id.clone();
+    let mut w = LogWriter::open(c, test_redactor()).expect("open");
+    let failed = w.write_failed_flag();
+    assert!(!failed.load(Ordering::Relaxed), "a fresh writer is healthy");
+
+    // Park a DIRECTORY on part 1's exact filename: opening it for append fails on
+    // Windows and Unix alike, and keeps failing — a persistent rotation block
+    // (permission loss on the log dir, path taken by something else).
+    let blocker = dir.path().join(part_name(&session, started, 1));
+    std::fs::create_dir(&blocker).expect("park a directory on part 1");
+
+    // Fill part 0 until the rotation is attempted and fails.
+    let mut blocked = false;
+    for i in 0..200 {
+        if w.write_record(rec(&format!("Component{i}"))).is_err() {
+            blocked = true;
+            break;
+        }
+    }
+    assert!(blocked, "the part cap must have been reached");
+    assert!(
+        failed.load(Ordering::Relaxed),
+        "a blocked rotation is the 'stopped writing' state"
+    );
+
+    // The writer loop's ~1 s idle flush: the old part's BufWriter still flushes
+    // fine, and that must NOT be read as recovery.
+    for round in 0..5 {
+        let _ = w.flush();
+        assert!(
+            failed.load(Ordering::Relaxed),
+            "idle flush {round} cleared writeFailed while rotation was still blocked"
+        );
+        // A further record still cannot rotate; interleaving must not help either.
+        let _ = w.write_record(rec("StillBlocked"));
+        assert!(
+            failed.load(Ordering::Relaxed),
+            "writeFailed flapped after idle flush {round}"
+        );
+    }
+
+    // Sticky, not stuck: once the block is gone the next rotation succeeds and the
+    // flush that reaches disk clears the flag again.
+    std::fs::remove_dir(&blocker).expect("unblock part 1");
+    w.write_record(rec("Recovered")).expect("rotation recovers");
+    w.flush().expect("flush after recovery");
+    assert!(
+        !failed.load(Ordering::Relaxed),
+        "a recovered rotation must clear writeFailed within one flush"
+    );
 }

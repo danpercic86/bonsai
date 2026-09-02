@@ -390,3 +390,26 @@ fn scan_obs_for_http(dir: &std::path::Path, banned: &[&str], hits: &mut Vec<Stri
         }
     }
 }
+
+/// `bump_counter` is `pub`, so the "counters are never user-derived" guarantee
+/// (§8: `usage.json` carries no user content) rests entirely on call sites using
+/// `<domain>.<action>` literals. The `debug_assert` is what makes a slip fail
+/// loudly in tests instead of silently persisting a branch name or a path.
+#[test]
+#[should_panic(expected = "never user-derived")]
+fn bump_counter_rejects_a_user_derived_key_in_debug() {
+    let store = MetricsState::default();
+    store.bump_counter("feature/my-branch", 1, "2026-08-27");
+}
+
+/// The allow-listed shapes the real call sites use must keep passing.
+#[test]
+fn bump_counter_accepts_domain_action_literals() {
+    let store = MetricsState::default();
+    for key in ["commit.create", "perf.repo_opens", "graph.get.rows"] {
+        store.bump_counter(key, 1, "2026-08-27");
+    }
+    let snap = store.snapshot();
+    let day = snap.days.last().expect("day bucket");
+    assert_eq!(day.totals.counters.len(), 3);
+}

@@ -28,6 +28,11 @@ import {
 } from '../DevConfirmDialogs';
 import { deleteErrorText, deleteResultToast, exportErrorText } from '../devLogMessages';
 
+/** Faster than the header pill's 3 s (`DevModePill`) ON PURPOSE — do not unify
+ *  them. This card is the surface the user watches while reproducing something:
+ *  its record/byte counters must visibly move. The pill is always-mounted chrome
+ *  reading one bool and settles for the cheaper cadence, and the offset keeps the
+ *  two polls from phase-locking into a single synchronised IPC burst. */
 const POLL_MS = 2000;
 const NO_BUSY: DevLogsBusy = { reveal: false, export: false, delete: false };
 

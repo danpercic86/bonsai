@@ -145,6 +145,16 @@ pub struct LogRecord {
     pub payload: LogPayload,
 }
 
+/// §9.3 — the dimension a `frame` record reports. The two frame recorders
+/// measure different quantities (paint duration vs scroll inter-frame gap) and
+/// must never be averaged together, so each record names its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FrameDim {
+    Paint,
+    Gap,
+}
+
 /// The per-`kind` payload union (§3). Internally tagged on `kind`; each variant
 /// renames to its exact wire string (the dotted kinds cannot be derived by
 /// `rename_all`).
@@ -280,6 +290,16 @@ pub enum LogPayload {
     },
     #[serde(rename = "frame")]
     Frame {
+        /// §9.3 — WHICH dimension this window measured. Paint duration and scroll
+        /// inter-frame gap come from two separate recorders, so exactly one of
+        /// `paint_ms`/`gap_ms` is a measurement and the other is a filler `0.0`.
+        /// Without this discriminator a consumer reads `gapMs: 0` on a paint
+        /// record as "zero gap measured" — a fabricated datum. REQUIRED, not
+        /// optional: the only producer is the frontend's own `graphObs.ts`, log
+        /// records are never re-parsed from disk by Rust, so there is no older
+        /// writer to stay compatible with, and a `frame` record without a
+        /// dimension is a bug worth rejecting rather than mislabelling.
+        dim: FrameDim,
         paint_ms: f64,
         gap_ms: f64,
         over33: u32,

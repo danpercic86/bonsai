@@ -18,6 +18,7 @@ pub mod histogram;
 pub mod invoke_shim;
 pub mod metrics;
 pub mod metrics_file;
+mod metrics_keys;
 pub mod phase;
 pub mod record;
 pub mod redact;

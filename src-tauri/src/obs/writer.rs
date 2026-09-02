@@ -103,6 +103,16 @@ pub struct LogWriter {
     /// underlying `io::Error` — whose Display embeds the log path — is NEVER
     /// stored here or carried across IPC. The UI shows generic copy only.
     write_failed: Arc<AtomicBool>,
+    /// §8.4 — the LAST attempt to open a part failed and the writer is still
+    /// holding the previous part's `BufWriter`. Writer-local (never crosses IPC).
+    ///
+    /// Without it, a persistent rotation block flapped: `open_part` sets
+    /// `write_failed`, but the healthy old `BufWriter` keeps flushing fine, so the
+    /// sink's ~1 s idle flush cleared the flag again until the next record
+    /// re-set it — the §16.9 status row and the header pill oscillated between
+    /// "not writing" and healthy while the log was, in fact, stuck. `flush()`
+    /// therefore only clears `write_failed` while rotation is healthy.
+    rotation_blocked: bool,
 }
 
 impl LogWriter {
@@ -123,6 +133,7 @@ impl LogWriter {
             seq: 0,
             dropped_parts: Arc::new(AtomicU64::new(0)),
             write_failed: Arc::new(AtomicBool::new(false)),
+            rotation_blocked: false,
         };
         w.open_part(0, false)?;
         Ok(w)
@@ -167,9 +178,16 @@ impl LogWriter {
                 // the "stopped writing" state. Set the flag before surfacing the
                 // error. BOOL only; the `io::Error` (path in its Display) stays.
                 self.write_failed.store(true, Ordering::Relaxed);
+                // The caller (a rotation) keeps writing into the PREVIOUS part's
+                // healthy `BufWriter`, which would flush successfully and clear
+                // the flag again; latch the block so `flush` cannot do that.
+                self.rotation_blocked = true;
                 return Err(AppError::Io(format!("cannot open log file: {e}")));
             }
         };
+        // A part opened: rotation is healthy again, so a later successful flush is
+        // once more allowed to clear `write_failed`.
+        self.rotation_blocked = false;
         self.file = Some(BufWriter::new(file));
         self.active = name;
         self.part = part;
@@ -328,7 +346,13 @@ impl LogWriter {
                 self.write_failed.store(true, Ordering::Relaxed);
                 return Err(AppError::Io(format!("cannot flush log file: {e}")));
             }
-            self.write_failed.store(false, Ordering::Relaxed);
+            // …but only while rotation is healthy. A blocked `open_part` leaves
+            // this `BufWriter` pointing at the FULL previous part, whose flush
+            // still succeeds while nothing more can ever be persisted — clearing
+            // on it would make §16.9 report healthy during a persistent block.
+            if !self.rotation_blocked {
+                self.write_failed.store(false, Ordering::Relaxed);
+            }
         }
         self.buffered = 0;
         Ok(())
