@@ -90,12 +90,23 @@ target), `App.tsx` 602 (launch effect needs 6 of App's own setters threaded in).
 
 ---
 
-## 🎨 P102 + P105 — hue audit (`--danger` fills, `--accent`-as-text) — IN PROGRESS (started 2026-09-02)
+## 🎨 P102 + P105 — hue audit — AI GATE GREEN, ⏳ AWAITING USER CHECKPOINT (AC18/19/20)
 
-**Current step:** ✅ contract `7c623d8` → ✅ impl `0e5dcab` → ✅ **both reviews done, both
-APPROVE after fixes** → ✅ **review fixes committed `185c352`** → ⏳ **full gate: `--quick` tier
-GREEN (all 7 steps, 255.9s), e2e still owed** (held while the ui-designer occupies harness port
-1420; running two things against one dev server is how e2e specs flake). Then the milestone commit.
+**Current step:** ✅ **AI GATE GREEN — MILESTONE COMPLETE bar the USER CHECKPOINT.**
+contract `7c623d8` → impl `0e5dcab` → both reviews APPROVE after fixes → fixes `185c352` →
+**FULL gate green**: `--quick` all 7 steps (255.9s) **and e2e 181 passed / 1 skipped (2.7m)**.
+e2e was deliberately run *after* the ui-designer released harness port 1420 — running two things
+against one dev server is how e2e specs flake.
+
+**⏳ AWAITING USER CHECKPOINT: AC18 / AC19 / AC20.** Not self-declared; the user's 2026-09-02
+checkpoint authority was scoped to P100 + P101 and explicitly does **not** reach work created that
+session. Evidence gathered to make the check fast: **AC18** — the updater panel is Tauri-only, but
+its `.btn-danger` shares the exact rule measured at 4.80/4.93 rest and 5.18/5.49 hover, so the
+question is "does it look right", not "is it legible". **AC19** — `--accent-strong` holds hue within
+**0.7°** of `--accent` in both themes (219.0° vs 219.7°); the open question is purely whether the
+dark `#7fabff` reads washed-out. **AC20** — no `filter` remains on any of the four hover targets, so
+there is no compositing pass left to flicker and layout cannot move (background-only swap); what is
+being judged is fill-change feel alone.
 
 **Gate `--quick` @ `185c352`:** cargo nextest 139.0s ✓ · doctests 4.0s ✓ · clippy 22.4s ✓ ·
 eslint 16.2s ✓ · **file-size ratchet 1.0s ✓ (the blocker is cleared)** · vitest 59.6s ✓ ·
