@@ -18,7 +18,9 @@ P107 does not touch `status-panel.css`. This contract is the only diff on that f
 > **SHIPPED 2026-09-03 in commit `10ce967`.** `ui-reference.md` §2 / §7 were written from the shipped
 > result (AC13), not from this contract. Post-landing corrections are inline below: §2's calibration
 > hedge is **resolved** (base ambiguity, both contracts corrected), and §10's **R2** and **R10**
-> baselines were both wrong (53 not 50; 12 not 0). **AC14, AC15 and the real-repo half of AC9 remain
+> baselines were both wrong (53 not 50; 12 not 0). **AC10 is MET per-site** — all 8 render sites
+> named with their harness routes, so no "unverified" qualifier carries forward.
+> **AC14, AC15 and the real-repo half of AC9 remain
 > USER CHECKPOINTs and stay PENDING** (§12) — no agent closes them.
 
 - **The search found 8 render sites** (not the 2 the inherited measurements name) across 7 files,
@@ -518,6 +520,16 @@ Numbered; each is checkable against §10's residue table or a measured ratio.
     `DiffBrowser`, S6 `PrFileRow`, S8 `ComposerGroupCard` — are each either confirmed or carried
     forward with the word **"unverified"** verbatim into `ui-reference.md`. **A declaration may not be
     recorded as fixed on grep evidence alone** (§2, second failure mode).
+    > **MET 2026-09-03, per site, with routes — no "unverified" survives.** All 8 sites reached:
+    > S1/S2 status rows · **S3 conflicts via `?op=merge`** (this is the route to the `C` letter) ·
+    > S4 `DiffFileTree` · **S5 `DiffBrowser`, `M` measured 8.39 / 6.65** — the declaration, not just
+    > the site · **S6 `PrFileRow` via `?forge=auth`, 4 statuses** · S7 `DiffOverlay` header
+    > (`rgb(232,234,237)` = `--text-1` on `--bg-0`) · **S8 `ComposerGroupCard`, 6 statuses on
+    > `--bg-2`**. `C` is corroborated twice: the `--danger-strong` row (7.62/6.01 → 6.72/5.55 →
+    > **5.27/5.18**) and AC11's `Conflicts (3)` label at 7.62/6.01. The table is in
+    > `ui-reference.md` §7. **An aggregate "all 8 sites" sentence would NOT have met this AC** —
+    > accepting a summary in place of a per-item record is exactly the second failure mode; it was
+    > met only once each of the four was named with a route and a figure.
 11. **AC11 — `.section-label-danger` clears the bar.** The `Conflicts` header measures **7.62 dark /
     6.01 light** on `--bg-1`.
 12. **AC12 — [D1, droppable]** `DiffOverlay.tsx:295` and `ComposerGroupCard.tsx:129` are hue-coded via

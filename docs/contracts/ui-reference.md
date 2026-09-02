@@ -174,7 +174,12 @@ matches*, and if declarations, the grep must exclude comments and `var()` fallba
 must say what the expected non-declaration matches are; (2) a baseline is measured against the real
 pre-fix tree, never inherited from a prior contract or inferred; (3) when a grep and a prediction
 disagree, re-measure the baseline before touching the code — the next pass will otherwise "fail" a
-correct fix.** The accent-fill shortfall is **closed** (P100); the accent-as-text
+correct fix; (4) when a residue prediction names `file:line`, it must state that **the count is the
+criterion and the line numbers are not** — any comment the fix itself adds shifts every line below
+it. P106's R4 predicted its five new declarations at `193, 198, 203, 216, 227` and shipped them at
+`193, 198, 203, 220, 231`: the count was exact, the lines drifted by the explanatory comments the
+same fix added. A reviewer checking lines rather than counts would have called a correct fix a
+miss.** The accent-fill shortfall is **closed** (P100); the accent-as-text
 (P105) and hardcoded-ink-on-hue-fill (P102) shortfalls **shipped 2026-09-02** in commit `0e5dcab`,
 enumerated in `docs/contracts/P102-P105-hue-audit-ui.md` §2–§3 and verified in the browser harness
 in both themes. All 93
@@ -1026,13 +1031,26 @@ the ink — five grey letters would delete a working scanning aid (find the dele
 (`rg "FileStatus" src/graph` → 0). Run it on any visual family from now on; "the search could not see a
 whole class" is how both prior counts in this programme went wrong.
 
-**Carried qualifiers (per §2's transcription rule — do not quietly upgrade these).** P106 §11 AC10
-required each of the six declarations under verdict to be confirmed as *rendered*, and named four
-sites unconfirmed at contract time: `C` conflicted, S5 `DiffBrowser.tsx:404`, S6
-`prPanel/PrFileRow.tsx:37`, S8 `ComposerGroupCard.tsx:129`. The implementation reports measuring all
-8 render sites live. **If its per-declaration record does not name those four individually, they
-remain "unverified" here** — a grep proves a declaration exists, not that it renders
-(§2, second failure mode).
+**Live-match confirmation — all 8 render sites reached, per site, with the route that reaches each**
+(P106 AC10, resolved 2026-09-03). A grep proves a declaration *exists*; only this proves it
+*renders* (§2, second failure mode). Four sites were unconfirmed at contract time and are now
+individually recorded — **no "unverified" qualifier survives on this family**:
+
+| Site | File | Route in the harness | Confirmed |
+|---|---|---|---|
+| S1 / S2 | `StatusFileRow.tsx:109` / `:114` | status rows, default view | rendered |
+| S3 | `StatusConflictsSection.tsx:124` | **`?op=merge`** | rendered — this is the route that reaches the **`C` conflicted** letter |
+| S4 | `DiffFileTree.tsx:181` | commit selected | rendered |
+| S5 | `DiffBrowser.tsx:404` | diff browser | rendered — **`M` measured 8.39 / 6.65** (`--warning-strong` on `--bg-1`), i.e. the declaration itself, not just the site |
+| S6 | `prPanel/PrFileRow.tsx:37` | **`?forge=auth`** | rendered — **4 statuses** exercised; its backdrops are `--bg-1` / `--bg-2` / `--selection` per the matrix above |
+| S7 | `DiffOverlay.tsx:295` | diff overlay header | rendered — computed `rgb(232,234,237)` = `--text-1` on `--bg-0` (pre-D1) |
+| S8 | `ComposerGroupCard.tsx:129` | composer | rendered — **6 statuses**, backdrop **`--bg-2`** |
+
+**The `C` letter is corroborated twice over**, which matters because it is the worst figure in the
+family: `.file-status-conflicted .file-badge` → `--danger-strong` measures **7.62 / 6.01** at rest,
+**6.72 / 5.55** hovered and **5.27 / 5.18** selected — and that **5.18** (light, `--selection`) *is*
+the conflicted letter on a selected row, the worst live badge anywhere in the app. Separately, AC11
+measures the `Conflicts (3)` section label at **7.62 / 6.01** on `--bg-1`.
 
 **Still open on this family — it is NOT fully closed:**
 - **AC14 (USER CHECKPOINT, pending).** Native-window read: `pnpm tauri dev` on a real repo with staged
