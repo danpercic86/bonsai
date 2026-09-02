@@ -92,8 +92,14 @@ target), `App.tsx` 602 (launch effect needs 6 of App's own setters threaded in).
 
 ## 🎨 P102 + P105 — hue audit (`--danger` fills, `--accent`-as-text) — IN PROGRESS (started 2026-09-02)
 
-**Current step:** ✅ contract `7c623d8` → ✅ **impl DONE + committed `0e5dcab`** → ⏳ reviewer +
-ui-designer reviewing concurrently (workflow step 4). Then tester + full gate.
+**Current step:** ✅ contract `7c623d8` → ✅ impl `0e5dcab` → ✅ **both reviews done, both
+APPROVE after fixes** → ✅ **review fixes committed `185c352`** → ⏳ **full gate: `--quick` tier
+GREEN (all 7 steps, 255.9s), e2e still owed** (held while the ui-designer occupies harness port
+1420; running two things against one dev server is how e2e specs flake). Then the milestone commit.
+
+**Gate `--quick` @ `185c352`:** cargo nextest 139.0s ✓ · doctests 4.0s ✓ · clippy 22.4s ✓ ·
+eslint 16.2s ✓ · **file-size ratchet 1.0s ✓ (the blocker is cleared)** · vitest 59.6s ✓ ·
+tsc+build 13.7s ✓.
 
 **The predicted grep residue matched reality on every line** — this is the milestone's central
 claim, and it held: `color: var(--accent)` 30→**7**, `--accent-strong` 0→**18**, hex ink 3→**0**,
