@@ -590,10 +590,11 @@
 }
 
 .forge-connect-link {
-  /* P105 B6: was --accent — 5.07:1 dark / 4.34:1 light on --bg-1. The hover underline
-     stays as the second, non-colour carrier for the link affordance. */
+  /* P105 B6: --accent-strong sits ON TOP of the --text-2 prose it is embedded in (1.02:1
+     dark / 1.28:1 light), so colour cannot carry the link at REST — WCAG G183 wants ≥ 3:1
+     vs surrounding text. The RESTING underline is that carrier (hover adds no second one). */
   color: var(--accent-strong);
-  text-decoration: none;
+  text-decoration: underline;
   white-space: nowrap;
   /* P72: explicit, so the affordance can never silently depend on the `href`
      surviving a future refactor (the click is IPC-routed). */

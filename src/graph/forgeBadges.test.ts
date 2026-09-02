@@ -23,6 +23,8 @@ const THEME = {
   badgeGood: '#2ea043',
   badgeWarn: '#f85149',
   badgeUnknown: '#8b949e',
+  merged: '#a371f7',
+  mergedText: '#16181d',
   warning: '#d29922',
   text2: '#c9d1d9',
   text3: '#8b949e',
@@ -66,14 +68,17 @@ describe('prBadgeVisual', () => {
     });
   });
 
-  it('merged → filled purple (distinct from good/warn), white text, no border', () => {
+  it('merged → the THEME --merged/--merged-text pair (distinct from good/warn)', () => {
     const v = prBadgeVisual(pr({ number: 99, state: 'merged' }), THEME);
-    expect(v.label).toBe('#99');
-    expect(v.text).toBe('#ffffff');
-    expect(v.border).toBeNull();
+    expect(v).toEqual({
+      label: '#99',
+      fill: THEME.merged,
+      text: THEME.mergedText,
+      border: null,
+    });
+    // Still a slot of its own, never the good/warn hue.
     expect(v.fill).not.toBe(THEME.badgeGood);
     expect(v.fill).not.toBe(THEME.badgeWarn);
-    expect(v.fill).toMatch(/^#[0-9a-f]{6}$/i);
   });
 
   it('draft → grey OUTLINE (border set), regardless of the open state underneath', () => {

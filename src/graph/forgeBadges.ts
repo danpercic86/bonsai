@@ -16,11 +16,6 @@ import type { RefEntity } from './refLabels';
 import type { GraphDisplayOptions } from './rightColumns';
 import { measure, truncateToWidth } from './textMeasure';
 
-/** Merged/closed PR pill color — fixed across themes (GitHub's merged violet),
- *  same convention as TAG_COLOR / STASH_COLOR. Green (open) + red (closed) come
- *  from the theme badge palette so they track the signature-badge colors. */
-const PR_MERGED_COLOR = '#8957e5';
-
 /** Per-branch PR signal (subset of P62 `PrSummary`; `title` feeds the tooltip). */
 export interface PrBadge {
   number: number;
@@ -55,7 +50,10 @@ export function prBadgeVisual(
     case 'open':
       return { label, fill: theme.badgeGood, text: '#ffffff', border: null };
     case 'merged':
-      return { label, fill: PR_MERGED_COLOR, text: '#ffffff', border: null };
+      // P102 §5.4: the --merged/--merged-text token pair the DOM pill
+      // (.pr-state-merged) uses, so the canvas badge and the PR panel show the
+      // same purple per theme instead of two different ones on one screen.
+      return { label, fill: theme.merged, text: theme.mergedText, border: null };
     case 'closed':
       return { label, fill: theme.badgeWarn, text: '#ffffff', border: null };
   }

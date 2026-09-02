@@ -105,8 +105,12 @@
 
 /* P105 C4/C5 state coverage (§3.6): `.btn-secondary:hover:not(:disabled)` is (0,3,0) and
    would out-specify the (0,2,0) rule above, dropping the selected fill back to --bg-3 on
-   hover — the state would then hang on the border alone. Re-assert --selection at matching
-   specificity, lifted 8% toward --text-1 (the same device as .btn-primary/.btn-danger hover)
+   hover — the state would then hang on the border alone. This selector re-asserts
+   --selection at STRICTLY HIGHER specificity — (0,4,0) vs (0,3,0) — which is what makes it
+   win: `settings-legacy-sections.css` is imported BEFORE `updates.css` (styles.css:18 vs
+   :43), so at merely equal specificity the later `.btn-secondary:hover:not(:disabled)` rule
+   would take the cascade and this fix would be a no-op. Do NOT simplify the selector.
+   The fill is lifted 8% toward --text-1 (the same device as .btn-primary/.btn-danger hover)
    so hovering still gives feedback. --text-1 on the lifted fill is 7.55:1 dark /
    11.42:1 light. */
 .settings-toggle-btn.is-active:hover:not(:disabled) {

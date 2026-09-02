@@ -97,8 +97,12 @@
 }
 
 /* P45: danger float button beside "Stage N lines" (shares the .diff-stage-float
-   box). The small left margin sits it side by side with the Stage button. */
-.diff-float-discard {
+   box). The small left margin sits it side by side with the Stage button.
+   SPECIFICITY: this button is a DESCENDANT of .diff-stage-float, so the generic
+   `.diff-stage-float button` rule above is (0,1,1) and out-specifies a bare
+   `.diff-float-discard` (0,1,0) — the accent fill/ink would win. The selector is
+   qualified with the ancestor to reach (0,2,1). Do not shorten it. */
+.diff-stage-float button.diff-float-discard {
   font-family: var(--font-ui);
   font-size: 12px;
   line-height: 1;
@@ -113,7 +117,8 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
   margin-left: 8px;
 }
-.diff-float-discard:hover {
+/* (0,3,1) — must stay above `.diff-stage-float button:hover` (0,2,1), see above. */
+.diff-stage-float button.diff-float-discard:hover {
   /* P102 §1.4: was `filter: brightness(1.08)` — 4.32:1 in light, because the lift moved fill
      and ink together. Fill-only mix toward --text-1: 5.1:1 dark / 5.3:1 light. */
   background: color-mix(in srgb, var(--danger) 92%, var(--text-1));

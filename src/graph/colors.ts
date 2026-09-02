@@ -50,6 +50,10 @@ export interface Theme {
   badgeGood: string;
   badgeWarn: string;
   badgeUnknown: string;
+  /** P102 §5.4: PR "merged" fill + its ink. Same tokens the DOM pill
+   *  (`.pr-state-merged`) uses, so canvas and DOM agree per theme. */
+  merged: string;
+  mergedText: string;
 
   // ── Bonsai styling (spec 002 UI contract). For graphStyle==='standard' these
   //    carry inert defaults (graphBackdrop === bg0, taper widths mirror the
@@ -192,6 +196,8 @@ export function resolveTheme(
     badgeGood: read('--badge-good'),
     badgeWarn: read('--badge-warn'),
     badgeUnknown: read('--badge-unknown'),
+    merged: read('--merged'),
+    mergedText: read('--merged-text'),
     graphStyle,
     bonsai,
     graphBackdrop,

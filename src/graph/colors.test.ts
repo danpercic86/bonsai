@@ -106,12 +106,17 @@ describe('resolveTheme', () => {
       '--accent': '#2266ff',
       '--match-ring': '#ff00ff',
       '--badge-good': '#00aa00',
+      '--merged': '#a371f7',
+      '--merged-text': '#16181d',
     });
     const theme = resolveTheme(fakeEl);
     expect(theme.bg0).toBe('#111111'); // trimmed
     expect(theme.accent).toBe('#2266ff');
     expect(theme.matchRing).toBe('#ff00ff');
     expect(theme.badgeGood).toBe('#00aa00');
+    // P102 §5.4: the canvas PR badge pulls the same token pair as .pr-state-merged.
+    expect(theme.merged).toBe('#a371f7');
+    expect(theme.mergedText).toBe('#16181d');
     expect(gpv).toHaveBeenCalledWith('--danger');
     expect(gpv).toHaveBeenCalledWith('--badge-unknown');
   });
