@@ -382,7 +382,9 @@ themes), so it is not a P102 defect. But it is the only theme-invariant hue lite
 - **Option B:** leave `#8957e5` + a locally restated `color: #ffffff` with an explanatory comment.
   Two fewer tokens; AC7 becomes "exactly 1, and it is this one".
 
-**Recommendation: Option A.** Orchestrator to confirm — the implementer must not pick silently.
+**Recommendation: Option A.** — **RESOLVED 2026-09-02: the orchestrator chose Option A.** `--merged`
+/ `--merged-text` are defined in both themes and shipped in `0e5dcab`; AC3 applies and AC7 is a
+zero-count. AC7 verified: `rg -i "\bcolor:\s*(#[0-9a-fA-F]{3,8}|white)\b" src/styles` → **0**.
 
 ---
 
@@ -484,12 +486,15 @@ Most already exist; the list marks what must be added.
 ## 9. File-size discipline
 
 No new files, no new components. Net CSS growth is ~20 lines across 11 stylesheets plus 5–9 token
-lines. Two files touched are already over the ~500-line soft limit — `forge-pr.css` (~710 lines,
-last rule at `:706`) and `settings-legacy-sections.css`. This milestone adds **no new rule block**
-to either: `forge-pr.css` gains 4 lines by moving one `color` declaration onto three existing state
-rules, and `settings-legacy-sections.css` gains 1. **File the `forge-pr.css` split as a separate
-`refactorer` task** — do not attempt it inside this milestone; mixing a behaviour-preserving split
-with a colour change makes the review diff unreadable.
+lines. Two files touched are already over the ~500-line soft limit — `forge-pr.css` (**874 lines**;
+the "~710, last rule at `:706`" figure that stood here was stale and is corrected 2026-09-02) and
+`settings-legacy-sections.css`. This milestone adds **no new rule block** to
+`forge-pr.css`: it gains 4 lines by moving one `color` declaration onto three existing state
+rules. `settings-legacy-sections.css` gains one small rule block — see the deviation note below.
+**File the `forge-pr.css` split as a separate `refactorer` task** — do not attempt it inside this
+milestone; mixing a behaviour-preserving split with a colour change makes the review diff
+unreadable. `forge-pr.css` at 874 lines is now **75% over** the soft limit, so that split has moved
+from "nice to have" to overdue.
 
 ---
 

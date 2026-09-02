@@ -41,7 +41,7 @@ list. Nothing in this contract is pending an answer.
 | `obs/invoke_shim.rs` | `invoke_handler` wrapper logging every command dispatch |
 | `obs/metrics.rs` | `MetricsStore` (counters/histograms), aggregation cadence |
 | `obs/metrics_file.rs` | atomic load/save of `metrics/usage.json`, daily buckets, retention |
-| `obs/metrics_keys.rs` | key ALLOW-LIST predicates (`cmd.<name>`, `<domain>.<action>`, error codes) — the privacy guard that keeps user-derived strings out of the durable file; split out of `metrics.rs` at the 500-line cap |
+| `obs/metrics_keys.rs` | **The metrics key privacy guard.** Sole home of the `<domain>.<action>` / `cmd.<name>` / error-code shape predicates that decide whether a string may become a key in `usage.json`. Separate from `metrics.rs` **by contract, not by size**: `usage.json` is durable, is not covered by `logs_delete_all` and has no redaction pass, so a user-derived key there is permanent, un-deletable repo content. |
 | `commands/obs.rs` | `log_append`, `log_session_info`, `log_reveal_dir`, `log_export_session`, `logs_delete_all`, `metrics_snapshot`, `metrics_reset` |
 
 `perf.rs` is **kept** as the hot-path atomic tally and is *absorbed*: `MetricsStore` reads
@@ -223,6 +223,15 @@ that repeats the same scope with no intervening mutation is a `redundant-refresh
 >
 > **§3 is authoritative for record shape.** Where prose elsewhere in this contract disagreed with a
 > payload definition here, §3 won and the prose was corrected (see §13 row 20).
+>
+> **Pre-release carve-out (architect, `8da1291` ratification).** The all-optional clause binds from
+> the moment P91 merges to `dev`. While P91 is unmerged, a **required** field may be added to an
+> existing payload without a version bump, because no shipped build has written the old shape and no
+> reader parses records from disk (§3.2). Exactly one field has used this carve-out:
+> `FramePayload.dim` (`FrameDim = 'paint' | 'gap'`, required on both sides). **The carve-out expires
+> on merge to `dev`.** After that, any required-field addition to an existing payload, any rename,
+> retype or removal, requires an `OBS_SCHEMA_VERSION` bump **and** a §3.2 reader rule for the older
+> version. Purely additive optional fields never need either.
 
 ```ts
 export const OBS_SCHEMA_VERSION = 1;
@@ -578,6 +587,34 @@ invalidates). Detail carries the counts; `refs` point at the offending spans. Cr
 
 ---
 
+### 3.2 Schema version & reader compatibility
+
+`OBS_SCHEMA_VERSION` (currently **1**) is stamped on the `session` header, which is line 1 of
+**every** part, including rotation parts — so any file, and any part handed over on its own, is
+self-describing.
+
+**Bump the version when, and only when:** an existing field is renamed, retyped or removed, or a
+**required** field is added to an existing payload after P91 has merged to `dev`. Adding a new
+`LogKind` variant, or an optional field, never bumps it.
+
+**Reader rules — binding on every consumer of a `.jsonl` file** (the in-app path, any future log
+viewer, the gate's line-by-line parse test, and the reviewing AI's preamble):
+
+1. **Unknown `kind` ⇒ skip the record**, do not fail the file. Forward compatibility is by
+   construction: `LogKind` grows.
+2. **Unknown field ⇒ ignore it.** No consumer may reject on extra keys.
+3. **Missing required field ⇒ reject that LINE, count it, continue.** A malformed record never
+   invalidates the rest of the file; a truncated tail line at a crash boundary is expected.
+4. **Never infer a missing discriminator.** A `frame` record without `dim` is unattributed: report
+   it as such, never default it to `paint`, and never average `paintMs`/`gapMs` across records of
+   different `dim`.
+5. A reader encountering `schema` **greater** than the version it knows parses on a best-effort
+   basis under rules 1-3 and says so in its output; it does not refuse the file.
+
+**Rust deserialization posture (as built, intentional):** `LogRecord`'s `Deserialize` exists for the
+`log_append` IPC path only — a same-build producer. It is **not** a compatibility surface for old
+files, and no increment may make it one without first satisfying the reader rules above.
+
 ## 6. On-disk format & lifecycle
 
 ```
@@ -785,6 +822,34 @@ ratified as-is**. The additive `truncate` record and the two optional `SessionPa
 **increment 7** (the increment that already reopens `writer.rs` for `RollAndPurge`), so nothing
 disturbs the in-flight increment 2.
 
+### 6.4 `writeFailed` — the "stopped writing" state machine (RATIFIED, increment 7c follow-up)
+
+One bool, three transitions. It is writer-owned, shared with the sink as an `AtomicBool` so
+`log_session_info` reads it without touching the writer thread.
+
+| Event | Effect |
+|---|---|
+| any failed `write_all` / `flush` | `writeFailed = true` |
+| failed `open_part` (rotation blocked: permission loss, path taken, disk full) | `writeFailed = true` **and latch `rotationBlocked = true`** |
+| successful `open_part` | `rotationBlocked = false` (clearing is permitted again) |
+| successful `flush` **while `rotationBlocked == false`** | `writeFailed = false` |
+| successful `flush` while `rotationBlocked == true` | **no clear** — the buffer being flushed is the full previous part |
+
+Consequences, all intended:
+
+- A transient failure on a disk that recovers clears within ~1 s (the writer loop flushes at least
+  every 1 s).
+- A **persistent** rotation block stays `true` for the rest of the session unless a part opens
+  again. It does not flap.
+- `rotationBlocked` is **writer-local and never crosses IPC.** Only the bool is exported.
+- **Privacy:** the errno, the `io::Error` and the path are dropped at the writer. The UI shows
+  generic copy with **no `{reason}` interpolated** — this architecture contract is authoritative
+  over the UI contract on that point.
+
+**Consistency rule for any future "sticky until success" flag in `obs/`:** the clear condition must
+name the *specific* operation that proves the failure is over, not merely "the next success". A
+success on a resource the failure did not touch is not evidence.
+
 ### Commands
 ```rust
 #[tauri::command] async fn log_append(state: State<'_, AppState>, records: Vec<LogRecord>) -> Result<(), AppError>;
@@ -809,18 +874,8 @@ export interface LogSessionInfo {
   exportFiles?: number; exportBytes?: number;
   /** §6.3 — parts of THIS session already evicted at the part cap; >0 ⇒ the session is truncated. */
   droppedParts?: number;
-  /** §8.4 (RATIFIED, increment 7c) — true while the writer cannot persist to disk (disk full,
-   *  permission loss, rotation-open blocked). **A BOOL, never the error string** — an `io::Error`
-   *  Display carries the log path, which must not cross IPC (increment 1's leak lesson). The writer
-   *  sets it on any failed `write_all`/`flush`/`open_part` and clears it ONLY on a `flush()` that
-   *  reaches disk (a buffered write proves nothing) **while rotation is healthy** — after a failed
-   *  `open_part` the writer still holds the PREVIOUS part's working `BufWriter`, whose flush
-   *  succeeds while nothing more can ever be persisted, so the clear is latched off until a part
-   *  opens again (increment-7c follow-up; without the latch the row and the pill flapped every
-   *  idle flush). So a recovered disk clears within ~1 s and a persistent failure stays true. The UI (§8.4) shows GENERIC copy with **no `{reason}`
-   *  interpolated** — the errno/path is deliberately dropped for privacy. The §8.4 danger toast
-   *  (dedupe key `dev-sink`) is DEFERRED to a follow-up; the always-visible status-card row + the
-   *  header pill danger variant already surface the state. */
+  /** §6.4 — true while the writer cannot persist to disk. **A BOOL, never an error string**
+   *  (an `io::Error` Display embeds the log path, which must not cross IPC). */
   writeFailed: boolean;
 }
 ```
@@ -1071,7 +1126,8 @@ pub struct Histogram { pub count: u64, pub sum_ms: u64, pub max_ms: u64,
 - **Absorption:** at each flush, `PerfState::snapshot()` deltas fold into `counters` under
   `perf.repo_opens`, `perf.graph_walks`, `perf.graph_cache_hits`, `perf.graph_redecorates`,
   `perf.status_scans`. `perf.rs` is unchanged; no second hot-path counter is introduced.
-- **Key namespace:** `<domain>.<action>` only, from a fixed allow-list in `obs/metrics.rs` — no
+- **Key namespace:** `<domain>.<action>` only. The key **names** are enumerated in
+  `obs/metrics.rs`; the **shape guard that admits them** lives in `obs/metrics_keys.rs` — no
   user-derived string can ever become a key (privacy + unbounded-growth guard). Metrics therefore
   need no redaction: **they structurally cannot contain repo content**, which is why they are not
   covered by `logs_delete_all`.
@@ -1124,7 +1180,18 @@ export interface Histogram {
 }
 ```
 
-**Which keys get a duration histogram** (allow-list in `obs/metrics.rs`, folded at flush from
+**Empty-bucket skip (increment-5 follow-up, non-ratified surface).** `percentile_ms` skips buckets
+with a zero count when choosing the containing bucket, except the top bucket, which is the
+guaranteed terminus. This is **inert for every `p` in `(0, 1]`** — the first bucket reaching the
+target is necessarily non-empty — so the ratified p50/p95 method is unchanged. It fixes `p == 0.0`,
+which previously stopped in an empty bucket 0 and fell through to the `max_ms` fallback, reporting
+the **maximum** as p0. The remaining `bucket_count == 0` path is reachable only from a torn or
+hand-edited `usage.json` that deserialized with `count > 0` and no bucket set; it returns `max_ms`
+rather than dividing by zero. p0 is not part of any rule or snapshot field; this is a bug fix
+outside the ratified surface, recorded so a later session does not read the guard as drift.
+
+**Which keys get a duration histogram** (names in `obs/metrics.rs`, shape guard in
+`obs/metrics_keys.rs`, folded at flush from
 `span` and `ipc.result` records):
 - `cmd.<name>` for every non-excluded command — end-to-end IPC duration;
 - `op.graph.get`, `op.status.scan`, `op.diff.compute` — total operation time;
@@ -1274,7 +1341,7 @@ is written on each enable.
 | Dev mode **OFF** | ≤ **1 %** on graph scroll frame time; **zero** allocations per IPC call beyond today; no writer thread spawned; no `useEffect` dep copies; no render tally allocated; **`PhaseRecorder::start` allocates nothing and `phase()` takes no `Instant`** | perf_gate case asserting sink-disabled paths do no work; vitest asserts `instrumentIpc(api).someCmd === api.someCmd` **while disabled at access time**; `cargo test` asserts a disabled recorder emits no record and holds an empty `Vec` |
 | Dev mode **ON** | ≤ **5 %** frame-time regression on a 20k-commit scroll; ≤ 2 ms added per IPC call; ≤ 1 `log_append` per 500 ms | perf_gate case with the sink enabled + `unbatched-sink` must not fire in the harness run |
 | Dev mode **ON, spans** | ≤ **5 µs** per operation; ≤ **16** phases per span; **exactly 1 `span` record per completed operation** — a 20k-commit repo open produces ≤ 5 span records (~1 KB total), a graph scroll session ≤ 1 per served `get_graph`. Phase timing must never appear on a per-commit or per-file path | `cargo test`: a `graph.get` produces exactly one `span` with ≤16 phases; a bench asserts recorder overhead < 5 µs; grep test asserts no `PhaseRecorder` use inside a loop over commits/files |
-| Dev mode **ON, anomaly baselines** | §5.1 in-memory baselines are ≤ **200 `cmd` keys × 1 `Histogram`** (~10 KB), fixed size, never persisted | `cargo test`: feeding 10k distinct cmd names keeps the map at the cap (LRU eviction) |
+| Dev mode **ON, anomaly detector** | **"Bounded" is literal and every piece pays for it:** (a) `mutations` and each `Sliding` event list are pruned to their window; (b) **each `Sliding::last_fire` debounce map is pruned to the same window as its events** — mandatory, because `dup-ipc` keys on `cmd\0argsHash`, an unbounded space where every distinct argument set mints an entry; (c) `open_calls` is FIFO-capped at 1024; (d) the §5.1 per-`cmd` baseline map is LRU-capped at **200 keys**; (e) `slow_last_fire` is keyed by `cmd`, a finite catalogue, and needs no prune. Total ≈ tens of KB, independent of session length. | `cargo test`: 10k distinct cmd names keep the baseline map at the cap; **2000 distinct arg hashes over 200 s of session time leave the `dup-ipc` debounce map within one window's worth of keys**; a long synthetic session leaves every window list at window size |
 | Dev mode **ON, sidebar** | a single ref change on a **500-ref** repo produces **≤ 8** react records total (container `each` + 4 aggregate tallies), never one per row | vitest: mount the sidebar with a 500-ref fixture, trigger one ref change, count records |
 | **Disk, per session** | **hard bound `max_parts × 16 MB` = 128 MB**, enforced continuously by §6.3 eviction + prune-on-rotation — never only at launch | `cargo test`: drive a writer past `max_parts` and assert the group never exceeds the bound, the oldest part is the one deleted, the newest part survives, and no other session group is touched |
 | Sink | never blocks a caller (bounded `try_send`), writer thread only | test: fill the channel, assert producers return immediately and a `drop` record appears |
@@ -1373,6 +1440,9 @@ whose phases plausibly explain where the time went**.
 | 20 | **`argsHash` has ONE producer and ONE canonical form** (contradiction found by the increment-2 reviewer) | **CORRECTED — §7.2's "a UI call and its Rust arrival hash alike" sentence is STRUCK; §3 was and is authoritative.** `IpcRecvPayload` is `{ cmd }` with no `argsHash`, so the log stream has exactly one canonical form — the frontend's **positional JSON array** (positional because `IpcApi` methods are, which is also why `argsShape` is keyed `"0"`,`"1"`,…). `argsHash` appears only on `ipc.call`/`ipc.result`. **Cross-side agreement is neither required nor implemented**, and `Redactor::hash_args` takes already-canonicalised `&str` — **no Rust canonicaliser exists**. **PROHIBITION binding on increment 3 and later: `ipc.recv` must NOT gain `argsHash`/`argsShape`.** A Rust canonicaliser would serialise a *named payload map*, yielding different canonical text for the same logical call; the resulting second canonical form would make `dup-ipc` **silently stop matching real double triggers** — the exact failure this milestone exists to detect, and invisible because the rule just goes quiet. **If a future increment truly needs a Rust-side `argsHash`, BOTH are required (not either/or):** it must adopt the **identical positional-array canonical form** as `src/obs/redact.ts`, pinned by the existing cross-side vectors at `src-tauri/src/obs/tests_redact.rs:203-211`; **and** `dup-ipc` must already filter explicitly on `kind`. **Item 3 decision — `dup-ipc` states its own precondition, mandated NOW:** the rule must filter on `kind === 'ipc.call'` **explicitly in code**, with a unit test feeding a synthetic non-`ipc.call` record bearing an `argsHash`. Reason: correctness that emerges from a field being *absent from another payload type* is fragile in a contract making continuous additive changes — any future additive field breaks it silently. An explicit filter makes the rule locally verifiable and independent of every other payload's shape. Documentation-only; no shipped code changes | §3 (`IpcRecvPayload`, `ArgShape`), §2.3, §2.3.1, §4, §5 (`dup-ipc` row + precondition), §7.2, §12 inc. 2/3/5 + gate |
 | 21 | **Sub-phase split unrealisable for status/diff** (D3, ratified during increment 3) | **RATIFIED AS BUILT — commit `a351d36`, reviewer-approved.** `graph.get` is fully phased (`revwalk`/`decorate`/`lane`/`serialize` + `cache`) because its orchestration is visible at `graph_cache.rs`. `status.scan` collapses to a single `statuses` phase and `diff.compute` to a single `hunks` phase: their finer steps (`index`/`map`, `tree`/`serialize`) live inside `crates/bonsai-core`, and hooking them there would breach the `bonsai-core`↔`obs` boundary invariant (`bonsai_core_has_no_obs_reference`). Op-level `ms` + `queuedMs`/`poolInflight`/`poolMax`/`deadlineFrac` retained for all three. Finer status/diff phasing is **permanently rejected** (invariant non-negotiable; op-level `ms` is sufficient granularity), not deferred. **v1 scope note:** only `get_workdir_file_diff` is instrumented; commit-vs-parent diff is uninstrumented | §3.1.2 addendum, §12 inc. 3 |
 | 22 | **Mock-mode anomaly source split** (D5b, ratified during increment 5) | **RATIFIED AS BUILT.** The authoritative anomaly detector (`obs/anomaly.rs`) runs only on the Rust sink writer thread, so in mock mode (`VITE_MOCK_IPC=1`, no Tauri) the ring buffer never yields anomalies — yet §6's mock-mode assertion and the §12 gate + row 5 require the browser harness to show them. Resolution: a **mock-only, dump-time batch analyzer** over the ring at `__bonsaiDumpLogs()` time, scoped to **exactly the three gate-named rules** (`dup-ipc`, `slow-command`, `slow-phase`). `obs/anomaly.rs` stays the **sole authoritative detector**; the mock analyzer is a harness-only diagnostic that never reaches a production bundle. Documentation-only; ratifies increment-5b code | §6, §5, §5.1, §12 inc. 5 + gate |
+| 23 | **`FramePayload.dim` is REQUIRED at schema 1** (edit by senior-dev in `8da1291`, ratified by architect) | **RATIFIED with a stated carve-out.** The discriminator is required, not optional-with-default: `gapMs: 0` on a paint record is a fabricated datum, and a default reintroduces exactly the ambiguity the field removes. It is nonetheless a **breaking change to the v1 `frame` shape**, permitted only because P91 is **pre-release** (branch-only, absent from `dev`) and **no Rust reader parses records from disk** — `LogRecord::Deserialize` serves the same-build `log_append` IPC path alone. `OBS_SCHEMA_VERSION` stays **1**. **The carve-out expires on merge to `dev`**; after that a required-field addition needs a version bump **and** a §3.2 reader rule. New §3.2 states the reader rules (skip unknown `kind`, ignore unknown fields, reject the malformed LINE not the file, never infer a missing discriminator, best-effort on a higher `schema`). **Orchestrator decision 2026-09-02: option A of the architect's three** — schema stays 1 with an expiring carve-out, rather than bumping to 2 now, because no v1 corpus exists to protect and a bump would manufacture a phantom version that future readers write compatibility code for | §3 amendment rule, §3.2 (new), §11 |
+| 24 | **`writeFailed` clears only while rotation is healthy** (edit by senior-dev in `8da1291`, ratified by architect) | **RATIFIED — the deviation from the literal old wording is the correct contract.** "Clears on any flush that reaches disk" let a persistent rotation block report healthy, because the writer still held the previous part's working `BufWriter`; the Dev status row and `DevModePill` flapped every idle flush. The flag means **"records are not reaching disk"**, and no clear rule may return `false` while that holds. State machine moved out of the `LogSessionInfo` doc comment into **§6.4**; `rotationBlocked` is writer-local and never crosses IPC; the exported surface stays a bare bool for privacy | §6 Commands, §6.4 (new), UI §8.4 |
+| 25 | **Metrics key predicates are a privacy guard, not a size split** | **RATIFIED.** `obs/metrics_keys.rs` is contractually separate from `metrics.rs` because `usage.json` is durable, uncovered by `logs_delete_all` and unredacted — a user-derived key there is permanent repo content. Every key family passes a shape predicate before recording; a failure **drops the observation**, and the release path must not depend on the `debug_assert`. §8/§8.1's "allow-list in `obs/metrics.rs`" pointers are corrected: names in `metrics.rs`, shape guard in `metrics_keys.rs` | §1, §8, §8.1 |
 
 **Deferred follow-ups (explicitly out of P91):** app-wide React instrumentation beyond the six
 surfaces; the Statistics page and any UI for `metrics_reset`; selective/per-file log deletion (v1
