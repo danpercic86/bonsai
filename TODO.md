@@ -442,6 +442,52 @@ are camelCase `IpcApi` names *and that they recorded nothing before this fix*; `
 512` plus the `meta.overflow` bucket is a **new §8 surface needing ratification**; and decision 25's
 counter-key shape now literally requires the dot.
 
+### ✅ F1 FIXED + COMMITTED `c0abbe1` (2026-09-03) — ruling `834f2d1`, copy `0a785b3`
+
+`cargo obs::` **158 passed** (135 → 146 → 158 across the three security commits). Independent
+security re-audit and code review both in flight; **do not call F1 closed until they report** — a
+security fix reviewed only by its author is not reviewed.
+
+**A defect in the contract's OWN negative test, caught by the implementer.** AC6 as written specified
+a `forgeSetToken` record keyed `{"repoId","token"}` — a form `scrub_value` **already caught before
+the fix**. As specified, the test would never have gone red on the token half: it would have looked
+like proof while proving nothing. The implementer kept it *and* added a third record in the form the
+buggy producer actually emitted, `{"0","1"}` with a 40-hex token (that shape passes the hex
+exemption, so **only the key rule can catch it**), then captured both leaking lines on disk before
+wiring the fix. **A negative test that cannot fail proves nothing** — worth a §13 row.
+
+**One forced deviation, flagged not buried:** `fullContext` (a boolean) had to be denied, because the
+free-text vocabulary matches `text` inside `fullCon**text**`. Listing it would fail the drift test and
+the writer would drop the whole `args` object anyway. Costs nothing — it is a boolean.
+
+**118 allow-list rows**, derived by walking every signature in `ipc-api*.ts` and listing a row **only**
+for commands taking a path/ref/branch/remote/tag/URL/SHA identifier. Commands whose args are only
+`repoId` (+ booleans) are left unlisted, because raw mode would add no name and `argsShape` already
+carries the arity. Several rows exist purely to **document a denial**.
+
+### 🔎 NEW, found by the consent-copy pass — three things were undisclosed, one is a real gap
+
+- **Nothing masks home directories.** `scrub.rs` has **no username rule** (verified independently by
+  grep), so a **raw absolute repo path carries the OS account name** into a mailed export zip. Not a
+  leak of repo content, but it is identifying, and the export workflow mails it to a third party.
+  Now disclosed in the copy; **whether to also mask it is an open question** — masking would
+  undercut raw mode's stated purpose of showing real paths, so this is a judgement call, not an
+  obvious fix.
+- **Remotes were missing** from the raw-mode list on both consent surfaces, and **full commit SHAs
+  were disclosed nowhere.**
+- **A third surface the brief never named:** `ExportConfirmDialog` carried its own, shorter "never"
+  list — and it is the dialog shown at the **exact moment the zip is created**. One flow was
+  presenting two different guarantees. Now respecified together.
+
+**F6 (`usage.json` disclosure) — HELD FOR USER, with a recommendation.** Three options; the designer
+recommends **A: disclose, no reset button**. Recorded plainly: the panel is headed "What a log file
+contains" and ends with "removes every one of them", so **by omission it reads as though Dev mode is
+the only thing recorded and the delete button clears it** — while `usage.json` is always-on, outside
+`logs_delete_all`, outside exports, with 400-day buckets folded into a never-aged lifetime total.
+Note the proposed remedy names the **`metrics` folder**, not the file: deleting `usage.json` alone
+lets `usage.json.bak` restore it. Option B (a reset row) reverses ratified §10 and belongs on a
+future Statistics page. **Until the user rules, only §2-§5 of the copy contract get implemented.**
+
 ### F3 — MEDIUM, reachable. Unbounded metric-key cardinality
 
 `log_append` takes records straight from the webview, and `is_valid_cmd_name` is a **shape**
