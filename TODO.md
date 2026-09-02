@@ -92,9 +92,49 @@ target), `App.tsx` 602 (launch effect needs 6 of App's own setters threaded in).
 
 ## 🎨 P102 + P105 — hue audit (`--danger` fills, `--accent`-as-text) — IN PROGRESS (started 2026-09-02)
 
-**Current step:** ui-designer writing the combined UI contract →
-`docs/contracts/P102-P105-hue-audit-ui.md`. Branch: `feat/p91-observability` (USER decision
-2026-09-02 — everything this session lands on that one branch; no push, local commits only).
+**Current step:** ✅ contract DONE + committed `7c623d8` → `docs/contracts/P102-P105-hue-audit-ui.md`
+(20 ACs, per-call-site enumeration). ⏳ senior-dev implementing. Branch: `feat/p91-observability`
+(USER decision 2026-09-02 — everything this session lands on that one branch; no push, local
+commits only).
+
+**The enumeration overturned the filing rather than confirming it — this is the method working.**
+Two seed-list facts were simply wrong: `controls.css:70` is **`.pill-detached`**, not `.btn-danger`
+(the real one is `updates.css:109`); and a **third** site the seed list never named,
+`.pr-state-pill`, puts **one `color: #ffffff` over three different fills** — including white on the
+dark `--success` fill at **2.85:1**, worse than the P102 seed defect and below even the 3:1 graphics
+bar. Had this milestone "fixed the two known sites", it would have shipped and left the worst
+instance in place. Same story on P105: the loose `var(--accent)` grep returns 140 hits in 34 files,
+but only **30** are `color:` declarations — 110 are legitimate graphics-bar uses, and of the 30,
+**7 are glyphs that correctly stay** at 3:1. A blanket sweep would have wrecked those.
+
+**Counts:** P105 — 30 `color: var(--accent)` declarations in 16 files → 7 KEEP (glyph, 3:1, each
+with a named non-colour carrier), 18 → `--accent-strong`, 5 recipe changes, +1 scope addition
+(`.asset-chip-active`). 21 of 30 measurably sub-AA. P102 — 3 hardcoded-ink declarations + 4
+`background: var(--danger)` fills.
+
+**Tokens:** `--accent-strong` `#7fabff` dark / `#2a5cbe` light — hue-preserving, and deliberately
+**surface-independent** (clears 4.5:1 on `--bg-0`…`--bg-3`, `--selection` and an accent tint in both
+themes; worst case 4.87). That independence is what makes the post-fix check a single grep instead
+of a per-site ancestor argument. Plus `--danger-text` / `--success-text`, all `#16181d` dark /
+`#ffffff` light, mirroring `--accent-text`.
+
+**ORCHESTRATOR DECISION (§5.4, Option A).** The merged-PR purple `#8957e5` **passes** contrast
+(4.61 both themes) so it is not a P102 defect, but it is the last theme-invariant hue literal in
+`src/styles/` and it sits inside the rule block P102 must rewrite. Chose **Option A** — add
+`--merged` / `--merged-text` — so AC7 is a clean zero-count and the light theme gets a purple tuned
+for a white page rather than a dark-theme value reused. Taken as a token-consistency call inside the
+design system's own logic, **not** a product-identity call; it therefore did not need the user and is
+not a checkpoint. Recorded because the contract explicitly forbade the implementer choosing silently.
+
+**Scope calls.** IN, on measured merit: three of P100's four `filter: brightness` residuals —
+`.btn-danger:hover` (4.17:1 light), `.diff-float-discard:hover` (4.32:1 light),
+`.diff-stage-float button:hover` (the `.btn-primary` 3.95 case). OUT: the fourth,
+`.settings-switch-track`, measures 3.80:1 **with no ink on it** — compliant, stays a NIT.
+
+**AC18/AC19/AC20 are USER CHECKPOINTs and remain PENDING** — the updater panel's `.btn-danger` is
+Tauri-only and invisible in the harness; whether `--accent-strong` still reads as *the Bonsai blue*
+and how hover feels after the `filter`→`background` swap are both perceptual. The user's 2026-09-02
+checkpoint authority was scoped to P100 + P101 and does **not** reach these.
 
 **Why the two are one milestone.** Both are "a hue token used against an insufficiently contrasting
 surface", and both want the same enumerate-then-bucket method. Kept as two clearly separated
@@ -125,6 +165,33 @@ family closed" (122 declarations never classified), and P74's hue-as-text sweep 
 native window is a **USER CHECKPOINT and stays pending** — the user's 2026-09-02 checkpoint
 authority was scoped to P100 + P101 only and explicitly does NOT extend to work created this
 session.
+
+---
+
+## 📋 P106 — the A/M/D/U/R letter badges are TEXT, not glyphs — PENDING (filed 2026-09-02 from the hue audit)
+
+Filed by `ui-designer` during the P102/P105 enumeration, **with the measurements already taken**
+(contract §3.5), so this follow-up starts from evidence rather than from a suspicion.
+
+The status letter badge (`A`/`M`/`D`/`U`/`R`) is rendered as a **character**, which puts it at the
+**4.5:1 read-text bar**, not the 3:1 graphics bar it is currently judged against. Its
+`--danger` / `--success` / `--warning` backings therefore need the same ink-flip treatment P102
+applies to the button fills — and `--warning` in particular has not been measured against a
+letterform anywhere yet.
+
+Same defect class as P102/P105, deliberately **not** folded in: this milestone already spans two
+hue tokens and 30+ call sites, and one defect class per milestone is what kept P95/P98/P100
+reviewable. The `--danger-text` / `--success-text` tokens P102 introduces are the prerequisite, so
+P106 should be cheap once this lands.
+
+### Filed alongside, not fixed (all from the same enumeration)
+- **`.wt-copy-chip`** — a sixth hue-over-own-tint instance, found after the contract's bucket table
+  was closed.
+- **`.settings-switch-track` NIT** — 3.80:1, but carries no ink, so it is compliant; recorded only
+  so a future sweep does not "fix" a non-defect.
+- **`src/styles/forge-pr.css` is ~710 lines** and over the ~500-line soft limit. This milestone adds
+  no new rule block there, so the split is **not** in scope — hand it to `refactorer` as a
+  standalone behavior-preserving pass.
 
 ---
 
