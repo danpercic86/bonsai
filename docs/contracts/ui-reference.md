@@ -60,9 +60,14 @@ CSS custom properties on `:root` (dark, default) and `[data-theme="light"]`.
 | `--border` | `#2c313a` | `#dcdfe5` | 1px pane/row borders |
 | `--accent` | `#4f8cff` | `#2f6fe4` | primary buttons, links, focus ring |
 | `--accent-text` | `#16181d` | `#ffffff` | text on a solid `--accent` fill (**5.52:1** dark / **4.65:1** light) — the two themes differ deliberately, P100 |
+| `--accent-strong` | `#7fabff` | `#2a5cbe` | **the accent used as read text** (P105, specified — not yet shipped). Clears 4.5:1 on `--bg-0`…`--bg-3`, `--selection` **and** an accent tint, in both themes: **7.76/7.13/6.29/5.46/4.93** dark, **6.23/5.81/5.36/4.93/5.01** light. Never a fill, never a border, never the focus ring — those stay `--accent` |
 | `--selection` | `#2a3b57` | `#dbe7ff` | selected row background |
 | `--danger` | `#e5534b` | `#d13438` | errors, destructive |
+| `--danger-text` | `#16181d` | `#ffffff` | ink on a solid `--danger` fill (**4.76:1** dark / **4.93:1** light) — P102, specified, not yet shipped |
 | `--success` | `#57ab5a` | `#1a7f37` | staged/added |
+| `--success-text` | `#16181d` | `#ffffff` | ink on a solid `--success` fill (**6.24:1** dark / **5.08:1** light) — P102, specified, not yet shipped |
+| `--merged` | `#a371f7` | `#8250df` | PR "merged" hue (P102, **pending the Option A/B call** in `P102-P105-hue-audit-ui.md` §5.4) — replaces the theme-invariant `#8957e5` literal |
+| `--merged-text` | `#16181d` | `#ffffff` | ink on `--merged` (**5.30:1** dark / **5.05:1** light) — same pending call |
 | `--warning` | `#d4a72c` | `#9a6700` | modified/dirty |
 | `--graph-canvas-bg` | `#16181d` | `#ffffff` | graph-pane surface behind the canvas (container div, load skeleton, empty state) — keeps the DOM behind the canvas seamless with the canvas fill. Aliases `--bg-0` by default; the **Bonsai graph style** (spec 002) overrides it via `[data-graph-style='bonsai']` to a warm backdrop: **`#17140f`** dark / **`#f4efe6`** light. See §5.1. |
 
@@ -81,12 +86,20 @@ outside `src/styles/`. Every declaration now carries a recorded bucket and verdi
 token's role is redefined by the SANCTIONED ROLES bullet below. P101 also found **three pre-existing
 P95-class enabled-control escapes** (`.settings-reset`, `.settings-config-advanced-summary`,
 `.onboarding-skip`), so P95's app-wide claim was as unevidenced as P98's: **an "app-wide swept"
-claim without an enumeration behind it has now failed twice — do not make a third.** The
-hue-as-text family was retro-fitted by P74; the accent-fill shortfall is **closed** (P100). All 93
+claim without an enumeration behind it has now failed FOUR times — do not make a fifth.** The tally:
+(1) P95's enabled-control class — 3 escapes found by P101; (2) P98's "`--text-3` family closed" —
+122 declarations never classified; (3) P74's hue-as-text sweep — the "`--accent` is fine on
+`--bg-0`/`--bg-1`/`--bg-2`" sentence was false, 21 sub-AA call sites (P105, below); (4) P74's "no
+remaining hue-as-text-over-its-own-tint anywhere" — 6 live instances (P105, below). **A claim of
+app-wide closure is worthless without a per-declaration table behind it.** The accent-fill shortfall
+is **closed** (P100); the accent-as-text and hue-fill-ink shortfalls are **enumerated and specified**
+but **not yet shipped** (P102 + P105, `docs/contracts/P102-P105-hue-audit-ui.md`). All 93
 P101 fixes **shipped** (P101a–c), so the **`--text-3` family is now CLOSED**, and — unlike the
 retracted P95/P98 claims — the enumeration is behind it, declaration by declaration, in
-`docs/contracts/P101-text3-audit-ui.md` §3. **No AA colour shortfall remains in §2. A new
-`--text-3` use outside the four SANCTIONED ROLES below is a defect**:
+`docs/contracts/P101-text3-audit-ui.md` §3. **A new
+`--text-3` use outside the four SANCTIONED ROLES below is a defect.** (The "no AA colour shortfall
+remains in §2" line that stood here was retired 2026-09-02: P102 and P105 found two more families —
+hue-as-text and hardcoded-ink-on-hue-fill — enumerated but not yet shipped.):
 
 - **The full `--text-3` / `--text-2` matrix (P98 measured; the `--bg-3` row added by P101).** Read
   this before choosing either token on any surface.
@@ -178,8 +191,18 @@ retracted P95/P98 claims — the enumeration is behind it, declaration by declar
   **11.68–12.00:1** light, hue demoted to a 3px leading bar + glyph at **3.35–4.96** / **3.38–3.69**,
   clearing the 3:1 graphics bar). The same recipe on a 12% tint over `--bg-1`
   (`.submodule-badge-ok` **4.76** / **4.06**, `.submodule-badge-warn` ≈**5.4** / **3.94**) was
-  already fixed in P73 by §11's pill recipe. **There is no remaining sanctioned use of
-  hue-as-text-over-its-own-tint anywhere in the app; a new one is a defect.**
+  already fixed in P73 by §11's pill recipe. **The claim that stood here — "there is no remaining
+  sanctioned use of hue-as-text-over-its-own-tint anywhere in the app" — is RETRACTED (2026-09-02,
+  P105).** P74 fixed the four toast tones and stopped; it never enumerated. Six instances survived
+  it: `.branch-name-chip` (`dialogs.css:287`, **4.29 / 3.74**), `.asset-chip-canonical`
+  (`ai-assets.css:125`) and `.asset-chip-new` (`:151`) (**3.68 / 3.38**), `.asset-chip-active`
+  (`:146`, `--success`, **≈4.0 / ≈3.6**), `.right-pane-tab.active` (`forge-pr.css:33`,
+  **4.17 / 3.64**), and `.wt-copy-chip` (`dialogs-forms.css:135`, `--danger`). The first five are
+  fixed by P105 §3.4 (label to `--text-1`, hue demoted to a 35% border, or — for a *state* —
+  P100 recipe 1); `.wt-copy-chip` is filed. **After P105 the rule is: the only hue ink permitted
+  over its own tint is `--accent-strong`** (`.conflict-action-ai:hover`, measured **5.86 / 4.87** on
+  the 14% tint), and only because it is measured at ≥4.5:1 *on that tint*. Any other
+  hue-as-text-over-its-own-tint is a defect.
 - **ACCENT FILL — two recipes, and the retracted "white is the ceiling" claim (P98, revised and
   closed 2026-09-01, P100).** `--accent-text` on `background: var(--accent)` was `#ffffff` in both
   themes and measured **3.22:1** dark / **4.65:1** light, putting a sub-AA primary label on every
@@ -211,23 +234,47 @@ retracted P95/P98 claims — the enumeration is behind it, declaration by declar
      instances (**2.61:1** dark / **3.56:1** light). Subordination on a filled row is carried by
      size (11px vs 13px) and right-edge placement, never by opacity — and on a `--selection` fill
      it is carried by the real `--text-1` ↔ `--text-2` colour step.
-  4. **The same defect exists for `--danger` fills and is not yet fixed** — `.btn-danger`
-     (`controls.css:70`) and `updates.css:114` put a hardcoded `#ffffff` on `var(--danger)`, which
-     §6 measures at **3.70:1** in dark. `partial-staging.css:104` already ships the ink flip
-     (`--bg-0` on `--danger`, **4.80:1** dark). Tracked as **P102**; a new `#fff`-on-hue fill
-     anywhere is a defect.
-- **`--accent` as *text* never sits on a `--selection` fill (added 2026-08-20, P69l; figures
-  corrected 2026-09-01, P101).** `color: var(--accent)` is a house-wide pattern (~30 call sites) and
-  is fine on `--bg-0` / `--bg-1` / `--bg-2`, but over `--selection` it measures **3.51:1** dark /
-  **3.74:1** light. **These are the authoritative figures**, re-derived by P101 from the shipped
-  hexes (`--accent` `#4f8cff` / `#2f6fe4` over `--selection` `#2a3b57` / `#dbe7ff`); the older
-  "**2.6:1** / **3.6:1**" reading that stood here and below was wrong and is retired. Both fail the
-  4.5:1 **text** bar, so accent-coloured *text* inside a row that can become selected is a latent
-  defect and `--accent` may never be the "emphasised" colour for a value inside a selected row — use
-  `--text-1`. But 3.51 / 3.74 **clears the 3:1 graphics bar in both themes**, so `--accent` as a
-  **border, bar or glyph** on `--selection` is a **compliant non-text carrier** — the settings
-  rail's inset bar (§12.1) and the `inset 2px 0 0 var(--accent)` leading bar on every selected list
-  row. It is load-bearing and it passes; it is not "decorative delineation carrying no meaning".
+  4. **The same defect exists for `--danger` and `--success` fills — enumerated 2026-09-02 (P102),
+     fixes specified, not yet shipped.** A whole-frontend sweep found **3** hardcoded-ink
+     declarations in `src/styles/`, not the 2 the seed list named:
+     `.pill-detached` (**`controls.css:71`** — note the correction: `controls.css:70` is the
+     *detached-HEAD pill*, **not** `.btn-danger`), `.btn-danger` (**`updates.css:115`**, not
+     `controls.css`), and `.pr-state-pill` (`forge-pr.css:172`). `#ffffff` on `--danger` is
+     **3.73:1** dark; the ink flip `#16181d` is **4.76:1** (`partial-staging.css:104` already ships
+     it; the "4.80" that stood here was a rounding). **The worst case in the whole audit is
+     `.pr-state-open`: white on the dark `--success` fill at 2.85:1** — below even the graphics bar,
+     and invisible to the seed list because one shared `color` on `.pr-state-pill` serves three
+     different fills. **A shared ink declaration over multiple hue fills is itself the defect
+     pattern** — set `background` and `color` together, per state. Fixes: `--danger-text` /
+     `--success-text` / `--merged-text` (§2 table). A new hardcoded-ink-on-hue-fill anywhere is a
+     defect; enumeration in `docs/contracts/P102-P105-hue-audit-ui.md` §2.
+- **`--accent` IS NOT A TEXT COLOUR (added 2026-08-20 P69l as a `--selection`-only rule; the
+  app-wide claim RETRACTED and the full matrix measured 2026-09-02, P105).** The sentence that
+  stood here — *"`color: var(--accent)` … is fine on `--bg-0` / `--bg-1` / `--bg-2`"* — was
+  **false**, and it licensed **21 measurably sub-AA call sites** (of 30 total). The matrix, from the shipped hexes
+  (`--accent` `#4f8cff` / `#2f6fe4`):
+
+  | Backdrop | `--accent` d / l | `--accent-strong` d / l |
+  |---|---|---|
+  | `--bg-0` | **5.52** / **4.65** ✓ | 7.76 / 6.23 ✓ |
+  | `--bg-1` | **5.07** ✓ / **4.34** ✗ | 7.13 / 5.81 ✓ |
+  | `--bg-2` | **4.48** / **4.00** ✗ | 6.29 / 5.36 ✓ |
+  | `--bg-3` | **3.89** / **3.68** ✗ | 5.46 / 4.93 ✓ |
+  | `--selection` | **3.51** / **3.74** ✗ | 4.93 / 5.01 ✓ |
+  | own 12–15% tint | **4.29–3.68** / **3.74–3.38** ✗ | 5.86 / 4.87 ✓ |
+
+  **`--accent` clears the 4.5:1 text bar on `--bg-0` only.** `--bg-1` passes in dark and fails in
+  light, which is not a shippable rule. It clears the **3:1 graphics bar everywhere**, so `--accent`
+  as a **border, bar, glyph or fill** is compliant on every surface — the settings rail's inset bar
+  (§12.1), the `inset 2px 0 0 var(--accent)` leading bar on every selected list row, the focus ring,
+  the sidebar's checked-out `.branch-glyph`. Those are load-bearing and they pass; they are not
+  "decorative delineation carrying no meaning". **Read text in the accent hue uses `--accent-strong`,
+  which clears 4.5:1 on every surface the app has, in both themes** — that surface-independence is
+  deliberate, so a text verdict never depends on resolving an ancestor chain. The focus ring must
+  **not** move to `--accent-strong` (it would stop matching the brand hue and the canvas selection
+  ring). The per-declaration enumeration — **30 call sites: 7 glyph keeps, 18 to `--accent-strong`,
+  5 recipe changes** — is `docs/contracts/P102-P105-hue-audit-ui.md` §3. The older "**2.6:1** /
+  **3.6:1**" `--selection` reading that stood here and below was wrong and is retired.
 - **A `var(--x)` that is not defined silently deletes its declaration.** `var(--border-0)` — never a
   real token — appeared 5× in `src/styles/conflicts.css` and computed to
   `border-style: none; border-width: 0px`, so the merge editor's split-label dividers simply did not
@@ -652,6 +699,15 @@ renamed `--accent`. Letter badge (A/M/D/U/R) in mono 11px before the path.
 precedent. Every new status indicator pairs its hue with a letter, word, or glyph. A **digit** counts
 as a carrier too (§12.5's rail counts: `0` vs `N` is what makes the colour lift optional).
 
+**But the letter badge is TEXT, so it is judged at 4.5:1, not 3:1** (P105, 2026-09-02). The letter
+carrying the meaning does not exempt the colour from the text bar. The **renamed** badge
+(`--accent`, `status-panel.css:207`) measures **3.51 / 3.74** on a selected row and is fixed to
+`--accent-strong` by P105. Its three siblings are worse than they look — `--danger` is **4.4** dark
+on `--bg-1` (marginal) and all three fail on the `--bg-2` hover and `--selection` states. **Filed as
+P106 — "status-badge hue family as text"**; it needs either `-strong` variants for
+`--danger`/`--success`/`--warning` or a demotion to `--text-1` + shape, which is a survey of its own.
+Do not close it by assertion.
+
 **House glyph vocabulary** (use these, do not invent synonyms): `✓` good/ready/checked ·
 `⚠` warning/failed · `⊘` blocked/refused/cancelled · `●` neutral/informational ·
 `✕` dismiss/close · `?` unknown/needs-you. A single glyph never means two different things on two
@@ -889,6 +945,13 @@ row badges (`.submodule-badge-*`, shared by submodule and worktree rows — `Sid
   **1.7–2.3:1** against the row background; never rely on it to carry meaning. Set the hue through
   the local `--h` custom property, the AI-dock convention. **Do not use the hue as the label colour**
   over its own tint — that recipe misses AA (§2).
+- **Solid-hue pills take their hue's `-text` ink, never a literal (added 2026-09-02, P102).** A pill
+  that must stay loud rather than tinted — the PR state pills (`.pr-state-open` / `-merged` /
+  `-closed`, `forge-pr.css:163-185`) and the detached-HEAD pill (`.pill-detached`) — keeps the fill
+  and flips the ink (P100 recipe 2): `--danger-text` / `--success-text` / `--merged-text`, all
+  `#16181d` dark / `#ffffff` light. **One `color` declaration may never serve several different
+  fills** — set `background` and `color` together on each state rule. That pattern is exactly what
+  hid `.pr-state-open`'s 2.85:1 white-on-green for a whole release.
 - **This recipe is size-bounded (added 2026-08-20, P74).** The 40% perimeter border reads as tone
   only at pill scale (≈20px tall, ≈60–110px wide). On a wide surface — a toast, a notice bar, a
   banner — the same hairline measures 1.7–2.3:1 across a 360px edge and disappears; there, move the
