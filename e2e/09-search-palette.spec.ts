@@ -8,6 +8,13 @@ import { test, expect } from './fixtures';
 import { expectedShortcutLabel, graphScrollHeight, openPalette, openRepo } from './helpers';
 import type { Page } from '@playwright/test';
 
+/** CommitSearchBar's match counter. Asserting 'N/M' with a bare
+ *  `page.getByText` is date-triggered flake: a rendered commit date
+ *  ('1d · 11/1/2026, 7:39:22 PM') CONTAINS the counter text, which makes the
+ *  page-wide match resolve to two nodes and fail strict mode on exactly the
+ *  days the calendar spells it (see e2e/30's note — '1/2' vs '9/1/2026'). */
+const searchCount = (page: Page) => page.locator('.commit-search-count');
+
 /** Two consecutive identical scroll extents = the P65 graph stream has finished. */
 async function settleGraph(page: Page): Promise<void> {
   let previous = -1;
@@ -34,7 +41,7 @@ test.describe('09 search & palette @smoke', () => {
     await expect(input).toBeVisible();
     await input.fill('Merge feat');
     // Live search (debounced) → 1 match, auto-revealed → details panel updates.
-    await expect(page.getByText('1/1')).toBeVisible();
+    await expect(searchCount(page)).toHaveText('1/1');
     await expect(
       page.getByTestId('commit-details').getByText('Merge feat and exp').first(),
     ).toBeVisible();
@@ -132,6 +139,6 @@ test.describe('09 search & palette @smoke', () => {
     await expect(page.locator('.toast-stack').getByText('Mock: search failed')).toBeVisible();
     // App remains usable: a follow-up benign search succeeds.
     await input.fill('Merge feat');
-    await expect(page.getByText('1/1')).toBeVisible();
+    await expect(searchCount(page)).toHaveText('1/1');
   });
 });

@@ -22,6 +22,15 @@ import { graphScroller, openRepo } from './helpers';
 
 const rail = (page: Page) => page.getByTestId('graph-rail');
 
+/** CommitSearchBar's match counter. NEVER assert 'N/M' with a bare
+ *  `page.getByText`: the rendered commit date ('1d · 9/1/2026, 7:39:22 PM')
+ *  CONTAINS such substrings, so a page-wide text match resolves to two nodes
+ *  and blows up on strict mode — only on the days the date happens to spell
+ *  the counter. (Observed 2026-09-03: '1/2' matched '9/1/2026'.) Scope to the
+ *  element that actually carries the count; `{ exact: true }` would NOT help,
+ *  since getByText already matches whole-substring against each candidate. */
+const searchCount = (page: Page) => page.locator('.commit-search-count');
+
 async function openSearch(page: Page, query: string): Promise<void> {
   await page.keyboard.press('ControlOrMeta+f');
   const input = page.getByRole('textbox', { name: 'Search commits' });
@@ -53,7 +62,7 @@ test.describe('30 graph overview rail @smoke', () => {
     await openRepo(page);
     await openSearch(page, 'pages');
     // 2 matches, auto-revealed 1/2 = 'pages: update'.
-    await expect(page.getByText('1/2')).toBeVisible();
+    await expect(searchCount(page)).toHaveText('1/2');
     const details = page.getByTestId('commit-details');
     await expect(details.getByText('pages: update').first()).toBeVisible();
     await expect(rail(page)).toBeVisible();
@@ -64,7 +73,7 @@ test.describe('30 graph overview rail @smoke', () => {
     expect(box).not.toBeNull();
     if (box === null) return;
     await page.mouse.click(box.x + box.width / 2, box.y + box.height - 2);
-    await expect(page.getByText('2/2')).toBeVisible();
+    await expect(searchCount(page)).toHaveText('2/2');
     await expect(details.getByText('pages: init').first()).toBeVisible();
 
     // Closing search unmounts the rail (no always-show, pointer not in zone).

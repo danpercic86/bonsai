@@ -20,6 +20,9 @@
  *    viewport, and scrollHeight clamps to clientHeight — the shrink would be
  *    invisible. The spacer is the true content extent at any size.
  *  - Toggle-ON re-requests the stream (async) → every height change is polled.
+ *  - The BASELINE extent is read via settledGraph(), never straight after
+ *    openRepo: the WIP row only exists once the first status round lands, so an
+ *    early read is one row short and skews every derived assertion.
  */
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
@@ -57,11 +60,37 @@ async function graphContentHeight(page: Page): Promise<number> {
     .evaluate((el) => parseFloat((el as HTMLElement).style.height));
 }
 
-/** Display rows above the graph's model row 0 (the WIP row, if the mock status
- *  produces one) — measured from the unfolded content extent, never assumed. */
-async function wipOffset(page: Page): Promise<number> {
-  const h = await graphContentHeight(page);
-  return Math.round((h - 8) / DEFAULT_ROW_HEIGHT) - MODEL_ROWS;
+/** THE baseline reading — every pre-fold measurement must come from here.
+ *
+ *  The content extent has TWO async inputs and `openRepo` waits for NEITHER
+ *  (it only waits for the canvas to be *visible*, which the pane renders
+ *  before any data lands):
+ *    1. the graph stream (meta -> batch -> done, `mock/handlers/graphStream.ts`)
+ *       supplies the model rows, and
+ *    2. the first working-dir status round supplies the WIP display row —
+ *       RepoWorkspace derives `wip` from `status`, so display row 0 does not
+ *       exist until that round lands.
+ *  Sampling the baseline inside that window yields an extent exactly ONE row
+ *  short, and every later assertion derived from it is then off by one
+ *  DEFAULT_ROW_HEIGHT. That is the 32 px flake seen under worker contention
+ *  (gate: `Expected: 456, Received: 488` — 456 = 33 rows, 488 = 33 rows + WIP);
+ *  it moved between tests run to run purely by which round won the race.
+ *  Waiting on both signals removes it at the source — no timeout was raised.
+ *
+ *  The WIP offset stays MEASURED, never assumed (header note): status landing
+ *  is what makes the row possible, not proof that the fixture produced one. */
+async function settledGraph(page: Page): Promise<{ full: number; wip: number }> {
+  // (2) Status landed: StatusPanel renders section headers only for a non-null
+  // snapshot, and that is the same React commit that hands GraphCanvas its
+  // `wip` prop — so this header being visible means the spacer already counts
+  // the WIP row. (Same signal e2e/04's openWithStatus uses.)
+  await expect(page.getByTestId('status-panel').getByText(/Staged \(/)).toBeVisible();
+  // (1) Rows landed: the extent covers at least the whole model.
+  await expect
+    .poll(() => graphContentHeight(page))
+    .toBeGreaterThanOrEqual(MODEL_ROWS * DEFAULT_ROW_HEIGHT + 8);
+  const full = await graphContentHeight(page);
+  return { full, wip: Math.round((full - 8) / DEFAULT_ROW_HEIGHT) - MODEL_ROWS };
 }
 
 /** The sr-only active-descendant row the scroller currently points at. */
@@ -76,7 +105,7 @@ test.describe('29 graph fold linear runs @smoke', () => {
     page,
   }) => {
     await openRepo(page, { uiSettings: FLAT });
-    const fullHeight = await graphContentHeight(page);
+    const { full: fullHeight } = await settledGraph(page);
 
     await toggleFold(page, 'fab');
     // Chip gains the Folded segment; the span collapses 20 rows into 1 pill.
@@ -96,8 +125,7 @@ test.describe('29 graph fold linear runs @smoke', () => {
     page,
   }) => {
     await openRepo(page, { uiSettings: FLAT });
-    const wip = await wipOffset(page);
-    const fullHeight = await graphContentHeight(page);
+    const { full: fullHeight, wip } = await settledGraph(page);
     const foldedHeight = fullHeight - (SPAN_HIDDEN - 1) * DEFAULT_ROW_HEIGHT;
 
     await toggleFold(page, 'fab');
@@ -138,8 +166,7 @@ test.describe('29 graph fold linear runs @smoke', () => {
     page,
   }) => {
     await openRepo(page, { uiSettings: FLAT });
-    const wip = await wipOffset(page);
-    const fullHeight = await graphContentHeight(page);
+    const { full: fullHeight, wip } = await settledGraph(page);
 
     // Select a mid-run commit (model row 15 = 'chore: history 15').
     await clickGraphRow(page, wip + 15);
@@ -158,7 +185,7 @@ test.describe('29 graph fold linear runs @smoke', () => {
     page,
   }) => {
     await openRepo(page, { uiSettings: FLAT });
-    const fullHeight = await graphContentHeight(page);
+    const { full: fullHeight } = await settledGraph(page);
 
     await filterFab(page).click();
     const popover = page.getByRole('dialog', { name: 'Graph filters' });
@@ -179,8 +206,7 @@ test.describe('29 graph fold linear runs @smoke', () => {
     page,
   }) => {
     await openRepo(page, { uiSettings: FLAT });
-    const wip = await wipOffset(page);
-    const fullHeight = await graphContentHeight(page);
+    const { full: fullHeight, wip } = await settledGraph(page);
     const foldedHeight = fullHeight - (SPAN_HIDDEN - 1) * DEFAULT_ROW_HEIGHT;
 
     await toggleFold(page, 'fab');
