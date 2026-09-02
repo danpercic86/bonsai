@@ -34,6 +34,12 @@ use crate::error::AppError;
 #[path = "session_drain.rs"]
 mod session_drain;
 
+/// The run's event sequence and the bounds on the text it carries. Also a
+/// `#[path]`-included CHILD module, for the same reason: it keeps reaching
+/// `ClaudeSession`'s private state without widening anything for the move.
+#[path = "session_events.rs"]
+mod session_events;
+
 /// Appended (via stdin, never argv) to a user reply so the next turn produces a
 /// file body rather than more conversation. Single line by construction.
 const REPLY_SUFFIX: &str = "\n\n(Answer above. Now output ONLY the merged file contents, with no conflict markers and no commentary.)";
@@ -474,65 +480,5 @@ impl<'a> ClaudeSession<'a> {
         // `AiRunRegistry::cancel_all` after the wait has completed.
         self.ctl.pid.store(0, Ordering::Relaxed);
         self.ctl.awaiting.store(false, Ordering::Relaxed);
-    }
-
-    /// Bound the accumulator DURING the run, not only on the wire at
-    /// [`Self::terminal`] time: streaming has no hard deadline by design, so a long
-    /// run would otherwise grow this without limit in RAM. Twice the wire cap and
-    /// keeping the HEAD — what `truncate_text` keeps — so the echo is unchanged.
-    fn trim_partial(&mut self) {
-        const KEEP: usize = 2 * MAX_PARTIAL_TEXT;
-        if self.partial.chars().count() > KEEP {
-            self.partial = self.partial.chars().take(KEEP).collect();
-        }
-    }
-
-    /// Keep only the last `MAX_EVENT_TEXT` chars of stderr for the failure message.
-    fn trim_stderr_tail(&mut self) {
-        let count = self.stderr_tail.chars().count();
-        if count > MAX_EVENT_TEXT {
-            self.stderr_tail = self.stderr_tail.chars().skip(count - MAX_EVENT_TEXT).collect();
-        }
-    }
-
-    /// Next event in the run's sequence (seq 0 is `Started`).
-    fn event(&mut self, kind: AiRunEventKind) -> AiRunEvent {
-        let elapsed = self.clock.now().saturating_duration_since(self.started).as_millis() as u64;
-        let ev = AiRunEvent::new(&self.ctl.run_id, self.seq, kind, elapsed, self.turn);
-        self.seq += 1;
-        ev
-    }
-
-    fn send(&self, ev: AiRunEvent) {
-        (self.on_event)(ev);
-    }
-
-    fn log(&mut self, text: String) {
-        self.log_line(text, false);
-    }
-
-    /// `notable` marks the lines that survive `ai_stream_log: false` (M6) — what the
-    /// model read, what the fence denied. Set by classification, never from text shape.
-    fn log_line(&mut self, text: String, notable: bool) {
-        let mut ev = self.event(AiRunEventKind::Log);
-        ev.text = Some(truncate_text(&text, MAX_EVENT_TEXT));
-        ev.notable = notable;
-        self.send(ev);
-    }
-
-    /// `Failed` / `Cancelled` carry the accumulated assistant text for DISPLAY
-    /// only — never as a stageable proposal (A5).
-    ///
-    /// The echo is LOSSY by construction: each block was already truncated to
-    /// `MAX_EVENT_TEXT` on the way in, `--include-partial-messages` deltas are
-    /// deliberately excluded (they would double-count the final `assistant` line),
-    /// and the whole thing is capped here. The dock log — every `Log` event — is
-    /// the complete record; `partialText` is only what the panel shows.
-    fn terminal(&mut self, kind: AiRunEventKind, msg: String) {
-        let partial = truncate_text(&self.partial, MAX_PARTIAL_TEXT);
-        let mut ev = self.event(kind);
-        ev.text = Some(truncate_text(&msg, MAX_EVENT_TEXT));
-        ev.partial_text = Some(partial);
-        self.send(ev);
     }
 }
