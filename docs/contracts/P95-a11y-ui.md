@@ -10,6 +10,18 @@ Because nothing moves and nothing new is drawn, the usual per-surface cozy/compa
 geometry tables do not apply here — the only theme-dependent content in this contract is the
 contrast table in §3, which is given for **both** themes.
 
+> **Reconciliation note — 2026-09-02.** This contract shipped and was user-verified as written, and
+> its reasoning is kept intact as history. One conclusion has since been **partially reversed**:
+> P95 removed `aria-activedescendant` because the IDREF had nothing to point at, but spec-004
+> ("fold linear runs") subsequently added a single `.sr-only` `<div id="graph-row-{d}">` inside the
+> scroller, re-rendered for the current active **display** row. With a real element to reference,
+> `aria-activedescendant` is valid on `role="group"` (ARIA 1.2) and was **reinstated** on the merge
+> of spec-004 into P95. `role="grid"`, `aria-rowcount`, `role="row"` and `aria-rowindex` remain
+> **forbidden**, exactly as P95 ruled. Passages that asserted the *absence* of
+> `aria-activedescendant` as a requirement — §1.2 line "Removed:", §1.5, AC1 — were amended
+> 2026-09-02 and are marked inline; §1.1's rejected alternatives stand (see the note added there).
+> **`docs/contracts/ui-reference.md` §4.1 is the canonical source** for the scroller's ARIA surface.
+
 `ui-reference.md` §2 and §4.1 were **already updated in this same design pass** to match this
 contract; senior-dev does not touch `docs/`.
 
@@ -46,7 +58,7 @@ Rejected alternatives, with the reason each loses to the canvas/virtualization c
 
 | Option | Verdict |
 |---|---|
-| Render one visually-hidden `role="row"`/`gridcell` per **visible** row (≈40 nodes, recycled) | **Rejected.** Reintroduces per-row DOM into the one component whose entire design premise is that there is none, adds ID churn on every scroll tick, and forces an answer to "the active row scrolled out of the rendered window" — at which point `aria-activedescendant` points at a removed node and we are back to a dangling IDREF, only intermittently. It also fights the 20k-row render budget. |
+| Render one visually-hidden `role="row"`/`gridcell` per **visible** row (≈40 nodes, recycled) | **Rejected.** Reintroduces per-row DOM into the one component whose entire design premise is that there is none, adds ID churn on every scroll tick, and forces an answer to "the active row scrolled out of the rendered window" — at which point `aria-activedescendant` points at a removed node and we are back to a dangling IDREF, only intermittently. It also fights the 20k-row render budget. **Still rejected as of 2026-09-02:** spec-004 renders one node for the **active** row only, not one per visible row — the active row is by definition the one being pointed at, so there is no ID churn on scroll and no dangling-IDREF window. This row of the table is about per-*visible*-row DOM and does not contradict the current model. |
 | `role="listbox"` with a single visually-hidden `role="option"` for the selected row, carrying `aria-setsize`/`aria-posinset` | **Rejected.** Valid, but it misreports a 20k-row graph as a one-item listbox, and it **double-announces**: the activedescendant change and `GraphSelectionAnnouncer` would both speak on every arrow press. Two channels for one event is a defect, not redundancy. |
 | **Live-region-only (chosen)** | Zero DOM per row, zero ID churn, **the "active row scrolled out of the rendered window" case ceases to exist** (there is nothing to point at, ever), one announcement channel, and it is one of the two fixes `ui-reference.md` §4.1 already sanctioned. The scroller stays exactly as focusable and as keyboard-navigable as it is today. |
 
@@ -70,6 +82,11 @@ onScroll onMouseMove onMouseLeave onClick onKeyDown onContextMenu   (all unchang
 ```
 
 **Removed:** `role="grid"`, `aria-rowcount`, `aria-activedescendant`.
+**Amended 2026-09-02:** `aria-activedescendant` was **reinstated** once spec-004 supplied the
+per-active-row element; it is present whenever there is an active display row (value
+`graph-row-{d}`) and omitted when there is none. `role="grid"` and `aria-rowcount` stay removed,
+and `role="row"` / `aria-rowindex` are likewise forbidden. The authoritative attribute set is now
+`ui-reference.md` §4.1, not the block above.
 **Added:** `role="group"`, `aria-describedby`.
 **Unchanged:** `tabIndex={0}`, `aria-label="Commit graph"`, every handler, the `.graph-spacer`
 child, and `.graph-scroll:focus-visible` in `src/styles/graph-canvas.css:35`.
@@ -123,7 +140,11 @@ file rather than being appended to an already-large one.)*
 
 Any test asserting the grid semantics will fail and must be updated in the same increment:
 `getByRole('grid')` → `getByRole('group', { name: 'Commit graph' })`, and assertions on
-`aria-activedescendant` / `aria-rowcount` become assertions that those attributes are **absent**.
+`aria-rowcount` become assertions that the attribute is **absent**.
+**Amended 2026-09-02:** `aria-activedescendant` is *not* asserted absent. Assert instead that it is
+present with value `graph-row-{d}` while a row is active, that
+`document.getElementById(value)` resolves to a real `.sr-only` element carrying that row's
+accessible name, and that the attribute is omitted when no row is active.
 Keep `data-testid="graph-scroller"` as the query of choice for non-a11y tests.
 
 ---
@@ -313,7 +334,7 @@ Harness = verifiable in the mock browser harness (`pnpm dev:mock`, `VITE_MOCK_IP
 
 | # | Criterion | Where |
 |---|---|---|
-| AC1 | `document.querySelector('[data-testid="graph-scroller"]')` has `role="group"`, `aria-label="Commit graph"`, a non-empty `aria-describedby`, `tabindex="0"`, and **no** `role="grid"`, `aria-rowcount` or `aria-activedescendant` attribute. | Harness |
+| AC1 (amended 2026-09-02) | `document.querySelector('[data-testid="graph-scroller"]')` has `role="group"`, `aria-label="Commit graph"`, a non-empty `aria-describedby`, `tabindex="0"`, and **no** `role="grid"`, `aria-rowcount`, `role="row"` or `aria-rowindex` attribute. `aria-activedescendant`: **present** whenever a display row is active, with a value of the form `graph-row-{d}` that `document.getElementById` resolves to a real `.sr-only` element carrying that row's accessible name; **absent** when no row is active. (Originally required the absence of `aria-activedescendant`; reinstated once spec-004 supplied the per-active-row element — see the reconciliation note at the top.) | Harness |
 | AC2 | The element referenced by that `aria-describedby` exists in the DOM, is `.sr-only`, and its text equals the §1.4 HINT string verbatim. | Harness |
 | AC3 | With two repo tabs open, the two graph scrollers' `aria-describedby` values differ (ids come from `useId`, not a constant). | Harness |
 | AC4 | `GraphCanvasHandle` exports `focusScroller(): void`; `tsc` passes; the mock/real IPC boundary is untouched. | Harness (`pnpm tsc`) |
@@ -325,7 +346,7 @@ Harness = verifiable in the mock browser harness (`pnpm dev:mock`, `VITE_MOCK_IP
 | AC10 | All ten §3.2 selectors no longer reference `var(--text-3)`; every selector in the §3.3 exempt set and every selector in the §3.4 deferred set still does; and no **enabled interactive control** in `src/styles/` uses `var(--text-3)` as its label, glyph or border colour. Remaining `--text-3` occurrences on decorative text (uppercase section labels, dividers, placeholder/empty-state copy — ~140 in total) are permitted by ui-reference §2 and are out of scope. | Harness (grep) |
 | AC11 | `.tab-close` has an accessible name and a ≥24px hit target. | Harness |
 | AC12 | Nothing in §3 changed any size, padding, weight, radius, border-width, hover or active rule; the visual diff is colour-only. | Harness (one screenshot pair, dark + light) |
-| AC13 | `ui-reference.md` (already updated by `ui-designer` in the design pass) is consistent with the shipped code: no `role="grid"` mandate remains in §4.1, the old "known gap"/"known defect" paragraphs are gone, and §2 reads **7.99:1** for `--text-2` on light `--bg-0`. Verification only — senior-dev does not edit `docs/`. | Harness (file read) |
+| AC13 (amended 2026-09-02) | `ui-reference.md` (maintained by `ui-designer`) is consistent with the shipped code: §4.1 mandates the `role="group"` attribute set with no `role="grid"`/`aria-rowcount`/`role="row"`/`aria-rowindex`, documents `aria-activedescendant` plus the single per-active-row `.sr-only` element as the current model, the old "known gap"/"known defect" paragraphs are gone, and §2 reads **7.99:1** for `--text-2` on light `--bg-0`. Verification only — senior-dev does not edit `docs/`. | Harness (file read) |
 | AC14 | A screen reader (NVDA on Windows / VoiceOver on macOS) announces "Commit graph, group" + the hint on focusing the graph, and announces exactly **one** utterance per arrow press — no dangling/empty active-element announcement, no double-speak. | **UC** |
 | AC15 | The canvas selection ring visibly follows keyboard navigation and the focus ring does not fight `scrollRowIntoView` (no scroll jump on `focusScroller`). | **UC** (canvas repaint needs rAF) |
 | AC16 | The gutter controls (#6/#7) still read as dim-at-idle and clearly brighten on hover — the reveal affordance survives `--text-2`. | **UC** (perceptual) |
@@ -359,6 +380,12 @@ Applied by `ui-designer` at contract time, so the reference never contradicts th
    §1.2 attribute set, documented the hint span, stated the focus-follows-consumption rule and the
    `defaultPrevented` guard from §2, and **deleted** both the "Known gap" and "Known defect"
    paragraphs, which this milestone closes.
+   **Superseded 2026-09-02:** §4.1 was revised again on the spec-004 merge. It now keeps the
+   `role="group"` attribute set and the forbid-list (`role="grid"`, `aria-rowcount`, `role="row"`,
+   `aria-rowindex`) but **reinstates `aria-activedescendant`** and documents the single
+   per-active-row `.sr-only` `<div id="graph-row-{d}">` that makes its IDREF resolve, along with the
+   display-index rule for row ordinals. Read §4.1 for the current model; this list records only
+   what P95 itself changed.
 
 ## 6. Flagged ambiguities (orchestrator decision)
 

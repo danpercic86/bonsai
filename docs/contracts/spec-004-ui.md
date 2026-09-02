@@ -12,6 +12,16 @@ outside the panel-density scopes, but `METRICS`/`COMPACT` cozy/compact numbers a
 below. One canon amendment ships with this spec: ui-ref §4.1 row counts switch to display rows
 (§7 here) — updated in `ui-reference.md` in the same pass.
 
+> **Reconciliation note — 2026-09-02.** §3 and §7 originally framed the scroller as a
+> treegrid/row-semantics widget (`role="row"` shadow nodes, `aria-rowcount`). P95's accessibility
+> rework landed after this contract was written and settled the scroller as
+> `role="group"` + `aria-activedescendant`, with `role="grid"`, `aria-rowcount`, `role="row"` and
+> `aria-rowindex` all **forbidden** (they require a grid/table role). The passages below were
+> revised on 2026-09-02 to match the shipped, user-approved model; everything else spec-004 says
+> — keyboard reachability of fold-pill rows, their accessible names, and display-index ordinals —
+> is unchanged and still true. **`docs/contracts/ui-reference.md` §4.1 is the canonical source**
+> for the scroller's ARIA surface; do not "restore" the earlier grid wording from this file.
+
 Files (per plan): painting in **`src/graph/drawFold.ts`** (draw.ts is at cap — dispatch only);
 model in `foldModel.ts`; state in `useGraphFold.ts`; toggle UI lands in the existing spec-003
 surfaces (`GraphFilterPopover.tsx`, `SettingsGraphDeclutterSection.tsx`, `useGraphFilter.ts` or
@@ -89,9 +99,16 @@ pairs 1:1 with the ArrowLeft keyboard path (§3).
 
 ## 3. Keyboard & screen-reader semantics (plan FLAG 3 — decided: **land, don't skip**)
 
-Skipping would make expansion keyboard-unreachable. Treegrid idiom on the existing §4.1
-composite widget. The selection model stays exactly as today for commit rows; the pill row is
-the only row type where "active" and "selected" diverge:
+Skipping would make expansion keyboard-unreachable. The scroller stays the ui-ref §4.1 composite
+widget exactly as P95 specced it — `.graph-scroll` with `tabIndex={0}`, `role="group"`,
+`aria-label="Commit graph"`, `aria-describedby` → the sr-only keyboard hint, and
+`aria-activedescendant`. No grid/treegrid role, no `aria-rowcount`, no `role="row"` or
+`aria-rowindex`: those are only meaningful under a grid/table role. `aria-activedescendant` is
+supported on `role="group"` (ARIA 1.2) and its IDREF resolves to a real element, because this
+spec adds a single sr-only `<div id="graph-row-{i}">` that is re-rendered per active display row
+and carries that row's accessible name (plus `aria-expanded` / `aria-selected`). The selection
+model stays exactly as today for commit rows; the pill row is the only row type where "active"
+and "selected" diverge:
 
 - **ArrowUp/Down onto a commit row selects it** (current behaviour, unchanged — active ==
   selected on commit rows). ArrowUp/Down onto a **fold-pill row** lands there: it updates
@@ -108,7 +125,7 @@ the only row type where "active" and "selected" diverge:
   keyboard collapse path; the pill is the mouse path.
 - PageUp/Down / Home/End operate on display rows (they already will, via the mapping); if the
   landing display row is a pill, the land-don't-select rule above applies.
-- **Accessible name** of a pill row (`role="row"` shadow node / active-descendant target):
+- **Accessible name** of a pill row (the sr-only active-descendant target element, no role):
   `"{N} commits folded. Press Enter to expand."`, with `aria-expanded="false"`
   (`true` never occurs — an expanded span has no pill row; the *boundary* row appends
   `", start of an expanded run of {N} commits. Press Left Arrow to collapse."` to its normal
@@ -170,11 +187,17 @@ itself is instant (§1 motion rule); the flash is the "here it is" signal and al
 
 ## 7. Canon amendment — ui-reference §4.1 (shipped with this contract)
 
-With fold active, model-row counts lie to assistive tech. `aria-rowcount`, active-descendant
-ids, and the announcer's `"Row {n} of {N}"` switch to **display rows** (`displayRowCount`,
-display indices). With fold off, display == model, so nothing changes for existing behaviour.
-One-line note added to `ui-reference.md` §4.1; fold-row visuals stay specced here (a §4 pointer
-line added).
+With fold active, model-row counts lie to assistive tech. Active-descendant ids
+(`graph-row-{d}`) and the announcer's `"Row {d+1} of {D}"` clause switch to **display rows**
+(`displayRowCount`, display indices). With fold off, display == model, so nothing changes for
+existing behaviour.
+
+The row ordinal reaches the user **only** through `GraphSelectionAnnouncer`'s live-region
+`"Row {d+1} of {D}"` clause — never through `aria-rowcount`, which is forbidden here (it needs a
+grid/table role the scroller does not have; see the 2026-09-02 note at the top of this file and
+`ui-reference.md` §4.1). What spec-004 *adds* to §4.1 is the per-active-row sr-only DOM node
+that makes `aria-activedescendant` resolve to a real element. Fold-row visuals stay specced here
+(a §4 pointer line added).
 
 ## 8. States matrix
 

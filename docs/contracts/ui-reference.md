@@ -368,23 +368,29 @@ section mirrors them — update both together.
   stays there.
 - **HiDPI:** canvas backing store scaled by `devicePixelRatio`; all metrics above are CSS px.
 
-### 4.1 Keyboard & screen-reader access (added 2026-08-22, graph review; ARIA model revised 2026-08-31, P95)
+### 4.1 Keyboard & screen-reader access (added 2026-08-22, graph review; ARIA model revised 2026-08-31, P95; reconciled with spec-004 on 2026-09-02)
 
-The `<canvas>` is opaque to assistive tech and the graph is virtualized to visible rows, so there
-are **no per-row DOM elements** and there never will be. The graph is therefore **not** an ARIA
-composite widget: it is a single labelled, focusable container whose selection is announced through a
-live region.
+The `<canvas>` is opaque to assistive tech and the graph is virtualized to visible rows, so the rows
+themselves are pixels, not DOM. The graph is **not** a grid or table: it is a single labelled,
+focusable container whose selection is announced through a live region, plus **one** visually-hidden
+element describing the currently active row.
 
 - The scroller (`.graph-scroll`) is the single tab stop and carries **exactly**: `tabIndex={0}`,
-  `role="group"`, `aria-label="Commit graph"`, and `aria-describedby` pointing at the keyboard hint
-  below. It shows a `:focus-visible` ring (2px `--accent`, 1px offset, inset so the canvas does not
-  clip it), distinct from the per-row `--accent` selection ring above.
-- **`role="grid"`, `aria-rowcount` and `aria-activedescendant` are forbidden here.** A `grid` with no
-  `role="row"` children is malformed, and `aria-activedescendant` would have to reference a row
-  element that does not exist (and, if one were rendered per visible row, would dangle the moment
-  the active row scrolled out of the rendered window). There is no `graph-row-{i}` ID scheme.
-  The rejected alternatives — visually-hidden rows per visible row, and a one-option `listbox` —
-  are recorded in `docs/contracts/P95-a11y-ui.md` §1.1 with the reasons.
+  `role="group"`, `aria-label="Commit graph"`, `aria-describedby` pointing at the keyboard hint
+  below, and `aria-activedescendant` pointing at the active-row element below (omitted when there is
+  no active row). It shows a `:focus-visible` ring (2px `--accent`, 1px offset, inset so the canvas
+  does not clip it), distinct from the per-row `--accent` selection ring above.
+- **`role="grid"`, `aria-rowcount`, `role="row"` and `aria-rowindex` are forbidden here** (settled by
+  P95, reaffirmed 2026-09-02). A `grid` with no `role="row"` children is malformed, and the row
+  attributes are only meaningful under a grid/table role. The rejected alternatives — a
+  visually-hidden row per *visible* row, and a one-option `listbox` — are recorded in
+  `docs/contracts/P95-a11y-ui.md` §1.1.
+- **`aria-activedescendant` is kept and is valid** (amended 2026-09-02, spec-004 merge). ARIA 1.2
+  lists it as supported on `role="group"`, and the IDREF resolves to a real element: spec-004 renders
+  exactly **one** `.sr-only` `<div id="graph-row-{d}">` inside the scroller, re-rendered for the
+  current active **display** row, carrying that row's accessible name plus `aria-selected` and
+  `aria-expanded`. One node, not one per visible row — it moves with the active row instead of
+  churning on scroll, so it neither dangles nor costs render budget. It carries **no role**.
 - A visually-hidden `.sr-only` span (id from `useId`, so multiple repo tabs do not collide) is the
   described-by target and reads: **"Use the arrow keys to move between commits. Press the Menu key
   or Shift+F10 for actions on the selected commit."**

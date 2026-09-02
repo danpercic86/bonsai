@@ -1,7 +1,10 @@
-/** P7 §6 hover tooltip DOM — moved VERBATIM out of GraphCanvas.tsx (spec-004
+/** P7 §6 hover tooltip positioning — moved out of GraphCanvas.tsx (spec-004
  *  size split): renders at the un-clamped anchor first, then a layout effect
  *  clamps it inside the host before paint (flicker-free). The hover TARGET
- *  resolution stays in GraphCanvas; this component owns only position + DOM. */
+ *  resolution stays in GraphCanvas and the tooltip's DOM lives in
+ *  `GraphTooltip.tsx` (P95 extraction, reunified in the 2026-09-02 dev merge —
+ *  both branches had split this component out independently); this component
+ *  owns only the clamped position and the measurement ref. */
 
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';

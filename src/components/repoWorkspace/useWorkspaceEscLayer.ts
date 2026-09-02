@@ -21,8 +21,6 @@ export function useWorkspaceEscLayer(deps: {
   historyOpenRef: { current: boolean };
   reflogOpenRef: { current: boolean };
   commitBrowserOpenRef: { current: boolean };
-  prBrowserOpenRef: { readonly current: boolean };
-  closePrBrowser: () => void;
   composerOpenRef: { current: boolean };
   closeComposer: () => void;
   searchOpenRef: { current: boolean };
@@ -52,8 +50,6 @@ export function useWorkspaceEscLayer(deps: {
     historyOpenRef,
     reflogOpenRef,
     commitBrowserOpenRef,
-    prBrowserOpenRef,
-    closePrBrowser,
     composerOpenRef,
     closeComposer,
     searchOpenRef,
@@ -124,11 +120,6 @@ export function useWorkspaceEscLayer(deps: {
         closeReflog();
         return;
       }
-      // PR-mode browser peels with the commit-mode one (mutually exclusive).
-      if (prBrowserOpenRef.current) {
-        closePrBrowser();
-        return;
-      }
       if (commitBrowserOpenRef.current) {
         setCommitBrowserOpen(false);
         return;
@@ -174,6 +165,5 @@ export function useWorkspaceEscLayer(deps: {
     closePalette,
     closeComposer,
     closeReplay,
-    closePrBrowser,
   ]);
 }

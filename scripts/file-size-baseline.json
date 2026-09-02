@@ -28,7 +28,7 @@
     "src-tauri/src/commands/tests_repo_session_misc.rs": 510,
     "src-tauri/src/settings_ui_tests.rs": 519,
     "src/App.tsx": 977,
-    "src/components/RepoWorkspace.tsx": 2781,
+    "src/components/RepoWorkspace.tsx": 2760,
     "src/components/WorkspaceGraphPane.tsx": 505,
     "src/graph/GraphCanvas.tsx": 973,
     "src/ipc/fixtures/diffs.ts": 746,

@@ -7,7 +7,6 @@ import type {
   GraphPrefs,
 } from '../../ipc';
 import type { GraphDisplayOptions } from '../../graph/rightColumns';
-import type { PrBrowserView } from './usePrDiffBrowser';
 import { shortOid } from '../workspaceUtils';
 
 /** Ahead/behind map keyed by local branch name, for the graph's ahead/behind
@@ -67,7 +66,6 @@ export function prDefaultBaseOf(
 export function diffBrowserViewOf(args: {
   compare: { oid: string } | null;
   compareData: CompareDiff | null;
-  prBrowserView: PrBrowserView | null;
   selectedIndex: number | null;
   graph: GraphLayout | null;
   commitBrowserOpen: boolean;
@@ -79,7 +77,6 @@ export function diffBrowserViewOf(args: {
   const {
     compare,
     compareData,
-    prBrowserView,
     selectedIndex,
     graph,
     commitBrowserOpen,
@@ -99,7 +96,6 @@ export function diffBrowserViewOf(args: {
     };
   }
   // PR mode: AUTO-OPENED by the PR panel (beats commit; compare beats it).
-  if (prBrowserView !== null) return prBrowserView;
   // Commit mode: EXPLICIT-open only.
   if (selectedIndex !== null && graph !== null && commitBrowserOpen && commitDiff !== null) {
     // Mid-stream partial layout: the selected commit's row is not in the

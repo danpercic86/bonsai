@@ -35,7 +35,6 @@ import { traced, GESTURES } from '../obs/gesture';
 import type { TraceId } from '../obs/types';
 import { type RefreshScope, slicesForScope } from './repoWorkspace/refreshScope';
 import { useRepoChangeSubscription } from './repoWorkspace/useRepoChangeSubscription';
-import { usePrDiffBrowser } from './repoWorkspace/usePrDiffBrowser';
 import type { IncrementalEdgeIndex } from '../graph/incrementalEdgeIndex';
 import { ipc } from '../ipc';
 import type {
@@ -558,22 +557,10 @@ export function RepoWorkspace({
   const [commitBrowserOpen, setCommitBrowserOpen] = useState(false);
   const commitBrowserOpenRef = useRef(commitBrowserOpen);
   commitBrowserOpenRef.current = commitBrowserOpen;
-  // Latest compare target read by refetchCompare (and usePrDiffBrowser's
-  // open-suppression) without widening effect/callback deps.
+  // Latest compare target read by refetchCompare without widening
+  // effect/callback deps.
   const compareRef = useRef(compare);
   compareRef.current = compare;
-  // PR mode: the open PR's local diff → center DiffBrowser (usePrDiffBrowser).
-  // P93 superseded the whole-PR open path (PR files now open per-file in the
-  // center overlay), so only the close/peel side is still wired; `openPrDiff`
-  // is intentionally not destructured — nothing opens this view any more.
-  const { closePrDiff, prBrowserView } = usePrDiffBrowser(
-    setScope,
-    setCommitBrowserOpen,
-    compareRef,
-  );
-  // Assigned after the diffBrowserView memo below (rendered-branch signal);
-  // declared here because useWorkspaceKeyboard consumes it earlier in the body.
-  const prBrowserOpenRef = useRef(false);
 
   const statusReqId = useRef(0);
   const graphReqId = useRef(0);
@@ -1333,8 +1320,7 @@ export function RepoWorkspace({
   useEffect(() => {
     setScope({ kind: 'root' });
     setCommitBrowserOpen(false);
-    closePrDiff(); // picking a commit / opening compare dismisses a PR diff too
-  }, [compare?.oid, selectedOid, closePrDiff]);
+  }, [compare?.oid, selectedOid]);
 
   // P86a: repo-changed + tag-auto-sync subscriptions (reason-aware refresh routing
   // + the CI-3 tag-count toast) live in their own hook so the container stays thin.
@@ -2172,8 +2158,6 @@ export function RepoWorkspace({
     historyOpenRef,
     reflogOpenRef,
     commitBrowserOpenRef,
-    prBrowserOpenRef,
-    closePrBrowser: closePrDiff,
     composerOpenRef: composer.openRef,
     closeComposer: composer.escClose,
     composerOpen: composer.open,
@@ -2317,14 +2301,9 @@ export function RepoWorkspace({
   // mode AUTO-OPENS once data has loaded (≥1 file); commit mode is EXPLICIT-open
   // (gated on commitBrowserOpen). null → browser not rendered.
   const diffBrowserView = useMemo(
-    () => diffBrowserViewOf({ compare, compareData, prBrowserView, selectedIndex, graph, commitBrowserOpen, commitDiff, headBranch, clearCompare, setCommitBrowserOpen }),
-    [compare, compareData, prBrowserView, selectedIndex, graph, commitBrowserOpen, commitDiff, headBranch, clearCompare],
+    () => diffBrowserViewOf({ compare, compareData, selectedIndex, graph, commitBrowserOpen, commitDiff, headBranch, clearCompare, setCommitBrowserOpen }),
+    [compare, compareData, selectedIndex, graph, commitBrowserOpen, commitDiff, headBranch, clearCompare],
   );
-
-  // Esc-layering flag derived from the RENDERED branch (not raw PR state):
-  // while compare wins the memo, an open-but-invisible PR layer must not
-  // swallow an Esc press meant for compare.
-  prBrowserOpenRef.current = diffBrowserView !== null && diffBrowserView === prBrowserView;
 
   return (
     <>

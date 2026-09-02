@@ -343,8 +343,10 @@ which the near-flat backdrop tracks within its ≤3% budget.
   detached-HEAD/PR/status carriers unchanged (§6, §7 house rule).
 - **Reduced motion:** the sway settle never arms under `prefers-reduced-motion` (§5); no other Bonsai
   motion is introduced.
-- **Focus / keyboard / SR:** graph focus, `role="grid"`, activedescendant, and the live-region
-  announcement (§4.1) are theme-invariant — Bonsai changes zero interaction, so all §4.1 a11y holds.
+- **Focus / keyboard / SR:** the graph scroller's ARIA surface, keyboard model and live-region
+  announcement are theme-invariant — Bonsai changes zero interaction, so all of them hold unchanged.
+  See `ui-reference.md` §4.1 for the canonical, current definition of that surface (the attribute
+  list once summarised here went stale; updated 2026-09-02).
 - **Both densities:** node radii/ring radii come from `metrics.ts` (cozy/compact) unchanged; new edge
   taper widths specced per density (§3); blossom radii derive from `avatarRadius`, so they scale with
   the density knob automatically.

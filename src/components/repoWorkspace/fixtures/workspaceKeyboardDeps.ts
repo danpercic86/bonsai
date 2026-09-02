@@ -61,8 +61,6 @@ export function makeKeyboardDeps(
     historyOpenRef: { current: false },
     reflogOpenRef: { current: false },
     commitBrowserOpenRef: { current: false },
-    prBrowserOpenRef: { current: false },
-    closePrBrowser: vi.fn(),
     composerOpenRef: { current: false },
     closeComposer: vi.fn(),
     composerOpen: false,

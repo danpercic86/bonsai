@@ -1136,6 +1136,11 @@ verification evidence → `docs/history/todo-archive-2026-09.md` Part 35.
 `ai::session_tests::watchdog_does_not_fire_while_awaiting_input` failed once under load and passed on
 immediate re-run.
 
+`src/App.test.tsx > App shell > an Arrow-key pane nudge persists the POST-nudge width` — same shape
+(added 2026-09-02). Failed once in a full `pnpm gate` run at 2662ms (`setUiSettings` never called,
+i.e. the debounced persist had not fired before the assertion), then passed 4/4 isolated and
+2644/2644 on a full-suite re-run. Timing-sensitive under parallel load, not a correctness bug.
+
 ### P80 forge follow-ups — **OPEN** (SHOULD-FIX/NIT, non-blocking; spun off the archived P80 milestone)
 - (a) `forge_set_token_inner` validates before the `host.is_empty()` guard — guard host first to skip
   a wasted round-trip on unparseable origin.

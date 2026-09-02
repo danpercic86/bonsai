@@ -36,8 +36,7 @@ function mount(deps: Deps) {
 describe('Esc peel order', () => {
   it('peels exactly the topmost open layer, in contract order', () => {
     // Full stack open: palette > composer > aiPanel > blame > history > reflog
-    // > prBrowser > commitBrowser > search > historySearch > diffSlot > compare
-    // > deselect.
+    // > commitBrowser > search > historySearch > diffSlot > compare > deselect.
     const deps = makeDeps({
       paletteOpenRef: { current: true },
       composerOpenRef: { current: true },
@@ -46,7 +45,6 @@ describe('Esc peel order', () => {
       historyOpenRef: { current: true },
       reflogOpenRef: { current: true },
       commitBrowserOpenRef: { current: true },
-      prBrowserOpenRef: { current: true },
       searchOpenRef: { current: true },
       historySearchOpenRef: { current: true },
       diffSlotRef: { current: {} as DiffSlot },
@@ -61,7 +59,6 @@ describe('Esc peel order', () => {
       [() => (deps.blameOpenRef.current = false), deps.closeBlame as never],
       [() => (deps.historyOpenRef.current = false), deps.closeHistory as never],
       [() => (deps.reflogOpenRef.current = false), deps.closeReflog as never],
-      [() => ((deps.prBrowserOpenRef as { current: boolean }).current = false), deps.closePrBrowser as never],
       [() => (deps.commitBrowserOpenRef.current = false), deps.setCommitBrowserOpen as never],
       [() => (deps.searchOpenRef.current = false), deps.closeSearch as never],
       [() => (deps.historySearchOpenRef.current = false), deps.closeHistorySearch as never],
