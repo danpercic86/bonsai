@@ -25,6 +25,18 @@ export const INITIAL_STATUS: StatusSnapshot = {
     { path: 'assets/deleted.png', origPath: null, status: 'deleted' },
     { path: 'assets/huge.png', origPath: null, status: 'modified' },
     { path: 'data/big-report.csv', origPath: null, status: 'modified' },
+    // P106 AC9: the only fixture that renders the `T` badge. The real backend emits
+    // this status from git2's Delta::Typechange (symlink <-> regular file), but the
+    // mock had no row for it, so the status-panel rule was unreachable in the
+    // browser harness — a verification gap, not a dead rule.
+    { path: 'scripts/build.sh', origPath: null, status: 'typechange' },
+    // P106 AC9 / §9: pathological path length — confirms the badge stays
+    // `flex: none` (12px) while the path beside it ellipsises.
+    {
+      path: 'packages/design-system/src/components/experimental/data-visualisation/charts/timeseries/renderers/high-density/webgl/shaders/fragment/gradient-with-a-really-long-descriptive-name.frag.glsl',
+      origPath: null,
+      status: 'modified',
+    },
   ],
   untracked: [
     { path: 'notes/todo.txt', origPath: null, status: 'untracked' },

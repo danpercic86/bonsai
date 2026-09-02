@@ -49,6 +49,15 @@ function badgeFor(path: string, statusByPath: Map<string, FileStatus>): string {
   return s !== undefined ? BADGES[s] : '?';
 }
 
+/** P106 D1/AC12: hue-code the composer badge. Without the status-class ancestor the
+ *  letter inherits ambient --text-1, so the same status reads grey here and coloured in
+ *  the status panel. The only status-class descendant rules target `.file-badge` plus
+ *  `.file-path`/`.file-name`, which this row does not use — no bleed. */
+function rowClassFor(path: string, statusByPath: Map<string, FileStatus>): string {
+  const s = statusByPath.get(path);
+  return s !== undefined ? `composer-file-row file-status-${s}` : 'composer-file-row';
+}
+
 export function ComposerGroupCard({
   variant,
   title,
@@ -125,7 +134,7 @@ export function ComposerGroupCard({
       ) : (
         <ul className="composer-files">
           {files.map((path) => (
-            <li key={path} className="composer-file-row" title={path}>
+            <li key={path} className={rowClassFor(path, statusByPath)} title={path}>
               <span className="file-badge mono">{badgeFor(path, statusByPath)}</span>
               <span className="composer-file-path mono">{path}</span>
               <select

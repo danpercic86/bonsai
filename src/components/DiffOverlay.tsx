@@ -291,7 +291,16 @@ export function DiffOverlay({
   const [imageMode, setImageMode] = useState<ImageMode>('sideBySide');
   return (
     <div className="diff-overlay" role="region" aria-label={`Diff: ${meta.path}`}>
-      <div className="diff-overlay-header">
+      {/* P106 D1/AC12: the status class hue-codes the badge letter; without it the header
+          badge inherits ambient --text-1 and reads grey where every other surface shows a
+          colour. Only `.file-badge` descendant rules key off it here. */}
+      <div
+        className={
+          meta.status !== null
+            ? `diff-overlay-header file-status-${meta.status}`
+            : 'diff-overlay-header'
+        }
+      >
         {meta.status !== null && <span className="file-badge mono">{BADGES[meta.status]}</span>}
         {meta.origPath !== null ? (
           <span

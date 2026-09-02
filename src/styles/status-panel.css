@@ -190,30 +190,34 @@
 
 /* Status colors per ui-reference §7. */
 .file-status-added .file-badge {
-  color: var(--success);
+  color: var(--success-strong);
 }
 
 .file-status-modified .file-badge,
 .file-status-typechange .file-badge {
-  color: var(--warning);
+  color: var(--warning-strong);
 }
 
 .file-status-deleted .file-badge,
 .file-status-conflicted .file-badge {
-  color: var(--danger);
+  color: var(--danger-strong);
 }
 
 .file-status-renamed .file-badge {
-  /* P105 B16: the A/M/D/U/R letter is TEXT, judged at 4.5:1, not 3:1. --accent bottomed
-     out at 3.51:1 dark / 3.74:1 light on a selected row; --accent-strong is 4.93 / 5.01
-     there. The other three badge hues are filed as P106. */
+  /* P105 B16: the A/M/D/U/R letter is TEXT, judged at 4.5:1, not 3:1 — it is the sole
+     non-colour carrier of the status at all 8 render sites (P106 §3). --accent bottomed out
+     at 3.51:1 dark / 3.74:1 light on a selected row; --accent-strong is 4.93 / 5.01 there.
+     P106 closed the other three hues the same way: the badge inks are now the ink-only
+     --success-strong / --warning-strong / --danger-strong, whose minima over the six live
+     backdrops are 5.71/5.94, 5.80/5.73 and 5.27/5.18. Do NOT reach for --*-text here —
+     those are fill-inks (= --bg-0) and measure 1.07-1.57 as a letterform (P106 §5). */
   color: var(--accent-strong);
 }
 
 /* P4c: untracked rows live in the merged "Changes" list and read as normal
    adds — green "A" badge, no muted/italic path treatment. */
 .file-status-untracked .file-badge {
-  color: var(--success);
+  color: var(--success-strong);
   font-style: normal;
 }
 
@@ -224,6 +228,6 @@
 }
 
 .section-label-danger {
-  color: var(--danger);
+  color: var(--danger-strong);
 }
 

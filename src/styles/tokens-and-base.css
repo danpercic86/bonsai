@@ -38,10 +38,19 @@
   /* P102: ink on a solid --danger fill. #ffffff measured 3.73:1 there in dark; near-black
      is 4.76:1. Same per-theme split as --accent-text (P100 recipe 2). */
   --danger-text: #16181d;
+  /* P106: --danger as READ TEXT (the `D`/`C` status letters, the Conflicts label).
+     --danger itself is 4.41 on --bg-1, 3.89 hovered and 3.05 on a selected row, so it is a
+     graphics-bar token. --danger-strong is 8.29…5.27 dark / 6.44…5.18 light across every
+     backdrop the badge composites over. Ink only — never a fill, border or focus ring. */
+  --danger-strong: #ff938c;
   --success: #57ab5a;
   /* P102: ink on a solid --success fill — 6.24:1. The white it replaces measured 2.85:1,
      below even the 3:1 graphics bar (.pr-state-open, the worst case in the audit). */
   --success-text: #16181d;
+  /* P106: --success as READ TEXT (the `A` added/untracked letters). --success drops to
+     3.96 on a selected row and 4.37 hovered in light. --success-strong is 8.98…5.71 dark /
+     7.39…5.94 light. Ink only. */
+  --success-strong: #7fc98a;
   /* P102 §5.4 Option A: the PR "merged" hue, previously a theme-invariant #8957e5 literal.
      --merged-text on --merged is 5.30:1. */
   --merged: #a371f7;
@@ -51,6 +60,10 @@
   --intra-add: #2ea043;
   --intra-del: #f85149;
   --warning: #d4a72c;
+  /* P106: --warning as READ TEXT (the `M`/`T` status letters). Light --warning fails 4 of
+     the badge's 6 backdrops (4.19-4.34) and dark clears them, but both themes share one
+     token so the letters stay one family: 9.13…5.80 dark / 7.13…5.73 light. Ink only. */
+  --warning-strong: #e3b341;
   /* P50b: commit-search match ring on graph dots (distinct from head/selection). */
   --match-ring: #ff4dd2;
   /* P58c: signature-badge palette (OQ7). Concrete hex (not var() indirection)
@@ -136,9 +149,14 @@
   --danger: #d13438;
   /* P102: white on the light theme's deeper --danger is 4.93:1; near-black would be 3.03. */
   --danger-text: #ffffff;
+  /* P106: --danger deepened toward black at the same hue. 6.44 on --bg-0 … 5.18 on
+     --selection (the family floor). Ink only — the fill/border stay --danger. */
+  --danger-strong: #b3282e;
   --success: #1a7f37;
   /* P102: white on the light theme's deeper --success is 5.08:1; near-black would be 2.42. */
   --success-text: #ffffff;
+  /* P106: --success deepened. 7.39 on --bg-0 … 5.94 on --selection. Ink only. */
+  --success-strong: #116329;
   /* P102 §5.4 Option A: a purple tuned for a white page rather than the dark theme's value
      reused. --merged-text (#ffffff) on it is 5.05:1. */
   --merged: #8250df;
@@ -146,6 +164,8 @@
   --intra-add: #1a7f37;
   --intra-del: #cf222e;
   --warning: #9a6700;
+  /* P106: --warning deepened. 7.13 on --bg-0 … 5.73 on --selection. Ink only. */
+  --warning-strong: #7a4f01;
   --match-ring: #c026a3;
   /* P58c: signature-badge palette — light (mirror --success/--danger/--text-3). */
   --badge-good: #1a7f37;
