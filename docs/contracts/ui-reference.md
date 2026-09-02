@@ -64,14 +64,14 @@ CSS custom properties on `:root` (dark, default) and `[data-theme="light"]`.
 | `--selection` | `#2a3b57` | `#dbe7ff` | selected row background |
 | `--danger` | `#e5534b` | `#d13438` | errors, destructive |
 | `--danger-text` | `#16181d` | `#ffffff` | ink on a solid `--danger` fill (**4.80:1** dark / **4.93:1** light) — P102, **shipped 2026-09-02**. **Fill-ink only — see the `--*-text` trap below** |
-| `--danger-strong` | `#ff938c` | `#b3282e` | **the danger hue used as read text** (P106 — **shipped 2026-09-03**, commit `10ce967`). **Ink only**: never a fill, never a border, never the focus ring — those stay `--danger`. Measured live over the six composited backdrops the status-badge family reaches: `--bg-0` 8.29/6.44 · `--bg-1` 7.62/6.01 · `--bg-2` 6.72/5.55 · `--selection` **5.27/5.18** · staged 6% `--success` tint over `--bg-1` 6.99/5.56 · changes 5% `--text-3` tint over `--bg-1` 7.25/5.74. **MIN 5.27 / 5.18** |
+| `--danger-strong` | `#ff938c` | `#b3282e` | **the danger hue used as read text** (P106 — **shipped 2026-09-03**, commit `10ce967`). **Ink only**: never a fill, never a border, never the focus ring — those stay `--danger`. Measured live over the six composited backdrops the status-badge family reaches: `--bg-0` 8.29/6.44 · `--bg-1` 7.62/6.01 · `--bg-2` 6.72/5.55 · `--selection` **5.27/5.18** · staged 6% `--success` tint over `--bg-1` 6.99/5.56 · changes 5% `--text-3` tint over `--bg-1` 7.25/5.74 · **`--bg-3` 5.84/5.10** (P108, **shipped 2026-09-03** `42206fd` — the first `-strong` ink to reach `--bg-3`). **MIN 5.10 (light, on `--bg-3`) — the lowest figure anywhere in the `-strong` family** |
 | `--success` | `#57ab5a` | `#1a7f37` | staged/added |
 | `--success-text` | `#16181d` | `#ffffff` | ink on a solid `--success` fill (**6.24:1** dark / **5.08:1** light) — P102, **shipped 2026-09-02**. **Fill-ink only** |
-| `--success-strong` | `#7fc98a` | `#116329` | **the success hue used as read text** (P106 — **shipped 2026-09-03**, `10ce967`). Same ink-only restriction. `--bg-0` 8.98/7.39 · `--bg-1` 8.26/6.90 · `--bg-2` 7.29/6.36 · `--selection` **5.71/5.94** · staged tint 7.57/6.38 · changes tint 7.86/6.59. **MIN 5.71 / 5.94** |
+| `--success-strong` | `#7fc98a` | `#116329` | **the success hue used as read text** (P106 — **shipped 2026-09-03**, `10ce967`). Same ink-only restriction. `--bg-0` 8.98/7.39 · `--bg-1` 8.26/6.90 · `--bg-2` 7.29/6.36 · `--selection` **5.71/5.94** · staged tint 7.57/6.38 · changes tint 7.86/6.59. **MIN over its shipped backdrops 5.71 / 5.94**; `--bg-3` is measured at **6.33 / 5.85** (P108) and takes the light minimum to 5.85 the day this ink ships there |
 | `--merged` | `#a371f7` | `#8250df` | PR "merged" hue — **Option A was chosen** (orchestrator call, 2026-09-02) and **shipped**: it replaces the theme-invariant `#8957e5` literal, makes the "no colour literal outside `tokens-and-base.css`" grep a clean **zero**, and gives the light theme a purple tuned for a white page instead of the dark value reused |
 | `--merged-text` | `#16181d` | `#ffffff` | ink on `--merged` (**5.30:1** dark / **5.05:1** light) — P102, **shipped 2026-09-02**. **Fill-ink only** |
 | `--warning` | `#d4a72c` | `#9a6700` | modified/dirty. **As a letterform it is dark-only** — see the letterform note below |
-| `--warning-strong` | `#e3b341` | `#7a4f01` | **the warning hue used as read text** (P106 — **shipped 2026-09-03**, `10ce967`). Same ink-only restriction. `--bg-0` 9.13/7.13 · `--bg-1` 8.39/6.65 · `--bg-2` 7.40/6.14 · `--selection` **5.80/5.73** · staged tint 7.69/6.15 · changes tint 7.98/6.36. **MIN 5.80 / 5.73**. There is deliberately **no `--warning-text`** — see the trap below |
+| `--warning-strong` | `#e3b341` | `#7a4f01` | **the warning hue used as read text** (P106 — **shipped 2026-09-03**, `10ce967`). Same ink-only restriction. `--bg-0` 9.13/7.13 · `--bg-1` 8.39/6.65 · `--bg-2` 7.40/6.14 · `--selection` **5.80/5.73** · staged tint 7.69/6.15 · changes tint 7.98/6.36. **MIN over its shipped backdrops 5.80 / 5.73**; `--bg-3` is measured at **6.43 / 5.64** (P108) and takes the light minimum to 5.64 the day this ink ships there. There is deliberately **no `--warning-text`** — and, separately, **no `--warn`**; see the trap below |
 | `--graph-canvas-bg` | `#16181d` | `#ffffff` | graph-pane surface behind the canvas (container div, load skeleton, empty state) — keeps the DOM behind the canvas seamless with the canvas fill. Aliases `--bg-0` by default; the **Bonsai graph style** (spec 002) overrides it via `[data-graph-style='bonsai']` to a warm backdrop: **`#17140f`** dark / **`#f4efe6`** light. See §5.1. |
 
 Focus: 2px `--accent` outline, offset 1px, keyboard only (`:focus-visible`).
@@ -82,19 +82,21 @@ Each is its hue **lifted in dark, deepened in light**, and each exists for exact
 used as read text**. They are **ink only** — never a fill, never a border, never a bar or glyph edge,
 never the focus ring; the fill/bar/border keeps the base hue (`--danger`/`--success`/`--warning`/
 `--accent`), whose ≥3:1 graphics figures are untouched by this family. **Fixed-family minimum across
-every backdrop any of the four reaches: 5.18** (`--danger-strong`, light, `--selection`) — 0.68 above
-the text bar.
+every backdrop any of the four reaches: 5.10** (`--danger-strong`, light, `--bg-3`) — 0.60 above the
+text bar. **This number moved from 5.18 to 5.10 when P108 shipped** (`42206fd`, 2026-09-03) and
+`.btn-secondary-danger:hover` put a `-strong` ink on `--bg-3` for the first time. The P108 contract
+recorded 5.10 forward-lookingly; it is now shipped fact, and 5.18 is history.
 
-> **THE `--bg-3` ROW, measured 2026-09-03 (P108 contract) — recorded now so the number is not lost
-> between contract and landing.** No `-strong` ink had reached `--bg-3` before, so the 5.18 minimum
-> above was computed over backdrops that did not include it. Measured on `--bg-3`:
-> `--danger-strong` **5.84 / 5.10** · `--success-strong` **6.33 / 5.85** · `--warning-strong`
-> **6.43 / 5.64** · `--accent-strong` **5.46 / 4.93**. **The first time a `-strong` ink ships on
-> `--bg-3` (P108's `.btn-secondary-danger:hover` is the first), the fixed-family minimum becomes
-> 5.10** (`--danger-strong`, light, `--bg-3`) — still 0.60 above the text bar and still inside the
-> band. Until that lands, 5.18 stands. For the base hues on `--bg-3`, which is where the new fixes
-> come from: `--danger` **3.38 / 3.90**, `--success` **4.39 / 4.02**, `--warning` **5.58 / 3.85**. The four minima sit in a **4.93–5.94** band (`--accent-strong` 4.93/5.01,
-`--danger-strong` 5.27/5.18, `--warning-strong` 5.80/5.73, `--success-strong` 5.71/5.94), so a surface
+> **THE `--bg-3` ROW — measured for the P108 contract, shipped 2026-09-03 in `42206fd`.** No
+> `-strong` ink had reached `--bg-3` before P108, so the earlier 5.18 minimum was computed over
+> backdrops that did not include it. Measured on `--bg-3`: `--danger-strong` **5.84 / 5.10** ·
+> `--success-strong` **6.33 / 5.85** · `--warning-strong` **6.43 / 5.64** · `--accent-strong`
+> **5.46 / 4.93**. The post-fix minimum anywhere in the app after P108 is therefore **5.10** —
+> `--danger-strong` as ink on `--bg-3`, light — matching the family minimum predicted by the
+> contract exactly. For the base hues on `--bg-3`, which is where the P108 fixes came from:
+> `--danger` **3.38 / 3.90**, `--success` **4.39 / 4.02**, `--warning` **5.58 / 3.85**. The four minima sit in a **4.93–5.85** band, counting every
+backdrop measured for the family including `--bg-3` (`--accent-strong` 4.93/4.93,
+`--danger-strong` 5.27/**5.10**, `--warning-strong` 5.80/5.64, `--success-strong` 5.71/5.85), so a surface
 mixing them reads as one system rather than four unrelated colours. **Reach for a `-strong` token
 before inventing a hex or demoting a hue to `--text-1`.** Candidates measured and rejected during
 P106, recorded so they are not re-derived: `#ef7c74` (danger dark, MIN 4.19 — fails), `#f5877f`
@@ -116,10 +118,38 @@ token exists and none should be added**: the only compliant solid-`--warning` in
 `--bg-0` (7.92 dark / 4.87 light, `.ai-dock-ask-glyph`), and a `--warning-text` would immediately be
 mistaken for the tint answer.
 
+**THE UNDEFINED-TOKEN TRAP — two live cases, both proven 2026-09-03 (P108, shipped `42206fd`). A
+`var()` fallback can mask a token that does not exist, and a naive probe of a non-existent token
+returns a plausible, wrong, *passing* number.**
+
+1. **`--warn` is defined nowhere in the app.** `settings-legacy-sections.css:134` was
+   `color: var(--warn, #b8860b)`, so it had **always** painted the theme-invariant literal
+   `#b8860b` — **5.46 dark / 3.25 light on `--bg-0`**, i.e. sub-AA in light since the day it was
+   written. Confirmed twice: by grep (no definition in `tokens-and-base.css` or anywhere else) and
+   live (`getComputedStyle(document.documentElement).getPropertyValue('--warn')` returns `""` in
+   **both** themes). **No hue-name grep can see this, because the hue name appears only inside the
+   fallback** — `--warn` is not in the hue alphabet, and `#b8860b` is not in any token grep. P108
+   fixed it by pointing at a real token **with no fallback at all**.
+2. **`--warning-text` is also undefined** — only `--accent-text`, `--danger-text` and
+   `--success-text` (and `--merged-text`) exist. Same trap class, nastier symptom: **probing an
+   undefined custom property on an element yields the element's *inherited* colour**, so a naive
+   measurement of "`--warning-text` on `--bg-1`" returns **13.54 dark / 15.42 light** — a
+   comfortable pass — instead of the **1.09 / 1.07** this file records for the value it would
+   resolve to by construction (`--bg-0`). **Anyone re-measuring that row without checking that the
+   token exists will get a plausible, wrong, passing number and will "correct" a correct figure.**
+
+**The rules, both grep-checkable:** (a) **a `var(--x, …)` fallback is not a fallback when `--x` is
+undefined — it is the value**; any audit that touches `var(--x, …)` must first confirm `--x` is
+defined in `tokens-and-base.css`, for both themes. (b) **Never record a ratio for a token you have
+not confirmed exists**; an undefined property measures as inheritance, not as itself. Ship real
+tokens with **no** fallback — a fallback on a token that exists is dead bytes, and on a token that
+does not exist it is an untracked hardcoded literal.
+
 **Contrast notes (measured 2026-08-17, P68e design pass; toast rows updated 2026-08-20, P74;
 `--text-3` swept in two enumerated passes, 2026-08-31 P95 and 2026-09-01 P98).**
 
-**Scope of the `--text-3` work — the audit is complete, the fixes are not yet shipped.** Three
+**Scope of the `--text-3` work — audit complete, all 93 fixes SHIPPED (P101a–c); closed by token
+name only, see the qualifier below.** Three
 *enumerated* passes: P95 took the **enabled-interactive-control** class, P98 took an
 **eight-selector read-text set**, and **P101 (2026-09-01) audited the family exhaustively** — all
 **124 `color: var(--text-3)` declarations across 33 files in `src/styles/`** (re-pinned by grep at
@@ -129,7 +159,7 @@ outside `src/styles/`. Every declaration now carries a recorded bucket and verdi
 token's role is redefined by the SANCTIONED ROLES bullet below. P101 also found **three pre-existing
 P95-class enabled-control escapes** (`.settings-reset`, `.settings-config-advanced-summary`,
 `.onboarding-skip`), so P95's app-wide claim was as unevidenced as P98's: **an "app-wide swept"
-claim without an enumeration behind it has now failed FIVE times — do not make a sixth.** The tally:
+claim has now failed SIX times — do not make a seventh.** The tally:
 (1) P95's enabled-control class — 3 escapes found by P101; (2) P98's "`--text-3` family closed" —
 122 declarations never classified; (3) P74's hue-as-text sweep — the "`--accent` is fine on
 `--bg-0`/`--bg-1`/`--bg-2`" sentence was false, 21 sub-AA call sites (P105, below); (4) P74's "no
@@ -141,10 +171,25 @@ milestone's scope, plus **2 inside its own rule block** that the P105 enumeratio
 `file:line`, so the next pass inherits evidence instead of a number. **A claim of app-wide closure
 is worthless without a per-declaration table behind it — and a bare count with no list behind it is
 the same failure in miniature.**
+**(6) P101's own "`--text-3` family CLOSED, exhaustively" — added 2026-09-03 on the P108 landing,
+and it is the most instructive of the six**, because P101 is the one that *did* have the
+per-declaration table. It enumerated all 124 `color: var(--text-3)` declarations and still missed
+`.commit-signature-unknown .commit-signature-icon`, a **2.96-in-light** glyph — below even the 3:1
+graphics bar — because that rule spells the same value `--badge-unknown`. The first five failed for
+want of an enumeration; **the sixth failed because the enumeration was scoped by token NAME.**
 
-**A SECOND FAILURE MODE, recorded 2026-09-03 (P107 landing). It does not increment the five above —
-the count of five means specifically "app-wide closure claimed without an enumeration", and diluting
-it would blunt what it teaches.** This one is the opposite shape: an item that *was* enumerated with
+> **THE ALIASING RULE (P108, 2026-09-03 — token aliasing has now hidden instances THREE times):**
+> **an audit scoped by token NAME cannot see an alias — scope by resolved VALUE.**
+> The three: `--badge-good` ≡ `--success` and `--badge-warn` ≡ `--danger` (found in P106/P107, which
+> hid a real 4.41-dark read-text failure), and `--badge-unknown` ≡ `--text-3` (found in P108, which
+> hid the sub-3:1 glyph above from a family recorded as CLOSED). Before claiming any colour family
+> closed, resolve every token in `tokens-and-base.css` to its literal in **both** themes, group the
+> tokens by identical value, and search on the whole group. An alias is invisible to every
+> name-shaped grep, and aliases are exactly where the escapes have been.
+
+**A SECOND FAILURE MODE, recorded 2026-09-03 (P107 landing). It does not increment the tally above —
+that tally counts false app-wide *closure claims*, while this one is a false *individual fix
+credit*, and diluting it would blunt what it teaches.** This one is the opposite shape: an item that *was* enumerated with
 `file:line`, and was still wrong. **`.settings-toggle-btn.is-active`
 (`settings-legacy-sections.css:101`) was credited below as a fixed-and-shipped P105 site, but the
 rule never matched anything** — the class had been orphaned in `7354aca` when `SettingsSegmented`
@@ -193,9 +238,13 @@ miss.** The accent-fill shortfall is **closed** (P100); the accent-as-text
 (P105) and hardcoded-ink-on-hue-fill (P102) shortfalls **shipped 2026-09-02** in commit `0e5dcab`,
 enumerated in `docs/contracts/P102-P105-hue-audit-ui.md` §2–§3 and verified in the browser harness
 in both themes. All 93
-P101 fixes **shipped** (P101a–c), so the **`--text-3` family is now CLOSED**, and — unlike the
-retracted P95/P98 claims — the enumeration is behind it, declaration by declaration, in
-`docs/contracts/P101-text3-audit-ui.md` §3. **A new
+P101 fixes **shipped** (P101a–c), so the **`--text-3` family is CLOSED *by token name*** — the
+enumeration is behind it, declaration by declaration, in `docs/contracts/P101-text3-audit-ui.md` §3,
+unlike the retracted P95/P98 claims — **but "by name" is the whole qualifier, and it failed once
+already**: P108 found the `--badge-unknown` alias escape (2.96 in light) and fixed it (Bucket C,
+shipped `42206fd`). **The family has never been audited by resolved VALUE.** Treat the closure as
+holding for `color: var(--text-3)` and for the one alias now known; a third spelling of `#6b7280` /
+`#8a919e` would be a new escape. **A new
 `--text-3` use outside the four SANCTIONED ROLES below is a defect.** **Do not write "no AA colour
 shortfall remains in §2" here again.** Two shortfalls are open and enumerated: the
 hue-over-own-tint residue (the list below was **16**; a descendant- and inheritance-aware re-search
@@ -205,17 +254,44 @@ keeps, 1 owned by P106** — enumerated with per-site measured ratios in
 A/M/D/U/R status-badge hue family (**P106**, §7 — **this one shipped 2026-09-03 in `10ce967`**;
 its two USER CHECKPOINTs remain **pending**, see §7).
 
-**Still open after P106, so that no one reads the `-strong` family as app-wide closure:**
-**P108 — hue-as-text over NEUTRAL surfaces. NOW ENUMERATED** (contract 2026-09-03,
-`docs/contracts/P108-hue-as-text-on-neutral-ui.md`), **not yet implemented.** All four passes were
-run; the record is that contract's §2 and §4. **62 call sites / 61 declarations — FIX 28, KEEP 34**
-(27 hue-text fixes, 1 alias-hidden glyph fix; 28 glyph/border keeps incl. 6 canvas, 6 compliant-text
-keeps). No new token: the fixes are the three `-strong` tokens plus `--text-2`.
+**P108 — hue-as-text over NEUTRAL surfaces. SHIPPED 2026-09-03, commit `42206fd`** (contract
+`8027cef`, `docs/contracts/P108-hue-as-text-on-neutral-ui.md`; that contract's §2 and §4 remain the
+per-declaration record). **17 CSS files, no `.ts`/`.tsx`, zero DOM change, no new token** — the fixes
+are the three `-strong` tokens plus `--text-2`. Population **62 call sites / 61 declarations**:
+**fixed 27 Bucket-A hue-texts + 1 Bucket-C alias-hidden glyph**; **kept 28 Bucket-B glyph/border
+(6 of them canvas) + 6 compliant Bucket-D texts**, three of which (`.settings-config-error`,
+`.settings-profile-danger`, `.pr-stat-add`) were additionally moved to `-strong` for cohesion —
+decision **D1 accepted**, which is why the `-strong` count lands at 35 rather than 32.
+
+**Every residue row matched its prediction, and every pre-fix baseline was re-measured in-tree
+rather than inherited** — the discipline from the third failure mode, applied and vindicated:
+raw hue-as-text **54 → 26** · `var(--…-strong)` **5 → 35** · `var(--warn` **1 → 0** · hex outside
+`tokens-and-base.css` **12 → 6** · `--badge-unknown` **3 → 2**. **Post-fix minimum anywhere in the
+app: 5.10** (`--danger-strong` as ink on `--bg-3`, light), exactly the family minimum the contract
+predicted.
+
+**Four things P108 established that outlive it — read these before running any colour audit:**
+1. **A `var()` fallback can mask a token that does not exist**, and an undefined token probes as
+   inheritance. Both cases (`--warn`, `--warning-text`) are written up in the UNDEFINED-TOKEN TRAP
+   block under the token table.
+2. **An audit scoped by token NAME cannot see an alias — scope by resolved VALUE** (the ALIASING
+   RULE block above; three escapes to date).
+3. **One declaration can serve two selectors with different verdicts, so bucket per *selector*, not
+   per *declaration*.** `commit-panel.css:98-100` carried a compliant glyph half and a text half
+   failing at **4.41 dark**; bucketing the declaration as a unit would have got **both** wrong —
+   either shipping a needless glyph change or leaving sub-AA text. The fix splits the rule. This is
+   the only structural change in the whole milestone.
+4. **A search pass that finds nothing is still evidence, and must still be run.** P108's imperative-
+   canvas pass covered **7 draw sites under `src/graph/`** and produced **0 fixes** — all glyph, all
+   ≥3:1 on both canvas backdrops. That is a *result*, not a wasted pass: assuming a pass would find
+   nothing is precisely how the earlier counts went wrong. Keep the canvas pass in the standard
+   method, and record its null result with the ratios that justify it.
 
 **A FIFTH count moved, and the mechanism is new: TOKEN ALIASING and UNDEFINED custom properties.**
-The inventory recorded here as **48** did not reproduce — the same-shaped grep measures **54** raw
-matches against the real tree (the 48 predates `settings-dev.css` and did not account for the three
-`border-color: var(--hue)` declarations the same pattern matches). Two whole classes were invisible
+The inventory recorded here as **48** did not reproduce — the real population is **62 call sites**,
+and the same-shaped raw grep measures **54** matches against the real tree (the 48 predates
+`settings-dev.css` and did not account for the three `border-color: var(--hue)` declarations the same
+pattern matches). **Quote 62, never 48.** Two whole classes were invisible
 to it, and both are now permanent search requirements:
 - **`--badge-good` ≡ `--success` and `--badge-warn` ≡ `--danger`, byte-identical in both themes**
   (already noted in §2's hiding-patterns block) — this hid a real read-text failure,
@@ -225,10 +301,28 @@ to it, and both are now permanent search requirements:
   — **below even the 3:1 graphics bar in light**, and it was invisible to P101's *exhaustive*
   `color: var(--text-3)` audit purely because of the alias. **The `--text-3` family is recorded as
   CLOSED above; this is a known escape from it**, fixed by P108 Bucket C.
-- **`settings-legacy-sections.css:134` is `color: var(--warn, #b8860b)` and `--warn` is not defined
-  anywhere in the app.** The rule has always painted the literal `#b8860b` — **5.46 dark / 3.25
-  light** — in both themes. **A `var()` fallback is not a fallback when the property is undefined; it
-  is the value.** Any grep over `var(--x, …)` must check that `--x` exists.
+- **`settings-legacy-sections.css:134` was `color: var(--warn, #b8860b)` and `--warn` is not defined
+  anywhere in the app** — confirmed by grep *and* live (`getComputedStyle` returns `""` in both
+  themes). The rule had always painted the literal `#b8860b` — **5.46 dark / 3.25 light on `--bg-0`**
+  — in both themes. **Fixed and shipped in `42206fd`**, by pointing at a real token with **no**
+  fallback. **A `var()` fallback is not a fallback when the property is undefined; it is the value**,
+  and **no hue-name grep can see it, because the hue name lives only inside the fallback.** Any grep
+  over `var(--x, …)` must check that `--x` exists. Full write-up: the UNDEFINED-TOKEN TRAP above.
+
+**OWED — P108's AC11 is UNVERIFIED, and must never be recorded as closed.** Two states could not be
+reached in the harness, so their post-fix figures are **source-derived, not measured**:
+`.file-count-del` in its **selected** state (**3.05**) and `.context-menu-item[data-tone='danger']`
+in its **hovered** state (**3.05**) — both pre-fix worst cases. **Both the implementing agent and the
+orchestrator tried and failed:** React's context menu needs a **trusted** input event, and the diff
+panes never mount via keyboard navigation. The qualifier travels with the numbers, verbatim, per the
+transcription rule above — and this one is **the orchestrator's own unverified claim, not an
+agent's**, which is exactly why it is written down here rather than quietly rounded to green.
+**AC12, AC13 and AC14 remain USER CHECKPOINTs and stay pending; no agent may self-declare them.**
+
+**One OPEN TONE question, deliberately unresolved and filed for the user:** `.op-worktree-warning`
+received the **contrast** fix and **kept its danger hue**. Whether a *warning* should be painted in
+the danger hue at all is a **tone** decision, not a contrast one, and P108 did not make it (contract
+§11, D3). Do not "fix" it as a contrast defect — it is compliant.
 
 **The hue alphabet for any future search is
 `danger|success|warning|merged|accent|badge-good|badge-warn|badge-unknown|h`** — three tokens longer
@@ -462,9 +556,14 @@ than the list P107 recorded. Also open: **P109** — the status badge has no acc
   (`.toast-glyph`, `.submodule-badge-glyph`, `.ai-dock-status-glyph`, `.git-run-pill-glyph`:
   11 instances). **Token aliasing hides a fifth family:** `--badge-good` is byte-identical to
   `--success` and `--badge-warn` to `--danger` in both themes, so
-  `.checks-rollup-pill--good/--warn` are this recipe under another name. **The hue alphabet for any
-  future search is `danger|success|warning|merged|accent|badge-good|badge-warn|h` — not the first
-  five.** And resolve the backdrop **per state**: `.error-dismiss` passes 3:1 at rest (3.87 / 3.87)
+  `.checks-rollup-pill--good/--warn` are this recipe under another name; **`--badge-unknown` ≡
+  `--text-3` is the third alias escape (P108)** — see the ALIASING RULE above, and scope by resolved
+  value, not by name. **A sixth pattern, P108: (iii-c) an *undefined* custom property with a hex
+  fallback** (`var(--warn, #b8860b)`) — the hue name appears only in the fallback, so no alphabet of
+  real token names can match it; grep `var\(--[a-z-]+,` and check each property is defined.
+  **The hue alphabet for any
+  future search is `danger|success|warning|merged|accent|badge-good|badge-warn|badge-unknown|h` —
+  not the first five.** And resolve the backdrop **per state**: `.error-dismiss` passes 3:1 at rest (3.87 / 3.87)
   and **fails at 2.96 in light on hover**, because its hover fill is a deeper tint of its own ink's
   hue.
 

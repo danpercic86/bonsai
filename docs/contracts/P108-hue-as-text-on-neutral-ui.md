@@ -1,6 +1,10 @@
 # P108 — Hue as text over a NEUTRAL surface (UI contract)
 
-**Status:** contract, not yet implemented. **Date:** 2026-09-03. **Owner:** ui-designer.
+**Status: SHIPPED 2026-09-03, commit `42206fd`** (contract committed at `8027cef`). 17 CSS files,
+no `.ts`/`.tsx`, zero DOM change, no new token. All five residue rows matched their predictions
+(§10). **Open against this milestone: AC11 is UNVERIFIED and OWED (§10); AC12/AC13/AC14 remain
+pending USER CHECKPOINTs; D3's tone question is unresolved and filed for the user (§11).**
+**Date:** 2026-09-03. **Owner:** ui-designer.
 **Predecessors:** `P102-P105-hue-audit-ui.md` (accent-as-text), `P106-status-badge-ink-ui.md`
 (A/M/D/U/R letter family, `-strong` tokens), `P107-hue-over-own-tint-ui.md` (hue over its own tint).
 **Canonical design system:** `docs/contracts/ui-reference.md` §2 (tokens, BASE rule, the three
@@ -209,11 +213,16 @@ Format is **dark / light**.
 | `--warning` | 7.92 / 4.87 | 7.28 / **4.54** | 6.42 / **4.19** | 5.58 / **3.85** | 5.03 / **3.91** | 7.92 / 4.87 | 8.19 / 4.25 |
 | `--merged` | 5.30 / 5.05 | 4.87 / 4.71 | **4.30 / 4.34** | **3.73 / 4.00** | **3.36 / 4.06** | — | — |
 | `#b8860b` (the undefined-`--warn` literal) | 5.46 / **3.25** | 5.01 / **3.04** | **4.43 / 2.80** | — | **3.47 / 2.62** | — | — |
-| `--badge-unknown` ≡ `--text-3` | 3.68 / 3.17 | **3.38 / 2.96** | **2.98 / 2.73** | — | — | 3.68 / 3.17 | — |
+| `--badge-unknown` ≡ `--text-3` | 3.67 / 3.17 | **3.38 / 2.96** | **2.98 / 2.73** | — | — | 3.67 / 3.17 | — |
 | **`--danger-strong`** | 8.29 / 6.44 | 7.62 / 6.01 | 6.72 / 5.55 | **5.84 / 5.10** | 5.27 / 5.18 | 8.29 / 6.44 | 8.57 / 5.62 |
 | **`--success-strong`** | 8.98 / 7.39 | 8.26 / 6.90 | 7.29 / 6.36 | **6.33 / 5.85** | 5.71 / 5.94 | — | — |
 | **`--warning-strong`** | 9.13 / 7.13 | 8.39 / 6.65 | 7.40 / 6.14 | **6.43 / 5.64** | 5.80 / 5.73 | 9.13 / 7.13 | 9.44 / 6.22 |
 | `--text-2` | 7.89 / 7.98 | 7.25 / 7.45 | 6.40 / 6.87 | 5.56 / 6.32 | 5.01 / 6.42 | — | — |
+
+**Correction, 2026-09-03 (landing):** the `--badge-unknown` / `--bg-0` cell was written as 3.68 and
+measures **3.67**; corrected above. `ui-reference.md` §2's `--text-3` matrix records 3.68 for the same
+pair — a 0.01 rounding difference, left as-is there. **No verdict changes**: the figure fails the
+4.5:1 text bar either way and clears the 3:1 graphics bar either way.
 
 Bold = below **4.5:1**. Two diff-line tint backdrops are also used by one Bucket-B row:
 `--danger` on a **12% `--danger` tint over `--bg-0`** = 4.23 / 4.13, on a **12% `--success` tint over
@@ -402,11 +411,21 @@ row is measured for all four `-strong` tokens in §3.1 and has been added to `ui
 qualified as forward-looking, so the measurement is not lost between contract and landing (that is
 exactly the transcription failure mode §2 records). **AC6 is what closes it.**
 
+> **APPLIED 2026-09-03 (`42206fd`).** A16 shipped, the measured post-fix minimum anywhere in the app
+> is **5.10**, and `ui-reference.md` §2 now records **5.10 as shipped fact** — the forward-looking
+> qualifier has been removed and 5.18 is recorded as history. The per-token `MIN` figures for
+> `--success-strong` and `--warning-strong` stay at their **shipped-backdrop** values (5.71/5.94 and
+> 5.80/5.73) with the `--bg-3` measurement noted beside them, because neither ink ships on `--bg-3`
+> yet.
+
 ---
 
 ## 7. The fix — CSS only, one selector split, zero DOM change
 
-**Files touched (10 CSS files + 0 TS/TSX):** `dialogs.css`, `dialogs-forms.css`, `sidebar.css`,
+**Files touched — planned 16 CSS files + 0 TS/TSX; SHIPPED 17 CSS files + 0 TS/TSX** (`42206fd`;
+the "10" in this line's first draft was a typo against its own 16-name list. **The 17th file is
+`identity-menu.css`** — the D1 cohesion move, which the plan did not attribute to a file;
+established from `git show --stat 42206fd`, not inferred). The 16 planned: `dialogs.css`, `dialogs-forms.css`, `sidebar.css`,
 `updates.css`, `onboarding.css`, `search.css`, `composer.css`, `commit-box.css`, `commit-panel.css`,
 `forge-pr.css`, `ai-dock-log.css`, `ai-assets.css`, `settings-dev.css`,
 `settings-legacy-sections.css`, `context-menu.css`, `diff-content.css`. (16 — no component file, no
@@ -528,6 +547,13 @@ own comments shift every line beneath them. P106's R4 predicted 5 declarations a
 `193,198,203,216,227` and shipped them at `193,198,203,220,231`: the count was exact, the lines
 drifted, and a reviewer checking lines would have failed a correct fix.
 
+**SHIPPED RESULT (`42206fd`, 2026-09-03).** Every residue row matched, each baseline re-measured in
+this tree rather than inherited: raw hue-as-text **54 → 26** · `-strong` **5 → 35** · `var(--warn`
+**1 → 0** · hex outside `tokens-and-base.css` **12 → 6** · `--badge-unknown` **3 → 2**. AC2 landed at
+26 and AC3 at 35 (not the 29 / 32 in the table below) because **D1 was accepted** and the three
+cohesion moves shipped — the predicted-with-D1 figures exactly. Post-fix minimum anywhere:
+**5.10**. **AC11 did not pass — see below the table.**
+
 | # | Criterion | Counts | Pre-fix | Predicted post-fix |
 |---|---|---|---|---|
 | **AC1** | §4 has a bucket, a verdict, a per-state backdrop **with its base**, and a sole-carrier determination for all **62** call sites; no blank cell | — | — | 62 rows, 0 blanks |
@@ -545,12 +571,33 @@ drifted, and a reviewer checking lines would have failed a correct fix.
 | **AC13** | **USER CHECKPOINT.** Hue identity survives: `--danger-strong` still reads red-for-error, `--warning-strong` yellow-for-caution; the signature verdict line, the `+N/−N` counts and the destructive menu items stay mutually distinguishable, including under deuteranopia | — | — | **pending** |
 | **AC14** | **USER CHECKPOINT.** A21 verified against a **real** write failure (read-only log directory), not the fixture — this string's whole job is to stay legible while the disk is failing | — | — | **pending** |
 
+**AC11 IS UNVERIFIED AND OWED — it must never be recorded as closed.** Two of the four states in it
+could not be reached in the harness, so their post-fix figures are **source-derived, not measured**:
+
+| State | Post-fix figure | Status |
+|---|---|---|
+| `.file-count-del`, **selected** | **3.05** | **source-derived — NOT measured.** The diff panes never mount via keyboard navigation, so the selected row state was unreachable |
+| `.context-menu-item[data-tone='danger']`, **hovered** | **3.05** | **source-derived — NOT measured.** React requires a **trusted** input event to open the context menu; synthetic events do not open it |
+
+**Both the implementing agent and the orchestrator attempted these and failed.** The qualifier travels
+with the numbers verbatim — into `ui-reference.md` and into any later summary — under the
+transcription rule (`ui-reference.md` §2, second failure mode: a hedge in a source contract must
+survive into the canonical doc). **This is the orchestrator's own unverified claim, not an agent's**,
+which is exactly why it is written down rather than rounded to green. To close AC11 later: drive the
+two states from a real pointer/keyboard in the native window, or add a fixture that mounts the diff
+pane with a pre-selected row and a menu opened by a trusted event.
+
 **AC12, AC13 and AC14 are USER CHECKPOINT items. They stay pending. No agent may self-declare them** —
 the user's checkpoint authority does not reach this work, and no agent message closes them.
 
 ---
 
 ## 11. Flagged for the orchestrator — decisions I am not making silently
+
+**D1 — RESOLVED: accepted as recommended; the three cohesion moves shipped in `42206fd`** (AC3 = 35,
+AC2 = 26). **D2 — RESOLVED: accepted; C1 shipped in this diff.** **D3 — the contrast half shipped;
+the TONE half is UNRESOLVED and filed for the user** (see below). D4 and D5 stand as recorded seeds,
+unclaimed by this milestone.
 
 **D1 — the six compliant Bucket-D texts: keep, or move for cohesion? (my recommendation: move three.)**
 D-b (`.settings-config-error`), D-c (`.settings-profile-danger`) and D-e (`.pr-stat-add`) each sit
@@ -571,6 +618,10 @@ closed-and-audited family (`--text-3`) keeps a known escape for another mileston
 only fixed the contrast, because changing it changes meaning. Whether the string should be
 `--warning-strong` is a copy/tone call, not a contrast one. **Recommendation: leave as danger now;
 file the tone question as a NIT.**
+> **OUTCOME 2026-09-03:** the **contrast** fix shipped in `42206fd` and the danger hue was kept, as
+> recommended. The **tone** question — should a warning be painted danger at all — is **deliberately
+> unresolved and filed for the user**. It is an open *tone* item, not an open *contrast* item: the
+> selector is compliant today, and a later pass must not re-open it as an accessibility defect.
 
 **D4 — `commit-box.css:225` `color: var(--accent)` was not found in P105's §3.3 verdict table.** It is
 `--accent`, therefore **P105's class and explicitly outside P108's boundary**, and I am **not**
