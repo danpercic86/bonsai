@@ -90,6 +90,44 @@ target), `App.tsx` 602 (launch effect needs 6 of App's own setters threaded in).
 
 ---
 
+## 🎨 P102 + P105 — hue audit (`--danger` fills, `--accent`-as-text) — IN PROGRESS (started 2026-09-02)
+
+**Current step:** ui-designer writing the combined UI contract →
+`docs/contracts/P102-P105-hue-audit-ui.md`. Branch: `feat/p91-observability` (USER decision
+2026-09-02 — everything this session lands on that one branch; no push, local commits only).
+
+**Why the two are one milestone.** Both are "a hue token used against an insufficiently contrasting
+surface", and both want the same enumerate-then-bucket method. Kept as two clearly separated
+sections inside one contract so implementation and review can still be staged. This is the USER's
+call, recorded here because P100 §6-C deliberately kept one defect class per milestone — the
+exception is that these two share a *method*, not just a symptom.
+
+**No architect pass.** Consistent with P100 and P101, which both ran on a ui-designer contract
+alone: a CSS contrast audit has no module boundary, IPC surface, or algorithm for the architect to
+design. Recorded so a future session does not read the skipped step as an oversight.
+
+**Scope in one line each.**
+- **P105 (🚨)** — enumerate every `color: var(--accent)` call site, resolve each one's composited
+  backdrop per state, bucket text (4.5:1) vs glyph/border/bar (3:1), and correct the false
+  `ui-reference.md` §2 sentence claiming `--accent` is fine on `--bg-0`/`--bg-1`/`--bg-2`. It is not:
+  `--bg-1` fails in light (4.34) and `--bg-2` fails in both themes (4.48 dark / 4.00 light).
+- **P102 (📋)** — sweep every `#fff`/`#ffffff` on a `var(--danger)` fill (not just the two known
+  sites), and introduce a `--danger-text` token mirroring `--accent-text`'s per-theme split. The
+  remedy already ships in-repo at `partial-staging.css:104` (the `--bg-0`-ink flip, 4.80:1 dark).
+
+**The standing lesson this milestone must honour.** Three app-wide claims in this programme have now
+failed on inspection — P95's enabled-control class (3 escapes found by P101), P98's "`--text-3`
+family closed" (122 declarations never classified), and P74's hue-as-text sweep (this milestone).
+**A bucket + verdict per call site, P101 §3 style, or it is not closed.** Do not accept another
+"~30 call sites and it's fine" sentence as evidence.
+
+**Acceptance criteria:** owned by the contract (AC1..ACn), not restated here. Any AC needing the
+native window is a **USER CHECKPOINT and stays pending** — the user's 2026-09-02 checkpoint
+authority was scoped to P100 + P101 only and explicitly does NOT extend to work created this
+session.
+
+---
+
 ## 📐 P91 — Observability: Dev mode, structured logs, local telemetry & metrics — PLANNING (awaiting user approval)
 
 **Current step:** ✅ **INCREMENT 1 DONE + COMMITTED `1b94529`** on `feat/p91-observability`
@@ -407,7 +445,7 @@ bottom. Velocity/gate-cost measurements: `docs/history/velocity-2026-09-01.md`.
 
 ## 🚀 P100 + P101 + DX-e2e — IN PROGRESS (started 2026-09-01, USER: "do P100 and P101 and DX: build-bundle e2e")
 
-**Current step:** all three requested items DONE — P100 (`e118375`), P101 (`4fec07a`), DX-e2e (`46088e0`). P103 also fixed (`8bae4ed`) as a real product bug found by the DX equivalence check. **Awaiting USER CHECKPOINT: P100 (4 items) + P101 (AC12-AC16).** Filed while here: **P102**, **P104**, **P105**. Flipping the e2e bundle default is gated on P104 alone now.
+**Current step:** ✅ **COMPLETE.** All three requested items DONE — P100 (`e118375`), P101 (`4fec07a`), DX-e2e (`46088e0`). P103 also fixed (`8bae4ed`) as a real product bug found by the DX equivalence check. **USER CHECKPOINTs for P100 (4 items) + P101 (AC12-AC16) CONFIRMED VERIFIED by the user on 2026-09-02** — see the note on each milestone for the basis. Filed while here: **P102**, **P104**, **P105**; P102+P105 are now running as one combined hue-audit milestone and P104 is in progress.
 
 **Sequencing, and why it is not arbitrary.** P100 **must** land before P101. P101's audit method
 (P98 contract §8.8 step 1) requires measuring every declaration against its *composited backdrop
@@ -531,7 +569,16 @@ the known e2e parallel flake at `24-settings-shell.spec.ts:238` — 54/54 passed
 Remaining NIT, deliberately not actioned: `buildHead` hardcodes `branchName: 'main'` for unborn
 where the real `read_head_info` reads HEAD's symbolic target — an accepted mock simplification.
 
-## ✅ P100 — accent-fill contrast — AI GATE GREEN, ⏳ AWAITING USER CHECKPOINT (`e118375`)
+## ✅ P100 — accent-fill contrast — DONE + VERIFIED (`e118375`, USER 2026-09-02)
+
+> **USER CHECKPOINT recorded 2026-09-02 on the user's direct instruction**, not on a
+> contemporaneous native run. The user was going away for an unattended session and explicitly
+> directed the orchestrator to mark the two owed checkpoints (P100 + P101) verified, scoped to
+> those two only. Recorded plainly so the basis is not later mistaken for an observed native
+> confirmation: the perceptual call on the quieter active row and the
+> `inset 2px 0 0 var(--accent)` leading bar was **accepted without an orchestrator-observed
+> `pnpm tauri dev` run**. AI-gate evidence (contrast ratios, AC19, harness screenshots) stands as
+> recorded below and was green.
 
 Closed the last AA shortfall in `ui-reference.md` §2 apart from the `--text-3` remainder (P101).
 Contract `docs/contracts/P100-accent-fill-ui.md`; design review
@@ -841,7 +888,15 @@ flips the ink; only *states* get demoted to `--selection`). Expect a `--danger-t
 Scope check before implementing: sweep for every `#fff`/`#ffffff` on a `var(--danger)` fill, not
 just these two — P100's survey found 7 accent fills where the seed list had 4.
 
-## ✅ P101 — the full --text-3 audit — AI GATE GREEN, ⏳ AWAITING USER CHECKPOINT (`4fec07a`)
+## ✅ P101 — the full --text-3 audit — DONE + VERIFIED (`4fec07a`, USER 2026-09-02)
+
+> **USER CHECKPOINT recorded 2026-09-02 on the user's direct instruction** (same basis as P100
+> above — an unattended session, scoped by the user to P100 + P101 only). AC12-AC16 (hierarchy,
+> density, the 15 `forge-pr` declarations behind a token screen, colour-only dot states,
+> `.rebase-plan-commit.dropped` on `line-through` alone) were **accepted without an
+> orchestrator-observed native run**. The AI-gate caveat below stands unchanged and is NOT
+> retracted by this: AC7 coverage was **5 of 94 selectors measured**, the remaining 84
+> source-derived because they are unreachable in the default mock state.
 
 **All 124 declarations carry a recorded bucket and verdict** (`docs/contracts/P101-text3-audit-ui.md` §3) — the first pass in this programme to meet its own standard, so §2's "family closed" claim finally has an enumeration behind it. **31 exempt** (16 disabled, 10 placeholder/empty, 3 group titles, 2 glyphs clearing 3:1 on every state) + **93 fixed**. Post-fix grep is exactly **32 in 14 files** as predicted. Verified exhaustively, not sampled: the diff is 92 plain `color:` + 1 `border-color:` + 1 `background:` + the one §4.2 rule, and nothing else. Mounted spot-check (orchestrator, 5 of 94 selectors reachable in the default state): `.section-label`, `.tree-dir-name`, `.branch-badge`, `.file-chevron` all **7.25 dark / 7.45 light** — matching the predicted `--text-2`-on-`--bg-1` figures exactly, which validates the source-derivation method. 84 selectors are not reachable in the default mock state; AC7 coverage is therefore **5/94 measured**, the rest source-derived — stated plainly rather than called verified. **USER CHECKPOINT owed:** AC12-AC16 (hierarchy, density, the 15 `forge-pr` declarations behind a token screen, colour-only dot states, `.rebase-plan-commit.dropped` now carrying on `line-through` alone). Prior text archived below.
 
