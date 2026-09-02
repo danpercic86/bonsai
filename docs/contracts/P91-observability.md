@@ -282,7 +282,42 @@ interface SessionPayload  { schema: number; app: string; os: string; sessionId: 
 interface GesturePayload  { origin: TraceOrigin; gesture: string; }
 /** The ONLY record kind that carries argsHash/argsShape. Emitted by the frontend proxy only. */
 interface IpcCallPayload  { cmd: string; argsHash: string; argsShape?: ArgShape;
-                            args?: Record<string, unknown>; } // only when redaction==='raw'
+                            /** raw mode only; keyed by PARAM NAME, allow-listed scalars only
+                             *  (A26). Never positional keys — see writer rule W3. */
+                            args?: Record<string, unknown>;
+                            /** raw mode only, emitted only when > 0: positions the policy elided. */
+                            argsOmitted?: number;
+                            /** WRITER-SET ONLY. Producers must never emit it; Rust's struct has no
+                             *  such field, so a forged one is dropped at deserialisation. */
+                            argsPolicyViolation?: boolean; }
+```
+
+Rust mirror (`obs/record.rs`, `LogPayload::IpcCall`) — **`args_omitted` is REQUIRED to exist on the
+struct and is OPTIONAL on the wire**:
+
+```rust
+#[serde(default, skip_serializing_if = "Option::is_none")]
+args_omitted: Option<u32>,
+```
+
+`OBS_SCHEMA_VERSION` stays **1**: the field is optional and additive, inside the §13 row-23
+pre-release carve-out.
+
+**Why it was missing, recorded so the class of bug is not repeated.** `argsOmitted` was
+contract-declared (A26 §B.6) and producer-emitted, but absent from the Rust `IpcCall` variant, so
+`serde` silently dropped it when `log_append` deserialised the record. Writer rule **W6**
+(`argsOmitted` must be a non-negative integer, else remove) was therefore **dead in production** —
+it could never see the field it validates — while its unit test passed, because that test called
+`raw_args::enforce` on a hand-built `serde_json::Value` and so never crossed the
+`LogRecord` → `append_record` boundary that W1–W5 exercised.
+
+> **Binding test rule (applies to every current and future writer rule).** A writer rule is
+> considered covered only by a test that goes **`LogRecord` → `append_record` → read the file
+> back**. A test that hands a synthetic `Value` straight to an enforcement function proves the
+> function, not the pipeline, and cannot detect a field that serde drops on the way in. Synthetic-
+> `Value` tests are permitted **in addition to**, never **instead of**, a round-trip test.
+
+```ts
 interface IpcResultPayload{ cmd: string; argsHash: string; ms: number;
                             outcome: 'ok'|'err'|'aborted'|'superseded';
                             errCode?: string; resultShape?: ArgShape; }
@@ -753,9 +788,25 @@ on disk. That is precisely the scenario decision 7 exists to prevent, so a "dele
 behind is a privacy bug, not a scoping nicety.
 
 **Resolution — both halves, because either alone leaves a hole:**
-1. **Exports default outside `logs/`.** `log_export_session(dest: None)` writes to
-   `<app_config_dir>/exports/`, and the save dialog opens there. `logs/` holds only the writer's own
-   files, so rotation/pruning logic never has to reason about foreign file types.
+1. **Exports ALWAYS land in `exports/`; the command takes no destination.**
+   `log_export_session()` writes to `<app_config_dir>/exports/` and has **no `dest` parameter**.
+   `logs/` holds only the writer's own files, so rotation/pruning never reasons about foreign file
+   types — and, because the destination is not caller-supplied, the §6.2 delete-all scope is
+   exhaustive by construction rather than by convention.
+
+   **Why `dest` was removed (audit F4, 2026-09-03).** The parameter was justified by a comment
+   claiming the path came from an OS save dialog. **No such dialog exists** — no `tauri-plugin-dialog`
+   save call was ever wired, and the only caller (`DevCategory.tsx`) passed nothing. A
+   `Option<String>` destination reachable from the webview is therefore an **unmediated
+   arbitrary-directory-create and file-write primitive**, and it simultaneously punched a hole in the
+   delete-all scope this very section exists to close: a zip steered anywhere else is unreachable by
+   `logs_delete_all`.
+
+   **RULE, binding on every future increment.** Any "Save as…" for a log/export artifact must obtain
+   its path from a **backend-invoked Tauri dialog** (the path is produced inside Rust, by a dialog the
+   backend opened) and **never** from a string supplied by the webview. If such a dialog is added,
+   §6.2's honest-reporting paragraph below must be extended to cover the new out-of-scope location
+   before the feature ships, not after.
 2. **The purge covers Bonsai-created export zips** in *both* `exports/` and `logs/` (the latter for
    files written by builds predating this rule, and for a user who steered the save dialog back into
    `logs/`). "Delete all log files" must mean *every log artifact Bonsai put in its own config
@@ -855,8 +906,10 @@ success on a resource the failure did not touch is not evidence.
 #[tauri::command] async fn log_append(state: State<'_, AppState>, records: Vec<LogRecord>) -> Result<(), AppError>;
 #[tauri::command] async fn log_session_info(state: State<'_, AppState>) -> Result<LogSessionInfo, AppError>;
 #[tauri::command] async fn log_reveal_dir(app: AppHandle) -> Result<(), AppError>;
-/// dest = None ⇒ `<app_config_dir>/exports/` (§6.2). NEVER defaults into `logs/`.
-#[tauri::command] async fn log_export_session(app: AppHandle, dest: Option<String>) -> Result<String, AppError>; // zips current session parts, returns path
+/// Zips the current session's parts into `<app_config_dir>/exports/` and returns the path.
+/// Takes NO destination — see §6.2. A webview-supplied path would be an unmediated
+/// directory-create + file-write primitive and would escape the §6.2 delete-all scope.
+#[tauri::command] async fn log_export_session(app: AppHandle) -> Result<String, AppError>;
 #[tauri::command] async fn logs_delete_all(app: AppHandle, state: State<'_, AppState>) -> Result<LogsDeleteResult, AppError>; // §6.1
 #[tauri::command] async fn metrics_snapshot(state: State<'_, AppState>) -> Result<MetricsSnapshot, AppError>;
 #[tauri::command] async fn metrics_reset(state: State<'_, AppState>) -> Result<(), AppError>;
@@ -921,6 +974,21 @@ identifies the repo, its people or its contents does.
 
 `raw` mode is precisely why §6.1/§6.2 exist: it is the only mode that puts real names on disk, and
 the user must be able to remove them — including from an export zip — on demand.
+
+**Limit of the writer-side guarantee — stated plainly, because it is a real and accepted design
+limit.** `obs/raw_args.rs` enforces **shape + vocabulary, not semantics**. It can prove that an
+`args` object is keyed by identifier-shaped parameter names, that no key matches the free-text or
+credential vocabulary, and that every value is a scalar ≤ `RAW_ARG_MAX_STR` (512) with no newline.
+It **cannot** prove that the *content* under `{"targetOid": "…"}` is actually an oid. Any content
+that fits an identifier-named key, ≤512 chars and single-line, survives the writer.
+
+The writer is therefore a **backstop against the producer being wrong about shape**, not against the
+producer being wrong about meaning. The meaning half has exactly one defence, and it is not in the
+writer: the **positional drift guard** in `src/obs/rawArgPolicy.test.ts`, which re-parses the
+`IpcApi` declarations and asserts that policy position *i* names the parameter actually declared at
+position *i*. A refactor that reorders a signature — relabelling a `message` as a `targetOid` — is
+structurally invisible to `raw_args.rs` and is caught only there. **Neither guard may be removed on
+the grounds that the other exists.**
 
 ### 7.2 Ordinal scheme — **DECIDED: salt-seeded counters; ordinals are side-local**
 
@@ -1126,11 +1194,12 @@ pub struct Histogram { pub count: u64, pub sum_ms: u64, pub max_ms: u64,
 - **Absorption:** at each flush, `PerfState::snapshot()` deltas fold into `counters` under
   `perf.repo_opens`, `perf.graph_walks`, `perf.graph_cache_hits`, `perf.graph_redecorates`,
   `perf.status_scans`. `perf.rs` is unchanged; no second hot-path counter is introduced.
-- **Key namespace:** `<domain>.<action>` only. The key **names** are enumerated in
-  `obs/metrics.rs`; the **shape guard that admits them** lives in `obs/metrics_keys.rs` — no
-  user-derived string can ever become a key (privacy + unbounded-growth guard). Metrics therefore
-  need no redaction: **they structurally cannot contain repo content**, which is why they are not
-  covered by `logs_delete_all`.
+- **Key namespace — three independent gates, see §8.2.** Key *names* are enumerated in
+  `obs/metrics.rs`; the *shape* predicates live in `obs/metrics_keys.rs`; the *`cmd.<name>`
+  allow-list* lives in `obs/metrics_cmds.rs`; the *cardinality cap* lives in `obs/metrics_map.rs`.
+  No user-derived string can become a key (privacy + unbounded-growth guard). Metrics therefore need
+  no redaction: they **structurally cannot contain repo content**, which is why they are not covered
+  by `logs_delete_all`.
 - **No network sink exists.** No HTTP client is reachable from `obs/*`; a test asserts it.
 - Read API for the future Statistics page: `metrics_snapshot()`. **No UI is designed in P91.**
 - **"Always on" clarified (RATIFIED, increment 6).** Only the **counters** are truly always-on:
@@ -1203,6 +1272,113 @@ Ceiling: ~60 histogram keys × ~50 bytes ≈ 3 KB per day bucket; 400 days ≈ 1
 `lifetime` folding keeps the tail flat. "Did this get slower over the last week" is answered by
 comparing `p95_ms` across `days[]` — no new storage, no new file.
 
+### 8.2 Metric-key admission — shape, allow-list, cardinality (RATIFIED 2026-09-03)
+
+Three gates, applied in this order. Each is independently necessary; none is a size split.
+
+| Gate | Home | Decides |
+|---|---|---|
+| **G1 shape** | `obs/metrics_keys.rs` | Is the string *shaped* like a key at all? Cheap first filter. **Never sufficient alone** — it accepts unlimited well-shaped strings. |
+| **G2 vocabulary** | `obs/metrics_cmds.rs` | For `cmd.<name>`: is `<name>` an actual `IpcApi` method? Exact membership, default deny. |
+| **G3 cardinality** | `obs/metrics_map.rs` | Has this map already minted `MAX_KEYS_PER_MAP` keys? If so, fold into `meta.overflow`. |
+
+#### G1 — shape predicates (`obs/metrics_keys.rs`)
+
+```rust
+pub(super) fn is_valid_cmd_name(name: &str) -> bool;    // non-empty, <=40, starts ascii-lowercase,
+                                                        // [a-zA-Z0-9_]* — camelCase ADMITTED
+pub(super) fn is_valid_counter_key(key: &str) -> bool;  // non-empty, <=60, MUST contain '.',
+                                                        // no leading/trailing/doubled '.',
+                                                        // chars in [a-z0-9_.]
+pub(super) fn is_valid_err_code(code: &str) -> bool;    // non-empty, <=48, [a-zA-Z0-9_.-]
+```
+
+**`is_valid_counter_key` requires the `<domain>.<action>` dot literally** — tightened beyond the
+audit finding. Without it a bare lowercase token (an oid, an id, a `ghp_…` token) is shape-valid,
+and would have been persisted the instant the guard began running in a release build.
+
+**`bump_validated` is the single sink.** Both counter writers — `bump_counter` (the public door for
+future `<domain>.<action>` counters) and `fold_perf` (the one production writer today) — pass
+through it, and it is a **runtime `if`, not a `debug_assert`** (release builds compile those out).
+Only with the single sink in place is "shape-valid decides persistence" true of the path that
+actually persists; before it, `fold_perf` wrote unvalidated.
+
+```rust
+// obs/metrics.rs — drops the observation and returns false when the key is rejected.
+#[must_use] fn bump_validated(t: &mut MetricTotals, key: &str, n: u64) -> bool;
+```
+
+#### G2 — the `cmd.*` allow-list (`obs/metrics_cmds.rs`)
+
+```rust
+/// Every `IpcApi` method name, sorted. Exact bijection with the interface declarations.
+pub(super) const KNOWN_CMDS: [&str; 199] = [ /* generated */ ];
+pub(super) fn is_known_cmd(name: &str) -> bool;   // binary search; once per `ipc.result`
+```
+
+- Generated from the `IpcApi` declarations in `src/ipc/types/ipc-api.ts`, `ipc-api-forge.ts`,
+  `ipc-api-obs.ts`. `obs/ipcProxy.ts` uses the **method name** as `cmd`, so these are **camelCase**,
+  not the snake_case Tauri command names.
+- `tests_metrics_cmds.rs` re-derives the list from those `.ts` files at test time and fails on any
+  drift, so adding an IPC method without regenerating the table is caught by `cargo test`, not by a
+  silently-missing histogram.
+- The §2.3-excluded methods (`logAppend`, `metricsSnapshot`, …) are present for the exact-mirror
+  property; the proxy never instruments them, so they can never arrive.
+- `metrics::observe_ipc_result` requires **G1 and G2**. An unknown name drops the observation.
+
+**FAILURE MODE, recorded because the fix alone does not teach it.** `is_valid_cmd_name` originally
+required **all-lowercase**, while the producer has always sent **camelCase** method names. Result:
+**the entire `cmd.*` histogram family recorded nothing in production** — every real observation was
+rejected by the shape gate — and the feature was silently, completely inert. It was green the whole
+time because the Rust tests fed the validator **snake_case** names (`get_status`, `commit`), which
+pass all-lowercase. *Tests and production fed different-shaped inputs to the same validator.*
+
+> **Binding rule.** A validator's tests must use inputs **produced by the real producer**, not
+> hand-written plausible ones. Where the producer lives on the other side of the IPC boundary, pin
+> the vocabulary with a **drift test that re-derives it from the producer's own source**
+> (`tests_metrics_cmds.rs` is the model), so the two sides cannot diverge silently. A predicate that
+> rejects everything is indistinguishable from a predicate that works, unless something asserts a
+> real input is **accepted**.
+
+#### G3 — cardinality cap (`obs/metrics_map.rs`) — RATIFIED as built
+
+```rust
+pub const MAX_KEYS_PER_MAP: usize = 512;
+pub const OVERFLOW_KEY: &str = "meta.overflow";   // <domain>.<action> shaped: passes every G1
+                                                  // predicate, cannot collide with a real key
+```
+
+Applied to **`counters`, `durations`, `errors`** in every `MetricTotals` — day buckets **and** the
+400-day→`lifetime` roll-up. Past the cap a map stops minting keys and folds every further
+observation into `meta.overflow`, so the **count is never lost** (an operator reading `usage.json`
+can tell a cap was hit) while the key set stays bounded at `MAX_KEYS_PER_MAP + 1` per map per bucket.
+An existing key always keeps recording under its own name.
+
+**DECISION — no global cap. The per-map-per-bucket cap is the whole mechanism.** The reviewer is
+right that worst-case cardinality is `400 days × 3 maps × 513` ≈ **616k keys**, not 513. That is
+accepted, for three reasons:
+
+1. **The cap is a runaway stop, not a sizing parameter.** Realistic bound is
+   `199 cmd.* + ~11 op/phase + queue.blocking + meta.overflow` ≈ **212** duration keys, plus a few
+   dozen `counters` and `errors` — every one of them allow-listed. 512 sits deliberately *above* the
+   reachable set so a healthy build never overflows and `meta.overflow` is itself a signal.
+2. **A global cap would be strictly worse.** It makes *today's* recording depend on *history*: once
+   the global budget is spent, a long-lived install stops minting new keys forever and dumps the
+   current day's real activity into `meta.overflow`, destroying exactly the week-over-week comparison
+   §8.1 exists to serve. Per-bucket capping keeps every day independently readable.
+3. **Total file size is a different problem with a different lever.** If a real `usage.json` ever
+   exceeds ~8 MB, the remedy is a **size-triggered early roll-up** — fold the oldest `days[]` into
+   `lifetime` before the 400-day age trigger, reusing the roll-up that already exists — not a key
+   cap. This is a **revisit trigger, not work in P91**; nothing is to be built for it now.
+
+**§8.1 ceiling corrected.** §8.1's "~60 histogram keys ≈ 3 KB per day bucket; 400 days ≈ 1.2 MB"
+predates the `cmd.<name>` family being enumerated. The bound is ~212 keys ≈ **~11 KB/day**, ≈ **4.3 MB**
+over 400 days if a user invoked every command every day in Dev mode; in practice far lower, since
+duration histograms accumulate **only during Dev-mode sessions** (§8, "always on clarified"). The
+`lifetime` fold keeps the tail flat either way.
+
+---
+
 ---
 
 ## 9. React causality instrumentation (dev-mode only, zero-cost off)
@@ -1231,6 +1407,19 @@ export function useStateTransitionLog(store: string, values: Record<string, unkn
   order is unconditional (a stable `useRef(null)` is always created; nothing is written when off).
 - `changedDeps` / `changedProps` are computed by `Object.is` against the previous values and mapped
   through names — **names only, never values** (dep values are frequently repo content).
+- **`briefString` gates on field NAME in BOTH modes (corrected 2026-09-03).** `useStateTransitionLog`
+  writes `from`/`to` through `briefString(field, value)`. Its raw branch previously returned up to 48
+  characters **verbatim for any field**, while its doc claimed the hook was "safe to wire to a repo
+  store BY CONSTRUCTION" — true in `strict` (which ordinalises) and false in `raw`. It now applies
+  the shared vocabulary in **both** modes: if `isFreeTextParam(field) || isSensitiveParam(field)`
+  (`message`, `msg`, `query`, `search`, `text`, `token`, `password`, …), the value is ordinalised or
+  reported as `str:<len>` — never echoed — regardless of redaction mode. Otherwise `raw` returns at
+  most 48 chars and `strict` ordinalises. The 48-char cap applies either way.
+- **Why the gate must be NAME-based here specifically.** `state` records ride **outside** the
+  `raw_args` backstop: writer rule W1 scopes `args` enforcement to `kind == "ipc.call"`, so a
+  `StatePayload.from`/`to` is never inspected by `obs/raw_args.rs`. `briefString` is the *sole* gate
+  on that path, which is why it uses the same vocabulary as A26 rather than a value heuristic —
+  over-classification (`origin/main` reported as a shape) is the deliberate failure direction.
 
 ### 9.2 Aggregate render mode (required for list-heavy surfaces)
 
@@ -1298,7 +1487,7 @@ New category `'dev'` (rail last, `dividerBefore: true`), rows:
 | `dev.capture-frames` | switch | frame records (default off — high volume) |
 | `dev.include-raw-names` | switch | `strict` → `raw` (§7). Default **off**. Confirm dialog on enable; persistent warning row while on; starts a new log file |
 | `dev.reveal-logs` | button | `log_reveal_dir()` |
-| `dev.export-session` | button | `log_export_session()` → save dialog defaulting to `exports/` (§6.2); re-shows the content statement first, including that exports saved outside Bonsai's folder are not covered by the delete action |
+| `dev.export-session` | button | `log_export_session()` → writes a zip into `exports/` (§6.2). **No save dialog and no path argument**; re-shows the content statement first, including that exports the user later copies elsewhere are not covered by the delete action |
 | `dev.delete-logs` | button (destructive) | **§6.1/§6.2** — confirm dialog first, stating `totalFiles` / `totalBytes` **and `exportFiles` / `exportBytes`** from `log_session_info`; then `logs_delete_all()`. Reports the result honestly: success count + bytes (naming exports separately via `deletedExports`), and a warning state when `failedFiles > 0`. When Dev mode is ON, the copy states that logging continues into a new, empty file |
 | `dev.session-info` | readonly | `LogSessionInfo` summary (files, size, records, anomalies, dropped, redaction mode). **When `droppedParts > 0`, shows a warning line: the session hit its 128 MB cap and its earliest records were discarded (§6.3), with the suggestion to narrow capture and reproduce in a shorter session.** Refreshes after a delete |
 | `dev.privacy-note` | readonly | the fixed §7.3 statement of what a log file contains |
@@ -1442,8 +1631,13 @@ whose phases plausibly explain where the time went**.
 | 22 | **Mock-mode anomaly source split** (D5b, ratified during increment 5) | **RATIFIED AS BUILT.** The authoritative anomaly detector (`obs/anomaly.rs`) runs only on the Rust sink writer thread, so in mock mode (`VITE_MOCK_IPC=1`, no Tauri) the ring buffer never yields anomalies — yet §6's mock-mode assertion and the §12 gate + row 5 require the browser harness to show them. Resolution: a **mock-only, dump-time batch analyzer** over the ring at `__bonsaiDumpLogs()` time, scoped to **exactly the three gate-named rules** (`dup-ipc`, `slow-command`, `slow-phase`). `obs/anomaly.rs` stays the **sole authoritative detector**; the mock analyzer is a harness-only diagnostic that never reaches a production bundle. Documentation-only; ratifies increment-5b code | §6, §5, §5.1, §12 inc. 5 + gate |
 | 23 | **`FramePayload.dim` is REQUIRED at schema 1** (edit by senior-dev in `8da1291`, ratified by architect) | **RATIFIED with a stated carve-out.** The discriminator is required, not optional-with-default: `gapMs: 0` on a paint record is a fabricated datum, and a default reintroduces exactly the ambiguity the field removes. It is nonetheless a **breaking change to the v1 `frame` shape**, permitted only because P91 is **pre-release** (branch-only, absent from `dev`) and **no Rust reader parses records from disk** — `LogRecord::Deserialize` serves the same-build `log_append` IPC path alone. `OBS_SCHEMA_VERSION` stays **1**. **The carve-out expires on merge to `dev`**; after that a required-field addition needs a version bump **and** a §3.2 reader rule. New §3.2 states the reader rules (skip unknown `kind`, ignore unknown fields, reject the malformed LINE not the file, never infer a missing discriminator, best-effort on a higher `schema`). **Orchestrator decision 2026-09-02: option A of the architect's three** — schema stays 1 with an expiring carve-out, rather than bumping to 2 now, because no v1 corpus exists to protect and a bump would manufacture a phantom version that future readers write compatibility code for | §3 amendment rule, §3.2 (new), §11 |
 | 24 | **`writeFailed` clears only while rotation is healthy** (edit by senior-dev in `8da1291`, ratified by architect) | **RATIFIED — the deviation from the literal old wording is the correct contract.** "Clears on any flush that reaches disk" let a persistent rotation block report healthy, because the writer still held the previous part's working `BufWriter`; the Dev status row and `DevModePill` flapped every idle flush. The flag means **"records are not reaching disk"**, and no clear rule may return `false` while that holds. State machine moved out of the `LogSessionInfo` doc comment into **§6.4**; `rotationBlocked` is writer-local and never crosses IPC; the exported surface stays a bare bool for privacy | §6 Commands, §6.4 (new), UI §8.4 |
-| 25 | **Metrics key predicates are a privacy guard, not a size split** | **RATIFIED.** `obs/metrics_keys.rs` is contractually separate from `metrics.rs` because `usage.json` is durable, uncovered by `logs_delete_all` and unredacted — a user-derived key there is permanent repo content. Every key family passes a shape predicate before recording; a failure **drops the observation**, and the release path must not depend on the `debug_assert`. §8/§8.1's "allow-list in `obs/metrics.rs`" pointers are corrected: names in `metrics.rs`, shape guard in `metrics_keys.rs` | §1, §8, §8.1 |
+| 25 | **Metrics key predicates are a privacy guard, not a size split** (extended 2026-09-03) | **RATIFIED, with two corrections.** `obs/metrics_keys.rs` is contractually separate from `metrics.rs` because `usage.json` is durable, uncovered by `logs_delete_all` and unredacted — a user-derived key there is permanent repo content. (a) **`is_valid_counter_key` now literally requires the `<domain>.<action>` dot**, tightened beyond the original finding: a bare lowercase token (an oid, an id, a `ghp_…`) was otherwise shape-valid and would have been persisted the moment the guard began running in release. (b) **`bump_validated` is the single sink** both `bump_counter` and `fold_perf` pass through, as a **runtime `if`, not a `debug_assert`** — only now is "shape-valid decides persistence" true of the path that actually persists (`fold_perf` previously wrote unvalidated). §8/§8.1's "allow-list in `obs/metrics.rs`" pointers are corrected: names in `metrics.rs`, shape in `metrics_keys.rs`, `cmd.*` membership in `metrics_cmds.rs`, cardinality in `metrics_map.rs` — see new §8.2 | §1, §8, §8.1, §8.2 |
 | 26 | **Raw mode widens IDENTIFIER fidelity, never CONTENT fidelity** (contradiction found by the 2026-09-02 security audit; ruled by architect) | **RULED: line 910 was the defect; §7.1's two absolute "never" rows stand.** The table said argument values are "included as `args`" in raw, while the same table said commit messages and search queries are "never, in either mode" and tokens are "NEVER, under any setting". The implementation resolved the conflict in the leaking direction and wrote commit messages, search text and forge PATs to disk — while the consent dialog promised it would not. Grounds for the ruling: two absolute "never"s outrank one mechanism description that never mentions them; consent is bounded by what the dialog promised at the moment of consent; §7.1 line 922 already defines raw's purpose as *real names*; and the failure is unrecoverable in one direction only (a PAT in a mailed zip) versus mere reviewer legibility in the other. **Mechanism:** sparse per-command allow-list, **default DENY**, keyed by parameter NAME never position, scalars only — so `is_sensitive_key` becomes meaningful inside `args` for the first time. **Independent writer-side enforcement** (`obs/raw_args.rs`) deliberately does NOT consult the table: it enforces a shape+vocabulary invariant it can decide alone, and its key rule kills the leak even if the producer is never fixed. `OBS_SCHEMA_VERSION` stays 1 under the row-23 pre-release carve-out | §7.1 (row corrected), `P91-raw-args-privacy.md` |
+| 27 | **`log_export_session` loses its `dest` parameter** (audit F4, fixed `120cadd`) | **RATIFIED.** The parameter was justified by a comment claiming the path came from an OS save dialog **that does not exist** — none was ever wired, and the only caller passed nothing. An `Option<String>` destination reachable from the webview is an unmediated arbitrary-directory-create + file-write primitive, and it silently escaped the §6.2 delete-all scope that decision 17 exists to guarantee. The command is now zero-arity on both sides and always writes to `exports/`, which restores the delete scope **by construction**. **RULE:** any future "Save as…" must take its path from a **backend-invoked** Tauri dialog, never a webview-supplied string, and must extend §6.2's honest-reporting paragraph before shipping | §6.2, §6 Commands, §10 |
+| 28 | **`cmd.*` metric keys recorded NOTHING in production** (audit F3, fixed `120cadd`) | **RATIFIED — and the failure mode is the durable part.** `is_valid_cmd_name` required all-lowercase; the producer (`obs/ipcProxy.ts`) sends **camelCase `IpcApi` method names**. The entire `cmd.*` histogram family was therefore silently empty in every real session, while the Rust tests stayed green because they fed the validator **snake_case** names. *Tests and production fed different-shaped inputs to the same validator, so everything was green while the feature did nothing.* Fix: authority moves to **exact membership in a generated 199-name allow-list** (`obs/metrics_cmds.rs`, an exact bijection with the `IpcApi` declarations, pinned by a drift test that re-derives it from the `.ts` sources); the shape predicate merely bounds it. **Binding rule:** a validator's tests must use inputs produced by the real producer, and a cross-boundary vocabulary must be pinned by a drift test — a predicate that rejects everything is indistinguishable from one that works unless something asserts a real input is **accepted** | §8, §8.2 |
+| 29 | **`MAX_KEYS_PER_MAP = 512` + `meta.overflow`** (new surface, `120cadd`) | **RATIFIED AS BUILT; NO global cap.** `obs/metrics_map.rs` caps `counters`/`durations`/`errors` in every `MetricTotals` — day buckets and the 400-day→`lifetime` roll-up — folding overflow into a `<domain>.<action>`-shaped `meta.overflow` bucket so counts are bounded but never lost. Worst-case cardinality is per-map-per-bucket, i.e. `400 × 3 × 513` ≈ **616k keys**, acknowledged. A global cap is **rejected**: it would make today's recording depend on history, so a long-lived install would stop minting keys and dump current activity into overflow, destroying the week-over-week comparison §8.1 exists for. The reachable key set is ~212 (allow-listed), so 512 is a runaway stop, not a sizing parameter. Total-file-size pressure has a different lever — a **size-triggered early roll-up** of the oldest `days[]` into `lifetime` — recorded as a **revisit trigger only** (threshold ~8 MB), not work in P91. §8.1's "~60 keys / 1.2 MB" ceiling is corrected to ~212 keys / ~4.3 MB worst case | §8, §8.1, §8.2 |
+| 30 | **`LogPayload::IpcCall` gains `args_omitted: Option<u32>`** (fixed `120cadd`) | **RATIFIED; `OBS_SCHEMA_VERSION` stays 1** under the row-23 pre-release carve-out (optional + `skip_serializing_if`). **Why it was missing:** the field was contract-declared (A26 §B.6) and producer-emitted but absent from the Rust struct, so serde dropped it at `log_append` deserialisation — writer rule **W6 was dead in production** while its test passed, because that test alone bypassed the `LogRecord`→`append_record` round-trip W1–W5 used. **Binding test rule:** a writer rule is covered only by a round-trip test (`LogRecord` → `append_record` → read the file back); a synthetic-`Value` test is permitted in addition, never instead | §3, `P91-raw-args-privacy.md` §C |
+| 31 | **`briefString` gates on field name in BOTH modes** (fixed `120cadd`) | **RATIFIED.** The raw branch returned 48 characters verbatim for any field, while the hook's doc claimed it was safe to wire "BY CONSTRUCTION" — true only in `strict`. It now applies the shared free-text/credential vocabulary (`isFreeTextParam`/`isSensitiveParam`) in both modes, so a `message`/`query`/`token`-shaped field name is ordinalised or reported as `str:<len>` regardless of mode. The gate must be **name-based here specifically** because `state` records ride **outside** the `raw_args` backstop (W1 scopes it to `kind == "ipc.call"`), making `briefString` the sole gate on that path | §7.1, §9.1 |
 
 **Deferred follow-ups (explicitly out of P91):** app-wide React instrumentation beyond the six
 surfaces; the Statistics page and any UI for `metrics_reset`; selective/per-file log deletion (v1

@@ -206,6 +206,28 @@ that mislabelled one argument is untrusted about the rest.
 | W5 | Every value satisfies `is_allowed_scalar` — objects and arrays are categorically ineligible. |
 | W6 | `argsOmitted`, if present, must be a non-negative integer; otherwise remove that field. |
 
+**What the writer does and does NOT guarantee — stated plainly, because the limit is real and
+accepted.** `raw_args.rs` enforces **shape + vocabulary, not semantics**. It proves that `args` is
+an object, keyed by identifier-shaped parameter names (W3), with no key in the free-text/credential
+vocabulary (W4), and only scalars <=512 chars with no newline (W5). It **cannot** prove that the
+content under `{"targetOid": "…"}` is an oid. **Any content that fits an identifier-named key, is
+<=512 chars and is single-line, survives the writer.** That is by design: a writer that tried to
+judge meaning would need the table it deliberately does not consult (§C opening).
+
+The semantic half has exactly one defence, and it is not in the writer: the **positional drift
+guard** in `src/obs/rawArgPolicy.test.ts`, which re-parses the `IpcApi` declarations and asserts
+that policy position *i* names the parameter actually declared at position *i*. A signature
+reordering that relabels a `message` as a `targetOid` is **structurally invisible** to
+`raw_args.rs` and is caught only there. **Neither guard may be removed on the grounds that the
+other exists**, and any future change to `IpcApi` argument order must keep the drift guard green
+before the policy JSON is edited.
+
+**Round-trip coverage requirement (from `P91-observability.md` §13 row 30).** Every rule W1-W6 must
+be covered by a test that goes `LogRecord` -> `append_record` -> read the file back. W6 shipped dead
+in production — the Rust struct lacked `args_omitted`, so serde dropped the field the rule
+validates — while its synthetic-`Value` unit test passed. Synthetic-`Value` tests are permitted in
+addition to, never instead of, a round-trip test.
+
 Pipeline order in `writer.rs::append_record` (currently `:272-283`):
 
 ```
@@ -295,14 +317,33 @@ export flow would need a re-consent; that is recorded here only to show the asym
    name. This test is the forcing function on future additions — it must fail if someone lists
    `message`, `token`, `prompt`, …
 6. **NEGATIVE TEST — writer, the one that must exist (`cargo test`):** open a `LogWriter` in
-   `RedactionMode::Raw`; append (a) an `ipc.call` for `commit` whose `args` is
-   `{"0":"r1","1":"NEGTEST_COMMIT_MESSAGE_ZQX","2":false}` — i.e. exactly what the buggy producer
-   emits — and (b) an `ipc.call` for `forgeSetToken` whose `args` is
-   `{"repoId":"r1","token":"a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"}` (40-hex: passes
-   `looks_like_opaque_secret`'s hex exemption, so only the key rule can catch it). Read the file back
-   and assert: the bytes contain **neither** `NEGTEST_COMMIT_MESSAGE_ZQX` **nor** the token substring;
-   both records carry `argsPolicyViolation: true`; both records still carry `cmd`, `argsHash` and
-   `argsShape`. This test must fail on today's `main`-of-branch code.
+   `RedactionMode::Raw` and append **three** `ipc.call` records, then read the file back:
+
+   | | Record | What it proves |
+   |---|---|---|
+   | (a) | `commit` with `args = {"0":"r1","1":"NEGTEST_COMMIT_MESSAGE_ZQX","2":false}` — exactly what the buggy producer emitted | **W3**: the numeric-key rule kills the leak at the writer even if the frontend is never fixed |
+   | (b) | `forgeSetToken` with `args = {"0":"r1","1":"a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"}` — 40-hex, producer-shaped | **W3 on the credential half**: 40-hex passes `looks_like_opaque_secret`'s hex exemption, so **only** the key rule can catch it |
+   | (c) | `forgeSetToken` with `args = {"repoId":"r1","token":"<40-hex>"}` | **W4**: the denied-key-name rule, independently of W3 |
+
+   Assert: the file bytes contain **neither** `NEGTEST_COMMIT_MESSAGE_ZQX` **nor** the token
+   substring; all three records carry `argsPolicyViolation: true`; all three still carry `cmd`,
+   `argsHash` and `argsShape`.
+
+   > **ERRATUM (architect, 2026-09-03) — do not "restore" the originally specified payload.**
+   > This AC originally specified **only** (a) and (c). Record (c) is keyed `{"repoId","token"}`,
+   > a form `scrub_value`'s `is_sensitive_key` **already caught before the fix** — so the token
+   > half of the assertion would have been **green on the buggy code** and could never have gone
+   > red. The implementer correctly kept (c) and added (b), which is the shape the producer
+   > actually emitted, chosen because 40-hex passes the hex exemption and therefore leaves the key
+   > rule as the only possible catcher. **All three records stay.** Row (c) is now explicitly a
+   > W4 test, not the leak test.
+   >
+   > **GENERAL RULE, binding on every negative test in P91 and after: a negative test must be
+   > proven to fail on the unfixed code.** Stating "this test must fail on today's code" is not
+   > proof; run it against the pre-fix commit, or construct the payload from the *actual producer
+   > output* rather than from a plausible-looking hand-written one. A negative test that was
+   > always green tests nothing and, worse, is later cited as coverage.
+
 7. **Writer unit tests (`cargo test`):** `raw_args::enforce` drops `args` on each of W1–W5
    independently; preserves a conforming `{"repoId":"r1","sign":false}`; is a no-op on records without
    `args`; and a producer-supplied `argsPolicyViolation: true` on an otherwise-clean record does not
@@ -321,12 +362,12 @@ export flow would need a re-consent; that is recorded here only to show the asym
 
 ## I. Flags for the orchestrator
 
-- **F1 — I could not patch `P91-observability.md` in place** (architect has no Edit tool; the file is
-  1455 lines and a full rewrite is neither safe nor token-affordable). Line 910 still reads the wrong
-  thing. Please apply the §A replacement rows at line 910 and paste the §G row into §13, or route that
-  one-line edit to `docs-curator`. Until then this file's "supersedes" clause is the only thing holding
-  the contradiction closed — that is a documentation risk, not an implementation one, since senior-dev
-  gets this path.
+- **F1 — CLOSED (`c0abbe1`, confirmed by independent re-audit 2026-09-03).** `P91-observability.md`
+  line 910 now carries the corrected row, §13 row 26 is spliced in, and the per-command raw-args
+  allow-list plus writer-side `obs/raw_args.rs` are shipped. The re-audit verified all **118 policy
+  rows** mechanically (signature parse, **0 positional mismatches**) and confirmed `append_record`
+  is the **only** function in the crate that writes a log line — i.e. there is no path around the
+  writer-side enforcement.
 - **F2 — seed allow-list size.** I listed six rows, all of which exist to *document a denial* while
   letting `repoId`/`sign`/`host`/`kind` through. That means raw mode currently yields almost no
   argument values, which is a real debuggability reduction. If you want raw mode to remain useful for
