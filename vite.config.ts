@@ -24,7 +24,13 @@ export default defineConfig({
       {
         // Pure-logic tests: *.test.ts run in node (all pre-T1 tests).
         extends: true,
-        test: { name: 'node', environment: 'node', include: ['src/**/*.test.ts'] },
+        // `scripts/**/*.test.mjs`: the repo's own tooling (gate/e2e helpers) is
+        // plain ESM and lives outside src/, but it still gets unit tests.
+        test: {
+          name: 'node',
+          environment: 'node',
+          include: ['src/**/*.test.ts', 'scripts/**/*.test.mjs'],
+        },
       },
       {
         // Component/hook tests: *.test.tsx run in jsdom with the RTL setup.

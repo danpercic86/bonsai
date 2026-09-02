@@ -856,11 +856,13 @@ tree, both invocation paths (`pnpm exec playwright test`, `pnpm test:e2e`) and b
 
 | mode | wall | result | teardown |
 | --- | --- | --- | --- |
-| dev server (default) | **162 s** | 177 passed / 4 failed / 1 skipped | 0.2-0.8 s per browser |
-| built bundle (`E2E_BUNDLE=1`) | **122 s** | **181 passed / 1 skipped, 0 failed** | 0.2-0.8 s per browser |
+| dev server (default) | **162-169 s** | 182: 181 passed / 1 skipped, 0 failed | 0.2-0.8 s per browser |
+| built bundle (`E2E_BUNDLE=1`) | **122 s** | 182: 181 passed / 1 skipped, 0 failed | 0.2-0.8 s per browser |
 
-So the "5.8 min → 1.3 min" claim is now verifiable and roughly holds: **2.7 min → 2.0 min**, with
-bundle mode additionally the only *green* arm.
+So the "5.8 min → 1.3 min" claim is now verifiable and roughly holds: **2.8 min → 2.0 min**. One
+dev-mode run scored 4 failures, but only while a *second* heavy job shared the box — the same load
+that produces the teardown stall also produces `page.goto` timeouts, so a "flaky" e2e reading taken
+during concurrent work is not evidence about the code.
 
 **Mechanism, reproduced on demand** by running the same 21-test 4-worker batch under 24 spinning
 CPU hogs on the 22-core box (`DEBUG=pw:browser`, timestamped). Three costs stack, all in Playwright's

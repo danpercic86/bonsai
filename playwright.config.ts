@@ -65,7 +65,19 @@ export default defineConfig({
   // 'list' always; add the HTML report + trace zips in CI so a CI-only
   // failure (one that doesn't reproduce locally) is actually diagnosable
   // from the uploaded artifact instead of just the text log.
-  reporter: CI ? [['list'], ['html', { open: 'never' }]] : 'list',
+  //
+  // P104: `./scripts/e2e-teardown-reporter.mjs` is always on. Playwright emits
+  // NOTHING between the last test result and the summary line, and on Windows
+  // that gap is Edge teardown -- 0.2s per browser on an idle box, but 185s of
+  // total silence when the machine is oversubscribed (Edge misses Playwright's
+  // hardcoded 30s CDP close window, then a BLOCKING `taskkill /T /F` runs for
+  // ~106s, then the runner waits for the browser process to exit). That silence
+  // was read as a hang and cost two 10-minute timeouts; the reporter names the
+  // phase and ticks while it runs. It is diagnostic only -- every timer inside
+  // is unref'd, so it can never itself hold the runner open.
+  reporter: CI
+    ? [['list'], ['html', { open: 'never' }], ['./scripts/e2e-teardown-reporter.mjs']]
+    : [['list'], ['./scripts/e2e-teardown-reporter.mjs']],
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: 'on-first-retry',
