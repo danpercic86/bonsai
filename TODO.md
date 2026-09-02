@@ -732,6 +732,56 @@ also the more interesting half: P106 makes the letter *legible*; P109 is about t
 
 ---
 
+## ⚡ VELOCITY — workspace test wall cut 14% (`737cc4b`, `5731d37`, 2026-09-03)
+
+`cargo nextest run --workspace` **106.5s → 92.5s**, with tests **increasing 2298 → 2316**. Every
+figure is from paired or repeated runs: concurrent agents on this box produced one 136s outlier
+purely from CPU contention, so single-run numbers would have been worthless.
+
+**The most useful result was a negative one.** Banding `prop_status::status_matches_porcelain`
+(44.6s → 13.7s max band, 3.25x) and `prop_stash_roundtrip` (3.2x) barely moved workspace wall — 108.8s
+→ 102.9s — because **a different test immediately became the floor.** *Optimising the
+measured-slowest thing does not necessarily move the number you care about.* Case totals were checked,
+not assumed: status **32 → 32**, stash **96 → 100** (the +4 deliberate, so the marginal over `n` stays
+uniform rather than skewed by rounding).
+
+**The real floor was `corrupt_repo_matrix_never_panics`** — 44.0s contended but **24.7s alone**, so
+intrinsic rather than contention. It held **13** cells, not the 10 the diagnosis assumed. Split into
+13 test fns: suite alone 24.65s → **17.02s**, other 12 cells now 1.16-2.68s each and off the critical
+path. Shared setup was *verified* rather than assumed — the isolated suite fell by exactly C1's
+runtime, proving the split added no setup cost.
+
+**The proptest regression seeds were worse than useless.** proptest keys its persistence file **per
+source file, not per test fn**, so after banding all 4 bands replayed all 3 seeds (12 replays, ~25% of
+each band). Worse, they were **stale**: a `cc` seed regenerates values through the *current* strategy,
+and the strategy changed when op kind 5 was re-added — so they no longer reproduced the inputs in
+their own `# shrinks to` comments. **They were random cases wearing a regression label, which is worse
+than no coverage because it looks like coverage.** Converted to explicit pinned-input tests, verified
+mechanically (both the deleted file and the generated Rust re-parsed into tuples and compared
+element-by-element, 3/3 identical). Replays 12 → 0.
+
+**`common::init_repo()` spent 5 process spawns where 1 does.** `git init` stays a CLI spawn so repo
+layout, templates and `init.defaultBranch` remain exactly git's; the 4 `git config` calls became
+in-process `git2` writes. **−8.7s (−8.6%) across the workspace**, ~0.44s per fixture repo. Equivalence
+is **proven by a guard test, not asserted**: a helper repo's sorted `git config --local --list` is
+identical to a control built with the literal four invocations; both the git CLI and libgit2 read all
+four keys; `repo.signature()` resolves (the property the fixture exists for); and a later write still
+*replaces* rather than creating an ambiguous multivar. **Residual risk stated:** equivalence is proven
+at the `--list` level, not textually, so a *future* test asserting on `.git/config` as text could
+differ. No current test reads it as text (checked).
+
+### Filed, deliberately not taken
+- **C1 could drop 17s → 11s** by giving one surface its own test and its own corrupted repo. **Not
+  taken:** it changes the shape of a crash-safety test for ~6s, and C1's deliberate deadline-burning
+  is the point of the cell.
+- **`crates/bonsai-mcp/tests/common/mod.rs:127`** — the twin fixture helper still spawns 3 `git
+  config` calls. The same fix applies verbatim; left alone to keep the blast radius inside one crate.
+- **`cargo fmt` is NOT clean repo-wide** (thousands of pre-existing diffs) and fmt is not a gate step
+  — do not run it, it would bury a real diff in noise. Same class as the **missing prettier config**
+  for the frontend.
+
+---
+
 ## ✅ P108 — hue-as-text on neutral surfaces — SHIPPED `42206fd`, ⏳ AC12/13/14 USER CHECKPOINT, ⚠ AC11 OWED
 
 Contract `8027cef` → impl `42206fd`. **17 CSS files, no TS/TSX, no DOM change, no new tokens.**
