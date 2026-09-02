@@ -1,6 +1,26 @@
 //! T5 property suite (contract §2.4): `read_status` must agree with the
 //! `git status --porcelain` oracle after any random mutation sequence. Gated on
-//! the git CLI; 32 cases (each shells out to git).
+//! the git CLI; 32 cases total (each shells out to git).
+//!
+//! WALL-CLOCK NOTE: the whole 32-case run used to live in ONE test fn, and
+//! nextest parallelizes across test *functions*, not across cases inside a
+//! `proptest!` block — so that one fn was the suite's critical path (~21s
+//! isolated / ~23.5s under gate contention). The op-count axis (`1..=12`) is
+//! therefore partitioned into 4 DISJOINT bands that TILE `1..=12` exactly, one
+//! test fn each, via `ops_strat_sized`. Every band runs the identical body and
+//! the identical porcelain-oracle assertion, so no coverage is dropped: the
+//! union of the four bands is exactly the old input space and the case total is
+//! unchanged at 32.
+//!
+//! Bands are EQUAL width here (3 each) with cases allocated proportional to
+//! width (8 each), unlike `prop_graph_layout`'s sqrt schedule. Reason: the
+//! per-case cost of this suite is dominated by FIXED setup — `init_repo` (5
+//! `git` process spawns) + `add -A` + `commit` + the `git status --porcelain`
+//! oracle ≈ 8 process spawns — while the ops themselves are cheap in-process
+//! git2/fs calls. Cost is therefore ~flat in op count, so equal cases per band
+//! is what equalizes per-band wall time, and proportional-to-width allocation
+//! also keeps the marginal distribution over op count exactly uniform, as the
+//! single fn had it.
 
 use std::path::Path;
 
@@ -38,11 +58,14 @@ fn content_for(path: &str, seed: u32) -> String {
 /// broad property (previously excluded while F-T5-3 was open).
 type RawOp = (u8, usize, u32, String);
 
-fn ops_strat() -> impl Strategy<Value = Vec<RawOp>> {
-    prop::collection::vec(
-        (0u8..=5, any::<usize>(), any::<u32>(), path_strat()),
-        1..=12,
-    )
+/// The op sequence, restricted to `lo..=hi` ops. Identical in every other
+/// respect (same kind/selector/seed/path distributions); exists so the suite can
+/// partition the op-count axis into disjoint bands that run as separate test fns
+/// (nextest parallelizes across fns, not across cases in one fn). The original
+/// strategy was `ops_strat_sized(1, 12)`, so a set of bands whose ranges tile
+/// `1..=12` covers exactly the same input space.
+fn ops_strat_sized(lo: usize, hi: usize) -> impl Strategy<Value = Vec<RawOp>> {
+    prop::collection::vec((0u8..=5, any::<usize>(), any::<u32>(), path_strat()), lo..=hi)
 }
 
 /// Apply one op best-effort against the live repo, mutating `known` (paths that
@@ -127,59 +150,74 @@ fn apply(repo: &git2::Repository, root: &Path, known: &mut Vec<String>, op: &Raw
     }
 }
 
-proptest! {
-    #![proptest_config(ProptestConfig { cases: 32, ..ProptestConfig::default() })]
+/// One band of the op-count partition: `$lo..=$hi` ops, `$cases` cases. The
+/// body is the original `status_matches_porcelain` body, verbatim: build a repo
+/// with a committed initial tree, apply the random op sequence, then assert
+/// `read_status` equals the `git status --porcelain` oracle exactly.
+macro_rules! band {
+    ($name:ident, $lo:expr, $hi:expr, $cases:expr) => {
+        proptest! {
+            #![proptest_config(ProptestConfig { cases: $cases, ..ProptestConfig::default() })]
 
-    #[test]
-    fn status_matches_porcelain(
-        initial in prop::collection::vec((path_strat(), any::<u32>()), 1..=6),
-        ops in ops_strat(),
-    ) {
-        require_git!();
-        let dir = common::init_repo();
-        let root = dir.path();
+            #[test]
+            fn $name(
+                initial in prop::collection::vec((path_strat(), any::<u32>()), 1..=6),
+                ops in ops_strat_sized($lo, $hi),
+            ) {
+                require_git!();
+                let dir = common::init_repo();
+                let root = dir.path();
 
-        // Commit an initial tree of distinct multi-line files. Best-effort:
-        // a generated path can clash with another as a dir/file (e.g. "z" and
-        // "z/a") — a state git itself cannot hold — so a failing path is simply
-        // skipped rather than panicking the harness.
-        let mut known: Vec<String> = Vec::new();
-        for (p, seed) in &initial {
-            if known.contains(p) {
-                continue;
-            }
-            let full = root.join(p);
-            if let Some(parent) = full.parent() {
-                if std::fs::create_dir_all(parent).is_err() {
-                    continue;
+                // Commit an initial tree of distinct multi-line files. Best-effort:
+                // a generated path can clash with another as a dir/file (e.g. "z" and
+                // "z/a") — a state git itself cannot hold — so a failing path is simply
+                // skipped rather than panicking the harness.
+                let mut known: Vec<String> = Vec::new();
+                for (p, seed) in &initial {
+                    if known.contains(p) {
+                        continue;
+                    }
+                    let full = root.join(p);
+                    if let Some(parent) = full.parent() {
+                        if std::fs::create_dir_all(parent).is_err() {
+                            continue;
+                        }
+                    }
+                    if std::fs::write(&full, content_for(p, *seed)).is_ok() {
+                        known.push(p.clone());
+                    }
                 }
-            }
-            if std::fs::write(&full, content_for(p, *seed)).is_ok() {
-                known.push(p.clone());
-            }
-        }
-        // Guarantee at least one committed file so the base commit is non-empty.
-        if known.is_empty() {
-            std::fs::write(root.join("seed.txt"), content_for("seed.txt", 0)).expect("seed write");
-            known.push("seed.txt".to_string());
-        }
-        common::git(root, &["add", "-A"]);
-        common::commit_fixed(root, "initial");
+                // Guarantee at least one committed file so the base commit is non-empty.
+                if known.is_empty() {
+                    std::fs::write(root.join("seed.txt"), content_for("seed.txt", 0)).expect("seed write");
+                    known.push("seed.txt".to_string());
+                }
+                common::git(root, &["add", "-A"]);
+                common::commit_fixed(root, "initial");
 
-        let repo = git2::Repository::open(root).expect("open");
-        for op in &ops {
-            apply(&repo, root, &mut known, op);
-        }
+                let repo = git2::Repository::open(root).expect("open");
+                for op in &ops {
+                    apply(&repo, root, &mut known, op);
+                }
 
-        let snapshot = read_status(root).expect("read_status");
-        prop_assert_eq!(
-            flatten_snapshot(&snapshot),
-            porcelain_tuples(root),
-            "read_status disagrees with git porcelain oracle"
-        );
-        drop(dir);
-    }
+                let snapshot = read_status(root).expect("read_status");
+                prop_assert_eq!(
+                    flatten_snapshot(&snapshot),
+                    porcelain_tuples(root),
+                    "read_status disagrees with git porcelain oracle"
+                );
+                drop(dir);
+            }
+        }
+    };
 }
+
+// 4 bands tiling 1..=12 (widths 3/3/3/3 = 12) with cases proportional to width
+// (8/8/8/8 = 32) — the same 32 cases the single fn ran.
+band!(status_matches_porcelain_b1_01_03, 1, 3, 8);
+band!(status_matches_porcelain_b2_04_06, 4, 6, 8);
+band!(status_matches_porcelain_b3_07_09, 7, 9, 8);
+band!(status_matches_porcelain_b4_10_12, 10, 12, 8);
 
 // ---- F-T5-3: worktree rename to an UNTRACKED target (FIXED) -----------------
 //

@@ -6,6 +6,23 @@
 //! restored (staged edits return as unstaged). The identity check is therefore
 //! relaxed to WORKTREE-bytes identity ("all changes present"), NOT index-entry
 //! identity — this is the behavior we pin.
+//!
+//! WALL-CLOCK NOTE: both properties used to run all their cases in ONE test fn
+//! each (48 cases, ~13.2s / ~11.4s), and nextest parallelizes across test
+//! *functions*, not across cases inside a `proptest!` block. The base-repo-size
+//! axis (`n in 1..=5`, the count of committed files) is therefore partitioned
+//! into 5 DISJOINT bands that TILE `1..=5` exactly — one value each, since the
+//! axis is small and discrete — emitted by one `band!` invocation per value
+//! that carries BOTH properties. The bodies and assertions are unchanged, so
+//! the union of the bands is exactly the old input space.
+//!
+//! Cases are 10 per band per property (50 total, up from 48 — bands are equal
+//! width, and 10 divides evenly where 48/5 = 9.6 does not, so the marginal
+//! distribution over `n` stays exactly uniform rather than being skewed by
+//! rounding). Equal cases per band is also what equalizes per-band wall time:
+//! this suite spawns no `git` process, and its per-case cost (git2 repo init +
+//! base commit + stash create/apply + worktree snapshot) is dominated by fixed
+//! setup, so cost is ~flat in `n` rather than proportional to it.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -84,104 +101,119 @@ fn base_repo(n: usize) -> (tempfile::TempDir, git2::Repository) {
     (dir, repo)
 }
 
-proptest! {
-    #![proptest_config(ProptestConfig { cases: 48, ..ProptestConfig::default() })]
+/// One band of the base-repo-size partition: `$lo..=$hi` committed files,
+/// `$cases` cases, both properties. The bodies are the original
+/// `stash_all_with_untracked_roundtrip` / `stash_all_tracked_only_roundtrip`
+/// bodies, verbatim.
+macro_rules! band {
+    ($with_untracked:ident, $tracked_only:ident, $lo:expr, $hi:expr, $cases:expr) => {
+        proptest! {
+            #![proptest_config(ProptestConfig { cases: $cases, ..ProptestConfig::default() })]
 
-    /// AllWithUntracked: staged + unstaged + untracked all round-trip in the
-    /// worktree; the worktree is clean between stash and apply.
-    #[test]
-    fn stash_all_with_untracked_roundtrip(
-        n in 1usize..=5,
-        staged in prop::collection::vec((any::<usize>(), any::<u32>()), 0..=6),
-        unstaged in prop::collection::vec((any::<usize>(), any::<u32>()), 0..=6),
-        untracked in prop::collection::vec((0usize..=6, any::<u32>()), 0..=6),
-    ) {
-        let (dir, repo) = base_repo(n);
-        let root = dir.path();
+            /// AllWithUntracked: staged + unstaged + untracked all round-trip in the
+            /// worktree; the worktree is clean between stash and apply.
+            #[test]
+            fn $with_untracked(
+                n in $lo..=$hi,
+                staged in prop::collection::vec((any::<usize>(), any::<u32>()), 0..=6),
+                unstaged in prop::collection::vec((any::<usize>(), any::<u32>()), 0..=6),
+                untracked in prop::collection::vec((0usize..=6, any::<u32>()), 0..=6),
+            ) {
+                let (dir, repo) = base_repo(n);
+                let root = dir.path();
 
-        // Staged edits to tracked files (modify + git2 add).
-        {
-            let mut index = repo.index().expect("index");
-            for (sel, seed) in &staged {
-                let rel = format!("t{}", sel % n);
-                write(root, &rel, &content(*seed, "staged"));
-                index.add_path(Path::new(&rel)).expect("add");
+                // Staged edits to tracked files (modify + git2 add).
+                {
+                    let mut index = repo.index().expect("index");
+                    for (sel, seed) in &staged {
+                        let rel = format!("t{}", sel % n);
+                        write(root, &rel, &content(*seed, "staged"));
+                        index.add_path(Path::new(&rel)).expect("add");
+                    }
+                    index.write().expect("write");
+                }
+                // Unstaged edits (modify only) — overlaps a staged file ⇒ staged-then-modified.
+                for (sel, seed) in &unstaged {
+                    write(root, &format!("t{}", sel % n), &content(seed.wrapping_add(7), "unstaged"));
+                }
+                // Untracked files.
+                for (k, seed) in &untracked {
+                    write(root, &format!("u{k}"), &content(*seed, "untracked"));
+                }
+
+                let before = worktree_snapshot(root);
+                let res = create_stash(root, None, StashScope::AllWithUntracked).expect("create_stash");
+                prop_assume!(res.created); // clean worktree ⇒ nothing to stash, skip
+
+                // Worktree is clean between stash and apply (baseline only).
+                let mid = read_status(root).expect("status");
+                prop_assert!(
+                    mid.staged.is_empty() && mid.unstaged.is_empty()
+                        && mid.untracked.is_empty() && mid.conflicted.is_empty(),
+                    "worktree not clean after stash: {mid:?}"
+                );
+
+                let outcome = apply_stash(root, 0, false, None).expect("apply_stash");
+                prop_assume!(matches!(outcome, ApplyStashOutcome::Applied));
+
+                let after = worktree_snapshot(root);
+                prop_assert_eq!(before, after, "worktree bytes not identical after stash round-trip");
+                drop(dir);
             }
-            index.write().expect("write");
-        }
-        // Unstaged edits (modify only) — overlaps a staged file ⇒ staged-then-modified.
-        for (sel, seed) in &unstaged {
-            write(root, &format!("t{}", sel % n), &content(seed.wrapping_add(7), "unstaged"));
-        }
-        // Untracked files.
-        for (k, seed) in &untracked {
-            write(root, &format!("u{k}"), &content(*seed, "untracked"));
-        }
 
-        let before = worktree_snapshot(root);
-        let res = create_stash(root, None, StashScope::AllWithUntracked).expect("create_stash");
-        prop_assume!(res.created); // clean worktree ⇒ nothing to stash, skip
+            /// All (no untracked): tracked changes round-trip; untracked files are left
+            /// in place by the stash and excluded from the identity check (§2.5 step 2).
+            #[test]
+            fn $tracked_only(
+                n in $lo..=$hi,
+                staged in prop::collection::vec((any::<usize>(), any::<u32>()), 0..=6),
+                unstaged in prop::collection::vec((any::<usize>(), any::<u32>()), 0..=6),
+                untracked in prop::collection::vec((0usize..=4, any::<u32>()), 0..=4),
+            ) {
+                let (dir, repo) = base_repo(n);
+                let root = dir.path();
+                {
+                    let mut index = repo.index().expect("index");
+                    for (sel, seed) in &staged {
+                        let rel = format!("t{}", sel % n);
+                        write(root, &rel, &content(*seed, "staged"));
+                        index.add_path(Path::new(&rel)).expect("add");
+                    }
+                    index.write().expect("write");
+                }
+                for (sel, seed) in &unstaged {
+                    write(root, &format!("t{}", sel % n), &content(seed.wrapping_add(7), "unstaged"));
+                }
+                let untracked_paths: Vec<String> = untracked.iter().map(|(k, _)| format!("u{k}")).collect();
+                for (k, seed) in &untracked {
+                    write(root, &format!("u{k}"), &content(*seed, "untracked"));
+                }
 
-        // Worktree is clean between stash and apply (baseline only).
-        let mid = read_status(root).expect("status");
-        prop_assert!(
-            mid.staged.is_empty() && mid.unstaged.is_empty()
-                && mid.untracked.is_empty() && mid.conflicted.is_empty(),
-            "worktree not clean after stash: {mid:?}"
-        );
+                let tracked_before: BTreeMap<String, Vec<u8>> = worktree_snapshot(root)
+                    .into_iter()
+                    .filter(|(p, _)| !untracked_paths.contains(p))
+                    .collect();
 
-        let outcome = apply_stash(root, 0, false, None).expect("apply_stash");
-        prop_assume!(matches!(outcome, ApplyStashOutcome::Applied));
+                let res = create_stash(root, None, StashScope::All).expect("create_stash");
+                prop_assume!(res.created);
 
-        let after = worktree_snapshot(root);
-        prop_assert_eq!(before, after, "worktree bytes not identical after stash round-trip");
-        drop(dir);
-    }
+                let outcome = apply_stash(root, 0, false, None).expect("apply_stash");
+                prop_assume!(matches!(outcome, ApplyStashOutcome::Applied));
 
-    /// All (no untracked): tracked changes round-trip; untracked files are left
-    /// in place by the stash and excluded from the identity check (§2.5 step 2).
-    #[test]
-    fn stash_all_tracked_only_roundtrip(
-        n in 1usize..=5,
-        staged in prop::collection::vec((any::<usize>(), any::<u32>()), 0..=6),
-        unstaged in prop::collection::vec((any::<usize>(), any::<u32>()), 0..=6),
-        untracked in prop::collection::vec((0usize..=4, any::<u32>()), 0..=4),
-    ) {
-        let (dir, repo) = base_repo(n);
-        let root = dir.path();
-        {
-            let mut index = repo.index().expect("index");
-            for (sel, seed) in &staged {
-                let rel = format!("t{}", sel % n);
-                write(root, &rel, &content(*seed, "staged"));
-                index.add_path(Path::new(&rel)).expect("add");
+                let tracked_after: BTreeMap<String, Vec<u8>> = worktree_snapshot(root)
+                    .into_iter()
+                    .filter(|(p, _)| !untracked_paths.contains(p))
+                    .collect();
+                prop_assert_eq!(tracked_before, tracked_after, "tracked worktree bytes not identical");
+                drop(dir);
             }
-            index.write().expect("write");
         }
-        for (sel, seed) in &unstaged {
-            write(root, &format!("t{}", sel % n), &content(seed.wrapping_add(7), "unstaged"));
-        }
-        let untracked_paths: Vec<String> = untracked.iter().map(|(k, _)| format!("u{k}")).collect();
-        for (k, seed) in &untracked {
-            write(root, &format!("u{k}"), &content(*seed, "untracked"));
-        }
-
-        let tracked_before: BTreeMap<String, Vec<u8>> = worktree_snapshot(root)
-            .into_iter()
-            .filter(|(p, _)| !untracked_paths.contains(p))
-            .collect();
-
-        let res = create_stash(root, None, StashScope::All).expect("create_stash");
-        prop_assume!(res.created);
-
-        let outcome = apply_stash(root, 0, false, None).expect("apply_stash");
-        prop_assume!(matches!(outcome, ApplyStashOutcome::Applied));
-
-        let tracked_after: BTreeMap<String, Vec<u8>> = worktree_snapshot(root)
-            .into_iter()
-            .filter(|(p, _)| !untracked_paths.contains(p))
-            .collect();
-        prop_assert_eq!(tracked_before, tracked_after, "tracked worktree bytes not identical");
-        drop(dir);
-    }
+    };
 }
+
+// 5 bands tiling 1..=5 (width 1 each) with 10 cases per band per property.
+band!(stash_all_with_untracked_roundtrip_b1_n1, stash_all_tracked_only_roundtrip_b1_n1, 1usize, 1, 10);
+band!(stash_all_with_untracked_roundtrip_b2_n2, stash_all_tracked_only_roundtrip_b2_n2, 2usize, 2, 10);
+band!(stash_all_with_untracked_roundtrip_b3_n3, stash_all_tracked_only_roundtrip_b3_n3, 3usize, 3, 10);
+band!(stash_all_with_untracked_roundtrip_b4_n4, stash_all_tracked_only_roundtrip_b4_n4, 4usize, 4, 10);
+band!(stash_all_with_untracked_roundtrip_b5_n5, stash_all_tracked_only_roundtrip_b5_n5, 5usize, 5, 10);
