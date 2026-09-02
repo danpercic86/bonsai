@@ -83,7 +83,17 @@ used as read text**. They are **ink only** — never a fill, never a border, nev
 never the focus ring; the fill/bar/border keeps the base hue (`--danger`/`--success`/`--warning`/
 `--accent`), whose ≥3:1 graphics figures are untouched by this family. **Fixed-family minimum across
 every backdrop any of the four reaches: 5.18** (`--danger-strong`, light, `--selection`) — 0.68 above
-the text bar. The four minima sit in a **4.93–5.94** band (`--accent-strong` 4.93/5.01,
+the text bar.
+
+> **THE `--bg-3` ROW, measured 2026-09-03 (P108 contract) — recorded now so the number is not lost
+> between contract and landing.** No `-strong` ink had reached `--bg-3` before, so the 5.18 minimum
+> above was computed over backdrops that did not include it. Measured on `--bg-3`:
+> `--danger-strong` **5.84 / 5.10** · `--success-strong` **6.33 / 5.85** · `--warning-strong`
+> **6.43 / 5.64** · `--accent-strong` **5.46 / 4.93**. **The first time a `-strong` ink ships on
+> `--bg-3` (P108's `.btn-secondary-danger:hover` is the first), the fixed-family minimum becomes
+> 5.10** (`--danger-strong`, light, `--bg-3`) — still 0.60 above the text bar and still inside the
+> band. Until that lands, 5.18 stands. For the base hues on `--bg-3`, which is where the new fixes
+> come from: `--danger` **3.38 / 3.90**, `--success` **4.39 / 4.02**, `--warning` **5.58 / 3.85**. The four minima sit in a **4.93–5.94** band (`--accent-strong` 4.93/5.01,
 `--danger-strong` 5.27/5.18, `--warning-strong` 5.80/5.73, `--success-strong` 5.71/5.94), so a surface
 mixing them reads as one system rather than four unrelated colours. **Reach for a `-strong` token
 before inventing a hex or demoting a hue to `--text-1`.** Candidates measured and rejected during
@@ -196,14 +206,34 @@ A/M/D/U/R status-badge hue family (**P106**, §7 — **this one shipped 2026-09-
 its two USER CHECKPOINTs remain **pending**, see §7).
 
 **Still open after P106, so that no one reads the `-strong` family as app-wide closure:**
-**P108 — hue-as-text over NEUTRAL surfaces**, deliberately **un-enumerated and with no count claimed**
-(seeds in `P107-hue-over-own-tint-ui.md` §9; the P106 measurement puts its real inventory at **48**
-`color: var(--danger|success|warning)` declarations in `src/styles/`, corrected from the 45 P106
-first recorded — see the THIRD FAILURE MODE above). P108 must run P106's **four-pass** search
-(same-rule-block, descendant combinator, tinted-parent child + `--h` indirection, **and imperative
-canvas**) and produce its own per-declaration table; the three `-strong` tokens are its tool, and it
-must **not** re-derive different hexes. Also open: **P109** — the status badge has no accessible name
-and `added`/`untracked` both render `A` (§7).
+**P108 — hue-as-text over NEUTRAL surfaces. NOW ENUMERATED** (contract 2026-09-03,
+`docs/contracts/P108-hue-as-text-on-neutral-ui.md`), **not yet implemented.** All four passes were
+run; the record is that contract's §2 and §4. **62 call sites / 61 declarations — FIX 28, KEEP 34**
+(27 hue-text fixes, 1 alias-hidden glyph fix; 28 glyph/border keeps incl. 6 canvas, 6 compliant-text
+keeps). No new token: the fixes are the three `-strong` tokens plus `--text-2`.
+
+**A FIFTH count moved, and the mechanism is new: TOKEN ALIASING and UNDEFINED custom properties.**
+The inventory recorded here as **48** did not reproduce — the same-shaped grep measures **54** raw
+matches against the real tree (the 48 predates `settings-dev.css` and did not account for the three
+`border-color: var(--hue)` declarations the same pattern matches). Two whole classes were invisible
+to it, and both are now permanent search requirements:
+- **`--badge-good` ≡ `--success` and `--badge-warn` ≡ `--danger`, byte-identical in both themes**
+  (already noted in §2's hiding-patterns block) — this hid a real read-text failure,
+  `.commit-signature-warn .commit-signature-text` at **4.41 dark on `--bg-1`**.
+- **`--badge-unknown` ≡ `--text-3`, byte-identical in both themes** (`#6b7280` / `#8a919e`). So
+  `.commit-signature-unknown .commit-signature-icon` is a `--text-3` glyph measuring **3.38 / 2.96**
+  — **below even the 3:1 graphics bar in light**, and it was invisible to P101's *exhaustive*
+  `color: var(--text-3)` audit purely because of the alias. **The `--text-3` family is recorded as
+  CLOSED above; this is a known escape from it**, fixed by P108 Bucket C.
+- **`settings-legacy-sections.css:134` is `color: var(--warn, #b8860b)` and `--warn` is not defined
+  anywhere in the app.** The rule has always painted the literal `#b8860b` — **5.46 dark / 3.25
+  light** — in both themes. **A `var()` fallback is not a fallback when the property is undefined; it
+  is the value.** Any grep over `var(--x, …)` must check that `--x` exists.
+
+**The hue alphabet for any future search is
+`danger|success|warning|merged|accent|badge-good|badge-warn|badge-unknown|h`** — three tokens longer
+than the list P107 recorded. Also open: **P109** — the status badge has no accessible name and
+`added`/`untracked` both render `A` (§7).
 
 - **The full `--text-3` / `--text-2` matrix (P98 measured; the `--bg-3` row added by P101).** Read
   this before choosing either token on any surface.
