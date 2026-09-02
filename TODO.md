@@ -356,10 +356,46 @@ they are deciding whether to trust it.
 **Root cause is the contract, not just the code.** Line 910 says args are "included as `args`" in
 raw; line 914 says commit messages and search queries are "never, in either mode"; line 918 says
 tokens are "NEVER, under any setting". Those cannot all hold, and **the implementation resolved the
-conflict in the leaking direction.** Architect is rewriting the clause: raw `args` becomes a
-**per-command allow-list defaulting to DENY**, with independent writer-side enforcement — because
-"the producer proposes, the writer enforces" is the pattern the rest of this module already follows,
-and this is the one place it was skipped.
+conflict in the leaking direction.**
+
+**✅ RULED + CONTRACT DELIVERED `834f2d1` — `docs/contracts/P91-raw-args-privacy.md`.** Line 910 was
+the defect; the two absolute "never" rows stand. **One rule: raw mode widens IDENTIFIER fidelity
+(repo path, file paths, ref names, remote URLs, full SHAs) and never CONTENT fidelity.** Free text
+and credentials are outside both modes, permanently. Grounds: two absolute "never"s outrank one
+mechanism description that never mentions them; consent is bounded by what the dialog promised at
+the moment of consent; §7.1 already defines raw's purpose as real *names*; and the failure is
+unrecoverable in **one direction only** — a PAT in a mailed zip — versus mere reviewer legibility in
+the other.
+
+**Mechanism:** sparse per-command allow-list at `src/obs/rawArgPolicy.json`, **default DENY**, keyed
+by parameter **name** rather than position, **scalars only**. Name-keying is what makes
+`is_sensitive_key` meaningful inside `args` for the first time; scalars-only kills
+`searchCommits(_, query: SearchQuery)` by shape alone. `looks_like_opaque_secret` and the hex
+exemption are deliberately **unchanged** — §13 row 19 ratified them and they are load-bearing for
+SHAs.
+
+**The strongest part of the design, worth not eroding later:** the writer-side check
+(`obs/raw_args.rs`) **deliberately does NOT consult the allow-list.** A shared table would be
+worthless against the failure that actually matters — a wrong row, or code that ignores the table,
+which is precisely today's bug. It enforces a shape+vocabulary invariant it can decide alone, and
+**its key-shape rule (`^[a-z][A-Za-z0-9]*$`) kills the current leak even if the producer is never
+fixed**, because today's leak is keyed `"0"`/`"1"`. Violations drop the **whole** `args` object and
+set a writer-set `argsPolicyViolation` that a producer cannot forge.
+
+**AC6 is the negative test**, and it is well chosen: it plants a 40-hex token *specifically because
+that shape passes the hex exemption*, so only the key rule can catch it. It must fail on current
+branch code.
+
+**Orchestrator decision on the architect's escalation:** ACCEPTED — add the path-/ref-taking command
+rows under the §B.2 derivation rule **in the same increment**. The six seed rows mostly document
+denials, so raw mode would currently yield almost no argument values, and *a raw mode that shows
+nothing invites someone to "fix" it by reverting to a blanket include.* That is the failure mode this
+whole ruling exists to prevent.
+
+**Still owed:** implementation (held until the F2-F5 agent releases `writer.rs`), and a
+`ui-designer` pass so the consent copy is not merely true but **complete** — it should name search
+terms and other free-text arguments, and describe raw as "real repository, file, branch and remote
+names" rather than "arguments". AC12 gates that before the USER CHECKPOINT.
 
 ### F2 — MEDIUM, **latent**. The `bump_counter` guard is a `debug_assert`, compiled out of release
 
