@@ -327,8 +327,8 @@ compare against the 162 s dev figure including build.
 ## ✅ P91 SECURITY ARC — CODE + CONTRACT COMPLETE (2026-09-03)
 
 **Full `pnpm gate` at `b26833f`:** all 7 non-e2e steps green (nextest 126.0s, doctests 3.0s,
-clippy 9.8s, eslint 10.6s, **file-size ratchet 0.77s**, vitest 58.1s, tsc+build 10.5s). e2e = 179
-passed / 1 skipped / **2 failed**, and **neither failure is a regression** — see the triage below.
+clippy 9.8s, eslint 10.6s, **file-size ratchet 0.77s**, vitest 58.1s, tsc+build 10.5s). e2e was 179 passed / 1 skipped / **2 failed**; both were diagnosed as **not regressions**, fixed
+in `23ee2b0`, and the suite is now **181 passed / 1 skipped / 0 failed**.
 `cargo obs::` went **135 → 146 → 158 → 162** across the arc.
 
 ### Commits
@@ -365,7 +365,36 @@ destroying the week-over-week comparison §8.1 exists to serve. 512 sits above a
 set, so it is a **runaway stop, not a sizing parameter**. File-size pressure has a different lever
 (size-triggered early roll-up), recorded as a **revisit trigger only, ~8 MB — no work now.**
 
-### ⚠ GATE TRIAGE — the two e2e failures, diagnosed not assumed
+### ✅ GATE FULLY GREEN at `23ee2b0` — e2e 181 passed / 1 skipped / **0 failed**
+
+Both failures below are **fixed** (`23ee2b0`), and the fold diagnosis is worth keeping because the
+first reading was wrong in an instructive way.
+
+**The fold spec was never a timing-tolerance problem.** The graph extent has **two independent async
+inputs** — the graph stream and the first working-dir status round — and `openRepo` waits for
+**neither**: it waits only for the canvas to become *visible*, which the pane renders before any data
+lands. The WIP display row is derived from status, so a baseline read too early is **exactly one row
+short**, and every assertion derived from it inherits the error. The arithmetic pins it: expected
+`456 = 1064 − 19×32` where 1064 is **33 rows without WIP**; received `488 = 1096 − 19×32` where 1096
+is **34 rows with WIP**. **The folded measurement was correct all along — the baseline was wrong.**
+That is why the failing line wandered across 75/95/137/178 and why it passed on an idle box.
+
+Fixed by waiting on the two real conditions, **not** by raising a timeout — it was never a timeout.
+Returning both measurements from one sample also closed a second latent inconsistency: the WIP offset
+and the full height were separate reads, so status landing *between* them yielded `wip=0` alongside a
+WIP-inclusive height.
+
+**The date-locator defect was a class, not an instance.** `getByText('1/2')` matched a commit date
+rendering as `1d · 9/1/2026`, because **`9/1/2026` contains `1/2`**. Note `{ exact: true }` would
+**not** have fixed it: `getByText` compares against each *candidate element's* text, and it is the
+date element's text that contains the counter — exactness on the needle never changes the candidate
+set. The sweep found **three more** instances, each one date away from firing, including two in
+`09-search-palette.spec.ts` that nobody had flagged.
+
+Verified by repetition rather than one pass: **5/5** at `--workers=1`, **5/5** at `--workers=4` (how
+the gate runs it), **48/48** under `--repeat-each=3` contention stress.
+
+### Original triage (kept — the reasoning is the point)
 - **`30-graph-rail.spec.ts:56` — a latent DATE-dependent test bug.** `getByText('1/2')` resolved to
   two elements: the search counter **and** a commit date rendering as `1d · 9/1/2026`, because
   **`9/1/2026` contains the substring `1/2`**. The clock rolling to 2026-09-03 mid-session exposed
