@@ -106,8 +106,11 @@ retracted P95/P98 claims — the enumeration is behind it, declaration by declar
 `docs/contracts/P101-text3-audit-ui.md` §3. **A new
 `--text-3` use outside the four SANCTIONED ROLES below is a defect.** **Do not write "no AA colour
 shortfall remains in §2" here again.** Two shortfalls are open and enumerated: the
-hue-over-own-tint residue (**16 sites**, listed in the hue-over-own-tint bullet below, filed as
-**P107**) and the A/M/D/U/R status-badge hue family (**P106**, §7):
+hue-over-own-tint residue (the list below was **16**; a descendant- and inheritance-aware re-search
+raised the population to **38 instances — 17 failing text, 1 failing glyph state, 19 compliant glyph
+keeps, 1 owned by P106** — enumerated with per-site measured ratios in
+`docs/contracts/P107-hue-over-own-tint-ui.md`, which is now the record for this class) and the
+A/M/D/U/R status-badge hue family (**P106**, §7):
 
 - **The full `--text-3` / `--text-2` matrix (P98 measured; the `--bg-3` row added by P101).** Read
   this before choosing either token on any surface.
@@ -245,11 +248,34 @@ hue-over-own-tint residue (**16 sites**, listed in the hue-over-own-tint bullet 
   | 15 | `settings-legacy-sections.css:487` | `.settings-ai-status-warn` | `--warning` | 12% |
   | 16 | `dialogs-forms.css:131` | `.wt-copy-chip` | `--danger` | 16% |
 
-  Use the P74 measured pairs above for the ratios: hue on its own 14% tint over `--bg-2` is
-  **3.35–4.96** dark / **3.38–3.69** light, i.e. **every row above fails 4.5:1 in the light theme**
-  and most fail in dark too. The fix for all 16 is the same §11 pill recipe already applied to the
-  `.asset-chip` family: keep the tint, label to `--text-1`, demote the hue to a 35% border or a
-  leading bar/glyph at the 3:1 graphics bar.
+  **Per-site ratios were measured for all 16 (plus a 17th, `.error-boundary-title`, that the
+  same-rule-block search structurally could not see) on 2026-09-02 — see
+  `docs/contracts/P107-hue-over-own-tint-ui.md` §3, which supersedes the estimates that stood here.**
+  Range: **3.35–6.46** dark / **3.48–4.17** light. **Every one fails 4.5:1 in the light theme**; 8
+  fail in both. The fix for all of them is the §11 pill recipe already applied to the `.asset-chip`
+  family: keep the tint, label to `--text-1` (**9.06–12.47** dark / **11.68–14.26** light on those
+  same tints), and carry the hue in a leading bar or glyph.
+
+  **CORRECTION 2026-09-02 (P107 §7) — a 35% hue border does NOT clear the 3:1 graphics bar.** The
+  sentence that stood here offered "a 35% border **or** a leading bar/glyph at the 3:1 graphics bar",
+  which reads as though both options clear 3:1. Measured: `--danger` 35% over `--bg-1` is **1.58**
+  dark / **1.69** light against the surrounding surface (and 1.39 / 1.42 against the tint it
+  encloses); `--warning` 35% over `--bg-0` is **2.05** / **1.61**; the shipped 40% border on
+  `.error-boundary` is **1.98** / **2.16**. A 35–40% hue edge is **decorative delineation** and is
+  acceptable only where the *word* carries the meaning. **It is never an identity carrier and never
+  the sole carrier of a state.** What does clear 3:1 is the **solid-hue** leading bar or glyph:
+  `--warning` bar **6.46 / 4.17** on its own 12% tint and **7.92 / 4.87** on `--bg-0`; `--danger` bar
+  **3.87 / 3.87** on its own 12% tint and **4.41 / 4.60** on `--bg-1`.
+
+  **`--warning` as a letterform, measured at last (P107 §6 — this closes §2's open note).** On its own
+  12–15% tint it is **4.87–6.46** dark / **3.49–4.17** light → **fails 4.5:1 in light**, which is the
+  A3/A5/A7/A9/A11/A14/A15 failure. On a **solid** `--warning` fill, `color: var(--bg-0)` is
+  **7.92** dark / **4.87** light → compliant, and it is what `.ai-dock-ask-glyph` already ships.
+  **No `--warning-text` token is needed**: there is no non-compliant solid-warning fill in the app,
+  and `--bg-0` already resolves to exactly the values a `--warning-text` would carry
+  (`#16181d` / `#ffffff`). Note also that the `--*-text` tokens are inks for **solid fills only** —
+  `--danger-text` on a 14% `--danger` tint measures **1.27 / 1.31**, i.e. invisible. Never reach for
+  `--danger-text` / `--success-text` / `--merged-text` on a tint because the hue name matches.
 
   **Same shape, glyph bar, NOT on the P107 list — recorded so a future sweep does not re-litigate
   them.** `.checks-rollup-pill--pending .checks-rollup-glyph` (`checks-panel.css:119`, on the
@@ -259,6 +285,23 @@ hue-over-own-tint residue (**16 sites**, listed in the hue-over-own-tint bullet 
   **different rules joined by a descendant selector**. That is exactly the pattern that hid
   `.pr-state-open` from P102's seed list — **a grep for `color:` and `background:` in the same rule
   block will not find these.**
+
+  **THREE hiding patterns, not one (P107 §1 — run all three or the count will be low again).**
+  (i) *same rule block* — what every prior pass ran; (ii) *descendant combinator* — the two chips
+  above, found by a multiline selector grep; (iii) two patterns even (ii) misses:
+  **(iii-a) an unqualified child class whose only parent is tinted** (`.dev-mode-pill-glyph`,
+  `.forge-reauth-icon`, `.ai-dock-ask-guard-glyph`, `.error-dismiss`, `.error-boundary-title`) — no
+  selector-shaped grep can find these, you must read the component that renders the tinted container
+  and check every child's ink; and **(iii-b) custom-property indirection** — `--h` carries the hue, so
+  neither `color: var(--danger)` nor a `--danger` background appears in the rule at all
+  (`.toast-glyph`, `.submodule-badge-glyph`, `.ai-dock-status-glyph`, `.git-run-pill-glyph`:
+  11 instances). **Token aliasing hides a fifth family:** `--badge-good` is byte-identical to
+  `--success` and `--badge-warn` to `--danger` in both themes, so
+  `.checks-rollup-pill--good/--warn` are this recipe under another name. **The hue alphabet for any
+  future search is `danger|success|warning|merged|accent|badge-good|badge-warn|h` — not the first
+  five.** And resolve the backdrop **per state**: `.error-dismiss` passes 3:1 at rest (3.87 / 3.87)
+  and **fails at 2.96 in light on hover**, because its hover fill is a deeper tint of its own ink's
+  hue.
 
   **The rule, after P105: the only hue ink permitted over its own tint is `--accent-strong`**
   (`.conflict-action-ai:hover`, `conflicts.css:99`, measured **5.86 / 4.87** on the 14% tint), and

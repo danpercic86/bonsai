@@ -516,8 +516,39 @@ places (never only a transient toast — the user may be mid-repro and not looki
 1. `DevSessionStatus` row 1 replaces `● Recording` with `▲ Not writing` (`--danger` triangle glyph +
    the words; `--danger` glyph on `--bg-1` = **4.4:1** dark / **4.6:1** light, clears the graphics
    bar), and row 2 is replaced by:
-   `Bonsai stopped writing the log. {reason} Turn Dev mode off and on to try again.`
-2. One danger toast, dedupe key `dev-sink`, same first sentence.
+   `Bonsai stopped writing the log. The logs folder may be full or no longer writable. Turn Dev mode off and on to start a new file.`
+2. One danger toast, dedupe key `dev-sink`, first sentence identical to row 2's first sentence, with
+   a single action button **`Show logs folder`** (same handler as §8.2's reveal, same `dev-reveal`
+   failure copy). The toast does **not** auto-dismiss.
+
+**No `{reason}` slot — by design, permanently.** Earlier drafts of this section interpolated a
+`{reason}`. `P91-observability.md` §6.4 is authoritative and carries a **bare bool**
+(`LogSessionInfo.writeFailed`): the errno, the `io::Error` and the log path are dropped at the
+writer and never cross IPC, because an `io::Error` Display embeds the path. The copy above is
+therefore written to be actionable **without** a cause: it names the two causes the state machine
+can actually have (disk full / permission loss / path taken all reduce to "full or not writable"),
+and it names the one recovery the user can perform (Dev mode off → on forces a fresh
+`open_part`, which is exactly the event §6.4 requires to clear `rotationBlocked`). Do not
+re-introduce a reason string, a cause enum, or an error code in any later revision of this page.
+
+**The state is sticky for the session — render it as state, never as a transient.** Per §6.4,
+`writeFailed` clears only on a successful flush while rotation is not blocked; under a **persistent
+rotation block it stays true for the rest of the session**. So:
+
+- `▲ Not writing`, row 2's sentence, and the §5 header pill's `Not logging` label are bound
+  **directly** to `writeFailed` from the most recent `log_session_info`. No local timer, no
+  auto-dismiss, no fade-out, no "recovered" flourish, and no optimistic clear on any other
+  successful IPC call.
+- The `dev-sink` toast is sticky until dismissed. Dismissing it clears **only the toast**; rows 1–2
+  and the header pill stay in the failed state until the backend bool flips.
+- A genuinely transient hiccup clears itself within ~1 s (the writer flushes at least every second)
+  and the UI simply follows it back. That is the *only* path back to `● Recording`.
+- Do not add a debounce, grace period or "still failing?" re-check in either direction. A status
+  that flaps during the exact failure it exists to report is worse than either steady state — and a
+  self-clearing transient would tell a user mid-repro that logging resumed when it has not.
+- Screen readers: the row-1 status container is `aria-live="polite"` and announces **once per
+  transition**, not once per poll. Poll responses that repeat the current value must not re-render
+  the live region's text node.
 
 The §5 header pill in this state swaps its dot to a `--danger` triangle glyph and its label to
 `Not logging`, with `aria-label="Dev mode is on but Bonsai stopped writing the log. Open Developer
