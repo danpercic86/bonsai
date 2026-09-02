@@ -647,6 +647,67 @@ F6 is the user's call; F7 is a judgement call.
 
 ---
 
+## 🎯 P106 — status-badge ink — CONTRACT DONE `c987516`, IMPL IN FLIGHT
+
+**8 render sites in 7 files, 6 ink declarations under verdict, 6 distinct composited backdrops.**
+Buckets: **5 FIX**, **1 KEEP** (`.file-status-renamed` on `--accent-strong`, min 4.93/5.01),
+**2 no-hue** (compliant by inheritance but inconsistent — the same status reads differently in
+different surfaces).
+
+**The letter is the SOLE status carrier at all 8 sites, so nothing is exempt.** Shape and position
+are identical across statuses, no word in the row names the status, and 11px/600 is far below the
+large-text threshold — and the badge does **not** scale with `--rp-row-font`, so this holds in both
+densities. Two consequences recorded: a `Conflicts` section header does **not** excuse the `C`
+letter, and the badge has no accessible name at all (→ P109).
+
+**Per-state resolution earned its keep here more than anywhere prior:** `D` measures **4.41 at rest,
+3.89 hovered, 3.05 selected** — *the worst figure is the state a user actually reads a diff in.* `M`
+passes everywhere in dark and fails **4 of 6** backdrops in light.
+
+**A FOURTH search pass was added over P107's three — imperative canvas rendering** (`rg "FileStatus"
+src/graph` → 0) — explicitly because "the search couldn't see a whole class" is how **both** prior
+counts in this programme went wrong. That is the lesson transferring rather than being re-learned,
+and it is the reason to trust this count.
+
+**`--warning-text` is explicitly NOT the answer, and would be actively wrong.** It resolves to
+`--bg-0`, which as ink measures **1.19/1.16** on the staged tint, **1.09/1.07** on `--bg-1`,
+**1.57/1.24** on `--selection`. The `--*-text` family is **fill-ink**. Hence three new ink-only
+tokens mirroring `--accent-strong`: `--danger-strong`, `--success-strong`, `--warning-strong`
+(family floor **5.18**, all four minima in a 4.93-5.94 band). **`--warning` as a letterform is now
+measured for the first time in this design system**: dark is adequate on neutrals (5.03-7.92),
+light is not (3.91-4.87, clearing `--bg-1` by 0.04). `--text-1`-for-everything was measured
+(9.36/13.29) and rejected on the two-recipe rule.
+
+**Orchestrator decisions:** (1) **D1 accepted** — hue-code the two colourless badges, kept isolated
+as the deliberately droppable AC12 so it can be reverted alone. (2) **`--warning-strong` dark =
+`#e3b341`** (family coherence) over `#d4a72c` (zero dark churn) — the designer's recommendation;
+visual language is its call. (3) **AC13's `ui-reference.md` update lands AFTER implementation**, from
+the shipped commit — this programme was already bitten once by the reference describing tokens as
+"specified — not yet shipped" and going stale.
+
+**15 ACs with a 10-row predicted residue table.** **AC14/AC15 + the real-repo half of AC9 are USER
+CHECKPOINTs and stay PENDING.**
+
+**⚠ One calibration value did NOT reproduce and is carried as a hedge, not dropped:**
+`--accent-strong` on a 14% accent tint measures **5.16/4.52** here vs P107's **5.85/4.87**, base
+unspecified. Two contracts currently disagree on a measured value; the implementation pass is asked
+to determine which base each used. Recording it rather than silently preferring one is the point.
+
+---
+
+## 📋 P109 — the status badge has no accessible name, and `added`/`untracked` both render `A` — PENDING (filed 2026-09-03 from P106)
+
+Found while establishing that the badge letter is the sole status carrier. Two distinct statuses
+render the **same character** (`StatusFileRow.tsx:15`) and the badge carries **no accessible name**,
+so the distinction is unavailable to a screen reader *and* ambiguous visually.
+
+Deliberately **not** rolled into P106 — one defect class per milestone is what has kept P95/P98/P100/
+P102/P105/P107 reviewable, and this is an a11y/semantics defect rather than a contrast one. It is
+also the more interesting half: P106 makes the letter *legible*; P109 is about the letter being
+*insufficient*.
+
+---
+
 ## 📋 P108 — hue-as-text over NEUTRAL surfaces — PROPOSED, not enumerated (filed 2026-09-02)
 
 Proposed by `ui-designer` while enumerating P107, and deliberately filed **without** a count or a
