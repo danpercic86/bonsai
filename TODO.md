@@ -324,6 +324,118 @@ compare against the 162 s dev figure including build.
 
 ---
 
+## 🔐 SECURITY AUDIT of the P91 surface — 2026-09-02 — **F1 IS A SHIP BLOCKER**
+
+Run deliberately *now* because **P91 has never shipped** (absent from `dev`): this is the last point
+at which a privacy defect can be fixed before it starts writing durable files on real users' disks.
+No user is affected today and there is no migration problem.
+
+### 🚨 F1 — HIGH, reachable today. Raw mode writes commit messages, search text and forge tokens to disk — while the consent dialog promises it does not
+
+`src/obs/ipcProxy.ts:106-123` serialises **every positional argument verbatim** in raw mode. So with
+Dev mode + "Include raw repository names" on, these land in `logs/*.jsonl`:
+`commit(repoId, message, …)` → **the full commit message**; `searchCommits(repoId, query)` → **the
+search text**; `forgeSetToken` / `forgeAddAccount` / `forgeSetTokenForHost` → **a forge PAT in
+cleartext**.
+
+**The credential scrubber cannot save it, for a structural reason worth remembering:**
+`scrub_value` (`scrub.rs:345`) applies `is_sensitive_key` to **JSON object keys**, but raw `args` is
+keyed **positionally** (`"0"`, `"1"`, …) — so no key ever matches `token|secret|password|auth`.
+Survival then rests on shape alone, and `looks_like_opaque_secret` (`scrub.rs:106`) requires
+length >= 32 **and explicitly exempts all-hex words** (a deliberate guard for commit SHAs). Net
+effect: GitHub `ghp_`/`github_pat_` and GitLab `glpat-` are caught by prefix, but a **40-hex
+Gitea/Forgejo token and a 20-char Bitbucket app password pass through unredacted.**
+
+**What makes this a blocker rather than a bug:** the consent dialog
+(`DevConfirmDialogs.tsx:39-42`) states, at the moment of consent, that *"Commit messages, file
+contents, author names and email addresses are still never written, and passwords and access tokens
+are never written in any mode."* And the designed workflow is enable → reproduce → **export the zip
+and send it to a maintainer.** The product would be telling the user something untrue precisely when
+they are deciding whether to trust it.
+
+**Root cause is the contract, not just the code.** Line 910 says args are "included as `args`" in
+raw; line 914 says commit messages and search queries are "never, in either mode"; line 918 says
+tokens are "NEVER, under any setting". Those cannot all hold, and **the implementation resolved the
+conflict in the leaking direction.** Architect is rewriting the clause: raw `args` becomes a
+**per-command allow-list defaulting to DENY**, with independent writer-side enforcement — because
+"the producer proposes, the writer enforces" is the pattern the rest of this module already follows,
+and this is the one place it was skipped.
+
+### F2 — MEDIUM, **latent**. The `bump_counter` guard is a `debug_assert`, compiled out of release
+
+The audit's answer to the question posed as highest-consequence: **the release path does NOT drop an
+invalid key — it records it verbatim.** There is no `[profile.release]` override, and
+`is_valid_counter_key` is referenced *only* from that assert, so in a shipped binary the function has
+no effect whatsoever.
+
+**Not reachable today** — `fold_perf` inlines its own `PERF_KEYS` loop and there is **no production
+caller at all**. The real hazard is the doc comment claiming "today: `fold_perf` and tests", which is
+**false** and invites the next developer to believe a validated caller exists. Combined with a guard
+that silently evaporates in release, the first person to wire this to anything repo-derived writes
+permanent, un-deletable content to a user's disk **with no test failing.** The sibling validators
+`is_valid_cmd_name` and `is_valid_err_code` are already real `if` guards — this is the odd one out.
+
+### F3 — MEDIUM, reachable. Unbounded metric-key cardinality
+
+`log_append` takes records straight from the webview, and `is_valid_cmd_name` is a **shape**
+predicate rather than membership in the real command set; the maps have **no cardinality cap**. It
+lands in a file `logs_delete_all` does not cover and only a headless `metrics_reset` can clear.
+
+### F4 — MEDIUM, reachable from the webview. `log_export_session(dest)` is an arbitrary-path write
+
+The code comment justifies taking `dest` verbatim because it "is the result of the OS save dialog".
+**That dialog does not exist** — the only caller passes no argument. So it is an unmediated
+arbitrary directory-create + file-write primitive, and it defeats the export-scope rule that exports
+stay in `exports/` where delete-all covers them.
+
+### F5 — MEDIUM. Default umask permissions
+
+Log parts, export zips and `usage.json` are created with no `set_mode`; on Linux/macOS that is
+typically `0644`, world-readable, for files carrying absolute repo paths and real branch names.
+
+### F6 — LOW/MEDIUM, a **product** call for the user, not a security fix
+
+`usage.json` is **always-on durable local telemetry**, independent of Dev mode, from first launch:
+`firstSeen`, launch count, and a **400-day** per-day profile of which operations were performed and
+how long they took. It survives `logs_delete_all` **by design**, `metrics_reset` has **no UI**, and
+the privacy panel never mentions the file exists. Content is non-identifying by construction, so this
+is a **disclosure** question, not a leak. **Since P91 has never shipped, now is the moment to decide
+whether a local Git client should keep an undeletable 400-day usage profile with no disclosure.**
+Held for the user.
+
+### F7 — LOW, mostly latent. `redact_names` misses bare ref/file names and never touches JSON keys
+
+A branch like `feature/acme-client-migration` has one separator, is unrooted and has no extension, so
+`is_path_shaped` returns false and it would be written **verbatim into a strict file**. Not reachable
+today — every free-form payload traced to a static allow-listed literal — but see F9:
+`strict::enforce` is the **sole** enforcement point for both Rust and frontend records, so a gap here
+is a single point of failure for the whole system.
+
+### Verified CLEAN (recorded so a later session does not re-audit)
+
+`react.ts` redaction is now safe **by construction**, not by disuse. The IPC dispatch shim cannot
+alter, drop, reorder or convert a failure, and carries `cmd` + trace ids only. Error strings never
+cross IPC. Zero-cost-when-off is **structural on both sides** — nothing collects-then-suppresses.
+Log rotation and purge have no traversal. **CSP and capabilities are well hardened**: script-src is
+self-only with no unsafe-inline or unsafe-eval, and there is no shell or fs plugin, so a renderer
+compromise is not shell access. Updater trust chain sound; no key material in the repo.
+External-process launching uses argument vectors, never a shell string. Forge credential storage via
+the OS keychain is well built — **F1 is a leak *around* it, not a defect in it.** And
+`no_proxy_client()`'s raw `.expect` sits in a `#[cfg(test)]` module that never compiles into the
+shipped binary — **the long-standing DEP-REFRESH follow-up about it can be CLOSED.**
+
+### F9 — INFO, and it reframes the "do the two redactors disagree?" question
+
+They cannot disagree, because **only one enforces**: `redact.ts` has no equivalent of `redact_names`;
+all name redaction for both sides happens once in `strict::enforce` on the writer thread. That is the
+correct architecture — a frontend bug cannot write an unredacted name into a strict file — and it is
+exactly why F7's gaps matter more than their current reachability suggests.
+
+**Order of work:** F1 before merge (architect + senior-dev in progress) → F2 → F4 → F5 → F3.
+F6 is the user's call; F7 is a judgement call.
+
+---
+
 ## 📋 P108 — hue-as-text over NEUTRAL surfaces — PROPOSED, not enumerated (filed 2026-09-02)
 
 Proposed by `ui-designer` while enumerating P107, and deliberately filed **without** a count or a
