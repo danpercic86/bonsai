@@ -5,7 +5,7 @@
  *  opening a dialog, the per-forge close verb routes through its confirm, and a
  *  success hands the updated detail back up + refreshes the list. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react';
 import { PR_DIFF_STATS } from '../../ipc/fixtures/prDiff';
 import { ipc } from '../../ipc';
 import type { ForgeKind, PrDetail } from '../../ipc';
@@ -281,6 +281,25 @@ describe('PrDetailContainer — P93 PR file diff wiring', () => {
     expect(document.activeElement).toBe(elsewhere);
     elsewhere.remove();
   });
+  // Every close asserted below is the PASSIVE EFFECT of the same commit that
+  // renders the new file row, so "the row appeared" is a strict PREDECESSOR of
+  // the close, not the signal being asserted: `await findByRole(...)` resolves
+  // from the DOM mutation and can return before React flushes that commit's
+  // effects — under load it reads a count of 0. `settle()` drains everything
+  // React still owes (the resolved forgePrDiff promise, the commit it causes,
+  // that commit's passive effects, and anything deferred by a macrotask), so the
+  // counts are read at quiescence. That is what keeps them EXACT: a spurious
+  // second close, even one arriving a tick late, lands inside the settle and
+  // fails the assertion — whereas `waitFor(toHaveBeenCalledTimes(1))` returns
+  // the instant the count reaches 1 and can never see the second call.
+  async function settle() {
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    });
+  }
+
   // P96 item 4: the two closing effects (C2's cleanup keyed on the PR number,
   // C3's headOid watcher) must not double-fire on a PR switch — and the guard
   // that collapses them must not swallow the close either. Exact counts only:
@@ -334,8 +353,8 @@ describe('PrDetailContainer — P93 PR file diff wiring', () => {
         <PrDetailContainer {...props} detail={second} />
       </ToastContext.Provider>,
     );
-    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
-    await screen.findByRole('button', { name: /README\.md/ });
+    await settle();
+    expect(screen.getByRole('button', { name: /README\.md/ })).toBeInTheDocument();
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -373,9 +392,9 @@ describe('PrDetailContainer — P93 PR file diff wiring', () => {
         <PrDetailContainer {...props} />
       </ToastContext.Provider>,
     );
-    await screen.findByRole('button', { name: /README\.md/ });
+    await settle();
+    expect(screen.getByRole('button', { name: /README\.md/ })).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
-    onClose.mockClear();
 
     // Phase 1 — the switch: C2's cleanup owns it, exactly one close.
     const second: PrDetail = {
@@ -387,8 +406,9 @@ describe('PrDetailContainer — P93 PR file diff wiring', () => {
         <PrDetailContainer {...props} detail={second} />
       </ToastContext.Provider>,
     );
+    await settle();
     // The new PR's own stats have landed (its distinct file is listed).
-    await screen.findByRole('button', { name: /beta\.md/ });
+    expect(screen.getByRole('button', { name: /beta\.md/ })).toBeInTheDocument();
     expect(onClose).toHaveBeenCalledTimes(1);
     onClose.mockClear();
 
@@ -402,7 +422,8 @@ describe('PrDetailContainer — P93 PR file diff wiring', () => {
         <PrDetailContainer {...props} detail={advancedDetail} />
       </ToastContext.Provider>,
     );
-    await screen.findByRole('button', { name: /gamma\.md/ });
+    await settle();
+    expect(screen.getByRole('button', { name: /gamma\.md/ })).toBeInTheDocument();
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -436,8 +457,8 @@ describe('PrDetailContainer — P93 PR file diff wiring', () => {
         <PrDetailContainer {...props} detail={second} />
       </ToastContext.Provider>,
     );
-    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
-    await screen.findByRole('button', { name: /README\.md/ });
+    await settle();
+    expect(screen.getByRole('button', { name: /README\.md/ })).toBeInTheDocument();
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
