@@ -4,7 +4,7 @@
 
 use super::testutil::{env_lock, set_mode, stub_path, STUB_MODE_ENV};
 use super::*;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[test]
 fn run_claude_success_strips_and_parses() {
@@ -111,7 +111,12 @@ fn run_claude_large_payload_round_trips_without_deadlock() {
 fn check_availability_version_stub_reports_installed() {
     let _g = env_lock();
     set_mode("version");
-    let a = check_availability();
+    // A deadline no process start can plausibly miss, instead of the 10 s UX
+    // budget (P91): a probe that is slow only because the box is saturated is
+    // indistinguishable here from a missing CLI — both give `installed: false` —
+    // which turned an assertion about PARSING `--version` into a race against
+    // `cmd.exe` startup. `check_availability` itself still ships the 10 s value.
+    let a = check_availability_within(Duration::from_secs(120));
     assert!(a.installed);
     assert!(a.logged_in);
     assert_eq!(a.version.as_deref(), Some("2.1.220"));

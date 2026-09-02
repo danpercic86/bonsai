@@ -46,8 +46,11 @@ REM bulk-sized (~400 KB) payload on Windows — P68a's ~90-byte turns are fine. 
 REM bulk interactive round-trip needs a real CLI (USER CHECKPOINT) or a Rust helper
 REM bin, not this script.
 REM   stream_success - init, thinking heartbeat, assistant text, post_turn_summary, result.
-REM   stream_slow    - init, then ~3 s of SILENCE (longer than a 2 s test idle
-REM                    limit), then a result. While alive it APPENDS a line to
+REM   stream_slow    - init, then ~30 s of SILENCE, then a result. The length is a
+REM                    BUDGET, not a threshold: since P91 the watchdog test drives a
+REM                    virtual clock, so all this window has to do is outlast the
+REM                    test noticing the `init` line on a saturated box. While alive
+REM                    it APPENDS a line to
 REM                    %BONSAI_STUB_MARKER% (when set) about once a second, so a test
 REM                    proves the child died by deleting that file after the run and
 REM                    finding it still absent a tick later — no timing assumption
@@ -68,7 +71,7 @@ REM                    trick as :check_model, in NDJSON form.
 REM   stream_stderr_fail - writes a usage-style error to STDERR and exits NON-ZERO
 REM                    without ever touching stdout. Proves the child's real error
 REM                    text survives the stdout-EOF/stderr race (P68a review S1).
-REM   stream_hang_stdin - echoes one line, then sleeps ~20 s WITHOUT EVER READING
+REM   stream_hang_stdin - echoes one line, then sleeps ~60 s WITHOUT EVER READING
 REM                    STDIN, so a payload larger than the pipe buffer leaves our
 REM                    write blocked. Proves cancel still works while a write is in
 REM                    flight (P68a review S2). Ticks %BONSAI_STUB_MARKER% once a
@@ -180,10 +183,10 @@ exit /b 0
 :stream_slow
 set /p _turn=
 echo {"type":"system","subtype":"init","session_id":"sess-slow","model":"sonnet","tools":[]}
-REM ~3 s of stdout silence, TICKING the marker about once a second while alive (see
+REM ~30 s of stdout silence, TICKING the marker about once a second while alive (see
 REM the header): a one-shot write after the sleep made the "nothing survived"
 REM assertion race the kill path under load.
-for /L %%t in (1,1,3) do (
+for /L %%t in (1,1,30) do (
   ping -n 2 127.0.0.1 >nul
   if defined BONSAI_STUB_MARKER echo tick>>"%BONSAI_STUB_MARKER%"
 )
@@ -201,7 +204,7 @@ REM kill_child_tree) reaps it with the cmd.exe parent. Ticks the marker once a
 REM second (same convention as :stream_slow) so the cancel test can assert directly
 REM that nothing survived, instead of arguing from the shared reap path.
 echo {"type":"system","subtype":"init","session_id":"sess-hang","model":"sonnet","tools":[]}
-for /L %%t in (1,1,20) do (
+for /L %%t in (1,1,60) do (
   ping -n 2 127.0.0.1 >nul
   if defined BONSAI_STUB_MARKER echo tick>>"%BONSAI_STUB_MARKER%"
 )

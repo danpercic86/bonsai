@@ -16,6 +16,10 @@ pub mod registry;
 /// this module doesn't exist on that platform.
 #[cfg(not(windows))]
 mod bin_resolve;
+/// The session's time source (P91): production reads the real clock, tests read
+/// one they advance, so the idle watchdog is asserted on ORDERING rather than on
+/// elapsed wall time.
+mod clock;
 /// Private: [`RunControl`] is the module's whole public surface (re-exported
 /// below), and `run_claude_streaming` is the only way to drive a session.
 mod session;
@@ -303,7 +307,28 @@ pub fn run_claude_streaming(
     ctl: &RunControl,
     on_event: &(dyn Fn(AiRunEvent) + Send + Sync),
 ) -> Result<AiResult, AppError> {
-    session::run(cwd, prompt, payload, opts, limits, ctl, on_event)
+    let deps = session::SessionDeps { ctl, on_event, clock: &clock::SystemClock };
+    session::run(cwd, prompt, payload, opts, limits, deps)
+}
+
+/// [`run_claude_streaming`] with the session's time source injected (P91).
+///
+/// Test-only seam, and the reason the watchdog is testable at all: with a
+/// `TestClock` the idle limit and the hard cap only advance when the test says
+/// so, so "the watchdog fired" is a consequence of an explicit call rather than
+/// of a race between the limit and however long `cmd.exe` took to start. Every
+/// production caller goes through [`run_claude_streaming`], which pins
+/// `SystemClock`.
+#[cfg(test)]
+pub(crate) fn run_claude_streaming_with_clock(
+    cwd: &Path,
+    prompt: &str,
+    payload: &str,
+    opts: RunOpts,
+    limits: RunLimits,
+    deps: session::SessionDeps<'_>,
+) -> Result<AiResult, AppError> {
+    session::run(cwd, prompt, payload, opts, limits, deps)
 }
 
 /// Kill a process TREE by pid — the app-exit path (D7), where no `Child` handle
@@ -407,6 +432,18 @@ pub fn register_with_claude(
 /// Blocking, never errors. Spawns `<bin> --version` (`AVAILABILITY_TIMEOUT`);
 /// returns a populated `AiAvailability`. Respects `CLAUDE_BIN_ENV`. (P13)
 pub fn check_availability() -> AiAvailability {
+    check_availability_within(AVAILABILITY_TIMEOUT)
+}
+
+/// [`check_availability`] with the probe deadline injected (P91).
+///
+/// The 10 s default is a UX budget for the settings panel, not a property worth
+/// asserting: a `--version` probe that is slow only because the box is saturated
+/// is indistinguishable here from a missing CLI (both yield `installed: false`),
+/// which made the stub test load-sensitive. Tests pass a deadline far larger than
+/// any plausible process-start delay so the assertion is about PARSING the
+/// version, which is what that test is for.
+pub(crate) fn check_availability_within(timeout: Duration) -> AiAvailability {
     let bin = resolve_bin();
     let mut cmd = Command::new(&bin);
     cmd.arg("--version");
@@ -418,7 +455,7 @@ pub fn check_availability() -> AiAvailability {
         detail: "Claude Code CLI not found on PATH".to_string(),
     };
 
-    match run_process(cmd, AVAILABILITY_TIMEOUT, None) {
+    match run_process(cmd, timeout, None) {
         Ok(o) if o.success && !o.timed_out => {
             let out = String::from_utf8_lossy(&o.stdout);
             let version = parse_version(&out);

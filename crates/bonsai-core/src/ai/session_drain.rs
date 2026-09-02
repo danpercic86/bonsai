@@ -18,9 +18,12 @@ use std::time::{Duration, Instant};
 
 use super::{classify_line, AiResult, ClaudeSession, LineOutcome, LoopEnd, Msg, RunLimits};
 
-/// Per-`recv` grace while draining stderr after the run has already ended.
+/// Per-`recv` grace while draining stderr after the run has already ended. The
+/// PRODUCTION value; a session carries it in `stderr_grace` so the tests below
+/// can widen it and stop racing the sender thread they spawn (P91).
 pub(super) const STDERR_GRACE: Duration = Duration::from_millis(150);
-/// Absolute cap on that drain, so a chatty stderr cannot stall shutdown.
+/// Absolute cap on that drain, so a chatty stderr cannot stall shutdown. Same
+/// story: production value, carried per-session in `stderr_grace_total`.
 pub(super) const STDERR_GRACE_TOTAL: Duration = Duration::from_millis(1000);
 
 impl<'a> ClaudeSession<'a> {
@@ -65,18 +68,20 @@ impl<'a> ClaudeSession<'a> {
     /// [`Self::ended_without_result`]); every OTHER stdout line is only LOGGED — the
     /// run is already decided, and dropping them silently would break D2.
     fn drain_stderr(&mut self, rx: &Receiver<Msg>) -> Option<String> {
-        let deadline = Instant::now() + STDERR_GRACE_TOTAL;
+        // REAL time on purpose: this bounds a wait on the child's own pipes, not a
+        // policy decision, so it is deliberately outside the `Clock` seam (P91).
+        let deadline = Instant::now() + self.stderr_grace_total;
         loop {
             // Clamp each per-recv grace to what is LEFT of the absolute cap, so the
-            // total drain never exceeds STDERR_GRACE_TOTAL (a bare `recv_timeout(
-            // STDERR_GRACE)` past a `now < deadline` check could overshoot by up to
-            // one full STDERR_GRACE). A clamped wait that times out is treated as the
+            // total drain never exceeds `stderr_grace_total` (a bare `recv_timeout(
+            // stderr_grace)` past a `now < deadline` check could overshoot by up to
+            // one full `stderr_grace`). A clamped wait that times out is treated as the
             // same empty-gap stop as before — we are at the cap and stopping anyway.
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 return None;
             }
-            match rx.recv_timeout(remaining.min(STDERR_GRACE)) {
+            match rx.recv_timeout(remaining.min(self.stderr_grace)) {
                 Ok(Msg::Err(line)) => {
                     self.stderr_tail.push_str(&line);
                     self.stderr_tail.push('\n');

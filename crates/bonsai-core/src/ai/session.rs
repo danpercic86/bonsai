@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use super::clock::Clock;
 use super::session_argv::build_command;
 use super::session_pipes::{send_write, spawn_reader, spawn_writer, turn_line, Msg, WriteTx};
 use super::stream::{
@@ -52,6 +53,17 @@ pub struct RunControl {
     pub replies: Receiver<String>,
 }
 
+/// The three per-run collaborators a session BORROWS: cancel/reply plumbing, the
+/// event sink, and its time source. Grouped into one value rather than passed as
+/// three parameters so the entry points stay readable once the clock became
+/// injectable (P91) — and so adding a fourth collaborator later is not another
+/// signature change at every call site.
+pub(crate) struct SessionDeps<'a> {
+    pub(crate) ctl: &'a RunControl,
+    pub(crate) on_event: &'a (dyn Fn(AiRunEvent) + Send + Sync),
+    pub(crate) clock: &'a dyn Clock,
+}
+
 /// Why the tick loop stopped without a result.
 enum LoopEnd {
     Cancelled,
@@ -69,9 +81,20 @@ struct ClaudeSession<'a> {
     /// `RunControl` (P68b §6.3), so a session can never own it.
     ctl: &'a RunControl,
     on_event: &'a (dyn Fn(AiRunEvent) + Send + Sync),
+    /// EVERY policy timestamp below comes from here, never from `Instant::now()`
+    /// (P91): production passes `SystemClock`, tests pass a clock they advance,
+    /// so the watchdog is driven by an explicit action instead of by elapsed wall
+    /// time. Waits on the OS (the exit grace, the stderr drain) stay real.
+    clock: &'a dyn Clock,
     seq: u64,
     started: Instant,
     last_output: Instant,
+    /// Per-`recv` / total grace for the post-EOF stderr drain
+    /// (`session_drain`). Fields rather than the bare constants so the drain's
+    /// unit tests can widen them and stop racing the sender thread they spawn;
+    /// production always gets `STDERR_GRACE` / `STDERR_GRACE_TOTAL`.
+    stderr_grace: Duration,
+    stderr_grace_total: Duration,
     turn: u32,
     awaiting: bool,
     /// Assistant prose ONLY (D2/A5) — a plausible truncated body for display.
@@ -87,18 +110,19 @@ pub(crate) fn run(
     payload: &str,
     opts: RunOpts,
     limits: RunLimits,
-    ctl: &RunControl,
-    on_event: &(dyn Fn(AiRunEvent) + Send + Sync),
+    deps: SessionDeps<'_>,
 ) -> Result<AiResult, AppError> {
-    ClaudeSession::new(ctl, on_event).drive(cwd, prompt, payload, &opts, &limits)
+    ClaudeSession::new(deps).drive(cwd, prompt, payload, &opts, &limits)
 }
 
 impl<'a> ClaudeSession<'a> {
-    fn new(ctl: &'a RunControl, on_event: &'a (dyn Fn(AiRunEvent) + Send + Sync)) -> Self {
-        let now = Instant::now();
+    fn new(deps: SessionDeps<'a>) -> Self {
+        let SessionDeps { ctl, on_event, clock } = deps;
+        let now = clock.now();
         ClaudeSession {
             ctl,
             on_event,
+            clock,
             seq: 0,
             started: now,
             last_output: now,
@@ -106,6 +130,8 @@ impl<'a> ClaudeSession<'a> {
             awaiting: false,
             partial: String::new(),
             stderr_tail: String::new(),
+            stderr_grace: session_drain::STDERR_GRACE,
+            stderr_grace_total: session_drain::STDERR_GRACE_TOTAL,
         }
     }
 
@@ -138,7 +164,7 @@ impl<'a> ClaudeSession<'a> {
         // the npm shim + node) is not the child being silent, and charging it to
         // the watchdog made a 1 s limit fire on startup alone under load. A CLI
         // that never says anything is still reaped, from this instant.
-        self.last_output = Instant::now();
+        self.last_output = self.clock.now();
 
         let (tx, rx) = channel::<Msg>();
         spawn_reader(child.stdout.take(), tx.clone(), Msg::Out, Msg::OutEof);
@@ -190,13 +216,13 @@ impl<'a> ClaudeSession<'a> {
             }
             match rx.recv_timeout(RECV_TICK) {
                 Ok(Msg::Out(line)) => {
-                    self.last_output = Instant::now();
+                    self.last_output = self.clock.now();
                     if let Some(res) = self.on_stdout(&line, limits)? {
                         return Ok(res);
                     }
                 }
                 Ok(Msg::Err(line)) => {
-                    self.last_output = Instant::now();
+                    self.last_output = self.clock.now();
                     self.stderr_tail.push_str(&line);
                     self.stderr_tail.push('\n');
                     self.trim_stderr_tail();
@@ -326,6 +352,11 @@ impl<'a> ClaudeSession<'a> {
 
     /// The 250 ms tick: pump a reply, or consult the watchdog / hard cap.
     fn on_tick(&mut self, writer: &mut Option<WriteTx>, limits: &RunLimits) -> Result<(), LoopEnd> {
+        // Read the clock ONCE per tick, before the awaiting branch, so a tick
+        // costs exactly one read whatever it goes on to do. `TestClock::reads`
+        // counts those, which is how the D3 test proves the loop really did get
+        // its chance to fire the watchdog and declined (P91).
+        let now = self.clock.now();
         if self.awaiting {
             match self.ctl.replies.try_recv() {
                 Ok(text) => {
@@ -340,7 +371,7 @@ impl<'a> ClaudeSession<'a> {
                     }
                     self.awaiting = false;
                     self.ctl.awaiting.store(false, Ordering::Relaxed);
-                    self.last_output = Instant::now();
+                    self.last_output = now;
                     self.log(format!("» answered ({bytes} bytes)"));
                 }
                 Err(TryRecvError::Empty) => {}
@@ -357,14 +388,16 @@ impl<'a> ClaudeSession<'a> {
             return Ok(());
         }
 
-        if !limits.idle_timeout.is_zero() && self.last_output.elapsed() > limits.idle_timeout {
+        if !limits.idle_timeout.is_zero()
+            && now.saturating_duration_since(self.last_output) > limits.idle_timeout
+        {
             return Err(LoopEnd::Failed(format!(
                 "Claude produced no output for {}s — stopped",
                 limits.idle_timeout.as_secs()
             )));
         }
         if let Some(cap) = limits.hard_cap {
-            if self.started.elapsed() > cap {
+            if now.saturating_duration_since(self.started) > cap {
                 return Err(LoopEnd::Failed(format!(
                     "Claude exceeded the {}s cap — stopped",
                     cap.as_secs()
@@ -464,7 +497,7 @@ impl<'a> ClaudeSession<'a> {
 
     /// Next event in the run's sequence (seq 0 is `Started`).
     fn event(&mut self, kind: AiRunEventKind) -> AiRunEvent {
-        let elapsed = self.started.elapsed().as_millis() as u64;
+        let elapsed = self.clock.now().saturating_duration_since(self.started).as_millis() as u64;
         let ev = AiRunEvent::new(&self.ctl.run_id, self.seq, kind, elapsed, self.turn);
         self.seq += 1;
         ev

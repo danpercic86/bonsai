@@ -7,20 +7,46 @@
 //! 2. a run must stay cancellable while the stdin write is blocked on a child that
 //!    never drains it (S2) — streaming has NO wall-clock deadline by design, so an
 //!    on-the-loop-thread write would be unkillable.
+//!
+//! Both runs are driven through a frozen [`TestClock`] (P91), so the idle watchdog
+//! and the hard cap cannot end them: what ends them is the property under test.
 
 use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use super::clock::TestClock;
+use super::session::SessionDeps;
 use super::testutil::{
     assert_child_is_dead, env_lock, marker_path, set_mode, set_mode_with_marker, wait_until, Sink,
 };
-use super::{run_claude_streaming, AiRunEvent, AiRunEventKind, AiRunRegistry, RunLimits, RunOpts};
+use super::{
+    run_claude_streaming_with_clock, AiRunEvent, AiRunEventKind, AiRunRegistry, RunLimits, RunOpts,
+};
 use crate::error::AppError;
 
 /// Larger than any OS pipe buffer (Windows ~4–64 KB, Linux 64 KB), so a stub that
 /// never reads stdin CANNOT let the write finish.
 const UNDRAINABLE_PAYLOAD_BYTES: usize = 1024 * 1024;
+
+/// Give-up bound on waiting for an observable event from the stub child, not a
+/// margin anything is asserted against (see `session_tests::STUB_STARTUP_BUDGET`).
+const STUB_STARTUP_BUDGET: Duration = Duration::from_secs(60);
+
+/// The one REAL timing assertion left in the `ai` tests, and deliberately so: S2's
+/// whole claim is that cancel is prompt EVEN THOUGH a 1 MiB write is stuck, so
+/// there is nothing to virtualise — a clock the test controls would just make the
+/// claim vacuous.
+///
+/// The number is chosen from both sides. Below it: cancelling costs a
+/// `taskkill /T /F` process spawn plus a `wait()`, which is process-creation work
+/// on a box that may be saturated — 5.2 s was the worst end-to-end time measured
+/// with three `cargo nextest` suites and a `cargo build --workspace` running
+/// concurrently, so 15 s is ~3x headroom over that. Above it: the stub holds
+/// stdin for ~60 s, so a pass still proves by a factor of 4 that the cancel did
+/// not simply wait the child out, which is the only way this assertion could pass
+/// for the wrong reason.
+const MAX_CANCEL_LATENCY: Duration = Duration::from_secs(15);
 
 fn sink_and_collect() -> (Sink, impl Fn(AiRunEvent) + Send + Sync) {
     let sink = Sink::default();
@@ -39,14 +65,13 @@ fn a_stderr_only_failure_surfaces_the_cli_s_own_message() {
     let (run_id, ctl) = reg.register();
     let (sink, collect) = sink_and_collect();
 
-    let err = run_claude_streaming(
+    let err = run_claude_streaming_with_clock(
         Path::new("."),
         "prompt",
         "payload",
         RunOpts::default(),
         RunLimits { idle_timeout: Duration::from_secs(10), ..RunLimits::default() },
-        &ctl,
-        &collect,
+        SessionDeps { ctl: &ctl, on_event: &collect, clock: &TestClock::new() },
     )
     .expect_err("a non-zero exit with no result is a failure");
     reg.finish(&run_id);
@@ -75,7 +100,7 @@ fn a_stderr_only_failure_surfaces_the_cli_s_own_message() {
 ///
 /// - the loop reached `pump` at all (the `init` log event below), and
 /// - `ctl.cancel` was still being polled, so the run ends in ~a tick instead of
-///   waiting out the stub's 20 s sleep.
+///   waiting out the stub's 60 s sleep ([`MAX_CANCEL_LATENCY`]).
 ///
 /// The marker check at the end adds the third property DIRECTLY rather than by
 /// argument: the blocked write must not have left the child alive — while it lives
@@ -89,11 +114,15 @@ fn cancel_works_while_the_stdin_write_is_blocked() {
     let (run_id, ctl) = reg.register();
     let (sink, collect) = sink_and_collect();
     let payload = "x".repeat(UNDRAINABLE_PAYLOAD_BYTES);
+    let clock = TestClock::new();
+    // `RunControl` holds a non-`Sync` mpsc `Receiver`, so it MOVES into the
+    // session thread; the clock is shared by reference.
+    let clock_ref = &clock;
 
     let mut cancelled_at = Instant::now();
     let outcome = thread::scope(|scope| {
         let handle = scope.spawn(move || {
-            run_claude_streaming(
+            run_claude_streaming_with_clock(
                 Path::new("."),
                 "prompt",
                 &payload,
@@ -101,14 +130,13 @@ fn cancel_works_while_the_stdin_write_is_blocked() {
                 // No watchdog and no cap: cancel is the ONLY thing that can stop
                 // this run, exactly as in the real (deadline-free) streaming path.
                 RunLimits { idle_timeout: Duration::ZERO, hard_cap: None, ..RunLimits::default() },
-                &ctl,
-                &collect,
+                SessionDeps { ctl: &ctl, on_event: &collect, clock: clock_ref },
             )
         });
         // The stub's `init` line can only become an event if the loop is running
         // while the write is blocked.
         assert!(
-            wait_until(|| sink.len() >= 2, Duration::from_secs(10)),
+            wait_until(|| sink.len() >= 2, STUB_STARTUP_BUDGET),
             "no event past `started`: the loop is blocked in the stdin write ({:?})",
             sink.kinds()
         );
@@ -123,10 +151,8 @@ fn cancel_works_while_the_stdin_write_is_blocked() {
         Err(AppError::AiCancelled(m)) => assert_eq!(m, "cancelled by user"),
         other => panic!("expected AiCancelled, got {other:?}"),
     }
-    // Generous, but far below the stub's 20 s sleep: a blocked write must not
-    // delay the cancel.
     assert!(
-        cancel_latency < Duration::from_secs(8),
+        cancel_latency < MAX_CANCEL_LATENCY,
         "cancel took {cancel_latency:?} — the blocked write delayed it"
     );
     assert_eq!(sink.kinds().last(), Some(&AiRunEventKind::Cancelled));

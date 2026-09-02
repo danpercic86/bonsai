@@ -1,42 +1,80 @@
 //! End-to-end tests for the streaming session (P68a §9): the stub CLI speaks
 //! NDJSON, so these cover the whole loop — event ordering, turn accounting, the
 //! idle watchdog, cancel, and the D2 guarantee that partial output survives.
+//!
+//! P91 — every run here is driven through a [`TestClock`] the test owns, so NO
+//! assertion in this file depends on wall-clock time:
+//!
+//! - tests that are about the PROTOCOL never advance the clock, so the idle
+//!   watchdog and the hard cap literally cannot fire and cannot kill a run over a
+//!   limit the test does not care about;
+//! - the two tests that ARE about the watchdog advance it explicitly, which makes
+//!   "the watchdog fired" a consequence of a test action instead of a race
+//!   between the idle limit and however long `cmd.exe` took to start.
+//!
+//! Real time survives only as GIVE-UP BOUNDS on waits for observable events
+//! ([`STUB_STARTUP_BUDGET`]) — nothing asserts how much of one is used, so a
+//! slower box simply uses more of it.
 
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
 
+use super::clock::TestClock;
+use super::session::SessionDeps;
 use super::testutil::{
     assert_child_is_dead, env_lock, marker_path, set_mode, set_mode_with_marker, wait_until, Sink,
     STUB_MODE_ENV,
 };
 use super::{
-    run_claude_streaming, AiRunEvent, AiRunEventKind, AiRunRegistry, RunLimits, RunOpts,
-    ToolPolicy, CLAUDE_BIN_ENV,
+    run_claude_streaming_with_clock, AiResult, AiRunEvent, AiRunEventKind, AiRunRegistry,
+    RunControl, RunLimits, RunOpts, ToolPolicy, CLAUDE_BIN_ENV,
 };
 use crate::error::AppError;
 
-/// Test limits: a generous idle window unless a test is about the watchdog.
+/// How long a test waits for something the stub child must OBSERVABLY do (its
+/// first log line, its sentinel). Deliberately enormous relative to the ~100 ms a
+/// quiet box needs: it is the point at which the test gives up and reports a
+/// broken stub, NOT a margin anything is asserted against. A saturated box just
+/// consumes more of it — 4 s was the worst measured while three full `cargo
+/// nextest` suites and a `cargo build --workspace` ran concurrently.
+const STUB_STARTUP_BUDGET: Duration = Duration::from_secs(60);
+
+/// Test limits: an idle window that never elapses, because the clock these tests
+/// hand the session never moves unless they move it.
 fn limits(idle_secs: u64) -> RunLimits {
     RunLimits { idle_timeout: Duration::from_secs(idle_secs), ..RunLimits::default() }
 }
 
-/// Idle limit for the watchdog tests (§10.1). The clock is reset right after a
-/// successful `spawn()`, so process-creation cost (cmd.exe + the npm shim) is NOT
-/// charged to it — but the stub's FIRST `echo` still is, and 1 s of headroom for
-/// that proved too tight: a loaded box (60 s+ suite run) let the watchdog fire
-/// before `stream_slow`'s `init` line and before `stream_ask`'s sentinel, failing
-/// on the log/awaiting assertion instead of on behaviour. 2 s doubles that headroom
-/// and stays strictly inside `stream_slow`'s ~3 s silence, so the watchdog is still
-/// the only thing that can end these runs.
+/// VIRTUAL idle limit for the watchdog tests (§10.1). The number is arbitrary
+/// now — it is only ever compared against virtual time the test itself adds — and
+/// is kept at the production-ish 2 s purely so the failure message the assertions
+/// match on ("no output for 2s") reads like a real one.
 const WATCHDOG_IDLE: Duration = Duration::from_secs(2);
 
+/// Drive one streaming run against a clock the TEST owns (see the module docs).
+fn drive(
+    clock: &TestClock,
+    payload: &str,
+    limits: RunLimits,
+    ctl: &RunControl,
+    on_event: &(dyn Fn(AiRunEvent) + Send + Sync),
+) -> Result<AiResult, AppError> {
+    run_claude_streaming_with_clock(
+        Path::new("."),
+        "prompt",
+        payload,
+        RunOpts::default(),
+        limits,
+        SessionDeps { ctl, on_event, clock },
+    )
+}
+
 /// Wait for the sentinel to block the run. A failure here almost always means the
-/// run ALREADY ENDED (stub startup slower than the idle limit) rather than a
-/// broken sentinel, so report which it was.
+/// run ALREADY ENDED rather than a broken sentinel, so report which it was.
 fn expect_awaiting(reg: &AiRunRegistry, run_id: &str, finished: impl Fn() -> bool) {
-    if wait_until(|| reg.is_awaiting(run_id), Duration::from_secs(30)) {
+    if wait_until(|| reg.is_awaiting(run_id), STUB_STARTUP_BUDGET) {
         return;
     }
     panic!(
@@ -70,16 +108,8 @@ fn stream_success_emits_started_logs_turn_end_and_done() {
         move |ev: AiRunEvent| s.push(ev)
     };
 
-    let res = run_claude_streaming(
-        Path::new("."),
-        "prompt",
-        "payload",
-        RunOpts::default(),
-        limits(10),
-        &ctl,
-        &collect,
-    )
-    .expect("stream_success should resolve");
+    let res = drive(&TestClock::new(), "payload", limits(10), &ctl, &collect)
+        .expect("stream_success should resolve");
     // §3.7: after `complete()` the shared pid must be back to 0 so a late
     // `cancel_all` cannot kill a recycled pid.
     assert_eq!(ctl.pid.load(Ordering::Relaxed), 0, "pid must reset after completion");
@@ -126,6 +156,14 @@ fn stream_success_emits_started_logs_turn_end_and_done() {
     );
 }
 
+/// The watchdog's POSITIVE control, and the ordering half of the D3 pair below.
+///
+/// Nothing about wall time is asserted: the run cannot age at all until
+/// `clock.advance` says so, and the only thing that can end it is the watchdog
+/// (the stub then stays silent for ~30 s, far past anything this test does). So
+/// the property is causal — *`init` line observed, then idle time introduced, so
+/// the watchdog fires and the already-collected log survives* — which is exactly
+/// what D2 claims.
 #[test]
 fn stream_slow_watchdog_fails_and_keeps_the_collected_log() {
     let _g = env_lock();
@@ -137,17 +175,36 @@ fn stream_slow_watchdog_fails_and_keeps_the_collected_log() {
         let s = sink.clone();
         move |ev: AiRunEvent| s.push(ev)
     };
+    let clock = TestClock::new();
+    // `RunControl` owns an mpsc `Receiver`, which is `Send` but not `Sync`, so it
+    // has to MOVE into the session thread; the clock stays here, shared by
+    // reference, because advancing it is the whole point.
+    let clock_ref = &clock;
 
-    let err = run_claude_streaming(
-        Path::new("."),
-        "prompt",
-        "payload",
-        RunOpts::default(),
-        RunLimits { idle_timeout: WATCHDOG_IDLE, ..RunLimits::default() },
-        &ctl,
-        &collect,
-    )
-    .expect_err("a 2s idle limit must fire on the ~3s silent stub");
+    let err = thread::scope(|scope| {
+        let handle = scope.spawn(move || {
+            drive(
+                clock_ref,
+                "payload",
+                RunLimits { idle_timeout: WATCHDOG_IDLE, ..RunLimits::default() },
+                &ctl,
+                &collect,
+            )
+        });
+        // The CAUSAL precondition for the D2 assertion below — the log line has to
+        // exist before the watchdog can be asked to preserve it. Previously this
+        // was implicit ("2 s is surely enough for the stub to start"), and it is
+        // the exact assumption that failed on a loaded box.
+        assert!(
+            wait_until(|| sink.has_text("session sess-slow"), STUB_STARTUP_BUDGET),
+            "the stub never logged its init line: {:?}",
+            sink.texts()
+        );
+        // The ONLY source of idle time in this run.
+        clock.advance(WATCHDOG_IDLE + Duration::from_secs(1));
+        handle.join().expect("session thread should not panic")
+    })
+    .expect_err("an elapsed idle limit must end the run");
     reg.finish(&run_id);
 
     match &err {
@@ -181,21 +238,24 @@ fn cancel_mid_run_keeps_partial_output_and_leaves_no_child() {
 
     let reg = AiRunRegistry::default();
     let (run_id, ctl) = reg.register();
-    let pid = std::sync::Arc::clone(&ctl.pid);
     let sink = Sink::default();
     let collect = {
         let s = sink.clone();
         move |ev: AiRunEvent| s.push(ev)
     };
+    let clock = TestClock::new();
+    let clock_ref = &clock;
+    // `ctl` moves into the session thread (see the watchdog test), so keep the
+    // shared pid cell out here for the §3.7 assertion below.
+    let pid = std::sync::Arc::clone(&ctl.pid);
 
     let outcome = thread::scope(|scope| {
         let handle = scope.spawn(move || {
-            run_claude_streaming(
-                Path::new("."),
-                "prompt",
+            drive(
+                clock_ref,
                 "payload",
-                RunOpts::default(),
-                // No watchdog at all: the ONLY thing that stops this run is cancel.
+                // No watchdog at all, AND a clock that never moves: the ONLY thing
+                // that stops this run is cancel.
                 RunLimits { idle_timeout: Duration::ZERO, ..RunLimits::default() },
                 &ctl,
                 &collect,
@@ -203,7 +263,7 @@ fn cancel_mid_run_keeps_partial_output_and_leaves_no_child() {
         });
         // Cancel once the child has actually produced its first line.
         assert!(
-            wait_until(|| sink.len() >= 2, Duration::from_secs(10)),
+            wait_until(|| sink.len() >= 2, STUB_STARTUP_BUDGET),
             "stub produced no output to cancel into"
         );
         assert!(reg.cancel(&run_id), "registry should know the run");
@@ -242,19 +302,11 @@ fn stream_ask_completes_after_a_registry_reply() {
         let s = sink.clone();
         move |ev: AiRunEvent| s.push(ev)
     };
+    let clock = TestClock::new();
+    let clock_ref = &clock;
 
     let res = thread::scope(|scope| {
-        let handle = scope.spawn(move || {
-            run_claude_streaming(
-                Path::new("."),
-                "prompt",
-                "payload",
-                RunOpts::default(),
-                limits(10),
-                &ctl,
-                &collect,
-            )
-        });
+        let handle = scope.spawn(move || drive(clock_ref, "payload", limits(10), &ctl, &collect));
         expect_awaiting(&reg, &run_id, || handle.is_finished());
         reg.reply(&run_id, "the plural form".to_string()).expect("reply accepted");
         handle.join().expect("session thread should not panic")
@@ -279,6 +331,14 @@ fn stream_ask_completes_after_a_registry_reply() {
     assert!(!reg.is_awaiting(&run_id), "awaiting flag cleared after the reply");
 }
 
+/// D3, as an ORDERING fact rather than "we slept longer than the limit".
+///
+/// The run is parked on the sentinel, then handed 100× its idle limit of virtual
+/// time. The tick loop reads the clock exactly once per tick, so waiting for
+/// [`TestClock::reads`] to grow proves the loop actually LOOKED at that time and
+/// declined to act on it — the sensitivity a `thread::sleep` only ever assumed,
+/// and lost first on a loaded box. That the same advance DOES kill an unparked
+/// run is the sibling test above; together they pin the pause, not the timing.
 #[test]
 fn watchdog_does_not_fire_while_awaiting_input() {
     let _g = env_lock();
@@ -290,23 +350,30 @@ fn watchdog_does_not_fire_while_awaiting_input() {
         let s = sink.clone();
         move |ev: AiRunEvent| s.push(ev)
     };
+    let clock = TestClock::new();
+    let clock_ref = &clock;
 
     let res = thread::scope(|scope| {
         let handle = scope.spawn(move || {
-            run_claude_streaming(
-                Path::new("."),
-                "prompt",
+            drive(
+                clock_ref,
                 "payload",
-                RunOpts::default(),
-                // A live watchdog, and a human who takes far longer than it to
-                // answer (D3). Without the pause this run would be killed.
+                // A live watchdog, and (below) a human who takes far longer than it
+                // to answer. Without the D3 pause this run would be killed.
                 RunLimits { idle_timeout: WATCHDOG_IDLE, ..RunLimits::default() },
                 &ctl,
                 &collect,
             )
         });
         expect_awaiting(&reg, &run_id, || handle.is_finished());
-        thread::sleep(WATCHDOG_IDLE * 2 + Duration::from_secs(1));
+        let ticks_before = clock.reads();
+        clock.advance(WATCHDOG_IDLE * 100);
+        // Four full ticks with the watchdog long overdue and nothing arriving on
+        // stdout: every one of them is an opportunity to fire that D3 must refuse.
+        assert!(
+            wait_until(|| clock.reads() >= ticks_before + 4, STUB_STARTUP_BUDGET),
+            "the tick loop stopped consulting the clock — it is no longer awaiting"
+        );
         reg.reply(&run_id, "take theirs".to_string()).expect("reply accepted");
         handle.join().expect("session thread should not panic")
     })
@@ -328,11 +395,9 @@ fn turn_budget_fails_a_repeatedly_questioning_model() {
         move |ev: AiRunEvent| s.push(ev)
     };
 
-    let err = run_claude_streaming(
-        Path::new("."),
-        "prompt",
+    let err = drive(
+        &TestClock::new(),
         "payload",
-        RunOpts::default(),
         RunLimits { max_turns: 1, ..limits(10) },
         &ctl,
         &collect,
@@ -364,11 +429,9 @@ fn one_shot_mode_rejects_a_question_it_cannot_answer() {
 
     // Non-interactive: the prompt is positional argv and stdin is closed after the
     // payload, so nobody could deliver an answer.
-    let err = run_claude_streaming(
-        Path::new("."),
-        "prompt",
+    let err = drive(
+        &TestClock::new(),
         "payload\n",
-        RunOpts::default(),
         RunLimits { interactive: false, tools: ToolPolicy::None, ..limits(10) },
         &ctl,
         &collect,
@@ -393,16 +456,8 @@ fn stream_partial_fails_naming_the_missing_result_and_keeps_the_body() {
         move |ev: AiRunEvent| s.push(ev)
     };
 
-    let err = run_claude_streaming(
-        Path::new("."),
-        "prompt",
-        "payload",
-        RunOpts::default(),
-        limits(10),
-        &ctl,
-        &collect,
-    )
-    .expect_err("a child that exits before `result` is a failure");
+    let err = drive(&TestClock::new(), "payload", limits(10), &ctl, &collect)
+        .expect_err("a child that exits before `result` is a failure");
     reg.finish(&run_id);
 
     match &err {
@@ -431,16 +486,8 @@ fn stream_garbage_lines_degrade_to_logs_and_the_run_still_succeeds() {
         move |ev: AiRunEvent| s.push(ev)
     };
 
-    let res = run_claude_streaming(
-        Path::new("."),
-        "prompt",
-        "payload",
-        RunOpts::default(),
-        limits(10),
-        &ctl,
-        &collect,
-    )
-    .expect("D12: unknown lines must never fail a run");
+    let res = drive(&TestClock::new(), "payload", limits(10), &ctl, &collect)
+        .expect("D12: unknown lines must never fail a run");
     reg.finish(&run_id);
     assert_eq!(res.text, "GARBAGE_TOLERATED");
     assert!(sink.has_text("this is not json at all"), "log: {:?}", sink.texts());
@@ -460,16 +507,8 @@ fn stream_bulk_returns_both_delimited_blocks() {
         move |ev: AiRunEvent| s.push(ev)
     };
 
-    let res = run_claude_streaming(
-        Path::new("."),
-        "prompt",
-        "payload",
-        RunOpts::default(),
-        limits(10),
-        &ctl,
-        &collect,
-    )
-    .expect("bulk stub should resolve");
+    let res = drive(&TestClock::new(), "payload", limits(10), &ctl, &collect)
+        .expect("bulk stub should resolve");
     reg.finish(&run_id);
     // The split itself is P68b; P68a only guarantees the body arrives intact.
     assert!(res.text.contains("===== BONSAI RESULT: a/one.json ====="));
@@ -491,16 +530,8 @@ fn missing_binary_emits_failed_then_returns_ai_unavailable() {
         move |ev: AiRunEvent| s.push(ev)
     };
 
-    let err = run_claude_streaming(
-        Path::new("."),
-        "prompt",
-        "payload",
-        RunOpts::default(),
-        limits(10),
-        &ctl,
-        &collect,
-    )
-    .expect_err("a missing CLI is AiUnavailable, as in run_claude");
+    let err = drive(&TestClock::new(), "payload", limits(10), &ctl, &collect)
+        .expect_err("a missing CLI is AiUnavailable, as in run_claude");
     reg.finish(&run_id);
     assert!(matches!(err, AppError::AiUnavailable(_)), "got {err:?}");
     // Started still reached the UI first (D8), and the failure is still an event.

@@ -51,11 +51,11 @@ case "$BONSAI_STUB_MODE" in
   stream_slow)
     IFS= read -r _turn
     echo '{"type":"system","subtype":"init","session_id":"sess-slow","model":"sonnet","tools":[]}'
-    # ~3 s of stdout silence, TICKING the marker about once a second while alive
+    # ~30 s of stdout silence, TICKING the marker about once a second while alive
     # (see the header): a one-shot write after the sleep made the "nothing survived"
     # assertion race the kill path under load.
     t=0
-    while [ "$t" -lt 3 ]; do
+    while [ "$t" -lt 30 ]; do
       sleep 1
       if [ -n "$BONSAI_STUB_MARKER" ]; then echo tick >> "$BONSAI_STUB_MARKER"; fi
       t=$((t + 1))
@@ -79,7 +79,7 @@ case "$BONSAI_STUB_MODE" in
     # that briefly outlives the kill releases the pipe within a tick.
     echo '{"type":"system","subtype":"init","session_id":"sess-hang","model":"sonnet","tools":[]}'
     t=0
-    while [ "$t" -lt 20 ]; do
+    while [ "$t" -lt 60 ]; do
       sleep 1
       if [ -n "$BONSAI_STUB_MARKER" ]; then echo tick >> "$BONSAI_STUB_MARKER"; fi
       t=$((t + 1))
