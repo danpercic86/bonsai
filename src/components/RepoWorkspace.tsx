@@ -92,7 +92,8 @@ import { useTagSync } from './repoWorkspace/useTagSync';
 import { useRebaseActions } from './repoWorkspace/useRebaseActions';
 import { useCherrypickRevertActions } from './repoWorkspace/useCherrypickRevertActions';
 import { useBisectActions } from './repoWorkspace/useBisectActions';
-import { clearReadOverlays, useReadOverlays } from './repoWorkspace/useReadOverlays';
+import { useReadOverlays } from './repoWorkspace/useReadOverlays';
+import { tearDownUnusableRepo } from './repoWorkspace/unusableRepoTeardown';
 import { useWorkspaceKeyboard } from './repoWorkspace/useWorkspaceKeyboard';
 import { useCommitSearch } from './repoWorkspace/useCommitSearch';
 import { useCommitVerification } from './repoWorkspace/useCommitVerification';
@@ -381,6 +382,14 @@ export function RepoWorkspace({
   // Set when a restore is armed from the reflog overlay, so the completion
   // effect knows to re-fetch the (now stale) reflog after refreshAll.
   const reflogRestoreRef = useRef(false);
+  // Close mirrors (`*OpenRef` pattern) for the state-rendered overlays whose
+  // hooks sit BELOW `runRefreshRound` — history-search panel (P57c),
+  // commit-search bar (P50b), replay overlay (spec-007) — assigned during render
+  // further down. `null` = unwired, which the went-unusable teardown reports
+  // LOUDLY (it throws) rather than leaking the overlay: unusableRepoTeardown.ts.
+  const historySearchCloseRef = useRef<(() => void) | null>(null);
+  const commitSearchCloseRef = useRef<(() => void) | null>(null);
+  const replayExitRef = useRef<(() => void) | null>(null);
   const [graph, setGraph] = useState<GraphLayout | null>(null);
   // P65b: the stream assembler's incremental edge index + total row count for the
   // active graph, threaded into GraphCanvas alongside `graph` (set together with
@@ -868,27 +877,14 @@ export function RepoWorkspace({
         if (slices.openRepo) {
           const { info } = await ipc.openRepo(repoPath);
           if (!isUsableRepo(info)) {
-            clearStatus();
-            clearGraph();
-            clearBranches();
-            clearStashes();
-            clearSubmodules();
-            clearWorktrees();
-            clearRemotes();
-            clearTagSync();
-            clearOpState();
-            clearCompare();
-            // P23d + P38: drop any blame/history/reflog overlay + invalidate
-            // in-flight fetches so a stale overlay can't linger over the
-            // now-empty pane. All three siblings go together — an open reflog
-            // is just as stale as an open blame once the repo is unusable.
-            clearReadOverlays({
-              setBlame,
-              setHistory,
-              setReflog,
-              blameReqId,
-              historyReqId,
-              reflogReqId,
+            // Empty every slice AND close every state-rendered overlay — this
+            // component stays MOUNTED, so anything open lingers over the emptied
+            // pane. Body + rationale: repoWorkspace/unusableRepoTeardown.ts.
+            tearDownUnusableRepo({
+              clearStatus, clearGraph, clearBranches, clearStashes, clearSubmodules,
+              clearWorktrees, clearRemotes, clearTagSync, clearOpState, clearCompare,
+              setBlame, setHistory, setReflog, blameReqId, historyReqId, reflogReqId,
+              closeAiPanel, historySearchCloseRef, commitSearchCloseRef, replayExitRef,
             });
             return;
           }
@@ -917,28 +913,10 @@ export function RepoWorkspace({
       }
     },
     [
-      repoPath,
-      refetchStatus,
-      refetchGraph,
-      refetchBranches,
-      refetchStashes,
-      refetchSubmodules,
-      refetchWorktrees,
-      refetchRemotes,
-      refetchOpState,
-      refetchCompare,
-      refetchTagSync,
-      clearStatus,
-      clearGraph,
-      clearBranches,
-      clearStashes,
-      clearSubmodules,
-      clearWorktrees,
-      clearRemotes,
-      clearTagSync,
-      clearOpState,
-      clearCompare,
-      pushToast,
+      repoPath, refetchStatus, refetchGraph, refetchBranches, refetchStashes, refetchSubmodules,
+      refetchWorktrees, refetchRemotes, refetchOpState, refetchCompare, refetchTagSync,
+      clearStatus, clearGraph, clearBranches, clearStashes, clearSubmodules, clearWorktrees,
+      clearRemotes, clearTagSync, clearOpState, clearCompare, closeAiPanel, pushToast,
     ],
   );
 
@@ -1504,6 +1482,7 @@ export function RepoWorkspace({
   // P50b: commit search — state hook drives the search bar + graph match rings;
   // next/prev reuse revealCommitByOid (the single-selection reveal path).
   const search = useCommitSearch({ repoId, graph, revealCommitByOid, pushToast });
+  commitSearchCloseRef.current = search.close;
 
   // Spec-003/004: a WALK change reloads the graph (+ selection reveal); the
   // fold rising edge re-requests for spans (toggle-off stays local, plan lock).
@@ -1519,6 +1498,7 @@ export function RepoWorkspace({
     runAiAnswer: runHistoryAnswer,
     pushToast,
   });
+  historySearchCloseRef.current = historySearch.close;
 
   // Spec-005: the overview-rail bundle (channel pick + jump resolvers live in
   // railProps.ts; GraphCanvas mounts the rail only while visible).
@@ -1527,6 +1507,7 @@ export function RepoWorkspace({
   // Spec-007: replay controller (entry snapshot + fab/palette gate) — replayProps.ts.
   const replay = useReplayController({ graph, metrics, metricsVersion, display: graphDisplay,
     graphStyle, graphSeason, themeVersion, reducedMotion, pushToast });
+  replayExitRef.current = replay.onExit;
 
   // P54c: commit composer row "Preview" — moved to composerPreview.ts.
   const previewComposerFileDiff = useCallback(
