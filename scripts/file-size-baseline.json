@@ -2,8 +2,6 @@
   "_comment": "Ratchet baseline for scripts/check-file-size.mjs — line counts of files already over the 500-line soft limit. These may only shrink. Regenerate with `pnpm lint:size -- --update-baseline`.",
   "limit": 500,
   "files": {
-    "crates/bonsai-core/src/ai/session.rs": 505,
-    "crates/bonsai-core/src/ai/session_tests.rs": 509,
     "crates/bonsai-core/src/git/ai_branch_name.rs": 509,
     "crates/bonsai-core/src/git/ai_operation_resolve.rs": 522,
     "crates/bonsai-core/src/git/branches/checkout_autostash_tests.rs": 819,
@@ -17,7 +15,7 @@
     "src-tauri/src/commands/tests_repo_session_misc.rs": 510,
     "src-tauri/src/settings_ui_tests.rs": 519,
     "src/App.tsx": 602,
-    "src/components/RepoWorkspace.tsx": 2296,
+    "src/components/RepoWorkspace.tsx": 2265,
     "src/components/WorkspaceGraphPane.tsx": 505,
     "src/graph/GraphCanvas.tsx": 784,
     "src/ipc/fixtures/diffs.ts": 746,
