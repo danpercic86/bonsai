@@ -35,15 +35,18 @@ pub(super) fn is_valid_cmd_name(name: &str) -> bool {
 
 /// True for a `<domain>.<action>` counter key: lowercase ASCII segments joined by
 /// single dots, no path separator, no whitespace. A user-derived string (branch
-/// name, path, ref) fails it. Enforced by `bump_counter` as a RUNTIME `if` — not
-/// a `debug_assert`, which release builds compile out (audit F2).
+/// name, path, ref) fails it. Enforced by `MetricsState::bump_validated` — the
+/// single sink BOTH counter writers go through (`bump_counter` and the
+/// production one, `fold_perf`) — as a RUNTIME `if`, not a `debug_assert`, which
+/// release builds compile out (audit F2).
 pub(super) fn is_valid_counter_key(key: &str) -> bool {
     !key.is_empty()
         && key.len() <= 60
         // A counter key is `<domain>.<action>`, so the separator is REQUIRED: a
         // bare lowercase token (a forge token, an oid, an id) is shape-valid
-        // otherwise, and once the guard runs in release (audit F2) "shape-valid"
-        // is exactly what decides whether it is persisted.
+        // otherwise, and because every write to `counters` — `fold_perf`
+        // included — passes through `bump_validated`, "shape-valid" is exactly
+        // what decides whether a key is persisted.
         && key.contains('.')
         && !key.starts_with('.')
         && !key.ends_with('.')

@@ -253,17 +253,16 @@ impl MetricsState {
             .totals
     }
 
-    /// Increments a counter key. The caller is expected to pass an allow-listed
-    /// `<domain>.<action>` literal.
+    /// The ONE way a `counters` key is minted. Every counter writer — the public
+    /// [`Self::bump_counter`] and [`Self::fold_perf`] alike — goes through here,
+    /// so [`is_valid_counter_key`] is not a guard one path can walk around.
     ///
-    /// **No production caller exists today**: `fold_perf` inlines its own
-    /// [`PERF_KEYS`] loop, so this entry point is currently exercised only by
-    /// tests. It stays because it is the intended door for future `<domain>.
-    /// <action>` counters — which is exactly why the guard below must hold at
-    /// runtime rather than in tests only.
+    /// It takes the already-locked totals rather than `&self` because `fold_perf`
+    /// holds the mutex across its whole loop; re-entering `bump_counter` there
+    /// would deadlock on the non-reentrant [`Mutex`].
     ///
-    /// The [`is_valid_counter_key`] guard is a REAL `if`, not a `debug_assert`
-    /// (audit F2): `debug-assertions` is off in release and this crate sets no
+    /// The guard is a REAL `if`, not a `debug_assert` (audit F2):
+    /// `debug-assertions` is off in release and this crate sets no
     /// `[profile.release]` override, so an assert would vanish from the shipped
     /// binary and let a key carrying a path separator, whitespace or an uppercase
     /// letter — i.e. a branch name, a path or a ref — be persisted verbatim into
@@ -271,14 +270,30 @@ impl MetricsState {
     /// covered by `logs_delete_all` and has no redaction pass (§8, decision 25).
     /// A rejected key DROPS the observation, silently and in every profile —
     /// identical to `observe_ipc_result`'s two guards; metrics never fail the app.
-    pub fn bump_counter(&self, key: &str, n: u64, today: &str) {
+    /// Returns true iff the observation was recorded, so callers only mark the
+    /// file dirty when something actually changed.
+    #[must_use]
+    fn bump_validated(t: &mut MetricTotals, key: &str, n: u64) -> bool {
         if !is_valid_counter_key(key) {
-            return;
+            return false;
         }
+        metrics_map::bump(&mut t.counters, key, n);
+        true
+    }
+
+    /// Increments a counter key. The caller is expected to pass an allow-listed
+    /// `<domain>.<action>` literal; a key failing [`is_valid_counter_key`] is
+    /// dropped by [`Self::bump_validated`].
+    ///
+    /// The only production counter writer today is [`Self::fold_perf`], which
+    /// shares the same validated sink. This entry point stays because it is the
+    /// intended door for future `<domain>.<action>` counters.
+    pub fn bump_counter(&self, key: &str, n: u64, today: &str) {
         let mut g = self.lock();
         let t = Self::totals_for(&mut g, today);
-        metrics_map::bump(&mut t.counters, key, n);
-        g.dirty = true;
+        if Self::bump_validated(t, key, n) {
+            g.dirty = true;
+        }
     }
 
     /// Folds one `ipc.result` into the day bucket: `cmd.<name>` duration plus, on
@@ -354,7 +369,10 @@ impl MetricsState {
         for (key, get) in PERF_KEYS {
             let delta = get(snap).saturating_sub(get(&baseline));
             if delta > 0 {
-                metrics_map::bump(&mut t.counters, key, delta);
+                // Same validated sink as `bump_counter` (audit F2 follow-up): the
+                // `PERF_KEYS` literals are const today, but the guard must not be
+                // reachable only from the entry point with no production caller.
+                let _recorded = Self::bump_validated(t, key, delta);
             }
         }
         g.perf_baseline = snap.clone();

@@ -199,6 +199,15 @@ pub enum LogPayload {
         /// Only present when the file's redaction mode is `raw` (§7.1).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         args: Option<serde_json::Value>,
+        /// §B.6 — how many argument positions the producer's allow-list elided.
+        /// Raw mode only, emitted only when > 0. Without this field the producer's
+        /// `argsOmitted` would be dropped as an unknown field at deserialisation
+        /// and `raw_args`' W6 rule would be unreachable in production.
+        ///
+        /// Optional + additive, so `OBS_SCHEMA_VERSION` stays **1** under the §13
+        /// row 23 pre-release carve-out (P91 is branch-only; no v1 corpus on disk).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        args_omitted: Option<u32>,
     },
     #[serde(rename = "ipc.result")]
     IpcResult {

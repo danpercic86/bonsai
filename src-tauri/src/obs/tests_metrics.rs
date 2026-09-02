@@ -428,6 +428,38 @@ fn bump_counter_drops_a_user_derived_key_in_every_profile() {
     );
 }
 
+/// The production counter writer is `fold_perf`, not `bump_counter`, and both
+/// now share the validated sink (`MetricsState::bump_validated`). So drive EVERY
+/// `PERF_KEYS` entry through it: a key that failed `is_valid_counter_key` would
+/// be dropped silently, and the missing counter is what this asserts.
+#[test]
+fn every_perf_key_survives_the_counter_key_guard() {
+    let store = MetricsState::default();
+    // All five fields non-zero, so all five deltas are > 0 on the first fold.
+    let all = PerfCounters {
+        repo_opens: 1,
+        graph_walks: 2,
+        graph_cache_hits: 3,
+        graph_redecorates: 4,
+        status_scans: 5,
+    };
+    store.fold_perf(&all, "2026-08-27");
+    let snap = store.snapshot();
+    let day = snap.days.last().expect("day bucket");
+    let keys: Vec<&str> = day.totals.counters.keys().map(String::as_str).collect();
+    assert_eq!(
+        keys,
+        [
+            "perf.graph_cache_hits",
+            "perf.graph_redecorates",
+            "perf.graph_walks",
+            "perf.repo_opens",
+            "perf.status_scans",
+        ],
+        "a PERF_KEYS literal was rejected by the counter-key guard"
+    );
+}
+
 /// The allow-listed shapes the real call sites use must keep passing.
 #[test]
 fn bump_counter_accepts_domain_action_literals() {

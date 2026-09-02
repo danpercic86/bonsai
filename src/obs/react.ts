@@ -13,6 +13,7 @@
 import { useEffect, useRef } from 'react';
 import { obsEnabled, obsRedaction } from './enabled';
 import { logRecord } from './log';
+import { isFreeTextParam, isSensitiveParam } from './rawArgPolicy';
 import { tagPath, tagValue } from './redact';
 import { currentTrace } from './trace';
 import { tallyRender } from './renderTally';
@@ -138,13 +139,25 @@ function looksLikePath(s: string): boolean {
  * path, remote), so in `strict` it never reaches the record verbatim: it is
  * replaced by a salt-seeded ordinal (`ui:path#3.ts` / `ui:other#5`), which still
  * makes "this field flipped back and forth" visible without carrying the name.
- * `raw` is the one mode allowed to log values (§7.1), and even there the length
- * cap applies so a transition record can never carry a large repo blob.
+ *
+ * `raw` widens **identifier** fidelity only — never content fidelity, the same
+ * one rule A26 applies to `args`. So the raw branch is gated on the FIELD NAME
+ * through the shared vocabulary (`isFreeTextParam`/`isSensitiveParam`): a field
+ * called `message`, `query`, `note` or `token` takes the strict ordinal path in
+ * BOTH modes, so wiring this hook to a store holding a commit-message draft or
+ * the search input cannot write user prose to disk. `state` records ride outside
+ * the writer's `raw_args` backstop, which guards `args` only — this is the sole
+ * gate, hence a name gate rather than a value heuristic.
+ *
+ * The 48-char cap applies either way, so a transition record can never carry a
+ * large repo blob.
  */
-function briefString(s: string): string {
-  const capped = s.length > 48 ? `${s.slice(0, 48)}…` : s;
-  if (obsRedaction() === 'raw') return capped;
+function briefString(field: string, s: string): string {
   if (s === '') return '';
+  const isContentField = isFreeTextParam(field) || isSensitiveParam(field);
+  if (obsRedaction() === 'raw' && !isContentField) {
+    return s.length > 48 ? `${s.slice(0, 48)}…` : s;
+  }
   // Over-classification is the deliberate failure direction: `origin/main`
   // becoming `ui:path#2` costs nothing, the reverse would leak a ref name.
   const tagged = looksLikePath(s) ? tagPath(s) : tagValue('other', s);
@@ -154,13 +167,14 @@ function briefString(s: string): string {
 }
 
 /** Cap/redact a stringified state value so a transition record can never carry a
- *  large repo blob — or, in `strict`, any repo NAME (§7.1). Numbers, booleans and
- *  container sizes are structural, not content, and are reported as-is. */
-function briefValue(v: unknown): string {
+ *  large repo blob — or, in `strict`, any repo NAME (§7.1). `field` selects the
+ *  raw-mode policy in [`briefString`]. Numbers, booleans and container sizes are
+ *  structural, not content, and are reported as-is. */
+function briefValue(field: string, v: unknown): string {
   if (v === null) return 'null';
   if (v === undefined) return 'undefined';
   const t = typeof v;
-  if (t === 'string') return briefString(v as string);
+  if (t === 'string') return briefString(field, v as string);
   if (t === 'number' || t === 'boolean') return String(v);
   if (Array.isArray(v)) return `arr:${v.length}`;
   return `obj:${Object.keys(v as object).length}`;
@@ -171,10 +185,12 @@ function briefValue(v: unknown): string {
  * contract but wired to no target in v1 (§9.2 assigns it none), so it is
  * implemented and unit-tested but instrumented nowhere.
  *
- * PRIVACY: `from`/`to` route through [`briefString`] → `obs/redact.ts`, so in
- * `strict` a repo-derived value (branch name, path) is an ordinal, never the
- * name. This hook is safe to wire to a repo store BY CONSTRUCTION — it is
- * deliberately not merely "safe because nothing calls it".
+ * PRIVACY: `from`/`to` route through [`briefString`], so `strict` turns a
+ * repo-derived value (branch name, path) into an ordinal, never the name — and
+ * `raw` logs a value verbatim only for a field whose NAME is neither free-text
+ * nor credential-shaped, capped at 48 chars. A `message`/`query`/`token` field
+ * is an ordinal in BOTH modes. That is what makes this hook safe to wire to a
+ * repo store BY CONSTRUCTION, rather than merely "safe because nothing calls it".
  */
 export function useStateTransitionLog(store: string, values: Record<string, unknown>): void {
   const prev = useRef<Record<string, unknown> | undefined>(undefined);
@@ -187,8 +203,8 @@ export function useStateTransitionLog(store: string, values: Record<string, unkn
           kind: 'state',
           store,
           field,
-          from: briefValue(before[field]),
-          to: briefValue(values[field]),
+          from: briefValue(field, before[field]),
+          to: briefValue(field, values[field]),
         });
       }
     }

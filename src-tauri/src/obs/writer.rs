@@ -281,7 +281,10 @@ impl LogWriter {
         // violating object is gone before anything can partially "rescue" it.
         // The writer decides this alone, without the producer's table — see
         // `obs/raw_args.rs`.
-        raw_args::enforce(&mut value);
+        // The bool says whether an `args` object was dropped; the record itself
+        // already carries `argsPolicyViolation: true` in that case, so the writer
+        // has nothing left to decide.
+        let _dropped_args = raw_args::enforce(&mut value);
         redact::scrub_value(&mut value);
         let mut line = serde_json::to_string(&value)
             .map_err(|e| AppError::Other(format!("cannot encode log record: {e}")))?;

@@ -32,7 +32,12 @@ use serde_json::Value;
 use super::scrub::is_sensitive_key;
 
 /// Longest raw `args` string kept on disk. Mirrors `RAW_ARG_MAX_STR` in
-/// `src/obs/rawArgPolicy.ts`.
+/// `src/obs/rawArgPolicy.ts` in VALUE, not in unit: the producer measures
+/// `s.length` (UTF-16 code units), the writer `s.chars().count()` (scalar
+/// values). Since chars ≤ UTF-16 units, the writer is very slightly LAXER —
+/// which is the safe direction: everything the producer keeps, the writer
+/// accepts, so no conforming record is dropped over an astral-plane character.
+/// Deliberately left as-is; neither side changes.
 pub const RAW_ARG_MAX_STR: usize = 512;
 
 /// Writer-set marker: this record carried an `args` object that failed §C.

@@ -106,6 +106,7 @@ pub(super) fn ipc_call(ts: i64, cmd: &str, hash: &str) -> LogRecord {
             args_hash: hash.to_string(),
             args_shape: None,
             args: None,
+            args_omitted: None,
         },
     )
 }

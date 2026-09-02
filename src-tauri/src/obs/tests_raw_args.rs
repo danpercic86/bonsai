@@ -37,8 +37,22 @@ fn ipc_call(cmd: &str, args: Value, arity: &[(&str, &str)]) -> LogRecord {
             args_hash: "abc123".into(),
             args_shape: Some(shape(arity)),
             args: Some(args),
+            args_omitted: None,
         },
     }
+}
+
+/// The wire form of one `ipc.call` as the WEBVIEW sends it to `log_append`,
+/// carrying whatever `argsOmitted` the producer proposed. Deserialising this
+/// into a [`LogRecord`] is the production entry point — a field the payload
+/// struct does not declare is dropped here, before the writer ever sees it.
+fn ipc_call_wire(args_omitted: Value) -> Value {
+    json!({
+        "seq": 0, "ts": 1_772_200_991_000_u64, "mono": 12, "src": "ui", "lvl": "debug",
+        "kind": "ipc.call", "cmd": "commit", "argsHash": "abc123",
+        "args": { "repoId": "r1" },
+        "argsOmitted": args_omitted,
+    })
 }
 
 fn cfg(dir: &Path, redaction: RedactionMode) -> WriterConfig {
@@ -273,8 +287,62 @@ fn w5_non_scalar_and_oversized_values_are_rejected() {
     assert!(!enforce(&mut ok), "{ok}");
 }
 
+/// W6 on the PRODUCTION path — wire JSON → `LogRecord` (what `log_append` does)
+/// → `LogWriter::write_record` → file, like W1–W5.
+///
+/// This is the test that would have caught `argsOmitted` being absent from
+/// `LogPayload::IpcCall`: with the field missing, serde drops it as an unknown
+/// field at deserialisation and it never reaches disk, exactly as the forged
+/// `argsPolicyViolation` does in
+/// [`a_producer_supplied_violation_flag_does_not_survive`].
 #[test]
-fn w6_args_omitted_must_be_a_non_negative_integer() {
+fn w6_args_omitted_reaches_disk_on_a_real_record() {
+    let rec: LogRecord = serde_json::from_value(ipc_call_wire(json!(2))).expect("deserialize");
+    let (text, rows) = round_trip(RedactionMode::Raw, vec![rec]);
+    let call = rows.iter().find(|r| r["kind"] == "ipc.call").expect("call");
+    assert_eq!(call["argsOmitted"], json!(2), "{text}");
+    // The conforming `args` still rides along and is not flagged.
+    assert_eq!(call["args"], json!({ "repoId": "r1" }), "{call}");
+    assert!(call.get("argsPolicyViolation").is_none(), "{call}");
+
+    // A fully-included call stays byte-identical to before the amendment: the
+    // producer omits the field and `skip_serializing_if` keeps it off disk.
+    let mut absent = ipc_call_wire(json!(0));
+    absent
+        .as_object_mut()
+        .expect("wire object")
+        .remove("argsOmitted");
+    let rec: LogRecord = serde_json::from_value(absent).expect("deserialize");
+    let (_, rows) = round_trip(RedactionMode::Raw, vec![rec]);
+    let call = rows.iter().find(|r| r["kind"] == "ipc.call").expect("call");
+    assert!(call.get("argsOmitted").is_none(), "{call}");
+}
+
+/// W6, the rejection half — also on the production path. A producer value that
+/// is not a non-negative integer never becomes a record: `log_append`'s
+/// deserialisation fails the whole batch (`null` is the one benign case, which
+/// serde folds to "absent").
+#[test]
+fn w6_a_malformed_args_omitted_never_becomes_a_record() {
+    for bad in [json!(-1), json!("2"), json!(1.5), json!(u64::from(u32::MAX) + 1)] {
+        let wire = ipc_call_wire(bad.clone());
+        assert!(
+            serde_json::from_value::<LogRecord>(wire).is_err(),
+            "argsOmitted {bad} was accepted as a record"
+        );
+    }
+    let rec: LogRecord = serde_json::from_value(ipc_call_wire(json!(null))).expect("deserialize");
+    let (_, rows) = round_trip(RedactionMode::Raw, vec![rec]);
+    let call = rows.iter().find(|r| r["kind"] == "ipc.call").expect("call");
+    assert!(call.get("argsOmitted").is_none(), "{call}");
+}
+
+/// W6's writer-side backstop, at the layer `enforce` actually operates on: a
+/// `Value` whose `argsOmitted` is malformed loses that field. Unreachable via
+/// the typed path above (serde rejects those shapes first) — this is the
+/// defence-in-depth check for a future payload struct that widens the field.
+#[test]
+fn w6_enforce_strips_a_malformed_args_omitted() {
     let mut good = json!({ "kind": "ipc.call", "cmd": "commit", "argsOmitted": 2 });
     assert!(!enforce(&mut good));
     assert_eq!(good["argsOmitted"], json!(2));

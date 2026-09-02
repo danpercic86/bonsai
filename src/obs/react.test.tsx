@@ -257,4 +257,29 @@ describe('useStateTransitionLog — reserved API', () => {
     expect(count?.from).toBe('1');
     expect(count?.to).toBe('2');
   });
+
+  /** RAW widens IDENTIFIER fidelity, never CONTENT fidelity: a free-text- or
+   *  credential-named field is an ordinal in BOTH modes, so wiring this hook to
+   *  a commit-message draft or the search input cannot write prose to disk.
+   *  `state` records are outside the writer's `raw_args` backstop. */
+  it('still redacts free-text and credential FIELDS in raw mode', async () => {
+    configureObs({ ...DEV_TRACE, includeRawNames: true });
+    function Store({ v }: { v: string }) {
+      useStateTransitionLog('composer', { message: v, searchText: v, token: v, branch: v });
+      return null;
+    }
+    const { rerender } = render(<Store v="alpha" />);
+    await act(async () => rerender(<Store v="NEGTEST_DRAFT_ZQX" />));
+    await drain();
+    const states = byKind('state');
+    for (const field of ['message', 'searchText', 'token']) {
+      const st = states.find((r) => r.field === field);
+      expect(st?.to, field).toMatch(/^ui:(other|path)#\d+/);
+    }
+    // The identifier-shaped field is unaffected: raw still widens those.
+    expect(states.find((r) => r.field === 'branch')?.to).toBe('NEGTEST_DRAFT_ZQX');
+    // ...and the three content fields carry no occurrence of the draft at all.
+    const content = states.filter((r) => r.field !== 'branch');
+    expect(JSON.stringify(content)).not.toContain('NEGTEST_DRAFT_ZQX');
+  });
 });
