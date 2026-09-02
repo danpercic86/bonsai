@@ -411,6 +411,37 @@ that silently evaporates in release, the first person to wire this to anything r
 permanent, un-deletable content to a user's disk **with no test failing.** The sibling validators
 `is_valid_cmd_name` and `is_valid_err_code` are already real `if` guards — this is the odd one out.
 
+### ✅ F2-F5 FIXED + COMMITTED `120cadd` (2026-09-02). F1 implementation in flight.
+
+`cargo obs::` **146 passed** (was 135), clippy clean, tsc clean, vitest 364 passed, `lint:size` OK.
+
+**🐞 A latent bug found en route, and it is the most instructive thing in this batch.** `cmd` is the
+**frontend** method name (camelCase, taken from `ipcProxy`'s `prop`), but `is_valid_cmd_name`
+**rejected uppercase** — so **the entire `cmd.*` histogram family recorded NOTHING in production.**
+Only the snake_case names used in tests ever passed the predicate. Every test was green and agreed
+with a feature that did not work at all, because the tests and production supplied different-shaped
+inputs to the same validator. Membership in the generated 199-name allow-list is now the authority
+and the shape check merely bounds it. `usage.json` keys are camelCase from here; no migration
+concern, since P91 has never shipped.
+
+**One judgment call beyond the literal finding, flagged rather than buried:** `is_valid_counter_key`
+now *requires* the `<domain>.<action>` dot. A bare lowercase token — `ghp_0123456789abcdef`, an oid,
+an id — was otherwise shape-valid and would have been persisted the moment the F2 guard started
+actually running in release.
+
+**Regression coverage is written to fail on the defect, not merely to pass** — worth imitating:
+the F2 test asserts the **drop**, so it fails whether the guard reverts to a `debug_assert` (panics
+in debug) *or* vanishes entirely (records in release); the F5 guard **scans source** for raw
+`File::create` / `create_dir_all` chains so it provides real coverage on Windows, where the 0600 bits
+cannot be asserted; and a drift test pins the allow-list to the `IpcApi` interfaces as an exact
+**bijection**, so adding a command without a decision fails the build.
+
+**Contract follow-ups owed to `architect`** (batched with the F1 ratification, not yet done):
+§6/§10 still specify `log_export_session(dest?)`, now removed; §8/§8.1 must record that `cmd.*` keys
+are camelCase `IpcApi` names *and that they recorded nothing before this fix*; `MAX_KEYS_PER_MAP =
+512` plus the `meta.overflow` bucket is a **new §8 surface needing ratification**; and decision 25's
+counter-key shape now literally requires the dot.
+
 ### F3 — MEDIUM, reachable. Unbounded metric-key cardinality
 
 `log_append` takes records straight from the webview, and `is_valid_cmd_name` is a **shape**
