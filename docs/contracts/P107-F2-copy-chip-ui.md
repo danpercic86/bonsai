@@ -1,6 +1,9 @@
 # P107 F2 — the copy-candidate chip: `unknown` verdict gets its own neutral variant
 
-**Status:** spec complete, awaiting implementation (senior-dev).
+**Status:** SHIPPED `8337d9b` (2026-09-03), implemented as specced. *(Status line corrected by the
+orchestrator, not the contract owner: it still read "awaiting implementation" after the work landed,
+which is the exact staleness class the 2026-09-03 sweep exists to catch. `ui-designer` should confirm
+the wording.)*
 **Resolves:** `docs/contracts/P107-hue-over-own-tint-ui.md` §10 / §12 **F2** ("still open").
 **Touches:** `src/components/WorktreeCopyCandidates.tsx`, `src/styles/dialogs-forms.css`,
 `src/ipc/mock/handlers/worktrees.ts` (one harness knob).

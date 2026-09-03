@@ -32,7 +32,7 @@ carries open, tracked work).
 | `ui-reference.md` | — | Canonical design system: tokens, geometry, graph metrics, ref pills, states, both themes. | living |
 | `P65a-lazy-topo-spike.md` | P66 | Feasibility spike for lazy generation-number topo order (VERDICT: tractable, effort L). | deferred — approved future work, not scheduled (user 2026-08-10) |
 | `P68-ai-conflict-streaming.md` | P68 | Streaming / interactive / bulk AI conflict resolution; invariants D1–D16 (canonical). | done — kept active: open P68 contract debt (TODO.md) |
-| `P68e-ai-activity-dock.md` | P68e | AI activity dock UI (bottom dock, live log, cancel, ask block). | done — kept active: 1064 lines, stale vs shipped code, pending splice + split |
+| `P68e-ai-activity-dock.md` | P68e | AI activity dock UI (bottom dock, live log, cancel, ask block). | done — kept active: **1123 lines** (re-measured 2026-09-03; said 1064), stale vs shipped code, pending splice + split |
 | `P68g-ui.md` | P68g-2 | Eight AI-run settings, honest consent copy, ask-block hardening; holds the §3.1–3.5 splice blocks for P68e. | done — kept active: source of the pending P68e splice |
 | `P68-security-audit.md` | P68g | Security audit of the AI conflict surface (1 HIGH, 5 MEDIUM, 7 LOW/INFO). | done — kept active: follow-ups 7–11 OPEN |
 | `P68-user-checklist.md` | P68 | Native checklist (real CLI past 90 s, cancel, mid-run question, read-only tools, bulk, settings, consent copy). | done — kept with the P68 cluster |
@@ -48,9 +48,9 @@ carries open, tracked work).
 | `pr-badge-placement-ui.md` | — | Move the forge PR badge + CI dot out of the ref-column band into a right-aligned forge column. | spec — implementation status unverified |
 | `settings-ai-autonomy-disabled-ui.md` | — | "Why is the autonomy choice disabled?" single-row variant of the disabled-group pattern. | spec, not yet implemented |
 | `002-bonsai-graph-theme-ui.md` | spec-002 | Commit-graph theme: lane palette, dots, ref pills, canvas metrics. | spec — own header says "ready for implementation"; implementation status unverified |
-| `P110-watcher-burst-scoping.md` | P110 | Watcher path classification (`Worktree`/`Refs`) carried into `repo-changed` so a worktree-only burst refreshes narrowly instead of re-streaming the graph. | implemented — working tree, awaiting review sign-off |
+| `P110-watcher-burst-scoping.md` | P110 | Watcher path classification (`Worktree`/`Refs`) carried into `repo-changed` so a worktree-only burst refreshes narrowly instead of re-streaming the graph. | awaiting USER CHECKPOINT — shipped `84bbf85` + `1be3a85` (status was `working tree, awaiting review sign-off`; stale as of 2026-09-03) |
 | `P91-observability.md` | P91 | Architecture of record: Dev mode, JSONL logs, trace ids, spans, anomaly rules, durable metrics, redaction. | living — milestone awaiting USER CHECKPOINT (never presented) |
-| `P91-observability-ui.md` | P91 | Dev-mode Settings surface + React causality instrumentation on the six surfaces. | living — awaiting USER CHECKPOINT; `:496`/`:951` are stale (they describe a native save dialog that never existed) |
+| `P91-observability-ui.md` | P91 | Dev-mode Settings surface + React causality instrumentation on the six surfaces. | living — awaiting USER CHECKPOINT. The `:496`/`:951` save-dialog staleness was **fixed in `fc9c36e`** (§ now states `log_export_session()` takes no destination and always writes to `<app_config_dir>/exports`); the old note here was itself stale as of 2026-09-03 |
 | `P91-privacy-copy-ui.md` | P91 | Dev-mode privacy consent copy across all three surfaces (satisfies raw-args AC12). | spec — §2-§5 implemented (`b26833f`); the rest is held pending the F6 user decision |
 | `P98-text3-readtext-ui.md` | P98 | `--text-3` read-text sweep; §8.8 is the canonical enumerate/bucket/verdict audit method. | done — checkpoint confirmed USER 2026-09-01; kept active because §8.8 is still the method of record |
 | `P100-accent-fill-ui.md` | P100 | Accent-fill contrast: recipe A (a state demotes to `--selection`) vs recipe B (an action keeps the fill, flips the ink). | done — checkpoint confirmed USER 2026-09-02 (archive Part 47); archive-eligible |
@@ -58,7 +58,9 @@ carries open, tracked work).
 | `P101-text3-audit-ui.md` | P101 | The full `--text-3` audit: 124 declarations, each with a recorded bucket and verdict (§3). | done — checkpoint confirmed USER 2026-09-02 (archive Part 47); archive-eligible |
 | `P102-P105-hue-audit-ui.md` | P102 + P105 | Two defects of one shape: `--accent` as text, and hardcoded `#ffffff` as ink on a `--danger` fill. Introduces `--accent-strong`, `--danger-text`, `--success-text`, `--merged`. | awaiting USER CHECKPOINT (AC18/AC19/AC20) — implemented `0e5dcab`, fixes `185c352` |
 | `P106-status-badge-ink-ui.md` | P106 | Status-badge ink (the A/M/D/U/R/T/C letter family): 8 render sites, 3 new ink-only `-strong` tokens. | awaiting USER CHECKPOINT (AC14/AC15 + the real-repo half of AC9) — implemented `10ce967` |
-| `P107-hue-over-own-tint-ui.md` | P107 | Hue text over its own tint: 38 call sites (§2 had claimed 6); the three-pass search incl. `--h` indirection. | implemented `2168057`, errata `ef06e6b`; the board heading is stale — see `TODO.md` FOR USER item 6 |
+| `P107-hue-over-own-tint-ui.md` | P107 | Hue text over its own tint: 38 call sites (§2 had claimed 6); the three-pass search incl. `--h` indirection. | awaiting USER CHECKPOINT (AC11/AC12/AC13) — implemented `2168057`, errata `ef06e6b`. (The "board heading is stale" note was itself stale: `TODO.md` FOR USER item 6 records that resolved 2026-09-03.) |
+| `P107-F2-copy-chip-ui.md` | P107 F2 | The copy-candidate chip's `unknown` verdict gets its own neutral variant; resolves P107 §10/§12 F2. Touches `WorktreeCopyCandidates.tsx`, `dialogs-forms.css`, one mock knob. | implemented `8337d9b` — **contract's own header still says "spec complete, awaiting implementation"; that header is stale, the board is right** |
+| `P109-status-badge-semantics-ui.md` | P109 | The status letter's *meaning*, not its ink: one `FileStatusBadge.tsx` replaces 8 drifted render sites; badges get accessible names. Zero CSS/token/geometry diff. | awaiting USER CHECKPOINT (AC13/AC14) — implemented `5a254ba`, recorded `5c2dcd2` |
 | `P108-hue-as-text-on-neutral-ui.md` | P108 | Hue used as text over a NEUTRAL `--bg-*` surface: 62 call sites, 28 fixes, no new tokens. | awaiting USER CHECKPOINT (AC12/AC13/AC14); **AC11 is OWED — source-derived and unverified** |
 | `spec-003-ui.md` | spec-003 | Graph declutter modes (first-parent, seed-ref filtering) — UI contract. | implemented; e2e `e2e/28-graph-filter.spec.ts`. No USER CHECKPOINT record mapped |
 | `spec-004-ui.md` | spec-004 | Fold linear runs: the fold pill as a frontend display row over `FoldSpan` metadata. | implemented; e2e `e2e/29-graph-fold.spec.ts`. Open bug: the fold-pill cursor is dead (`TODO.md`) |
@@ -74,6 +76,16 @@ carries open, tracked work).
 > **archive-eligible** (their checkpoints are confirmed) and should go to `archive/` with `git mv` on
 > the next touch; the P102/P105/P106/P107/P108 and P91 contracts stay active because their USER
 > CHECKPOINTs are pending.
+
+> **2026-09-03 staleness re-sweep (second pass, same day).** Index diffed against the directory:
+> **2 files had no row** — `P107-F2-copy-chip-ui.md` and `P109-status-badge-semantics-ui.md`, both
+> added above. **0 dangling rows**: every row that is not in `docs/contracts/` resolves to
+> `docs/contracts/archive/`, and there is no row for the deleted `P91-raw-args-privacy.md` (folded
+> into `P91-observability.md` §7.4 by `12b0ab6`) — that one was already clean. **4 stale statuses
+> corrected**: `P110` (said "working tree, awaiting review sign-off"; shipped `84bbf85`+`1be3a85`),
+> `P91-observability-ui.md` (its staleness note was fixed by `fc9c36e`), `P107-hue-over-own-tint-ui.md`
+> (pointed at a `TODO.md` contradiction that item 6 has since resolved), `P68e-ai-activity-dock.md`
+> (1064 → 1123 lines). No file was moved in this pass either.
 
 > **Why the P68 cluster stays active despite `done`.** `TODO.md` §"P68 contract debt" schedules edits
 > *to these files* (apply the `P68g-ui.md` §3.1–3.5 splice into `P68e-ai-activity-dock.md`, then

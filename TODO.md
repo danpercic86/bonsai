@@ -38,6 +38,15 @@ Full detail for everything compacted out of this file is in `docs/history/` — 
 curator: a milestone with a pending USER CHECKPOINT stays here, and open follow-ups stay here
 however old they are.
 
+**2026-09-03 staleness sweep (no archiving, facts only).** Prompted by two same-day misses of one
+shape — work landed, the entry that filed it was never upgraded (P109 fixed in `5a68e00`;
+`.settings-toggle-btn.is-active` fixed in `112800c`). **35 open entries were cross-checked against
+the tree; 11 had drifted.** Corrections are inline below, each marked `re-verified 2026-09-03` or
+struck through with its SHA. The board's own record of being wrong is kept deliberately. Two
+findings are worth reading before trusting anything nearby: the `ai::session*` clock seam **is in
+the tree** (`734b310`), and the M1 design-review residue was telling sessions to delete
+`aria-activedescendant`, which `ui-reference.md:865` explicitly sanctions.
+
 ---
 
 ## FOR USER — open decisions (nobody else may resolve these)
@@ -519,7 +528,9 @@ CWD, capabilities narrowed deliberately, `script-src 'self'` with no `unsafe-inl
 - **`src/styles/forge-pr.css` is 890 lines** (measured 2026-09-03; the board said ~710, which was
   180 lines stale), well over the ~500-line soft limit → `refactorer`.
 - **`image_diff_cli_2.rs`** numbered split still owed — renaming changes nextest IDs, so it needs its
-  own increment where that IS the expected diff.
+  own increment where that IS the expected diff. Path re-verified 2026-09-03:
+  `crates/bonsai-core/tests/diff/image_diff_cli_2.rs` (it moved under `tests/diff/`; the board never
+  carried a path).
 - ~~**`.settings-toggle-btn.is-active` is dead styling**~~ — **ALREADY DONE**, board was stale.
   P107 `2168057` deleted both rules (its own message says so: "re-confirmed dead before deleting").
   Verified 2026-09-03: zero `settings-toggle-btn` + `is-active` pairings in `src/**`, and the only
@@ -535,8 +546,9 @@ CWD, capabilities narrowed deliberately, `script-src 'self'` with no `unsafe-inl
   curation pass.
 - **Two velocity items filed and deliberately NOT taken** (2026-09-03): C1 could drop 17s → 11s by
   giving one surface its own test and its own corrupted repo — **not taken**, it changes the shape of
-  a crash-safety test for ~6s; and `crates/bonsai-mcp/tests/common/mod.rs:127` still spawns 3
-  `git config` calls (same fix applies verbatim; left alone to keep the blast radius in one crate).
+  a crash-safety test for ~6s; and `crates/bonsai-mcp/tests/common/mod.rs:131-133` still spawns 3
+  `git config` calls (board said `:127`; re-measured 2026-09-03 — same fix applies verbatim; left
+  alone to keep the blast radius in one crate).
 
 ---
 
@@ -760,12 +772,33 @@ Ratchet baseline moved **27 offenders / 6241 excess → 20 / 3528**; full gate g
 - **Fold-pill cursor is dead** in `GraphCanvas.handleMouseMove` — P92 §1.4's overflow-cursor write
   unconditionally clobbers spec-004 §1/§2's `foldCursorFor`, and `computeHoverTarget` returns null on
   exactly those rows. Real regression; no vitest mounts `GraphCanvas`, so e2e is the only net.
+  **STILL OPEN, re-verified 2026-09-03** at `src/graph/GraphCanvas.tsx` (note: `src/graph/`, not
+  `src/components/`): `:535` writes `foldCursorFor(...)`, then `:551` unconditionally overwrites it
+  with `next?.kind === 'overflow' ? 'pointer' : ''`. No guard between them.
 - **Reflog overlay not torn down** when a repo goes unusable — candidate fix `52c815e` /
   `6092eb3` / `338d71f`, not recorded as closed. See FOR USER item 6.
+  **Evidence completed 2026-09-03 (closure still belongs to item 6, not to the curator):** all three
+  SHAs are ancestors of HEAD, and `src/components/repoWorkspace/unusableRepoTeardown.ts:232-240`
+  now tears down "all three read-overlay siblings" including `setReflog` / `reflogReqId`. The
+  described symptom is not reproducible from source.
 - **Shortcuts stay live during confirm dialogs** (`pendingForcePush`, `pendingCommitPush`,
-  `pendingBisectBad` absent from `dialogOpen`) — candidate fix `1d9d9bf`, not recorded as closed.
-- **`ai::session*` is load-flaky** — wall-clock watchdog margins; needs a clock seam, not wider
-  sleeps. Candidate fix `734b310`, not recorded as closed.
+  `pendingBisectBad` absent from `dialogOpen`) — ~~candidate fix `1d9d9bf`~~. **STILL OPEN, and the
+  candidate-fix citation was wrong.** Re-verified 2026-09-03: `1d9d9bf` IS an ancestor of HEAD, but
+  it is `fix(P38): disarm every armed dialog on the repo-went-unusable teardown` — a different
+  concern, and it did not close this. `dialogOpen` (`src/components/RepoWorkspace.tsx:1624-1629`) is
+  `anyDialogArmed || askOpen || pendingProposedOp || hookGate.pendingHook ||
+  hookDisclosure.pendingHookDisclosure`, and `anyDialogArmed`
+  (`src/components/repoWorkspace/useWorkspaceDialogState.ts:265-300`) enumerates ~35 flags but
+  **not** `pendingForcePush` (`:208`), `pendingCommitPush` (`:205`) or `abortConfirmOpen` (`:178`);
+  `pendingBisectBad` lives outside the hook entirely at `RepoWorkspace.tsx:299`. Four flags, not
+  three.
+- ~~**`ai::session*` is load-flaky** — wall-clock watchdog margins; needs a clock seam, not wider
+  sleeps.~~ — **the clock seam LANDED in `734b310`** (`test(ai): drive the session watchdog from an
+  injectable clock, not wall time`), verified an ancestor of HEAD 2026-09-03. `crates/bonsai-core/
+  src/ai/clock.rs` exists and `crates/bonsai-core/src/ai/session_watchdog_tests.rs:41/67/115` drives
+  the watchdog with `TestClock::new()` + `clock.advance(...)`, not sleeps. The board asked for
+  exactly this fix and it is in the tree. Per FOR USER item 6 the formal close is the
+  orchestrator's; the evidence is no longer in doubt.
 - **Contract divergences the tests document as bugs-in-the-contract:** rebase §3.1.5/§9.7
   unstaged-changes precondition, and the libgit2-vs-CLI rename/delete conflict index-entry count.
   Plus a near-tautological `expected_presence` oracle.
@@ -784,7 +817,10 @@ Ratchet baseline moved **27 offenders / 6241 excess → 20 / 3528**; full gate g
   across `assets/bundle/write.rs` + `assets/profiles/store.rs`; test helper families across
   `tests/diff/` and the four `tests/rebase_merge/*_support.rs`.
 - **Three files deliberately stopped short of 500** (each further cut would forward 15-100 values to
-  exactly one consumer): `RepoWorkspace.tsx` 2309, `GraphCanvas.tsx` 784, `App.tsx` 602.
+  exactly one consumer). Line counts re-measured 2026-09-03: `src/components/RepoWorkspace.tsx`
+  **2264** (board said 2309), `src/graph/GraphCanvas.tsx` **784** (unchanged; the board omitted the
+  path and it is `src/graph/`, not `src/components/`), `src/App.tsx` **590** (board said 602 — the
+  `9273238` bullet above already recorded the 602 → 590 drop, so the two bullets disagreed).
 
 ### Velocity follow-ups from the 2026-09-01 measurement pass
 
@@ -809,15 +845,24 @@ Baseline numbers: `docs/history/velocity-2026-09-01.md`. Done in that pass: prop
 - **keyring 3 → 4** needs a dedicated increment: 4.x moves onto `keyring-core`, renames every
   per-backend feature, drops `crypto-rust`, and requires explicit credential-store registration —
   real changes to `crates/bonsai-forge/src/auth.rs`. (DEP REFRESH, archive Part 24.)
-- **`no_proxy_client()`** in `src-tauri/src/mcp/http_support.rs` still uses `.expect("build reqwest
-  client")`. **Contradicted by the P91 audit, which says this can be CLOSED** — see FOR USER item 6.
+- ~~**`no_proxy_client()`** in `src-tauri/src/mcp/http_support.rs` still uses `.expect("build reqwest
+  client")`.~~ — **CLOSED by the orchestrator 2026-09-03**; this bullet was the stale half of the
+  contradiction FOR USER item 6 already resolved. The `.expect` is still there
+  (`src-tauri/src/mcp/http_support.rs:221`, re-verified 2026-09-03) but the module is declared
+  `#[cfg(test)]` (`src-tauri/src/mcp.rs:410`) `mod http_support;` (`:411`), so it never compiles into a
+  shipped binary. Item 6 is the canonical record; this line is a pointer, not a second opinion.
 - **P87b FU-1..4** still open: target row label, commitAmend row, row `role`/`aria-expanded`,
   clickable dock bar. Plus the `AiActivityPanel` aria-label NIT. (archive Part 27.)
 - **RepoWorkspace refactor** still stands for maintainability (not perf); P88's audit re-confirmed it.
 - **P90.1 deferred:** per-check timing fields; header commit-summary text; command-palette
   `Refresh checks` / `Show checks`; mock fixtures for noForge/error reachable by click.
 - **Known flake (pre-existing, untouched):** `watcher::tests::git_internals_filtered` is a timing
-  flake (`unwrap_err` on an `Instant`); passes on isolated re-run.
+  flake; passes on isolated re-run. Located and the shape corrected 2026-09-03: it lives at
+  `src-tauri/src/watcher/tests.rs:127`, and the flaky assertion is `rx.recv_timeout(
+  Duration::from_millis(1500)).unwrap_err() == RecvTimeoutError::Timeout` (`:144`) — an `unwrap_err`
+  on a **channel-recv Result**, not "on an `Instant`" as the board said. Note the test now carries a
+  long comment defending that 1.5 s negative window as sound after `watch_into_channel`'s sentinel
+  sync (`29e72a7`), so whether it still flakes is **undetermined** — not re-run in this sweep.
 - **FLAG FOR USER (peer session, now ended):**
   `src/components/repoWorkspace/useWorkspaceKeyboard.test.tsx` failed in ISOLATION on the committed
   baseline (1 graph-nav `defaultPrevented` case), introduced by the peer's graph-a11y commit
@@ -834,20 +879,28 @@ Baseline numbers: `docs/history/velocity-2026-09-01.md`. Done in that pass: prop
 
 ### Residue of the two dated 2026-08-22 design reviews (archive Part 35)
 
-- **`graph-design-review-2026-08-22.md` M1 is SUPERSEDED — do not implement.** `role="grid"` /
-  `aria-rowcount` / `aria-activedescendant` are forbidden by `ui-reference.md` §4.1 (`:250-252`).
+- **`graph-design-review-2026-08-22.md` M1 is SUPERSEDED — do not implement.** Facts corrected
+  2026-09-03; the verdict is unchanged but the citation was wrong twice over. `role="grid"`,
+  `aria-rowcount`, `role="row"` and `aria-rowindex` are forbidden by `ui-reference.md` §4.1 — now at
+  `:860-864`, **not** `:250-252` (§4.1's header is `:848`; `:250-252` is unrelated text today).
+  **`aria-activedescendant` is NOT forbidden** — `ui-reference.md:865` says it "is kept and is
+  valid" (amended 2026-09-02, spec-004 merge), so the board was directing sessions to remove a
+  shipped, sanctioned attribute.
 - **M2/M3/M4/S2/S3/N1/N2 — resolution unverified.** Not checked by the 2026-09-01 sweep; do not
   assume they landed.
-- **`review-2026-08-22-ui.md` NIT-1 — Sidebar ignores `panelDensity`** (confirmed still open
-  2026-09-01: `.branch-row` is a fixed height).
-- **NIT-2 —** `src/components/OnboardingOverlay.tsx:229` is still `aria-label="Close"`; the review
-  preferred "Close the tour".
+- **`review-2026-08-22-ui.md` NIT-1 — Sidebar ignores `panelDensity`** (re-confirmed still open
+  2026-09-03: `src/styles/sidebar.css:92` is `.branch-row { height: 24px; }`, a hard literal, and no
+  file under `src/components/` that reads `panelDensity` is a sidebar file).
+- **NIT-2 —** `src/components/OnboardingOverlay.tsx:229` is still `aria-label="Close"` (re-verified
+  2026-09-03, line number still exact); the review preferred "Close the tour".
 - SHOULD-3 (`--accent` text over `--selection` fails AA) is the **same item** as P69 **A9** below —
   A9 is the canonical entry.
 
 ### P80 forge follow-ups (SHOULD-FIX/NIT, non-blocking)
 
 - (a) `forge_set_token_inner` validates before the `host.is_empty()` guard — guard host first.
+  Still open, re-verified 2026-09-03: `src-tauri/src/commands/forge.rs:290` calls
+  `validate_repo_token`, `:291` is the `host.is_empty()` guard.
 - (b) keychain-write-then-settings ordering: a failed `settings::update` leaves an orphaned keychain
   token (currently `let _ =`) — surface the error.
 - (c) re-connecting a migrated legacy `login:None` host creates a 2nd three-part account + orphans the
@@ -862,9 +915,12 @@ Baseline numbers: `docs/history/velocity-2026-09-01.md`. Done in that pass: prop
 
 ### `cargo fmt` has never been run on this repo
 
-- No `rustfmt.toml` anywhere, no fmt check in any hook or CI.
+- No `rustfmt.toml` anywhere, no fmt check in any hook or CI (re-verified 2026-09-03: zero
+  `rustfmt.toml` in the tree).
 - `cargo fmt --all --check` reports **1773 hunks across 221 files**; `--config
-  use_small_heuristics=Max` is *worse* (2065).
+  use_small_heuristics=Max` is *worse* (2065). **These two numbers were NOT re-measured in the
+  2026-09-03 staleness sweep** (cargo is not on the default PATH and running it is out of that
+  sweep's scope) — treat them as of their original measurement date, not as current.
 - Right shape: its own commit — pick a config, add `rustfmt.toml`, one-shot reformat, then add
   `cargo fmt --check` to the gate. **Do it between milestones, never inside one.**
 
@@ -879,7 +935,8 @@ Baseline numbers: `docs/history/velocity-2026-09-01.md`. Done in that pass: prop
 
 ### P68 contract debt (P68 is done; its contracts are stale/oversized)
 
-- `docs/contracts/P68e-ai-activity-dock.md` is **1064 lines** and under-describes shipped code
+- `docs/contracts/P68e-ai-activity-dock.md` is **1123 lines** (re-measured 2026-09-03; the board and
+  `docs/contracts/INDEX.md` both said 1064, 59 lines stale) and under-describes shipped code
   (P68g-1 added an untrusted-model-output attribution line, a fixed "Bonsai never asks for passwords
   or tokens" guard, and a two-id `aria-describedby`). Splice-ready replacements are in
   `docs/contracts/P68g-ui.md` §3.1-§3.5. **Needs: apply the splice, then split the file.**
