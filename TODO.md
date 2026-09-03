@@ -491,7 +491,7 @@ denial) — plus the success toast, which named no location while the page's `Sh
 `?wtCopyPreviewFail=1` and `?obsExportFail=space|permission|other`, the latter reaching three
 `exportErrorText` branches that had **no route at all**. Both verified in the harness.
 
-### SEC-2026-09-03 — external-process launching: repo-authored paths are unvalidated — IN PROGRESS
+### ✅ SEC-2026-09-03 — external-process launching: repo-authored paths were unvalidated — REMEDIATED `0806596`
 
 Full report: `docs/audit-2026-09-03-external-launch.md` (`7e426c3`). Remediation delegated the same
 day; this entry is the resume point.
@@ -511,9 +511,29 @@ from a `.gitmodules` value authored by whoever wrote the cloned repo.
   `NotADirectory` before ShellExecute. Adding `explorer /select,<file>` would silently remove it.
 - **MEDIUM-2 / LOW-1 / LOW-2 / LOW-3 / INFO(CSP)** — see the report; each is its own increment.
 
-**Two steps are UNVERIFIED and must not be treated as settled:** the `wt ;` splitting was never
-executed, and whether `submodule_status` stats the joined path on **repo open** — which would make
-HIGH-2 zero-click rather than one-click — was not resolved from source review.
+**Both formerly-unverified steps were measured, and one moved a severity:**
+- `wt` splitting `;` inside one argv token — **CONFIRMED**. HIGH-1 stands.
+- HIGH-2 zero-click via `submodule_status` — **DISPROVEN**, so it is **click-triggered**. libgit2
+  concatenates `sm->path` under the workdir and does not honour the escape Rust's `join` does. The
+  SMB callout is real (UNC-loopback `exists()` 6.6 ms vs 19 µs local — it dials); it needs the click.
+- The audit was **wrong** that `C:/Windows` and `..` reach `join` — libgit2 drops both first. The
+  residual escaping set is exactly **rooted** and **UNC**. The path must also be **quoted** in
+  `.gitmodules`, or `;`/`#` are config comments and never reach us.
+
+**Fixed** by `contained_abs_path` (`crates/bonsai-core/src/git/submodule_abs_path.rs`): all-`Normal`
++ relative proves containment **without touching the filesystem**, so an uninitialized submodule
+still works; when the target exists it also canonicalizes and re-checks against symlink escape. A
+rejected submodule is **still listed** with `absPath: null` rather than dropped — hiding a submodule
+git itself reports is its own correctness bug. Proven red both ways, with positive controls that
+stayed green so the validator is not the vacuous kind.
+
+**STILL OPEN, each its own increment:** MEDIUM-2 (`terminalCommand`/`editorCommand` unvalidated —
+renderer compromise still converts to local execution), LOW-1 (cwd DLL search order), INFO (CSP
+`form-action` / `base-uri` / `object-src`).
+
+**One residual documented, not closed:** a symlink introduced inside an already-checked-out
+superproject at a not-yet-created leaf bypasses the canonicalize recheck (`canonicalize` fails on a
+missing leaf). Primary vectors are closed lexically regardless of filesystem state.
 
 **What is well defended, recorded so it is not re-audited:** shell-free spawn on every platform,
 `tauri-plugin-shell` not a dependency at all, `parse_template` substitutes inside an already-tokenized
