@@ -326,8 +326,9 @@ the danger hue at all is a **tone** decision, not a contrast one, and P108 did n
 
 **The hue alphabet for any future search is
 `danger|success|warning|merged|accent|badge-good|badge-warn|badge-unknown|h`** — three tokens longer
-than the list P107 recorded. Also open: **P109** — the status badge has no accessible name and
-`added`/`untracked` both render `A` (§7).
+than the list P107 recorded. Also open: **P109** — the status badge has no accessible name, and
+`added`/`untracked` collide on `A` in 3 of the 6 badge tables while the other 3 already render `U`
+(§7, record correction 2026-09-03).
 
 - **The full `--text-3` / `--text-2` matrix (P98 measured; the `--bg-3` row added by P101).** Read
   this before choosing either token on any surface.
@@ -1112,7 +1113,7 @@ a `--*-strong` token in every case — the base hues remain correct for fills, b
 | Status | Letter | Ink | Declaration |
 |---|---|---|---|
 | added | `A` | `--success-strong` | `status-panel.css:193` |
-| untracked | `A` | `--success-strong` (italic path) | `status-panel.css:220` |
+| untracked | `A` **in 3 of 6 tables, `U` in the other 3 — see the correction below** | `--success-strong` (italic path) | `status-panel.css:220` |
 | modified | `M` | `--warning-strong` | `status-panel.css:198` |
 | typechange | `T` | `--warning-strong` | same rule |
 | deleted | `D` | `--danger-strong` | `status-panel.css:203` |
@@ -1194,9 +1195,21 @@ measures the `Conflicts (3)` section label at **7.62 / 6.01** on `--bg-1`.
 - **AC9's real-repo half (USER CHECKPOINT, pending).** A genuine `typechange` (symlink → regular file)
   cannot be produced in the mock harness; the fixture proves the *rule*, the native app proves the
   *pipeline*.
-- **P109 (open).** The badge has **no accessible name**, and `added` and `untracked` both render `A`
-  (`StatusFileRow.tsx:15`) — indistinguishable to a screen reader and ambiguous visually. P106 made
-  the letter *legible*; P109 is about the letter being *insufficient*.
+- **P109 (open).** The badge has **no accessible name**, and `added` and `untracked` render the same
+  letter — indistinguishable to a screen reader and ambiguous visually. P106 made the letter
+  *legible*; P109 is about the letter being *insufficient*.
+  > **RECORD CORRECTION 2026-09-03 (P109 §2), and it makes the defect worse than recorded above.**
+  > P106 wrote that `added` and `untracked` "deliberately share the letter `A` (`StatusFileRow.tsx:15`,
+  > P4c)". That is true of **3 of the 6 `BADGES` tables**. The other **3 already render `U`**:
+  > `DiffBrowser.tsx:32`, `DiffFileTree.tsx:22`, `prPanel/PrFileRow.tsx:20` (vs `A` in
+  > `StatusFileRow.tsx:15`, `DiffOverlay.tsx:25`, `ComposerGroupCard.tsx:15`). **The same untracked
+  > file renders `A` in the status panel and `U` in the diff file tree, in the shipped app** —
+  > `notes/todo.txt` is `untracked` in both `src/ipc/fixtures/status.ts:42` and
+  > `src/ipc/fixtures/diffs.ts:126`, so the collision is observable by switching panels. The `U` in
+  > this section's own family name "A/M/D/**U**/R" has had **no referent** under the mapping recorded
+  > in the table above. This is a record correction, not a proposal; the forward fix is
+  > `docs/contracts/P109-status-badge-semantics-ui.md` (recommendation: `U` everywhere, plus
+  > `role="img"` + `aria-label`), which lands under its own AC12.
 
 **No agent may self-declare the three checkpoint items** — the user's checkpoint authority did not
 reach this work, and no agent message closes them.
