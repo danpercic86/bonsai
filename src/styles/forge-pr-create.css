@@ -1,0 +1,220 @@
+/* Bonsai — Right-pane PR panel: the create-PR form, the P83 actions/merge surfaces
+   that sit between its rules, and the forge-connect (token) form. Split out of
+   forge-pr.css verbatim; cascade order is fixed by the import list in
+   src/styles.css — do not reorder these rules or files. */
+
+/* ----- create form + connect ----- */
+
+.pr-create,
+.forge-connect {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+.pr-create-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pr-create-heading,
+.forge-connect-heading {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.pr-create-branches {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* P78: base/compare comboboxes match the mono field styling. */
+.pr-create-branches .combobox {
+  flex: 1;
+  min-width: 0;
+}
+.pr-create-branches .combobox .dialog-input {
+  width: 100%;
+  font-family: var(--font-mono);
+  background: var(--bg-1);
+}
+
+.pr-create-arrow {
+  padding-bottom: 8px;
+  color: var(--text-2);
+}
+
+.pr-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.pr-field-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+
+.pr-input {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-1);
+  color: var(--text-1);
+}
+
+.pr-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.pr-textarea {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.pr-draft-toggle,
+.pr-create-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pr-draft-toggle {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.pr-create-actions {
+  justify-content: flex-end;
+}
+
+.pr-generate-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: none;
+  letter-spacing: normal;
+  /* P105 B5: was --accent — 4.48:1 dark / 4.00:1 light once the row hovers to --bg-2. */
+  color: var(--accent-strong);
+}
+
+/* Icon-system §2.7: 14px leading SummarizeIcon + label. */
+.pr-generate-button svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+/* P83: PR actions footer bar (UI contract §1, §8). Pinned under the body/
+   comments; destructive-left, affirmative-right (mirrors dialog button order). */
+.pr-actions-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+[data-density='compact'] .pr-actions-bar {
+  padding: 8px 12px;
+}
+
+/* P83: secondary-but-dangerous close/decline/abandon button. Base is quiet
+   (--text-2); hover/focus tints text + border to --danger so color is never the
+   sole signal (the verb carries the meaning). */
+.btn-secondary-danger {
+  color: var(--text-2);
+}
+
+.btn-secondary-danger:hover:not(:disabled),
+.btn-secondary-danger:focus-visible:not(:disabled) {
+  color: var(--danger-strong);
+  border-color: var(--danger);
+}
+
+/* P83: merge dialog form card (mirrors .ai-consent-card width for a form). */
+.pr-merge-card {
+  width: 420px;
+}
+
+/* P83: one-line method description under the picker. */
+.pr-merge-method-desc {
+  margin: 4px 0 0;
+  font-size: 12px;
+  /* P98 (orchestrator addition to the contract's seven): a merge-method description is
+     text the user reads in order to choose, i.e. read text by the contract's own test, and
+     ui-reference §2 now asserts the --text-3 read-text family is closed — leaving this one
+     would make that claim false. Was 3.38:1 dark / 2.96:1 light on --bg-1. */
+  color: var(--text-2);
+}
+
+.forge-connect-sub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.forge-connect-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* P64c: per-provider token-scope hint + "create a token" help link. */
+.forge-connect-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.forge-connect-link {
+  /* P105 B6: --accent-strong sits ON TOP of the --text-2 prose it is embedded in (1.02:1
+     dark / 1.28:1 light), so colour cannot carry the link at REST — WCAG G183 wants ≥ 3:1
+     vs surrounding text. The RESTING underline is that carrier (hover adds no second one). */
+  color: var(--accent-strong);
+  text-decoration: underline;
+  /* P107: pinned so the hover thickness bump below is a deterministic 1px -> 2px rather
+     than depending on the UA resolution of `auto`. */
+  text-decoration-thickness: 1px;
+  white-space: nowrap;
+  /* P72: explicit, so the affordance can never silently depend on the `href`
+     surviving a future refactor (the click is IPC-routed). */
+  cursor: pointer;
+}
+
+/* P107: this rule was a no-op -- P105 B6 moved the underline to REST, so hover redeclared
+   the identical underline and the link had no hover feedback at all. A thickness bump is the
+   contrast-safe answer: it keeps the resting underline (the WCAG G183 carrier), adds no
+   colour that would have to clear a ratio, and does not reflow the text around it. */
+.forge-connect-link:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+
+.forge-connect-submit {
+  align-self: flex-start;
+}
+
+.forge-connect-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

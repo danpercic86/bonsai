@@ -29,7 +29,11 @@ const BASELINE_PATH = join(REPO_ROOT, 'scripts', 'file-size-baseline.json');
 const SCAN_TARGETS = [
   { root: 'crates', extensions: ['.rs'] },
   { root: 'src-tauri/src', extensions: ['.rs'] },
-  { root: 'src', extensions: ['.ts', '.tsx'] },
+  // `.css` joined 2026-09-03: forge-pr.css sat at 890 lines for a long time and the
+  // ratchet could not see it, because the limit had never been enforced for styles.
+  // It was free to add — after that split, ZERO css files exceed the limit, so this
+  // adds no baseline entries and only stops the next one from drifting unnoticed.
+  { root: 'src', extensions: ['.ts', '.tsx', '.css'] },
   { root: 'e2e', extensions: ['.ts', '.tsx'] },
 ];
 

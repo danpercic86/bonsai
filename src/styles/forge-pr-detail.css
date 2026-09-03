@@ -1,0 +1,207 @@
+/* Bonsai — Right-pane PR panel: the selected-PR detail header (title, meta, stats,
+   mergeable state, labels, body) and the comment list. Split out of forge-pr.css
+   verbatim; cascade order is fixed by the import list in src/styles.css — do not
+   reorder these rules or files. */
+
+/* ----- PR detail ----- */
+
+.pr-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pr-detail-header {
+  flex: none;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pr-detail-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pr-open-link {
+  text-decoration: none;
+}
+
+.pr-detail-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pr-detail-title-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+
+.pr-detail-num {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.pr-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.pr-detail-stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.pr-stat-add {
+  color: var(--success-strong);
+  font-weight: 600;
+}
+
+.pr-stat-del {
+  color: var(--danger-strong);
+  font-weight: 600;
+}
+
+.pr-stat-files {
+  color: var(--text-2);
+}
+
+/* P107 A1-A3 (R1): the hue ink sat on a 14% tint of its own hue -- 4.61/3.94 clean,
+   3.78/3.76 conflict, 5.64/3.80 pending, all failing 4.5:1 in light and two in dark. The
+   word (Clean / Conflicts / Checking) is the read text, so the ink moves to --text-1
+   (>= 9.99:1 in every state, including inside .pr-row.selected) and the hue is demoted to a
+   hairline inset edge -- decoration, NOT an identity carrier (P107 §7). box-shadow,
+   not border: these pills have no border and 1px would add 2px to every box. */
+.pr-mergeable {
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.pr-mergeable-clean {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--success) 35%, transparent);
+}
+
+.pr-mergeable-conflict {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 35%, transparent);
+}
+
+.pr-mergeable-pending {
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 35%, transparent);
+}
+
+.pr-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.pr-label {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--bg-2);
+}
+
+.pr-body {
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ----- PR comments ----- */
+
+.pr-comments {
+  padding: 12px;
+}
+
+.pr-comment-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pr-comment {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--bg-1);
+}
+
+.pr-comment-review {
+  border-left: 3px solid var(--accent);
+}
+
+.pr-comment-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.pr-comment-author {
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.pr-comment-kind {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+}
+
+.pr-comment-kind-review {
+  /* P105 B4: was --accent — 5.07:1 dark / 4.34:1 light on the PR detail’s --bg-1. */
+  color: var(--accent-strong);
+}
+
+.pr-comment-date {
+  margin-left: auto;
+  color: var(--text-2);
+}
+
+.pr-comment-loc {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.pr-comment-body {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

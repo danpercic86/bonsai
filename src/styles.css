@@ -49,6 +49,10 @@
 @import './styles/worktrees.css';
 @import './styles/composer.css';
 @import './styles/forge-pr.css';
+@import './styles/forge-pr-detail.css';
+@import './styles/forge-pr-create.css';
+@import './styles/forge-account.css';
+@import './styles/forge-pr-changes.css';
 @import './styles/ai-dock.css';
 @import './styles/ai-dock-log.css';
 @import './styles/git-dock.css';

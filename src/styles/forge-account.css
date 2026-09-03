@@ -1,0 +1,180 @@
+/* Bonsai — Forge connected-account header (P79/P80): the account row, the switcher
+   trigger + caret, the avatar, the provider monogram badge and the re-auth banner.
+   Split out of forge-pr.css verbatim; cascade order is fixed by the import list in
+   src/styles.css — do not reorder these rules or files. */
+
+/* ================= P79 — connected-account header + avatar/badge ================= */
+
+.forge-account-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+[data-density='compact'] .forge-account-header {
+  padding: 6px 12px;
+}
+
+.forge-account-login {
+  /* P80: a spacer now pushes the badge/kebab right, so the login no longer
+     grows — it sizes to content and ellipsises when the header is narrow. */
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.forge-account-host {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+.forge-account-kebab {
+  flex: none;
+}
+
+/* P80: the switcher trigger — the left group (login · host · caret) becomes a
+   button when the host has ≥2 accounts. Reset to look like the static row. */
+.forge-account-trigger {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.forge-account-trigger:hover {
+  background: var(--bg-2);
+}
+
+.forge-account-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.forge-account-trigger[aria-disabled='true'] {
+  cursor: default;
+}
+
+/* The trigger owns the login flex-grow; the host stays intrinsic beside it. */
+.forge-account-trigger .forge-account-login {
+  flex: 0 1 auto;
+}
+
+/* P80: small openable caret after the host on the switcher trigger. */
+.forge-account-caret {
+  flex: none;
+  font-size: 10px;
+  color: var(--text-2);
+}
+
+/* P80: muted "why this account is active" caption between host and the badge. */
+.forge-account-source {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 20ch;
+}
+
+/* Pushes the provider badge + kebab to the right when the trigger doesn't grow. */
+.forge-account-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+/* P80: switcher-menu header lines (reuse .context-menu-header container). */
+.context-menu-note {
+  display: block;
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-menu-subnote {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+/* Avatar: mirrors .identity-avatar (22px cozy / 20px compact), object-fit for
+   the <img> variant. Decorative; the login text carries the accessible name. */
+.forge-avatar {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: var(--bg-3);
+  color: var(--text-1);
+  border: 1px solid var(--border);
+  object-fit: cover;
+}
+
+[data-density='compact'] .forge-avatar {
+  width: 20px;
+  height: 20px;
+}
+
+/* Hueless 2-letter provider monogram (reuses .pr-draft-tag geometry). */
+.forge-provider-badge {
+  flex: none;
+  display: inline-block;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 1px 7px;
+  color: var(--text-2);
+  background: var(--bg-2);
+}
+
+/* Re-auth warning banner (§2.2): non-alarming, words carry the meaning. */
+.forge-reauth-banner {
+  border: 1px solid var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--text-1);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.forge-reauth-icon {
+  flex: none;
+  color: var(--warning);
+}
