@@ -1377,6 +1377,102 @@ over 400 days if a user invoked every command every day in Dev mode; in practice
 duration histograms accumulate **only during Dev-mode sessions** (§8, "always on clarified"). The
 `lifetime` fold keeps the tail flat either way.
 
+### 8.3 Metrics persistence ordering — TWO guarantees, not one (RATIFIED 2026-09-03, `bcb3720`)
+
+Persisting `usage.json` is deliberately **two steps that cannot be one lock**: snapshot the
+in-memory `MetricsFile` under the state mutex, then do file IO with that mutex **released** (counters
+keep being bumped while we serialize). Two independent mechanisms guard the two steps, and they must
+not be conflated:
+
+| Mechanism | Guarantees | Does **NOT** guarantee |
+|---|---|---|
+| `SAVE_LOCK` (`obs/metrics_file.rs`, process-wide `Mutex<()>`) | The **commit sequence** is atomic between savers: tmp write → fsync → the `usage.json`/`.bak` **rename pair** never interleaves with another saver's. | Anything about *which* snapshot the bytes came from. It is acquired **after** the snapshot. |
+| `rev` / `commit_rev` generation stamp (`obs/metrics.rs` + `obs/metrics_persist.rs`) | **Snapshot ordering**: a snapshot that lost the race is **dropped**, never written over newer bytes. | Cross-instance / cross-process ordering (see Scope below). |
+
+**Correction of record.** `SAVE_LOCK`'s own doc previously claimed it "serializes the whole commit
+sequence". That overstated it: it serialized the *rename pair*, not the snapshot→commit interval.
+Two savers could snapshot A→B and commit B→A, landing the **older** bytes last. The dangerous pair
+was exactly the one `SAVE_LOCK` cited as its motivation — `reset()` snapshots the emptied file, an
+in-flight 60 s flush holding pre-reset bytes commits after it, and the reset is **silently undone on
+disk**; both paths then cleared `dirty`, so nothing rescheduled a corrective write. `usage.json` is
+durable, is outside the `logs_delete_all` scope (§8), and `metrics_reset` is the user's only way to
+clear it.
+
+**Shape (in-memory only; nothing on disk changes).**
+
+```rust
+// obs/metrics.rs
+struct Inner { /* … */ dirty: bool, rev: u64 }         // `rev` monotone, bumped on every accepted mutation
+pub struct MetricsState { /* Mutex<Inner> + */ commit_rev: AtomicU64 }  // on the STATE, deliberately not in `Inner`:
+                                                                        // it is read/written under SAVE_LOCK, not the state mutex
+impl MetricsState {
+    fn mark_dirty(g: &mut Inner);                       // THE single dirty+rev sink; every writer passes through it
+}
+
+// obs/metrics_persist.rs — the persistence half of MetricsState (also keeps metrics.rs under the 500-line cap)
+impl MetricsState {
+    pub fn flush(&self, perf: &PerfCounters, now_secs: i64) -> Result<(), AppError>;  // delegates to persist()
+    pub fn reset(&self, now_secs: i64) -> Result<(), AppError>;                       // delegates to persist()
+    fn persist(&self) -> Result<(), AppError>;          // the ONE door to usage.json
+}
+```
+
+**Rules, binding on every future writer:**
+
+- **P1 — one door.** All writes to `usage.json` go through `persist()`. `flush` and `reset` add no
+  IO of their own.
+- **P2 — one dirty sink.** Only `mark_dirty` sets `dirty`, and it bumps `rev` in the same step. A
+  writer that sets `dirty` directly defeats P4/P5.
+- **P3 — compare-then-commit.** `persist()` captures `(path, file, rev)` under the state mutex, then
+  **under `SAVE_LOCK`** drops the write when `commit_rev > rev`; on success it stores `rev` into
+  `commit_rev` before releasing. The compare and the commit are one critical section.
+- **P4 — conditional clear.** `dirty` is cleared only if `rev` has not moved since the snapshot, so
+  an observation recorded *during* a write survives to the next flush instead of being dropped.
+- **P5 — failure keeps dirty.** A failed commit leaves `dirty` set; the next flush retries.
+- **P6 — no-delta is not dirty.** `fold_perf` marks dirty only when a delta exists. The old
+  unconditional flag rewrote `usage.json` **every 60 s** and made `dirty` worthless as a signal.
+- **P7 — lock order.** The state mutex and `SAVE_LOCK` are **disjoint, never nested**, in that
+  order. `SAVE_LOCK` must not be held while taking the state mutex, and no snapshot may be cloned
+  while holding `SAVE_LOCK`.
+
+**Why the wider lock lost** (recorded so it is not "simplified" back): taking `SAVE_LOCK` around
+snapshot+save is *correct* but nests `SAVE_LOCK` → state mutex, introducing a **second lock order**
+into a module that already carries a non-reentrant re-entry hazard — `fold_perf` holds the state
+mutex across its whole loop, which is exactly why `bump_validated` takes already-locked totals. It
+would also clone a 400-day `MetricsFile` while holding the IO lock, and would leave the bad
+interleaving reproducible only by racing threads. The stamp preserves the single lock order.
+
+**Test seam.** A thread-local, **one-shot** `after_snapshot_hook()` runs between a saver's snapshot
+and its commit, so the losing interleaving is injected deterministically rather than raced for.
+Thread-local because unit tests share a process; one-shot (`take`n before running) so a hook that
+itself persists cannot recurse. Any future change to P3/P4 must keep a test that drives this seam.
+
+**Scope.** Per-store, unchanged from `SAVE_LOCK`'s. Two `MetricsState` instances, or two processes,
+sharing one path still conflict at the in-memory level; no commit-side check can repair that.
+
+**Unchanged surface:** `rev`/`commit_rev` are in-memory only, nothing new is persisted, the IPC
+surface is untouched, and `OBS_SCHEMA_VERSION` / `METRICS_SCHEMA_VERSION` stay **1**. Mock IPC is
+unaffected — `metricsSnapshot`/`metricsReset` keep their existing shapes.
+
+> **Binding rule.** *A lock that orders a commit does not order the snapshot the commit is derived
+> from.* Whenever state is snapshotted under lock A and committed under lock B, the snapshot must
+> carry a **monotone revision stamp** compared against a last-committed stamp **inside B's critical
+> section**, and the losing write must be **dropped, not applied**. Corollary: any `dirty`/`pending`
+> flag cleared after such a commit must be cleared **conditionally on that same stamp**, or work
+> recorded during the write is lost. Widening one lock over both steps is the tempting fix and is
+> the one to justify against nesting, not the default.
+
+**Acceptance criteria (§8.3):**
+1. Injecting a `reset()` at the seam of an in-flight `flush()` leaves the **emptied** file on disk.
+2. Injecting a `flush()` at the seam of an in-flight `reset()` also leaves the **emptied** file on
+   disk (the older snapshot is dropped, and its return is still `Ok`).
+3. A counter bumped between snapshot and commit leaves `dirty == true` and is present after the
+   next flush.
+4. A commit that fails leaves `dirty == true`.
+5. Two consecutive `flush()` calls with no counter delta and no wall-time delta perform **one**
+   write, not two.
+6. A grep-level check that `SAVE_LOCK` is never acquired while the state mutex is held (P7).
+
 ---
 
 ---
@@ -1638,6 +1734,8 @@ whose phases plausibly explain where the time went**.
 | 29 | **`MAX_KEYS_PER_MAP = 512` + `meta.overflow`** (new surface, `120cadd`) | **RATIFIED AS BUILT; NO global cap.** `obs/metrics_map.rs` caps `counters`/`durations`/`errors` in every `MetricTotals` — day buckets and the 400-day→`lifetime` roll-up — folding overflow into a `<domain>.<action>`-shaped `meta.overflow` bucket so counts are bounded but never lost. Worst-case cardinality is per-map-per-bucket, i.e. `400 × 3 × 513` ≈ **616k keys**, acknowledged. A global cap is **rejected**: it would make today's recording depend on history, so a long-lived install would stop minting keys and dump current activity into overflow, destroying the week-over-week comparison §8.1 exists for. The reachable key set is ~212 (allow-listed), so 512 is a runaway stop, not a sizing parameter. Total-file-size pressure has a different lever — a **size-triggered early roll-up** of the oldest `days[]` into `lifetime` — recorded as a **revisit trigger only** (threshold ~8 MB), not work in P91. §8.1's "~60 keys / 1.2 MB" ceiling is corrected to ~212 keys / ~4.3 MB worst case | §8, §8.1, §8.2 |
 | 30 | **`LogPayload::IpcCall` gains `args_omitted: Option<u32>`** (fixed `120cadd`) | **RATIFIED; `OBS_SCHEMA_VERSION` stays 1** under the row-23 pre-release carve-out (optional + `skip_serializing_if`). **Why it was missing:** the field was contract-declared (A26 §B.6) and producer-emitted but absent from the Rust struct, so serde dropped it at `log_append` deserialisation — writer rule **W6 was dead in production** while its test passed, because that test alone bypassed the `LogRecord`→`append_record` round-trip W1–W5 used. **Binding test rule:** a writer rule is covered only by a round-trip test (`LogRecord` → `append_record` → read the file back); a synthetic-`Value` test is permitted in addition, never instead | §3, `P91-raw-args-privacy.md` §C |
 | 31 | **`briefString` gates on field name in BOTH modes** (fixed `120cadd`) | **RATIFIED.** The raw branch returned 48 characters verbatim for any field, while the hook's doc claimed it was safe to wire "BY CONSTRUCTION" — true only in `strict`. It now applies the shared free-text/credential vocabulary (`isFreeTextParam`/`isSensitiveParam`) in both modes, so a `message`/`query`/`token`-shaped field name is ordinalised or reported as `str:<len>` regardless of mode. The gate must be **name-based here specifically** because `state` records ride **outside** the `raw_args` backstop (W1 scopes it to `kind == "ipc.call"`), making `briefString` the sole gate on that path | §7.1, §9.1 |
+| 32 | **`SAVE_LOCK` ordered the commit, not the snapshot** (increment-6 review item 1; fixed `bcb3720`) | **RATIFIED — generation stamp, NOT a wider lock.** `SAVE_LOCK` made the rename pair atomic but was acquired *after* the snapshot, so two savers could snapshot A→B and commit B→A, landing the **older** bytes last. The realised failure is the pair `SAVE_LOCK`'s own doc cited as its motivation: `reset()` snapshots the emptied file, an in-flight flush commits pre-reset bytes after it, **the reset is silently undone on disk**, and both paths clear `dirty` so nothing reschedules a corrective write. Fix: a monotone `Inner::rev` bumped through the single `MetricsState::mark_dirty` sink, plus `commit_rev: AtomicU64` **on the state, not in `Inner`** (it is read under `SAVE_LOCK`, not the state mutex); one door `persist()` captures `(path, file, rev)` under the state mutex and, **under `SAVE_LOCK`**, compare-then-commits — dropping a snapshot whose `rev` lost. **Why the wider lock lost:** `SAVE_LOCK` around snapshot+save is correct but nests `SAVE_LOCK` → state mutex, adding a **second lock order** to a module that already has a non-reentrant re-entry hazard (`fold_perf` holds the state mutex across its whole loop — the reason `bump_validated` takes already-locked totals); it would clone a 400-day `MetricsFile` under the IO lock, and leave the bad interleaving reproducible only by racing threads. The stamp keeps one lock order: state mutex, then **disjointly** `SAVE_LOCK` (never nested). **Three adjacent defects fixed in the same seam:** `dirty` is cleared only if `rev` has not moved (an observation recorded *during* a write survives); a failed commit leaves `dirty` set; and `fold_perf` no longer dirties on a zero delta — the old unconditional flag rewrote `usage.json` **every 60 s** and made `dirty` meaningless. Nothing persisted changed; `rev`/`commit_rev` are in-memory only; IPC untouched; `OBS_SCHEMA_VERSION` / `METRICS_SCHEMA_VERSION` stay **1**. `flush`/`reset`/`persist` moved to a new `obs/metrics_persist.rs` (which also kept `metrics.rs` under the 500-line cap). **Binding rule (§8.3): a lock that orders a commit does not order the snapshot the commit is derived from** — snapshot-under-A / commit-under-B requires a monotone stamp compared inside B, the losing write dropped, and any `dirty` flag cleared conditionally on that stamp | §8.3 (new), §1 |
+| 33 | **`last_fire` prune premise stated; a `cutoff` guard REJECTED on merit** (`bcb3720`) | **RATIFIED as a comment-only change — the guard is correctly absent.** `Sliding::prune` deletes `last_fire` entries on the same cutoff as `events`, which is correctness-preserving **only under the premise that every later `arm` sees a `now` no smaller than this one**. That premise is now stated in code rather than assumed; it is **not enforced**, because record `ts` merges two unsynchronised clocks (`Date.now()` in the webview, `now_ms()` in Rust) into one writer stream with no monotonic clamp. Consequence of a `ts` regression larger than the window: a dropped debounce entry ⇒ **at most one duplicate anomaly record**. A monotone-cutoff guard was **rejected**: the same monotone cutoff would also **retain more `events`**, which can turn a count rule's non-fire into a **fire** — trading a duplicate record for a **false positive**, i.e. a strictly worse failure for a diagnostic whose value is trust in its firings. **Both effects are bounded and self-healing** once `ts` advances past the window. **Revisit trigger (not work in P91, and an option deliberately left open rather than decided here):** if duplicate anomaly records are ever *observed* in a real log, the fix is a **monotonic clamp at the sink** (`seq` is already authoritative for ordering, §3) — not a cutoff guard in the rules — but that changes the semantics of the `ts` the user sees in exported logs and needs an explicit ruling before it ships | §5, §5.1, §8.3 (rule class) |
 
 **Deferred follow-ups (explicitly out of P91):** app-wide React instrumentation beyond the six
 surfaces; the Statistics page and any UI for `metrics_reset`; selective/per-file log deletion (v1
