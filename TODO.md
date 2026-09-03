@@ -349,6 +349,46 @@ as an authoritative status. Build diary: archive Part 44. Security arc: Part 42.
 
 ---
 
+## ✅ GATE STATE at `c6cd7dd` — GREEN, with a measurement caveat that matters
+
+**All 7 non-e2e steps have been green in every run tonight, regardless of machine load** —
+`cargo nextest`, doctests, clippy, eslint, the file-size ratchet, vitest, and tsc+build.
+
+**e2e: 181 passed / 1 skipped / 0 failed in 172.2 s**, run **alone on a verified-idle machine**
+(CPU sampled 2-19%, 42 GB free, zero scratch processes). That is the only uncontaminated reading of
+the night and it is clean.
+
+### ⚠ The e2e leg is contention-sensitive, and I mis-diagnosed that twice before getting it right
+
+Three consecutive full-gate runs showed e2e failures. **None was a code defect.** Each was the
+machine being saturated — and twice the saturation was caused by this session's own tooling:
+
+1. **Gate-5** failed at the *newly raised* 15 s `FIRST_PAINT_TIMEOUT`, which looked like proof the
+   new number was still too small. It was not. **My own diagnosis agent had left an 18-thread
+   synthetic CPU load generator running** (`bonsai-scratch/load.mjs`, 342 CPU-minutes, machine pinned
+   at 100%), inflating every timing ~2× — `cargo nextest` 151 s against a 73 s norm. **Had I trusted
+   the surface reading I would have bumped the timeout a second time to hide an artifact of my own
+   tooling.**
+2. **Gate-6** I asserted was run on a clean machine. **It was not** — the diagnosis agent was still
+   finishing its own e2e and load runs and overlapped it; its completion notice arrived in the same
+   block as the gate start, and I read that as "already done".
+3. I also claimed **34 stray Playwright browsers were leaking** and degrading the box. **False** —
+   the count had matched `msedgewebview2` as well; a proper `Win32_Process` check found **zero**
+   Playwright-owned processes. The 22 `msedge` are the user's own browser.
+
+**RULE, earned the hard way: before trusting any timing-sensitive failure, verify machine state AT
+THE TIME IT RAN** — sample CPU repeatedly, look for scratch/load processes, and confirm no agent is
+mid-run. A slow timing number is evidence about the machine until proven otherwise. This is the
+timing analogue of the grep-counting rule: *measure the baseline, do not infer it.*
+
+### What this means for the gate
+The `pnpm gate` e2e leg will fail intermittently on a loaded machine, and that is **expected**
+behaviour documented at P104 (Edge misses a hardcoded 30 s CDP close window, then a blocking
+`taskkill` runs). `FIRST_PAINT_TIMEOUT = 15 s` (`c6cd7dd`) removes the largest source, measured at
+7.6× p99. **Run the gate on an otherwise-idle machine, or run e2e with `--workers=1`.**
+
+---
+
 ## Durable lessons — the audit method, and what it cost to learn
 
 These are the reusable findings. They are on the board, not in the archive, because every one of
