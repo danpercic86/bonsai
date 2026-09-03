@@ -13,8 +13,39 @@ All notable changes to Bonsai are documented here. The format is based on
   whichever ref happened to come first, and the "+N" chip that hid the extra refs is clickable
   rather than hover-only.
 
+### Security
+
+- **A cloned repository could no longer aim Bonsai's external tools at a path of its choosing.**
+  A submodule's location comes from `.gitmodules`, which is authored by whoever wrote the repository
+  you cloned — and Bonsai was joining that value onto the superproject's directory without checking
+  the result stayed inside it. A rooted path (`C:/…`, `/…`) or a UNC share (`\\host\share`) replaces
+  the base entirely rather than extending it, so "Open in terminal", "Open in editor" and "Show in
+  folder" on such a row would have run against an attacker-chosen location — and merely testing
+  whether a UNC path exists makes Windows dial that host and offer your credentials. Submodule paths
+  are now validated to stay within the superproject before any absolute path is produced.
+- **A submodule Bonsai refuses to resolve is still shown, just without actions.** Hiding a submodule
+  that Git itself reports would be its own kind of wrong, so the row still lists with its name and
+  status; it simply carries no absolute path, which means **"Open in new tab" is disabled and every
+  external-tool item is absent from its menu**. No raw path is ever used as a fallback.
+
 ### Fixed
 
+- **The commit graph no longer jumps back to the working directory while you are reading a commit.**
+  A background refresh re-streamed the graph and re-picked the selection by row position, so a
+  fetch, a watcher event or a branch switch could silently move you off the commit you had selected.
+  The selection is now anchored to the commit id and survives the re-stream.
+- **A branch switch no longer redraws the whole graph.** A checkout touches hundreds of files at
+  once, and every one of them was waking the file watcher into a full re-stream. Watcher activity is
+  now classified by which part of the repository changed, so a burst of working-directory writes
+  refreshes the status list without rebuilding the history behind it.
+- **A file marked for copying said "unchecked" when its box was ticked.** In the worktree copy
+  dialog, a row whose preview could not be computed showed a red "unchecked" chip — inches from a
+  checkbox that was, in fact, checked. It now reads "unknown" in a neutral colour, and both the
+  chip and the row explain themselves to a screen reader. Red is reserved for "this will destroy
+  something".
+- **The observability export no longer offers to let you choose a folder.** Two buttons and a
+  permission-error message still promised a folder picker that had been removed; the export writes
+  to a fixed location and now says where.
 - **Brand-new files could be destroyed by a branch switch.** A dirty-tree switch auto-stashes with
   untracked files included and pops the stash on the far side. libgit2's untracked-restore phase can
   silently fail to write those files back — the target branch tracks that path (a binary is replaced

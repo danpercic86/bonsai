@@ -33,10 +33,16 @@ native USER CHECKPOINT have both passed — the orchestrator never self-declares
 ## Where the rest of the board went
 
 Full detail for everything compacted out of this file is in `docs/history/` — start at
-`docs/history/README.md`. The 2026-09-03 sweep is `docs/history/todo-archive-2026-09.md`
-**Parts 36-50**; the archive table at the bottom is the short form. Nothing below was closed by the
+`docs/history/README.md`. The 2026-09-03 sweeps are `docs/history/todo-archive-2026-09.md`
+**Parts 36-53**; the archive table at the bottom is the short form. Nothing below was closed by the
 curator: a milestone with a pending USER CHECKPOINT stays here, and open follow-ups stay here
 however old they are.
+
+**2026-09-03 compaction pass (Parts 51-53).** Moved off the board: the `5c2dcd2` and `c6cd7dd` gate
+states plus the e2e-contention narrative (Part 51); the narratives behind items closed that day
+(Part 52); and the stories behind the durable lessons (Part 53). The **rules** those stories taught
+stayed here. **1068 → ~1000 lines** — the ~300-line target is unreachable while seven USER
+CHECKPOINTs and seven FOR USER decisions are open; see the residual note in the Archive section.
 
 **2026-09-03 staleness sweep (no archiving, facts only).** Prompted by two same-day misses of one
 shape — work landed, the entry that filed it was never upgraded (P109 fixed in `5a68e00`;
@@ -468,28 +474,24 @@ grep-counting rules below.
 - **AC13** — screen-reader read-through in the native window with a real AT.
 - **AC14** — the `U` glyph read at 11 px in the native window: confirm `U` is instantly legible.
 
-### ✅ P107 F2 — the copy-candidate chip said "unchecked" on ticked rows — SHIPPED `8337d9b` (2026-09-03)
+### ✅ Closed on 2026-09-03 — one line each, narratives in archive Part 52
 
-Closed the last open item from P107's design review. Contract:
-`docs/contracts/P107-F2-copy-chip-ui.md`.
+The board's own record of having been wrong stayed useful twice today, so these lines stay even
+though the work is done. Full text: `docs/history/todo-archive-2026-09.md` Part 52.
 
-`WorktreeCopyCandidates.tsx` rendered one danger-tinted chip for two conditions, and the
-`previewFailed` branch rendered the word **`unchecked`** — on rows where
-`needsDecision = isChecked && (…)`, so the chip appears **only when the box IS ticked**, inches from
-an actual checkbox. The word read as the exact opposite of the truth. Now `unknown`, with a neutral
-`.wt-copy-chip--unknown` modifier: danger means "this will destroy something", which fits `conflict`
-and not "we could not compute a verdict". `.wt-copy-chip` itself is byte-identical — P107 A16's
-contrast remediation (11.31 / 12.21) stands. Both branches gained a `title`; the row checkbox gained
-`aria-describedby` → the chip, so the reason reaches a screen reader.
-
-**Same increment, P91:** two shipped strings still promised the folder picker that security audit
-**F4** removed (`confirmLabel="Choose location…"`, and "Choose a different folder" on permission
-denial) — plus the success toast, which named no location while the page's `Show in folder` reveals
-`logs/` and the zip lands in the sibling `exports/`.
-
-**Why both went unnoticed: neither state was reachable in the harness.** Added
-`?wtCopyPreviewFail=1` and `?obsExportFail=space|permission|other`, the latter reaching three
-`exportErrorText` branches that had **no route at all**. Both verified in the harness.
+- **P107 F2 — the copy-candidate chip said "unchecked" on ticked rows** — SHIPPED `8337d9b`.
+  Contract `docs/contracts/P107-F2-copy-chip-ui.md`. `WorktreeCopyCandidates.tsx`'s `previewFailed`
+  branch read as the exact opposite of the truth; now `unknown` on a neutral
+  `.wt-copy-chip--unknown`. `.wt-copy-chip` itself byte-identical, so P107 A16's 11.31 / 12.21 stands.
+- **Same increment, P91:** two shipped strings still promised the folder picker security audit **F4**
+  removed; corrected. Both states were unreachable in the harness until `?wtCopyPreviewFail=1` and
+  `?obsExportFail=space|permission|other` were added — the latter reached three `exportErrorText`
+  branches that had **no route at all**. Both verified in the harness.
+- ~~**`.settings-toggle-btn.is-active` is dead styling**~~ — **ALREADY DONE**; P107 `2168057` had
+  deleted both rules two commits earlier. Board was stale (2nd such miss that day, after P109).
+- ~~**`pr-badge-placement-ui.md` documents the merged pill as `#8957e5`**~~ — **DONE** `fc9c36e`.
+  Worse than filed: `ui-reference.md` carried the stale literal at `:1038`/`:1048` while `:71`
+  recorded it replaced — the canonical design system contradicting itself. All five repointed.
 
 ### ✅ SEC-2026-09-03 — external-process launching: repo-authored paths were unvalidated — REMEDIATED `0806596`
 
@@ -545,21 +547,27 @@ CWD, capabilities narrowed deliberately, `script-src 'self'` with no `unsafe-inl
 
 ### Queued housekeeping (none blocking)
 
-- **`src/styles/forge-pr.css` is 890 lines** (measured 2026-09-03; the board said ~710, which was
-  180 lines stale), well over the ~500-line soft limit → `refactorer`.
+- ~~**`src/styles/forge-pr.css` is 890 lines**~~ — **DONE** `e149382`. Split into five modules
+  (213 / 207 / 220 / 180 / 87). Cascade order was the constraint, so every chunk is a **contiguous
+  original line range in original order** — correct by construction. Proven twice: the concatenation
+  diffs empty against the original body (887 lines each side), and the **emitted stylesheet is
+  byte-identical** — `pnpm build` yields the same Vite content-hashed filename before and after, and
+  since Vite derives that name from the content, the match *is* the proof.
+  *(The curator observed this mid-flight and correctly logged it as "in flight, not a status
+  upgrade" rather than ticking it. It was this session's own uncommitted work, not a peer's.)*
+- **The ~500-line limit had never been enforced for CSS** — `scripts/check-file-size.mjs`
+  `SCAN_TARGETS` covered `crates/**.rs`, `src-tauri/src/**.rs`, `src/**.{ts,tsx}` and **no `.css` at
+  all**, which is how 890 lines went unnoticed. `.css` added in `e149382`, and it was **free**: after
+  the split zero CSS files exceed the limit, so it added no baseline entries and
+  `file-size-baseline.json` is byte-unchanged. Three items were found during the split and
+  deliberately NOT fixed (each would reorder the cascade or cross into another file):
+  `context-menu.css:89` now points at a rule that lives in `forge-account.css`; a duplicate
+  `.pr-create-actions` rule in `forge-pr-create.css`; and the generic `.btn-secondary-danger`
+  sitting in `forge-pr-create.css` where it thematically belongs with `controls.css`.
 - **`image_diff_cli_2.rs`** numbered split still owed — renaming changes nextest IDs, so it needs its
   own increment where that IS the expected diff. Path re-verified 2026-09-03:
   `crates/bonsai-core/tests/diff/image_diff_cli_2.rs` (it moved under `tests/diff/`; the board never
   carried a path).
-- ~~**`.settings-toggle-btn.is-active` is dead styling**~~ — **ALREADY DONE**, board was stale.
-  P107 `2168057` deleted both rules (its own message says so: "re-confirmed dead before deleting").
-  Verified 2026-09-03: zero `settings-toggle-btn` + `is-active` pairings in `src/**`, and the only
-  surviving rule is the live `min-width: 72px` at `settings-legacy-sections.css:93`. Second board
-  entry this session found stale in the same way as P109 — worth a curation sweep for more.
-- ~~**`pr-badge-placement-ui.md` documents the merged pill as `#8957e5`**~~ — **DONE** `fc9c36e`.
-  Worse than filed: `ui-reference.md` itself carried the stale literal at `:1038`/`:1048` while `:71`
-  recorded it as replaced — the canonical design system contradicting itself. All five repointed to
-  `--merged` and reworded, since the passages also called it theme-invariant and `--merged` is not.
 - **The 90-char branch-name chip** becomes a 50 px two-line stadium at `border-radius: 999px` —
   pre-existing, newly visible because P102/P105 added the fixture that reaches it.
 - **`ui-reference.md` is growing fast** (§2 now carries a 16-row evidence table) — worth its own
@@ -576,7 +584,7 @@ CWD, capabilities narrowed deliberately, `script-src 'self'` with no `unsafe-inl
 
 496.4 s total. Machine **not** fully idle this time — CPU sampled 21-64% with no build running (that
 is the harness/MCP floor), so these are pass/fail evidence and **must not be compared as timings**
-against the `5c2dcd2` baseline below. Recorded that way deliberately.
+against the `5c2dcd2` idle baseline (archive Part 51). Recorded that way deliberately.
 
 | step | time |
 |---|---|
@@ -613,89 +621,51 @@ code, but it is the same argv-vs-shell class the audit just spent a day on.
 
 ---
 
-## ✅ GATE STATE at `5c2dcd2` — **ALL 8 STEPS PASSED** (2026-09-03)
+## Earlier gate states — archived, with the rules they earned
 
-Run on a machine **verified idle first** — CPU sampled six times (~1% after the sampler's own
-startup spike), **zero** `bonsai-scratch`/`load.mjs` processes, 42 GB free. 362.0 s total:
+- **`5c2dcd2` — ALL 8 STEPS PASSED, 362.0 s (2026-09-03)**, on a machine verified idle first (CPU
+  ~1%, zero `bonsai-scratch`/`load.mjs` processes, 42 GB free). This is the **idle baseline** the
+  `c218258` block above must not be timed against. Per-step table: archive Part 51.
+- **`c6cd7dd`** — kept on the board until 2026-09-03 for its reasoning, not its status; now archive
+  Part 51. All 7 non-e2e steps green in every run regardless of load; e2e 181 passed / 1 skipped in
+  172.2 s run alone on a verified-idle machine.
+- The **e2e mis-diagnosis story** (three "failing" gate runs, none a code defect: my own diagnosis
+  agent's 18-thread `load.mjs` generator left running, an overlapping agent run I asserted was clean,
+  and 34 "leaking Playwright browsers" that were the user's own `msedge`) is archive Part 51.
 
-| step | time |
-|---|---|
-| `cargo nextest` | 108.0 s |
-| doctests | 3.8 s |
-| clippy | 8.5 s |
-| eslint | 11.1 s |
-| **file-size ratchet** | 0.73 s |
-| vitest | 56.2 s |
-| tsc + vite build | 10.9 s |
-| **e2e playwright** | **162.7 s** |
+**Rules earned there — these stay on the board:**
 
-This covers everything shipped in the session, including P109's badge consolidation, the metrics
-snapshot-ordering fix, and both contract ratifications.
-
-**Verifying machine state before running is now a standing pre-gate step**, not a nicety — see the
-caveat section below for why. The earlier gate state at `c6cd7dd` is kept underneath because the
-reasoning is the point.
-
----
-
-## 📌 The earlier gate state at `c6cd7dd` — kept for the reasoning, not the status
-
-**All 7 non-e2e steps have been green in every run tonight, regardless of machine load** —
-`cargo nextest`, doctests, clippy, eslint, the file-size ratchet, vitest, and tsc+build.
-
-**e2e: 181 passed / 1 skipped / 0 failed in 172.2 s**, run **alone on a verified-idle machine**
-(CPU sampled 2-19%, 42 GB free, zero scratch processes). That is the only uncontaminated reading of
-the night and it is clean.
-
-### ⚠ The e2e leg is contention-sensitive, and I mis-diagnosed that twice before getting it right
-
-Three consecutive full-gate runs showed e2e failures. **None was a code defect.** Each was the
-machine being saturated — and twice the saturation was caused by this session's own tooling:
-
-1. **Gate-5** failed at the *newly raised* 15 s `FIRST_PAINT_TIMEOUT`, which looked like proof the
-   new number was still too small. It was not. **My own diagnosis agent had left an 18-thread
-   synthetic CPU load generator running** (`bonsai-scratch/load.mjs`, 342 CPU-minutes, machine pinned
-   at 100%), inflating every timing ~2× — `cargo nextest` 151 s against a 73 s norm. **Had I trusted
-   the surface reading I would have bumped the timeout a second time to hide an artifact of my own
-   tooling.**
-2. **Gate-6** I asserted was run on a clean machine. **It was not** — the diagnosis agent was still
-   finishing its own e2e and load runs and overlapped it; its completion notice arrived in the same
-   block as the gate start, and I read that as "already done".
-3. I also claimed **34 stray Playwright browsers were leaking** and degrading the box. **False** —
-   the count had matched `msedgewebview2` as well; a proper `Win32_Process` check found **zero**
-   Playwright-owned processes. The 22 `msedge` are the user's own browser.
-
-**RULE, earned the hard way: before trusting any timing-sensitive failure, verify machine state AT
-THE TIME IT RAN** — sample CPU repeatedly, look for scratch/load processes, and confirm no agent is
-mid-run. A slow timing number is evidence about the machine until proven otherwise. This is the
-timing analogue of the grep-counting rule: *measure the baseline, do not infer it.*
-
-### What this means for the gate
-The `pnpm gate` e2e leg will fail intermittently on a loaded machine, and that is **expected**
-behaviour documented at P104 (Edge misses a hardcoded 30 s CDP close window, then a blocking
-`taskkill` runs). `FIRST_PAINT_TIMEOUT = 15 s` (`c6cd7dd`) removes the largest source, measured at
-7.6× p99. **Run the gate on an otherwise-idle machine, or run e2e with `--workers=1`.**
+- **Before trusting any timing-sensitive failure, verify machine state AT THE TIME IT RAN** — sample
+  CPU repeatedly, look for scratch/load processes, confirm no agent is mid-run.
+- A slow timing number is **evidence about the machine** until proven otherwise. Timing analogue of
+  the grep-counting rule: *measure the baseline, do not infer it.*
+- **Verifying machine state before running the gate is a standing pre-gate step**, not a nicety.
+- The e2e leg **will** fail intermittently on a loaded machine — expected, documented at P104 (Edge
+  misses a hardcoded 30 s CDP close window, then a blocking `taskkill` runs).
+- `FIRST_PAINT_TIMEOUT = 15 s` (`c6cd7dd`) removed the largest source, measured at 7.6× p99.
+- **Run the gate on an otherwise-idle machine, or run e2e with `--workers=1`.**
 
 ---
 
-## Durable lessons — the audit method, and what it cost to learn
+## Durable lessons — the rules
 
-These are the reusable findings. They are on the board, not in the archive, because every one of
-them was learned by a claim that was green the whole time it was wrong.
+The reusable rules. They are on the board, not in the archive, because every one was learned by a
+claim that was green the whole time it was wrong. **The stories, worked numbers and measurement
+narrative behind them are archive Part 53** — cite the rule here, read the story there.
 
-### The six failed app-wide claims, and the distinction between them
+### The six failed app-wide claims
 
-Every one had the same shape: **a sentence claiming an app-wide property, with a call-site count
-that nobody enumerated.** The first five failed for want of an enumeration. The sixth is different
-and worse — the enumeration **existed** and was still blind, because it was **scoped by token name**.
+Every one had the same shape: **a sentence claiming an app-wide property, with a call-site count that
+nobody enumerated.** The first five failed for want of an enumeration. The sixth is worse — the
+enumeration **existed** and was still blind, because it was **scoped by token name**.
 
 1. **P95** — the enabled-control class; 3 escapes found by P101.
 2. **P98** — "`--text-3` family closed"; 122 declarations were never classified.
 3. **P74** — the hue-as-text sweep; became P105.
 4. **`ui-reference.md` §2** — "6 live hue-over-own-tint instances"; the real population is **38**.
 5. **P106's hand-over count of 48** for P108; the real inventory was **62**.
-6. **P101** — an *exhaustive* `--text-3` audit recorded as CLOSED, which still missed a **2.96
-   light** glyph, because **`--badge-unknown` is byte-identical to `--text-3`**.
+6. **P101** — an *exhaustive* `--text-3` audit recorded as CLOSED, which still missed a **2.96 light**
+   glyph, because **`--badge-unknown` is byte-identical to `--text-3`**.
 
 **The rule:** a bucket + verdict per call site, P101 §3 style, or it is not closed. Enumerate,
 bucket, record a verdict per site, predict the post-fix residue, then verify the prediction.
@@ -706,8 +676,8 @@ bucket, record a verdict per site, predict the post-fix residue, then verify the
 - **An audit scoped by token NAME cannot see an alias. Scope by resolved VALUE.**
 - Token aliasing has hidden instances three times: `--badge-good`/`--badge-warn` are byte-identical
   to `--success`/`--danger` (the first pair), then `--badge-unknown` to `--text-3`.
-- A `var()` **fallback masking a missing token is invisible to any hue-name search**, because the
-  hue name appears only in the fallback (`--warn`, which is defined nowhere).
+- A `var()` **fallback masking a missing token is invisible to any hue-name search**, because the hue
+  name appears only in the fallback (`--warn`, which is defined nowhere).
 - A naive probe of an **undefined** custom property returns the *inherited* value, not the value the
   contract cites — same trap class.
 
@@ -730,9 +700,9 @@ bucket, record a verdict per site, predict the post-fix residue, then verify the
   the tint, **AND** the base.
 - A figure naming only the tint is **incomplete evidence and may not be used to close an AC**.
 - Proof: `--accent-strong` on a 14% accent tint measures **6.42/5.19 over `--bg-0`**, **5.85/4.87
-  over `--bg-1`** (P107's figure) and **5.16/4.52 over `--bg-2`** (P106's). All three reproduce under
-  one method — the two contracts never disagreed, **neither stated its base**, and the base alone
-  accounts for **1.26** of dark-theme spread.
+  over `--bg-1`** (P107's figure) and **5.16/4.52 over `--bg-2`** (P106's) — one method, three bases.
+  The two contracts never disagreed; **neither stated its base**, and the base alone accounts for
+  **1.26** of dark-theme spread.
 
 ### The three P91 testing rules — now in the contract, not only in session memory
 
@@ -758,22 +728,18 @@ bucket, record a verdict per site, predict the post-fix residue, then verify the
   (0,1,0), so the destructive discard button rendered in accent blue with no danger hue at all while
   passing every AC grep. Sibling to the child-rule trap; both are in `ui-reference.md` §2.
 
-### The measurement lessons (archive Part 46 for the numbers)
+### The measurement rules (numbers: archive Part 46; the worked narrative: archive Part 53)
 
-- **Optimising the measured-slowest test did not move workspace wall, because a different test
-  became the floor.** Banding `prop_status` (3.25x) and `prop_stash_roundtrip` (3.2x) moved wall
-  only 108.8s → 102.9s. The real floor was `corrupt_repo_matrix_never_panics` — 44.0s contended but
-  **24.7s alone**, so intrinsic, and it held **13** cells, not the 10 the diagnosis assumed. Net for
-  the pass: `cargo nextest --workspace` **106.5s → 92.5s** with tests *increasing* 2298 → 2316.
-- **Concurrent agents on this box produce outliers** — one 136s run came purely from CPU contention;
-  single-run numbers are worthless, use paired or repeated runs.
-- **proptest regression seeds were worse than useless**: proptest keys its persistence file **per
-  source file, not per test fn**, so after banding all 4 bands replayed all 3 seeds — and a `cc`
-  seed regenerates values through the *current* strategy, so they no longer reproduced the inputs in
-  their own shrink comments. **Random cases wearing a regression label.**
-- **Do not run the e2e suite concurrently with other heavy jobs.** Playwright's Edge teardown has a
-  hardcoded 30 s CDP close window and a blocking `taskkill`; under load that is minutes of dead air
-  that reads as a hang. `gate.mjs` is strictly serial, so the gate itself is safe.
+- **Optimising the measured-slowest test may not move wall clock, because a different test becomes
+  the floor.** Net for the 2026-09-03 pass: `cargo nextest --workspace` **106.5s → 92.5s** with tests
+  *increasing* 2298 → 2316.
+- **Concurrent agents on this box produce outliers** — single-run numbers are worthless; use paired
+  or repeated runs.
+- **proptest regression seeds can be worse than useless**: proptest keys its persistence file **per
+  source file, not per test fn**, and a `cc` seed regenerates values through the *current* strategy.
+  Random cases wearing a regression label.
+- **Do not run the e2e suite concurrently with other heavy jobs.** `gate.mjs` is strictly serial, so
+  the gate itself is safe.
 - **A flake that reproduces deterministically in a production bundle is not a flake** (P103).
 
 ---
@@ -853,27 +819,18 @@ Ratchet baseline moved **27 offenders / 6241 excess → 20 / 3528**; full gate g
   **not** `pendingForcePush` (`:208`), `pendingCommitPush` (`:205`) or `abortConfirmOpen` (`:178`);
   `pendingBisectBad` lives outside the hook entirely at `RepoWorkspace.tsx:299`. Four flags, not
   three.
-- ~~**`ai::session*` is load-flaky** — wall-clock watchdog margins; needs a clock seam, not wider
-  sleeps.~~ — **the clock seam LANDED in `734b310`** (`test(ai): drive the session watchdog from an
-  injectable clock, not wall time`), verified an ancestor of HEAD 2026-09-03. `crates/bonsai-core/
-  src/ai/clock.rs` exists and `crates/bonsai-core/src/ai/session_watchdog_tests.rs:41/67/115` drives
-  the watchdog with `TestClock::new()` + `clock.advance(...)`, not sleeps. The board asked for
-  exactly this fix and it is in the tree. Per FOR USER item 6 the formal close is the
-  orchestrator's; the evidence is no longer in doubt.
+- ~~**`ai::session*` is load-flaky** — needs a clock seam, not wider sleeps.~~ — **the clock seam
+  LANDED in `734b310`**, an ancestor of HEAD; `crates/bonsai-core/src/ai/clock.rs` +
+  `session_watchdog_tests.rs:41/67/115` drive it with `TestClock`. Evidence not in doubt, but the
+  **formal close belongs to FOR USER item 6**, so it stays open here. Detail: archive Part 52.3.
 - **Contract divergences the tests document as bugs-in-the-contract:** rebase §3.1.5/§9.7
   unstaged-changes precondition, and the libgit2-vs-CLI rename/delete conflict index-entry count.
   Plus a near-tautological `expected_presence` oracle.
-- ~~**Duplicated external-tool launchers**~~ — **DONE** `9273238`. Hoisted to
-  `src/hooks/useExternalTools.ts`; `App.tsx` 602 → 590, ratchet lowered by hand (not
-  `--update-baseline`, which rewrites the whole file and would have swept in in-flight work).
-  `sessionSaveTimer` fixed, with a **proven-red** test. **The toast auto-dismiss timer fix is
-  deliberately REVERTED** — `React.StrictMode` is on in `main.tsx`, so every dev mount runs
-  effects → cleanups → effects, and a toast pushed during the FIRST pass has already armed its
-  handle when that cleanup fires; cancelling on unmount strands it on screen permanently. A
-  dev-only behaviour regression traded for a dev-only timer leak. `useToastQueue.test.tsx` carries
-  the finding so nobody re-applies it. `useRepoTabs` is immune for a *specific* reason, not by luck:
-  its persist effect is gated on `sessionReadyRef`, which `App.tsx:339` sets only after an awaited
-  async restore, so nothing is armed during the synchronous double-mount.
+- ~~**Duplicated external-tool launchers**~~ — **DONE** `9273238`; hoisted to
+  `src/hooks/useExternalTools.ts`, `App.tsx` 602 → 590, `sessionSaveTimer` fixed with a proven-red
+  test. **Standing warning:** the toast auto-dismiss timer fix is **deliberately REVERTED** —
+  `React.StrictMode` makes cancel-on-unmount strand a toast on screen permanently. Do not re-apply;
+  `useToastQueue.test.tsx` carries the finding. Full reasoning: archive Part 52.4.
 - **Duplicated helpers left visible, not merged** (behavior risk, not a move): atomic-write helpers
   across `assets/bundle/write.rs` + `assets/profiles/store.rs`; test helper families across
   `tests/diff/` and the four `tests/rebase_merge/*_support.rs`.
@@ -906,12 +863,10 @@ Baseline numbers: `docs/history/velocity-2026-09-01.md`. Done in that pass: prop
 - **keyring 3 → 4** needs a dedicated increment: 4.x moves onto `keyring-core`, renames every
   per-backend feature, drops `crypto-rust`, and requires explicit credential-store registration —
   real changes to `crates/bonsai-forge/src/auth.rs`. (DEP REFRESH, archive Part 24.)
-- ~~**`no_proxy_client()`** in `src-tauri/src/mcp/http_support.rs` still uses `.expect("build reqwest
-  client")`.~~ — **CLOSED by the orchestrator 2026-09-03**; this bullet was the stale half of the
-  contradiction FOR USER item 6 already resolved. The `.expect` is still there
-  (`src-tauri/src/mcp/http_support.rs:221`, re-verified 2026-09-03) but the module is declared
-  `#[cfg(test)]` (`src-tauri/src/mcp.rs:410`) `mod http_support;` (`:411`), so it never compiles into a
-  shipped binary. Item 6 is the canonical record; this line is a pointer, not a second opinion.
+- ~~**`no_proxy_client()` `.expect("build reqwest client")`**~~ — **CLOSED 2026-09-03.** The
+  `.expect` survives at `src-tauri/src/mcp/http_support.rs:221`, but the module is `#[cfg(test)]`
+  (`src-tauri/src/mcp.rs:410-411`), so it never reaches a shipped binary. **FOR USER item 6 is the
+  canonical record**; this line is a pointer, not a second opinion. Detail: archive Part 52.5.
 - **P87b FU-1..4** still open: target row label, commitAmend row, row `role`/`aria-expanded`,
   clickable dock bar. Plus the `AiActivityPanel` aria-label NIT. (archive Part 27.)
 - **RepoWorkspace refactor** still stands for maintainability (not perf); P88's audit re-confirmed it.
@@ -1055,7 +1010,7 @@ part number. The table below is the short form.
 | File | Covers |
 |---|---|
 | `docs/history/README.md` | **The archive index** — which file/part holds which milestone. |
-| `docs/history/todo-archive-2026-09.md` | **Parts 36-50 (moved 2026-09-03):** the file-size refactor pass · the full narratives of P102+P105, P106, P107, P108 and the P91 security arc + audit + build diary (their milestone entries stay live above) · superseded pre-ship filings for P102/P105/P106/P108, the dead-CSS decision block and the resolved `lint:size` blocker · the 2026-09-03 velocity pass · P99, P100, P101, P98, P95, P96, P97 and the P100+P101+DX-e2e banner · built-bundle e2e + P103 + P104 · the DX/velocity stubs · the pre-condensation open-follow-up text. **Parts 33-35 (2026-09-01):** the P84 record gap · macOS ad-hoc signing · the two 2026-08-22 design reviews. **Parts 22-32 (2026-09-01, verbatim):** P94 · P93+P92 · DEP REFRESH · P90+P89 · P88 · the P85-P87 batch · P82+P83 · divergence reconcile + Release 1.1.0 · the DX dev-loop text · the confirmed-checkpoints block · the 2026-08-21 resolved follow-ups. |
+| `docs/history/todo-archive-2026-09.md` | **Parts 51-53 (moved 2026-09-03, compaction pass):** the `5c2dcd2` + `c6cd7dd` gate states and the e2e-contention mis-diagnosis story · the full narratives of everything closed 2026-09-03 (P107 F2, the four `112800c` ticks, the `4002ad2` struck entries) · the durable-lessons stories and worked numbers. **Parts 36-50 (moved 2026-09-03):** the file-size refactor pass · the full narratives of P102+P105, P106, P107, P108 and the P91 security arc + audit + build diary (their milestone entries stay live above) · superseded pre-ship filings for P102/P105/P106/P108, the dead-CSS decision block and the resolved `lint:size` blocker · the 2026-09-03 velocity pass · P99, P100, P101, P98, P95, P96, P97 and the P100+P101+DX-e2e banner · built-bundle e2e + P103 + P104 · the DX/velocity stubs · the pre-condensation open-follow-up text. **Parts 33-35 (2026-09-01):** the P84 record gap · macOS ad-hoc signing · the two 2026-08-22 design reviews. **Parts 22-32 (2026-09-01, verbatim):** P94 · P93+P92 · DEP REFRESH · P90+P89 · P88 · the P85-P87 batch · P82+P83 · divergence reconcile + Release 1.1.0 · the DX dev-loop text · the confirmed-checkpoints block · the 2026-08-21 resolved follow-ups. |
 | `docs/history/todo-archive-2026-08.md` | Parts 1-9: P65 to P28 build detail, the Phase 1-4 banners, resolved FOR-USER decisions, P69(1.0.0)/P67/P68 detail. Parts 10-16: the P62-P74 checkpoint waiver + P71-P74, the P69 Settings redesign, the Audit #2 fix batch. Parts 17-18: P70 and P77. Part 19: the follow-ups resolved 2026-08-21, verbatim. Part 20: P78/P79/P80. Part 21: P80b/P81/P82. |
 | `docs/history/todo-archive.md` | P27 to P2, M0-M6 |
 | `docs/history/milestones-mvp.md` | the M0-M6 AI-gate vs USER CHECKPOINT split |
@@ -1066,3 +1021,15 @@ part number. The table below is the short form.
 Move a milestone's section into the current dated archive file only once **both** halves of its gate
 have passed (or the native half is explicitly waived). A milestone with a pending USER CHECKPOINT
 stays on this board.
+
+### Why this board is ~1000 lines, not ~300 (curator note, 2026-09-03)
+
+Residual composition, measured after the Parts 51-53 pass: FOR USER decisions **135** · awaiting
+USER CHECKPOINT **198** · P110 + P109 **~84** · SEC-2026-09-03 **~52** · durable-lesson rules
+**~97** · accepted decisions **~44** · open follow-ups **~214** · header/conventions/gate/archive
+**~180**.
+
+**~470 of those lines become archivable the instant the seven USER CHECKPOINTs and seven FOR USER
+decisions clear** — and not before. Going further today would mean archiving a pending checkpoint
+(forbidden) or stripping the 2026-09-03 sweep's freshly-verified `file:line` citations out of the
+open follow-ups, which is the evidence a cold resume needs most.
