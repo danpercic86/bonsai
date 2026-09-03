@@ -4,7 +4,7 @@ Everything ever removed from `TODO.md` lives here. Compaction is **lossless**: a
 moved, never summarized away. If you are looking for a milestone that is not on the board, it is in
 one of the files below.
 
-Curated by `docs-curator`. Last updated **2026-09-01**.
+Curated by `docs-curator`. Last updated **2026-09-03**.
 
 ## How to find a milestone
 
@@ -25,6 +25,21 @@ Curated by `docs-curator`. Last updated **2026-09-01**.
 | **P84** (sidebar reveal-in-graph + tag auto-sync) — record gap | `todo-archive-2026-09.md` Part 33 | Code shipped (`cce9eb9`, `90b315c`, `1803391`, `6868be6`); **USER CHECKPOINT never recorded**; contracts archived on user instruction 2026-09-01. |
 | macOS ad-hoc code signing — config done 2026-08-30, **release still pending** | `todo-archive-2026-09.md` Part 34 | A one-line live pointer stays in `TODO.md`. |
 | The two dated 2026-08-22 design reviews — per-finding dispositions | `todo-archive-2026-09.md` Part 35 | Includes which findings are still open. |
+| File-size refactor pass (2026-09-02) | `todo-archive-2026-09.md` Part 36 | Its still-open follow-ups stay live in `TODO.md`. |
+| P102 + P105 hue audit — full narrative | `todo-archive-2026-09.md` Part 37 | **Milestone still LIVE**: AC18/19/20 pending USER CHECKPOINT. |
+| P106 status-badge ink — full narrative | `todo-archive-2026-09.md` Part 38 | **Milestone still LIVE**: AC14/AC15 + the real-repo half of AC9 pending. |
+| P108 hue-as-text on neutral — full narrative | `todo-archive-2026-09.md` Part 39 | **Milestone still LIVE**: AC12/13/14 pending; **AC11 OWED/unverified**. |
+| P107 hue-over-own-tint — full narrative | `todo-archive-2026-09.md` Part 40 | Header archived as it stood ("IMPL PENDING") although `2168057` shipped it. |
+| Superseded pre-ship filings (P102/P105/P106/P108), the dead-CSS decision block, the resolved `lint:size` blocker | `todo-archive-2026-09.md` Part 41 | |
+| P91 security arc (code + contract complete) | `todo-archive-2026-09.md` Part 42 | **P91 still LIVE**: its USER CHECKPOINT was never presented. |
+| P91 security audit F1–F9 | `todo-archive-2026-09.md` Part 43 | **F6 and the home-directory masking question stay live** as user decisions. |
+| P91 observability build diary + planning record | `todo-archive-2026-09.md` Part 44 | Includes the "WIP on branch, do not merge" note. |
+| P91 increment-4-7 SHOULD-FIX follow-ups (full text) | `todo-archive-2026-09.md` Part 45 | **Still open**; one line per item stays on the board. |
+| Velocity — workspace test wall cut 14% (2026-09-03) | `todo-archive-2026-09.md` Part 46 | `737cc4b`, `5731d37`. |
+| P99, P100, P101, P98, P95, P96, P97 + the P100+P101+DX-e2e banner | `todo-archive-2026-09.md` Part 47 | All done with USER CHECKPOINT confirmed. |
+| Built-bundle e2e, P103, P104, the dev/prod gap inventory | `todo-archive-2026-09.md` Part 48 | **The bundle-default flip stays live** as a user decision. |
+| DX dev-loop + velocity/gate-cost stubs | `todo-archive-2026-09.md` Part 49 | P75 HALTED and P76 held stay live on the board. |
+| OPEN follow-ups as they stood before the 2026-09-03 condensation | `todo-archive-2026-09.md` Part 50 | Nothing here was closed; the board carries one line per item. |
 
 ## Non-milestone records
 

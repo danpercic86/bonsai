@@ -38,7 +38,7 @@ carries open, tracked work).
 | `P68-user-checklist.md` | P68 | Native checklist (real CLI past 90 s, cancel, mid-run question, read-only tools, bulk, settings, consent copy). | done — kept with the P68 cluster |
 | `P75-ipc-codegen.md` | P75 | Generate the IPC boundary from Rust with tauri-specta v2 (all 173 commands, no call-site churn). | HALTED 2026-08-21 — tauri-specta breaks Win10 app launch (`kernel32!WaitOnAddress`); reverted, findings + pins kept |
 | `P76-native-checkpoint-automation.md` | P76 | tauri-driver + WebdriverIO harness to automate ~60–70% of the native USER CHECKPOINT backlog. | deferred — HELD as contract-only per user (2026-08-20) |
-| `P95-a11y-ui.md` | P95 | Graph scroller semantics (live-region-only ARIA), keyboard reachability, toolbar/control contrast; AC1–AC17. | awaiting USER CHECKPOINT (AC8/AC14/AC15/AC16) — implemented `f9a9209` |
+| `P95-a11y-ui.md` | P95 | Graph scroller semantics (live-region-only ARIA), keyboard reachability, toolbar/control contrast; AC1–AC17. | done — implemented `f9a9209`; AC8/14/15/16 confirmed by USER 2026-09-01 (archive Part 47). Archive-eligible; kept active because §4.1 forbids the `role="grid"` model. |
 | `checkout-commit-backend.md` | — | Dirty-safe "checkout an arbitrary commit → detached HEAD" command + IPC surface + frontend handler. | implementation appears shipped (`7036fef` covers detached-HEAD checkout) — kept active: no checkpoint record mapped |
 | `checkout-commit-ui.md` | — | Commit & branch menu structure for checkout-commit across graph rows, ref pills, sidebar rows. | implementation appears shipped (`7036fef` covers detached-HEAD checkout) — kept active: no checkpoint record mapped |
 | `hook-disclosure.md` | — | First-time per-repo git-hook execution disclosure (`hooks_enabled` defaults true). | spec — implementation status unverified |
@@ -47,6 +47,33 @@ carries open, tracked work).
 | `novel-content-gate.md` | P68 #7 / H1 | Novel-content gate: demote auto-resolved files containing lines absent from base/ours/theirs. | open — P68 security follow-up 7 (TODO.md) |
 | `pr-badge-placement-ui.md` | — | Move the forge PR badge + CI dot out of the ref-column band into a right-aligned forge column. | spec — implementation status unverified |
 | `settings-ai-autonomy-disabled-ui.md` | — | "Why is the autonomy choice disabled?" single-row variant of the disabled-group pattern. | spec, not yet implemented |
+| `002-bonsai-graph-theme-ui.md` | spec-002 | Commit-graph theme: lane palette, dots, ref pills, canvas metrics. | spec — own header says "ready for implementation"; implementation status unverified |
+| `P91-observability.md` | P91 | Architecture of record: Dev mode, JSONL logs, trace ids, spans, anomaly rules, durable metrics, redaction. | living — milestone awaiting USER CHECKPOINT (never presented) |
+| `P91-observability-ui.md` | P91 | Dev-mode Settings surface + React causality instrumentation on the six surfaces. | living — awaiting USER CHECKPOINT; `:496`/`:951` are stale (they describe a native save dialog that never existed) |
+| `P91-raw-args-privacy.md` | P91 (A26) | Raw-mode `args` is a sparse per-command allow-list, default DENY, keyed by parameter name, scalars only. | RATIFIED 2026-09-02 — blocks merge to `dev`; architect recommends folding it into `P91-observability.md` |
+| `P91-privacy-copy-ui.md` | P91 | Dev-mode privacy consent copy across all three surfaces (satisfies raw-args AC12). | spec — §2-§5 implemented (`b26833f`); the rest is held pending the F6 user decision |
+| `P98-text3-readtext-ui.md` | P98 | `--text-3` read-text sweep; §8.8 is the canonical enumerate/bucket/verdict audit method. | done — checkpoint confirmed USER 2026-09-01; kept active because §8.8 is still the method of record |
+| `P100-accent-fill-ui.md` | P100 | Accent-fill contrast: recipe A (a state demotes to `--selection`) vs recipe B (an action keeps the fill, flips the ink). | done — checkpoint confirmed USER 2026-09-02 (archive Part 47); archive-eligible |
+| `design-review-2026-09-01-P100.md` | P100 | Design review + contract amendments. Verdict: APPROVE with amendments, no MUST-FIX. | done — archive-eligible with P100 |
+| `P101-text3-audit-ui.md` | P101 | The full `--text-3` audit: 124 declarations, each with a recorded bucket and verdict (§3). | done — checkpoint confirmed USER 2026-09-02 (archive Part 47); archive-eligible |
+| `P102-P105-hue-audit-ui.md` | P102 + P105 | Two defects of one shape: `--accent` as text, and hardcoded `#ffffff` as ink on a `--danger` fill. Introduces `--accent-strong`, `--danger-text`, `--success-text`, `--merged`. | awaiting USER CHECKPOINT (AC18/AC19/AC20) — implemented `0e5dcab`, fixes `185c352` |
+| `P106-status-badge-ink-ui.md` | P106 | Status-badge ink (the A/M/D/U/R/T/C letter family): 8 render sites, 3 new ink-only `-strong` tokens. | awaiting USER CHECKPOINT (AC14/AC15 + the real-repo half of AC9) — implemented `10ce967` |
+| `P107-hue-over-own-tint-ui.md` | P107 | Hue text over its own tint: 38 call sites (§2 had claimed 6); the three-pass search incl. `--h` indirection. | implemented `2168057`, errata `ef06e6b`; the board heading is stale — see `TODO.md` FOR USER item 6 |
+| `P108-hue-as-text-on-neutral-ui.md` | P108 | Hue used as text over a NEUTRAL `--bg-*` surface: 62 call sites, 28 fixes, no new tokens. | awaiting USER CHECKPOINT (AC12/AC13/AC14); **AC11 is OWED — source-derived and unverified** |
+| `spec-003-ui.md` | spec-003 | Graph declutter modes (first-parent, seed-ref filtering) — UI contract. | implemented; e2e `e2e/28-graph-filter.spec.ts`. No USER CHECKPOINT record mapped |
+| `spec-004-ui.md` | spec-004 | Fold linear runs: the fold pill as a frontend display row over `FoldSpan` metadata. | implemented; e2e `e2e/29-graph-fold.spec.ts`. Open bug: the fold-pill cursor is dead (`TODO.md`) |
+| `spec-005-ui.md` | spec-005 | Graph overview rail: match ticks + on-demand minimap. | implemented; e2e `e2e/30-graph-rail.spec.ts`. No USER CHECKPOINT record mapped |
+| `spec-006-ui.md` | spec-006 | Author colouring + parent-highlight on hover (canvas paint + one settings row). | implemented; e2e `e2e/31-graph-author-color.spec.ts`. No USER CHECKPOINT record mapped |
+| `spec-007-ui.md` | spec-007 | Replay mode: animated history playback. | implemented; e2e `e2e/32-graph-replay.spec.ts`. No USER CHECKPOINT record mapped |
+
+> **2026-09-03 index sweep.** The index had drifted: **18 active contract files had no row** — the
+> whole P91 cluster (4 files), the hue-audit programme (P98, P100 + its design review, P101,
+> P102/P105, P106, P107, P108), the five `spec-00N-ui.md` companions and `002-bonsai-graph-theme-ui.md`.
+> All are added above. **No file was moved in this pass.** `P95-a11y-ui.md`, `P98-text3-readtext-ui.md`,
+> `P100-accent-fill-ui.md`, `design-review-2026-09-01-P100.md` and `P101-text3-audit-ui.md` are now
+> **archive-eligible** (their checkpoints are confirmed) and should go to `archive/` with `git mv` on
+> the next touch; the P102/P105/P106/P107/P108 and P91 contracts stay active because their USER
+> CHECKPOINTs are pending.
 
 > **Why the P68 cluster stays active despite `done`.** `TODO.md` §"P68 contract debt" schedules edits
 > *to these files* (apply the `P68g-ui.md` §3.1–3.5 splice into `P68e-ai-activity-dock.md`, then
