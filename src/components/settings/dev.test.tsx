@@ -155,6 +155,10 @@ describe('mapped error copy (never raw OS text)', () => {
   });
   it('export disk-full / permission', () => {
     expect(exportErrorText('no space left on device')).toMatch(/Not enough space/);
-    expect(exportErrorText('permission denied')).toMatch(/isn't allowed to write there/);
+    // F4 removed the destination picker, so the sentence names the exports
+    // folder Bonsai actually failed to write (P91 §8.3 amendment).
+    expect(exportErrorText('permission denied')).toBe(
+      "Bonsai isn't allowed to write to its exports folder. Check the folder's permissions and try again.",
+    );
   });
 });

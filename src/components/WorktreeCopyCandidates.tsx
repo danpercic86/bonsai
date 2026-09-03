@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 import type { CopyAction, CopyCandidate, CopyGroup, CopyVerdict } from '../ipc';
 
 export interface WorktreeCopyCandidatesProps {
@@ -49,6 +51,8 @@ export function WorktreeCopyCandidates({
   onToggleGroup,
   onSetAction,
 }: WorktreeCopyCandidatesProps) {
+  const baseId = useId();
+
   if (loading) {
     return <p className="dialog-body-note">Loading uncommitted files…</p>;
   }
@@ -82,13 +86,16 @@ export function WorktreeCopyCandidates({
                 </button>
               )}
             </div>
-            {rows.map((c) => {
+            {rows.map((c, i) => {
               const isChecked = checked.has(c.path);
               const isConflict = verdictByPath.get(c.path) === 'conflict';
               // A checked path needs an explicit decision when it conflicts OR
               // its verdict is unknown (preview failed) — both default to Skip.
               const needsDecision = isChecked && (isConflict || previewFailed);
               const action = conflictActions[c.path] ?? 'skip';
+              // Index-based, not path-based: paths contain spaces and `#`,
+              // which are not safe in an `id` (P107 F2 §3.2).
+              const chipId = `${baseId}chip-${group}-${i}`;
               return (
                 <div key={`${group}:${c.path}`} className="wt-copy-row">
                   <label className="dialog-checkbox-label wt-copy-check">
@@ -96,6 +103,7 @@ export function WorktreeCopyCandidates({
                       type="checkbox"
                       checked={isChecked}
                       disabled={disabled}
+                      aria-describedby={needsDecision ? chipId : undefined}
                       onChange={() => onToggle(c.path)}
                     />
                     <span className="mono wt-copy-path" title={c.path}>
@@ -104,7 +112,19 @@ export function WorktreeCopyCandidates({
                   </label>
                   {needsDecision && (
                     <div className="wt-copy-conflict">
-                      <span className="wt-copy-chip">{isConflict ? 'conflict' : 'unchecked'}</span>
+                      <span
+                        id={chipId}
+                        className={
+                          isConflict ? 'wt-copy-chip' : 'wt-copy-chip wt-copy-chip--unknown'
+                        }
+                        title={
+                          isConflict
+                            ? "The branch you're checking out changed this file too. Overwrite replaces it in the new worktree."
+                            : "Bonsai couldn't check this file for conflicts, so it is skipped unless you choose Overwrite."
+                        }
+                      >
+                        {isConflict ? 'conflict' : 'unknown'}
+                      </span>
                       <div className="wt-copy-toggle">
                         <button
                           type="button"

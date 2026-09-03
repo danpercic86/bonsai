@@ -71,7 +71,7 @@ export function ExportConfirmDialog({
     <ConfirmDialog
       open={open}
       title="Export this session's log"
-      confirmLabel="Choose location…"
+      confirmLabel="Export"
       confirmVariant="primary"
       busy={busy}
       onConfirm={onConfirm}

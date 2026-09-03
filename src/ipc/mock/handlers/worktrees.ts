@@ -1,9 +1,13 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
 import type { IpcApi } from '../../types';
 import { randomOid } from '../../fixtures/oids';
-import { delay, requireRepo } from '../repoState';
+import { delay, query, requireRepo } from '../repoState';
 import { worktreesFor } from '../worktreeState';
 import type { AppError, CopyCandidate, CopyPlanEntry, CopySelection, WorktreeInfo } from '../../types';
+
+/** P107 F2 §5 harness knob: make the conflict preview fail (module-init read,
+ *  matching the house `query()` convention). */
+const COPY_PREVIEW_FAIL = query('wtCopyPreviewFail') === '1';
 
 export const worktreeHandlers = {
   // Stateful worktree mock (P27 §5): list + add/remove/lock/unlock over the
@@ -175,6 +179,14 @@ export const worktreeHandlers = {
     requireRepo(repoId);
     if (branch.trim() === '') {
       const err: AppError = { kind: 'branchNotFound', message: 'branch name is empty' };
+      throw err;
+    }
+    // P107 F2 §5: `?wtCopyPreviewFail=1` forces the UNKNOWN verdict path, which
+    // is otherwise unreachable in the harness (the branch combobox never lets
+    // the empty-name refusal above fire) -- every checked row then renders the
+    // neutral `unknown` chip plus the dialog's warning note.
+    if (COPY_PREVIEW_FAIL) {
+      const err: AppError = { kind: 'git', message: 'could not read the target tree' };
       throw err;
     }
     // Deterministic conflict: `src/staged-change.ts` (a tracked file the target

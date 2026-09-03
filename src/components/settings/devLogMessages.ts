@@ -62,7 +62,7 @@ export function exportErrorText(raw: string): string {
     return 'Not enough space to write the export. Free some space and try again.';
   }
   if (m.includes('permission') || m.includes('allowed') || m.includes('denied')) {
-    return "Bonsai isn't allowed to write there. Choose a different folder.";
+    return "Bonsai isn't allowed to write to its exports folder. Check the folder's permissions and try again.";
   }
   if (m.includes('no log') || m.includes('no longer') || m.includes('not found')) {
     return 'Those log files are no longer there. Turn on Dev mode and reproduce the problem again.';

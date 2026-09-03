@@ -103,7 +103,11 @@ export function DevCategory() {
     setBusy((b) => ({ ...b, export: true }));
     try {
       await ipc.logExportSession();
-      pushToast('success', 'Session log exported.', 'dev-export');
+      // The zip lands in `exports/`, but the page's `Show in folder` reveals
+      // `logs/` — the sibling directory. The toast is the only place that gap is
+      // closed, so it names the folder (P91 UI §8.3 step 5). The live-region
+      // announcement stays bare: the location is not actionable by voice.
+      pushToast('success', 'Session log exported. It is in the exports folder, next to your logs.', 'dev-export');
       setAnnounce('Session log exported.');
     } catch (e) {
       pushToast('error', exportErrorText(errorMessage(e)), 'dev-export');

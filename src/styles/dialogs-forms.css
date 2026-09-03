@@ -142,6 +142,17 @@
   padding: 1px 6px;
 }
 
+/* P107 F2: the `unknown` verdict is NOT a danger state -- Bonsai could not compute
+   a verdict, it did not find a destructive one. Hueless §11 recipe (--text-2 12%,
+   as .checks-rollup-pill--neutral), ink inherited from .wt-copy-chip so the two
+   chips in one list read as one family. --text-1 on this tint over the dialog's
+   --bg-1 is 10.80:1 dark / 12.87:1 light. No hairline: a neutral one computes to
+   2.06:1 and would clear no bar the word does not already clear. */
+.wt-copy-chip--unknown {
+  background: color-mix(in srgb, var(--text-2) 12%, transparent);
+  box-shadow: none;
+}
+
 .wt-copy-toggle {
   display: inline-flex;
   border: 1px solid var(--border);

@@ -193,6 +193,21 @@ export const obsHandlers = {
     if (!readUiSettings().dev.enabled && ringStats().records === 0) {
       throw new Error('there are no log files to export');
     }
+    // §12: `?obsExportFail=space|permission|other` reaches the three
+    // `exportErrorText()` branches the "no log files" refusal above cannot.
+    // Each message mirrors the shape `commands/obs.rs::export_session` actually
+    // produces (`AppError::Io("cannot …: {os error}")`), so the substring the
+    // mapper keys off is the one the backend would really emit.
+    const exportFail = query('obsExportFail');
+    if (exportFail === 'space') {
+      throw new Error('cannot write log part to the zip: no space left on device (os error 28)');
+    }
+    if (exportFail === 'permission') {
+      throw new Error('cannot create export file: permission denied (os error 13)');
+    }
+    if (exportFail !== null && exportFail !== '') {
+      throw new Error('cannot finalize the zip: zip writer failed');
+    }
     // §6.2: the destination is ALWAYS exports/, NEVER logs/ and never a
     // caller-supplied path — the command takes no `dest` (audit F4).
     return `${MOCK_EXPORTS_DIR}/bonsai-2026-08-27T14-03-11-smock0001.zip`;
