@@ -77,9 +77,15 @@ function pnpmJsEntry() {
  * Quote one argument for a cmd.exe command line we assemble ourselves
  * (`windowsVerbatimArguments`). Backslashes before a quote — and at the end of
  * a quoted run — must be doubled, per the CommandLineToArgvW rules.
+ *
+ * `%` is NOT in the trigger set, deliberately (reviewer, 2026-09-03). Quoting
+ * cannot neutralise it: cmd.exe expands `%VAR%` *inside* double quotes, so
+ * `%PATH%` would still reach the child expanded, and there is no escape for `%`
+ * in a `cmd /c "…"` line. Listing it here would advertise protection this
+ * function does not provide. `assertNoPercent` below is the real answer.
  */
 function quoteWinArg(arg) {
-  if (arg !== '' && !/[\s"&|<>^()%!]/.test(arg)) return arg;
+  if (arg !== '' && !/[\s"&|<>^()!]/.test(arg)) return arg;
   const escaped = arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, '$1$1');
   return `"${escaped}"`;
 }
@@ -105,6 +111,19 @@ export function resolveTool(name, args) {
   if (shim !== undefined) {
     // A batch shim and nothing better. Build the command line ourselves so the
     // quoting is explicit and auditable rather than a blind concatenation.
+    // Reject rather than pretend: see `quoteWinArg` — cmd.exe expands `%VAR%`
+    // inside quotes, so an arg containing `%` cannot be passed through this
+    // branch intact. Every caller today passes literal args, so this throws for
+    // nobody; it exists so a future one finds out at the call site instead of
+    // silently receiving an expanded environment variable.
+    for (const a of args) {
+      if (a.includes('%')) {
+        throw new Error(
+          `spawn-tool: cannot pass an argument containing '%' to the batch-shim ` +
+            `fallback (cmd.exe would expand it): ${a}`,
+        );
+      }
+    }
     const line = [shim, ...args].map(quoteWinArg).join(' ');
     const comspec = process.env.ComSpec ?? process.env.COMSPEC ?? 'cmd.exe';
     return { file: comspec, args: ['/d', '/s', '/c', `"${line}"`], verbatim: true };

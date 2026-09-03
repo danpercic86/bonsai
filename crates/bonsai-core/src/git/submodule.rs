@@ -472,3 +472,7 @@ pub(super) fn remove_cached_git_dir(repo: &git2::Repository, name: &str) {
 #[cfg(test)]
 #[path = "submodule_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "submodule_security_tests.rs"]
+mod security_tests;

@@ -39,7 +39,21 @@ use std::path::{Component, Path};
 /// without touching the filesystem, which keeps an UNINITIALIZED submodule (a
 /// legitimate state where the target does not exist yet) working. When the
 /// target DOES exist we additionally canonicalize and re-check containment, so a
-/// symlinked, already-checked-out submodule dir cannot point back out.
+/// symlinked, already-checked-out submodule dir cannot resolve back out.
+///
+/// TWO LIMITS, stated because this function is the documented security control
+/// (reviewer, 2026-09-03) and the old wording claimed more than it delivers:
+///
+/// 1. **The containment probe is itself a filesystem touch.** `joined.exists()`
+///    below stats an attacker-influenced path. All-`Normal` blocks a *literal*
+///    UNC `rel`, not a symlink-redirected one — if an INTERMEDIATE component is
+///    a symlink to a UNC share, that stat is the SMB/WebDAV callout this module
+///    exists to prevent. Creating such a symlink needs
+///    `SeCreateSymbolicLinkPrivilege` or developer mode on Windows plus
+///    `core.symlinks=true`; on POSIX the UNC concern does not arise.
+/// 2. **TOCTOU.** `abs_path` is validated at list time and shipped over IPC; the
+///    symlink can be created afterwards, and the stored string is not
+///    re-validated at launch.
 pub fn contained_abs_path(sm_workdir: &Path, rel: &Path) -> Option<String> {
     if rel.as_os_str().is_empty() {
         return None;
