@@ -34,8 +34,12 @@
 //
 // Zero dependencies, plain Node ESM — same behaviour on Windows/macOS/Linux.
 
-import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
+
+// Every child process goes through runTool, which resolves the real executable
+// so no step needs a shell (Node DEP0190: with `shell` set, the args array is
+// concatenated into one command line without escaping). See lib/spawn-tool.mjs.
+import { runTool } from './lib/spawn-tool.mjs';
 
 const argv = new Set(process.argv.slice(2));
 const has = (f) => argv.has(f);
@@ -76,7 +80,7 @@ const wantAudit = full && !rustOnly && !frontOnly;
 
 // --- is nextest available? --------------------------------------------------
 function have(cmd, args) {
-  const r = spawnSync(cmd, args, { stdio: 'ignore', shell: isWin });
+  const r = runTool(cmd, args, { stdio: 'ignore' });
   return r.status === 0;
 }
 const hasNextest = have('cargo', ['nextest', '--version']);
@@ -92,7 +96,7 @@ const hasNextest = have('cargo', ['nextest', '--version']);
 const CROSS_TARGETS = ['aarch64-apple-darwin', 'x86_64-unknown-linux-gnu'];
 const crossWanted = (full || ciParity) && !frontOnly;
 function installedTargets() {
-  const r = spawnSync('rustup', ['target', 'list', '--installed'], { encoding: 'utf8', shell: isWin });
+  const r = runTool('rustup', ['target', 'list', '--installed'], { encoding: 'utf8' });
   return r.status === 0 && r.stdout ? r.stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : [];
 }
 const installed = crossWanted ? installedTargets() : [];
@@ -237,9 +241,8 @@ for (const step of selected) {
   const label = `[${step.group}] ${step.name}`;
   console.log(`\n─── ${label} ───────────────────────────────────`);
   const start = Number(process.hrtime.bigint() / 1000000n);
-  const r = spawnSync(step.cmd, step.args, {
+  const r = runTool(step.cmd, step.args, {
     stdio: 'inherit',
-    shell: isWin,
     env: { ...process.env, ...scratch, ...(step.env ?? {}) },
   });
   const dur = Number(process.hrtime.bigint() / 1000000n) - start;

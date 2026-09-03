@@ -6,6 +6,7 @@ import { randomOid } from '../../fixtures/oids';
 import { RESERVED_STASH_PATHS, stashHasReserved } from '../../fixtures/stashes';
 import { delay, requireRepo } from '../repoState';
 import { hookRejectionFor } from '../hooksGate';
+import { runMockActivity } from '../gitActivity';
 import type { AppError, ApplyStashOutcome, CommitResult, CreateStashResult, StashEntry, StashScope } from '../../types';
 
 /** F-A6-B wrong-target guard (mirrors the Rust core + Tauri command). When the
@@ -135,42 +136,52 @@ export const stashHandlers = {
 
   // P58: `sign` accepted but ignored (mock cannot sign; native-only).
   // P59a: `skipHooks` ≡ --no-verify; git runs the commit hooks on amend too.
+  // P87 FU-2: amend runs the commit-family hooks and rewrites HEAD, so it emits a
+  // git-activity run exactly like `commit` does (the Rust `commit_amend_inner`
+  // wraps its body in `with_activity(GitActivityCategory::Amend)`).
   async commitAmend(
     repoId: string,
     message: string,
     _sign?: boolean | null,
     skipHooks?: boolean,
   ): Promise<CommitResult> {
-    await delay(150);
-    const state = requireRepo(repoId);
-    const rejection = hookRejectionFor(state, message, skipHooks);
-    if (rejection) throw rejection;
-    if (message.trim() === '') {
-      const err: AppError = { kind: 'emptyMessage', message: 'commit message is empty' };
-      throw err;
-    }
-    if (!hasIdentity(state.config)) {
-      const err: AppError = {
-        kind: 'configMissing',
-        message:
-          'git identity not configured: user.name and user.email are not set. ' +
-          'Run: git config --global user.name "Your Name" and ' +
-          'git config --global user.email "you@example.com"',
-      };
-      throw err;
-    }
-    // Amend rewrites the tip: new oid, staged content folded in, message-only
-    // amend allowed (no nothing-to-commit guard). Replace the top commit's
-    // summary in the synthetic lane-0 fixture rows.
-    state.status.staged = [];
-    state.headOid = randomOid();
-    const summary = message.trim().split('\n', 1)[0] ?? '';
-    if (state.commits.length > 0) {
-      state.commits[0] = { ...state.commits[0], oid: state.headOid, summary };
-    } else {
-      state.commits.unshift({ oid: state.headOid, summary });
-    }
-    return { oid: state.headOid, summary, branch: state.headBranch, hookWarning: null };
+    return runMockActivity('amend', () => commitAmendInner(repoId, message, skipHooks));
   },
-
 } satisfies Partial<IpcApi>;
+
+async function commitAmendInner(
+  repoId: string,
+  message: string,
+  skipHooks?: boolean,
+): Promise<CommitResult> {
+  await delay(150);
+  const state = requireRepo(repoId);
+  const rejection = hookRejectionFor(state, message, skipHooks);
+  if (rejection) throw rejection;
+  if (message.trim() === '') {
+    const err: AppError = { kind: 'emptyMessage', message: 'commit message is empty' };
+    throw err;
+  }
+  if (!hasIdentity(state.config)) {
+    const err: AppError = {
+      kind: 'configMissing',
+      message:
+        'git identity not configured: user.name and user.email are not set. ' +
+        'Run: git config --global user.name "Your Name" and ' +
+        'git config --global user.email "you@example.com"',
+    };
+    throw err;
+  }
+  // Amend rewrites the tip: new oid, staged content folded in, message-only
+  // amend allowed (no nothing-to-commit guard). Replace the top commit's
+  // summary in the synthetic lane-0 fixture rows.
+  state.status.staged = [];
+  state.headOid = randomOid();
+  const summary = message.trim().split('\n', 1)[0] ?? '';
+  if (state.commits.length > 0) {
+    state.commits[0] = { ...state.commits[0], oid: state.headOid, summary };
+  } else {
+    state.commits.unshift({ oid: state.headOid, summary });
+  }
+  return { oid: state.headOid, summary, branch: state.headBranch, hookWarning: null };
+}

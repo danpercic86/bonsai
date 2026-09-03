@@ -89,19 +89,18 @@
   line-height: 1.45;
 }
 
-.pr-draft-toggle,
-.pr-create-actions {
+.pr-draft-toggle {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.pr-draft-toggle {
   font-size: 13px;
   color: var(--text-2);
 }
 
 .pr-create-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   justify-content: flex-end;
 }
 
@@ -139,7 +138,14 @@
 
 /* P83: secondary-but-dangerous close/decline/abandon button. Base is quiet
    (--text-2); hover/focus tints text + border to --danger so color is never the
-   sole signal (the verb carries the meaning). */
+   sole signal (the verb carries the meaning).
+   STAYS HERE (checked 2026-09-03) even though it is a generic button variant:
+   `.btn-secondary { color: var(--text-1) }` lives in updates.css, imported at
+   styles.css:43 — AFTER controls.css (:12) and BEFORE this file (:53). Both
+   selectors are specificity 0,1,0, so this rule only wins the base ink by being
+   later in source order. Relocating it to controls.css would silently flip the
+   button back to --text-1. If it ever moves, it must land after the
+   `.btn-secondary` block in updates.css, not in controls.css. */
 .btn-secondary-danger {
   color: var(--text-2);
 }

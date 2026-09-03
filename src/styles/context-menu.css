@@ -86,7 +86,7 @@
 }
 
 /* P101 §4.2: the disabled exemption applies to the subnote too — the child rule
-   (forge-pr.css .context-menu-subnote) would otherwise re-brighten half a disabled
+   (forge-account.css .context-menu-subnote) would otherwise re-brighten half a disabled
    menu item. Specificity 0,2,1 beats the plain 0,1,0 subnote rule regardless of
    source order; there is no equal-specificity --active override to tie against. */
 .context-menu-item:disabled .context-menu-subnote {

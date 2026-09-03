@@ -73,9 +73,16 @@ export function GitActivityRow({ run, tick }: GitActivityRowProps) {
 
   return (
     <li className="git-run" data-status={run.status}>
+      {/* P87b FU-3: the roving focus target IS the disclosure control, so the
+          role + expanded state live here — not on a wrapper and not on the
+          chevron. Its accessible name comes from the summary content (noun,
+          status pill, duration). Enter/Space are wired below because a
+          `role="button"` div gets neither for free. */}
       <div
         className="git-run-summary"
         data-run-row
+        role="button"
+        aria-expanded={expanded}
         tabIndex={-1}
         onClick={toggle}
         onKeyDown={(e) => {
@@ -85,17 +92,21 @@ export function GitActivityRow({ run, tick }: GitActivityRowProps) {
           }
         }}
       >
+        {/* Decorative twisty: the row above announces the state, so this is
+            hidden from AT. `tabIndex={-1}` keeps it out of the tab order —
+            an aria-hidden element must never be focusable — while the click
+            still works for pointer users (it bubbles to the row). */}
         <button
           type="button"
           className="file-chevron git-run-chevron"
-          aria-expanded={expanded}
-          aria-label={expanded ? 'Collapse run' : 'Expand run'}
+          aria-hidden="true"
+          tabIndex={-1}
           onClick={(e) => {
             e.stopPropagation();
             toggle();
           }}
         >
-          <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+          <span>{expanded ? '▾' : '▸'}</span>
         </button>
         <span className="git-run-glyph" aria-hidden="true">
           <Glyph />

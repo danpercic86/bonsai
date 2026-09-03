@@ -69,10 +69,15 @@ export const GitActivityDock = forwardRef<GitActivityDockHandle, GitActivityDock
       density,
     } = props;
 
-    // §3.1 divergence: once shown, stay mounted for the session. A ref, so a Clear
-    // that empties `runs` cannot unmount the live region.
-    const everShown = useRef(false);
-    if (runs.length > 0) everShown.current = true;
+    // §3.1 divergence: once shown, stay mounted for the session — a Clear that
+    // empties `runs` must not unmount the live region. A latched state (not a ref
+    // written during render): `shown` is a pure function of props + state, so
+    // StrictMode's double render and any concurrent re-render agree on it.
+    const [everShown, setEverShown] = useState(runs.length > 0);
+    const shown = everShown || runs.length > 0;
+    useEffect(() => {
+      if (runs.length > 0) setEverShown(true);
+    }, [runs.length]);
 
     const listRef = useRef<HTMLOListElement | null>(null);
     const [dragHeight, setDragHeight] = useState<number | null>(null);
@@ -140,7 +145,7 @@ export const GitActivityDock = forwardRef<GitActivityDockHandle, GitActivityDock
       }
     };
 
-    if (!everShown.current) return null;
+    if (!shown) return null;
 
     const effectiveHeight = dragHeight ?? height;
     const lead = activeRun ?? runs[0] ?? null;
