@@ -52,8 +52,31 @@ export function useRepoChangeSubscription(
             // (→ the tag list) + the graph's tag pills.
             void refresh('external', 'refsOnly');
             break;
+          case 'fsWorktree':
+            // P110: Rust classified this debounced burst as working-tree content
+            // and/or `.git/index` ONLY — it contains no HEAD/refs path, so the
+            // commit graph CANNOT have changed and the narrow `worktree` scope
+            // ({status, opState}) suffices. Same `watcher` ORIGIN as "fs": this
+            // may well be our own mutation's echo, so it must stay
+            // echo-suppressible (NOT `external`).
+            //
+            // P99 invariant check (refreshScope.ts:27-30): `worktree` has
+            // `openRepo: false`, which is only sound for scopes that never move
+            // HEAD. That holds BY CONSTRUCTION here — a burst carrying any
+            // HEAD/refs path is classified `refs` in Rust and arrives as "fs"
+            // below. This is the load-bearing reason the narrow scope is safe.
+            //
+            // Narrowed self-healing (accepted): pre-P110, an echo-SUPPRESSED
+            // refs burst was incidentally healed by the NEXT fs burst, which was
+            // also `full`; that next burst may now be `worktree` and heal only
+            // status. Acceptable because suppression happens only inside a
+            // mutation's own armed window, and that mutation's refresh round has
+            // already refetched the graph — there is nothing left to heal.
+            void refresh('watcher', 'worktree');
+            break;
           default:
-            // Raw notify watcher (reason "fs"/unknown) = the mutation's own fs echo.
+            // Raw notify watcher (reason "fs"/unknown) = the mutation's own fs
+            // echo, possibly graph-affecting. Unknown reasons stay `full` — safe.
             void refresh('watcher', 'full');
         }
       });

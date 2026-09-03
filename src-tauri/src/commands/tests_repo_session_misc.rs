@@ -351,7 +351,7 @@ fn open_repo_dedupes_canonical_path_variants() {
     let second = tauri::async_runtime::block_on(open_repo_inner(
         &state,
         variant,
-        |_id| Box::new(|| {}),
+        |_id| Box::new(|_class| {}),
     ))
     .expect("re-open via path variant");
     assert_eq!(second.repo_id, first.repo_id, "must FOCUS, not duplicate");

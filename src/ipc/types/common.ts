@@ -84,9 +84,16 @@ export interface RecentRepo {
 export interface RepoChangedPayload {
   /** Which open repo the debounced filesystem change belongs to. */
   repoId: string;
-  /** Why the refresh fired: `"fs"` (watcher), `"fetch"`, or `"tags"` (P85 A3:
-   *  the fire-and-forget fetch tag auto-sync adopted/moved a local tag). Any
-   *  unknown reason is treated as a full refresh — always safe. */
+  /** Why the refresh fired:
+   *  - `"fs"` — a debounced watcher burst that touched `.git/HEAD`, `.git/refs/**`
+   *    or `.git/packed-refs` (or a notify error): the commit graph may have moved.
+   *  - `"fsWorktree"` (P110) — a debounced watcher burst of working-tree content
+   *    and/or `.git/index` ONLY. Rust classified it, so the frontend can safely
+   *    run the narrow `worktree` scope instead of a full graph re-stream.
+   *  - `"fetch"` — a backend-confirmed remote update.
+   *  - `"tags"` — P85 A3: the fire-and-forget fetch tag auto-sync adopted/moved a
+   *    local tag.
+   *  Any unknown reason is treated as a full refresh — always safe. */
   reason: string;
 }
 

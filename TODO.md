@@ -373,7 +373,8 @@ as an authoritative status. Build diary: archive Part 44. Security arc: Part 42.
 
 ### P110 — selection flicker on a background graph re-stream — SHIPPED, awaiting USER CHECKPOINT (2026-09-03)
 
-**Current step:** AI gate green (all 8 steps, 479.3s); native-window confirmation is the only half left.
+**Current step:** both parts AI-gate green (flicker fix `84bbf85`, 479.3s; watcher scoping, 617.9s);
+native-window confirmation is the only half left.
 
 User report: after checking out an older branch with many commits after it, the right panel and the
 graph selection flipped between the selected commit and the working-directory ("Uncommitted changes")
@@ -400,10 +401,32 @@ view several times over a few seconds, on every background refresh round.
 - **USER CHECKPOINT:** `pnpm tauri dev`, check out an old branch with heavy history after it, select a
   commit deep in the graph and leave the window alone through several refresh rounds — the right panel
   must stay on that commit.
-- **Follow-up worth considering (not filed as a defect):** the *frequency* of these rounds. A checkout
+- **Follow-up DONE (user asked for it the same session):** the *frequency* of these rounds. A checkout
   that rewrites thousands of working-tree files storms the `notify` watcher, and each debounced burst
-  runs a `full` scope round, which includes a complete graph re-stream. The flicker is now invisible,
-  but the work is still being done.
+  ran a `full` scope round including a complete graph re-stream. Contract:
+  `docs/contracts/P110-watcher-burst-scoping.md`.
+  - The watcher ALREADY classified paths (`is_relevant`) and threw the answer away. `classify()` is now
+    both the relevance filter and the graph-affecting classification, so the two cannot drift.
+  - A burst is refs-class if ANY path in it is refs-class (`refs |= t.refs`); worktree-only bursts emit
+    `reason: "fsWorktree"` → `refresh('watcher', 'worktree')`. Same origin (still echo-suppressible),
+    narrower scope. `"fs"` keeps its exact prior meaning; unknown reason still → `full`.
+  - **`.git/index` is refs-class, deliberately.** Post-change, correctness depends on observing the
+    REF-file event specifically, and ReadDirectoryChangesW drops events on Windows — the index write is
+    the redundancy that survives a dropped `refs/heads/main`. Costs one graph re-stream per checkout
+    (the index is written once), not one per burst.
+  - **`submodules` added to the `worktree` slice** — a regression the increment itself introduced:
+    `git -C sub checkout other` writes refs under `.git/modules/sub/refs/**` (classified noise,
+    pre-existing) + worktree files, so the burst is worktree-only and the submodule panel went stale.
+    Fixed by restoring the refresh BEHAVIOUR, not by widening WHICH bursts fire.
+  - Reviewer walked every git op (commit/reset/merge/rebase/cherry-pick/stash/fetch/gc/submodule) for a
+    graph-affecting change landing in a worktree-only burst: none found. Relevance set proven unchanged.
+  - The accumulation rule is now proven by mutation: deleting `refs |= t.refs` fails
+    `burst_accumulation_is_conservative` deterministically. The prior test passed without it.
+
+**Latent pre-existing gap, NOT introduced here (candidate follow-up):** op-state files (`MERGE_HEAD`,
+`REBASE_HEAD`, `rebase-merge/**`, `CHERRY_PICK_HEAD`) are excluded by the filter and never triggered a
+refresh before or after P110. Op-state freshness during a conflicted rebase rides on incidental worktree
+churn. Deliberately left alone — changing it would widen which bursts fire.
 
 
 ### P109 — the status badge has no accessible name, and `added`/`untracked` both render `A` — pending (filed 2026-09-03 from P106)

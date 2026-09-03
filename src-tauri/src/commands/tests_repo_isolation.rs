@@ -127,7 +127,7 @@ fn isolation_focus_dedupe_on_reopen() {
         let cased = tauri::async_runtime::block_on(open_repo_inner(
             &state,
             variant,
-            |_id| Box::new(|| {}),
+            |_id| Box::new(|_class| {}),
         ))
         .expect("re-open A (case-variant)")
         .repo_id;

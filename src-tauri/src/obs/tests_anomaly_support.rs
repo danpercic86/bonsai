@@ -188,6 +188,7 @@ pub(super) fn watcher(ts: i64, fired: bool) -> LogRecord {
             fired,
             suppressed: false,
             suppress_reason: None,
+            burst_class: None,
         },
     )
 }

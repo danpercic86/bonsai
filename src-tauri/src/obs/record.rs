@@ -253,6 +253,11 @@ pub enum LogPayload {
         suppressed: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         suppress_reason: Option<String>,
+        /// P110: the debounced burst's path class — `"worktree"` (status-only)
+        /// or `"refs"` (graph-affecting). Present on `fired` records only;
+        /// omitted otherwise so the existing record shape is unchanged.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        burst_class: Option<String>,
     },
     #[serde(rename = "refresh")]
     Refresh {

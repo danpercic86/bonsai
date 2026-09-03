@@ -1,5 +1,6 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
 import type { IpcApi } from './types';
+import { installWatcherHarness } from './mock/watcherHarness';
 import { repoHandlers } from './mock/handlers/repo';
 import { statusHandlers } from './mock/handlers/status';
 import { diffHandlers } from './mock/handlers/diff';
@@ -35,6 +36,11 @@ import { obsHandlers } from './mock/handlers/obs';
 
 // Assembled from per-domain handler groups. Public surface unchanged: index.ts
 // still imports { mockIpc } from './mock'.
+// P110: expose `window.__bonsaiEmitWatcher(reason)` so the browser harness can
+// drive BOTH filesystem reasons ("fs" → full refresh, "fsWorktree" → narrow
+// worktree scope) with no Tauri watcher present.
+installWatcherHarness();
+
 export const mockIpc: IpcApi = {
   ...repoHandlers,
   ...statusHandlers,

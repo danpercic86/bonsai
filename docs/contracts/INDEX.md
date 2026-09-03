@@ -48,6 +48,7 @@ carries open, tracked work).
 | `pr-badge-placement-ui.md` | — | Move the forge PR badge + CI dot out of the ref-column band into a right-aligned forge column. | spec — implementation status unverified |
 | `settings-ai-autonomy-disabled-ui.md` | — | "Why is the autonomy choice disabled?" single-row variant of the disabled-group pattern. | spec, not yet implemented |
 | `002-bonsai-graph-theme-ui.md` | spec-002 | Commit-graph theme: lane palette, dots, ref pills, canvas metrics. | spec — own header says "ready for implementation"; implementation status unverified |
+| `P110-watcher-burst-scoping.md` | P110 | Watcher path classification (`Worktree`/`Refs`) carried into `repo-changed` so a worktree-only burst refreshes narrowly instead of re-streaming the graph. | implemented — working tree, awaiting review sign-off |
 | `P91-observability.md` | P91 | Architecture of record: Dev mode, JSONL logs, trace ids, spans, anomaly rules, durable metrics, redaction. | living — milestone awaiting USER CHECKPOINT (never presented) |
 | `P91-observability-ui.md` | P91 | Dev-mode Settings surface + React causality instrumentation on the six surfaces. | living — awaiting USER CHECKPOINT; `:496`/`:951` are stale (they describe a native save dialog that never existed) |
 | `P91-privacy-copy-ui.md` | P91 | Dev-mode privacy consent copy across all three surfaces (satisfies raw-args AC12). | spec — §2-§5 implemented (`b26833f`); the rest is held pending the F6 user decision |

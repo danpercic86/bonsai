@@ -98,6 +98,9 @@ export interface WatcherPayload {
   fired: boolean;
   suppressed: boolean;
   suppressReason?: string;
+  /** P110 — the debounced burst's path class. Rust sets it on `fired`
+   *  records only; absent everywhere else. */
+  burstClass?: 'worktree' | 'refs';
 }
 
 /** §2.5 — one executed coalesced refresh round. >1 contributing trace IS the

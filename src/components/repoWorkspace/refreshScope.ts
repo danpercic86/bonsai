@@ -11,7 +11,7 @@
 //   full        |    ✓      ✓     ✓      ✓        ✓       ✓       ✓       ✓       ✓          ✓         ✓(forced/origin)
 //   refsOnly    |    –      –     ✓      ✓        –       ✓       –       –       –          –         –
 //   remoteMeta  |    –      –     ✓      ✓        ✓       ✓       –       –       –          –         ✓(non-forced)
-//   worktree    |    –      ✓     –      –        –       –       ✓       –       –          –         –
+//   worktree    |    –      ✓     –      –        –       –       ✓       –       ✓          –         –
 //   stash       |    –      ✓     ✓      –        –       –       –       ✓       –          –         –
 //
 // P88a: `stash` (push/apply/pop/drop) touches the worktree+index (→ status), the
@@ -92,7 +92,15 @@ const SLICES: Record<RefreshScope, RefreshSlices> = {
   },
   refsOnly: { ...NONE, graph: true, branches: true, compare: true },
   remoteMeta: { ...NONE, graph: true, branches: true, remotes: true, compare: true, tagSync: true },
-  worktree: { ...NONE, status: true, opState: true },
+  // P110: `submodules` is in here for a reason that is easy to "clean up" by
+  // mistake. A `git -C sub checkout other` writes the submodule's refs under
+  // `<super>/.git/modules/sub/refs/**` (which the Rust watcher classifies as
+  // noise) and its worktree files under `<workdir>/sub/**`, so the burst is
+  // Worktree-only and lands here. Without this slice the submodule panel would
+  // go stale until a manual refresh — a regression against the pre-P110 `full`.
+  // Note this restores prior refresh BEHAVIOUR without widening WHICH bursts
+  // fire (reclassifying `.git/modules/**`, which fires nothing today, would).
+  worktree: { ...NONE, status: true, opState: true, submodules: true },
   stash: { ...NONE, status: true, graph: true, stashes: true },
 };
 

@@ -341,7 +341,9 @@ interface EventPayload    { name: string; reason?: string; delivered: boolean; l
 interface ChannelPayload  { name: string; phase: 'open'|'close'; chunks?: number;
                             bytes?: number; ms?: number; outcome?: string; }
 interface WatcherPayload  { paths: number; relevant: number; debounceMs: number;
-                            fired: boolean; suppressed: boolean; suppressReason?: string; }
+                            fired: boolean; suppressed: boolean; suppressReason?: string;
+                            // P110: burst path class, `fired` records only.
+                            burstClass?: 'worktree'|'refs'; }
 interface RefreshPayload  { round: number; scope: string; origins: string[];
                             contributingTraces: TraceId[]; collapsed: number; ms: number; }
 interface RenderPayload   { component: string; count: number; sinceMs: number;

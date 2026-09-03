@@ -2,10 +2,21 @@
 
 use super::shared::*;
 
-/// Payload of the `"repo-changed"` event. `reason` is `"fs"` in M1; future
-/// reasons (e.g. `"op"` after a commit) reuse this event. `repo_id` identifies
-/// which open repo's watcher fired so the frontend can route it to the right
-/// tab (P3e contract §4.1).
+/// Payload of the `"repo-changed"` event. `repo_id` identifies which open
+/// repo's watcher fired so the frontend can route it to the right tab (P3e
+/// contract §4.1).
+///
+/// `reason` values emitted today:
+/// - `"fs"` — a debounced watcher burst that touched `.git/HEAD`, `.git/refs/**`
+///   or `.git/packed-refs` (or a notify error): the commit graph may have
+///   changed, so the frontend runs a FULL refresh. Unchanged wire value, so
+///   older listeners keep their previous behaviour.
+/// - `"fsWorktree"` (P110) — a debounced watcher burst of working-tree content
+///   and/or `.git/index` ONLY. Such a burst cannot have moved HEAD or rewritten
+///   a ref, so the frontend refreshes status + op state only, skipping the graph
+///   re-stream. This is what keeps a long checkout (which storms the watcher in
+///   several sub-300 ms-quiet bursts) from re-streaming the graph per burst.
+/// - `"fetch"` / `"tags"` — backend-confirmed remote/tag updates (not fs echoes).
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoChangedPayload {
@@ -55,7 +66,7 @@ pub async fn open_repo(
         path,
         move |repo_id: String| {
             let emit_app = emit_app.clone();
-            Box::new(move || {
+            Box::new(move |class: crate::watcher::BurstClass| {
                 // P91 §2.4: the fs watcher callback fires outside any command
                 // trace, so a `root("watcher")` is the honest causality here.
                 crate::obs::emit_logged(
@@ -63,7 +74,11 @@ pub async fn open_repo(
                     "repo-changed",
                     RepoChangedPayload {
                         repo_id: repo_id.clone(),
-                        reason: "fs".to_string(),
+                        reason: match class {
+                            crate::watcher::PathClass::Refs => "fs",
+                            crate::watcher::PathClass::Worktree => "fsWorktree",
+                        }
+                        .to_string(),
                     },
                     &crate::obs::TraceMeta::root("watcher"),
                 );
@@ -196,7 +211,7 @@ pub async fn set_active_repo(
 /// Runtime-free core of `open_repo` (unit-testable without a Tauri app).
 /// `make_on_change` is given the resolved `repo_id` and returns the watcher
 /// callback for that repo; the command wires it to an app-wide
-/// `"repo-changed"` emit carrying that id. Tests pass `|_id| Box::new(|| {})`
+/// `"repo-changed"` emit carrying that id. Tests pass `|_id| Box::new(|_class| {})`
 /// (no Tauri runtime).
 pub(crate) async fn open_repo_inner<F>(
     state: &AppState,
@@ -204,7 +219,7 @@ pub(crate) async fn open_repo_inner<F>(
     make_on_change: F,
 ) -> Result<OpenRepoResult, AppError>
 where
-    F: FnOnce(String) -> Box<dyn Fn() + Send + 'static>,
+    F: FnOnce(String) -> Box<dyn Fn(crate::watcher::BurstClass) + Send + 'static>,
 {
     let path_buf = std::path::PathBuf::from(&path);
     let info = tauri::async_runtime::spawn_blocking(move || read_repo_info(&path_buf))

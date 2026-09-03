@@ -2,7 +2,7 @@
 //! (`tests.rs` + the `tests_*` files). Hoisted from `tests.rs` (T2 Area 1) so
 //! every test module builds its fixtures the same runtime-free way: plain
 //! `AppState`, git2 scratch repos under `%TMP%`, and the no-op watcher factory
-//! (`open_repo_inner(state, path, |_id| Box::new(|| {}))`).
+//! (`open_repo_inner(state, path, |_id| Box::new(|_class| {}))`).
 
 use super::*;
 
@@ -59,7 +59,7 @@ pub(crate) fn path_string(p: &std::path::Path) -> String {
 }
 
 /// Opens `path` runtime-free with a no-op watcher factory (P3e contract
-/// §9.1: `open_repo_inner(state, path, |_id| Box::new(|| {}))`).
+/// §9.1: `open_repo_inner(state, path, |_id| Box::new(|_class| {}))`).
 pub(crate) fn open(
     state: &AppState,
     path: &std::path::Path,
@@ -67,7 +67,7 @@ pub(crate) fn open(
     tauri::async_runtime::block_on(open_repo_inner(
         state,
         path_string(path),
-        |_id| Box::new(|| {}),
+        |_id| Box::new(|_class| {}),
     ))
 }
 

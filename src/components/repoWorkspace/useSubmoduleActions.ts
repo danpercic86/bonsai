@@ -46,7 +46,10 @@ export function useSubmoduleActions(
 
   // P88a row 14: add/deinit/remove edit the superproject index + `.gitmodules`
   // (worktree) → the echo-armed `refreshAll('worktree')` covers status + arms the
-  // watcher echo; the submodule list has no scope slice, so keep its refetch.
+  // watcher echo. P110 gave `worktree` a `submodules` slice too, so the explicit
+  // refetch below is now belt-and-braces (last-wins guarded, so a duplicate is
+  // harmless) — kept because the row ops call it directly on paths that do NOT
+  // go through a scoped round.
   async function refreshAfterChange(trace?: TraceId) {
     await Promise.all([refreshAll('worktree', trace), refetchSubmodules()]);
   }
