@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ipc } from '../ipc';
 import { useRenderCount } from '../obs/react';
-import type { FileDiff, FileDiffHeader, FileStatus, ListView } from '../ipc';
+import type { FileDiff, FileDiffHeader, ListView } from '../ipc';
 import { errorMessage } from '../utils/errors';
 import { isImagePath } from '../utils/imagePaths';
 import { buildPathTree, flattenTreeLeaves } from '../utils/pathTree';
@@ -9,6 +9,7 @@ import { SkeletonRows } from './CommitPanel';
 import { diffBrowserSourceKey } from './diffBrowserSourceKey';
 import type { DiffScope } from './DiffFileTree';
 import { DiffImageCard } from './DiffImageCard';
+import { FileStatusBadge } from './FileStatusBadge';
 import { DiffView } from './DiffView';
 
 // P11g §6 (revised by P11g-revision A + D): the all-files diff view. NO longer
@@ -22,16 +23,6 @@ import { DiffView } from './DiffView';
 // owns all diff fetching" pattern (§8.4). Change D: the loader no longer depends
 // on IntersectionObserver/visibility — it eagerly enqueues the current scope's
 // non-binary files on mount + every scope change.
-
-const BADGES: Record<FileStatus, string> = {
-  added: 'A',
-  modified: 'M',
-  deleted: 'D',
-  renamed: 'R',
-  typechange: 'T',
-  untracked: 'U',
-  conflicted: 'C',
-};
 
 /** §6.4: at most 4 per-file hunk fetches in flight; a small queue drains as
  *  each resolves. Keeps IPC/memory proportional to what the user looks at. */
@@ -401,7 +392,7 @@ function DiffCard({
         <span className={`file-chevron${collapsed ? '' : ' file-chevron-open'}`} aria-hidden="true">
           {'›'}
         </span>
-        <span className="file-badge mono">{BADGES[header.status]}</span>
+        <FileStatusBadge status={header.status} />
         {isRename ? (
           <span className="diff-card-path mono file-rename">
             {header.origPath} {'→'} {header.path}

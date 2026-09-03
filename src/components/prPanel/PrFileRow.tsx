@@ -1,4 +1,5 @@
-import type { FileDiffHeader, FileStatus } from '../../ipc';
+import type { FileDiffHeader } from '../../ipc';
+import { FileStatusBadge } from '../FileStatusBadge';
 
 // P89/P93: one changed-file row in the PR detail's changed-files section. A flat
 // single-line row (status badge + path + ±counts) that OPENS the file's diff in
@@ -10,16 +11,6 @@ import type { FileDiffHeader, FileStatus } from '../../ipc';
 // A `binary: true` header renders a NON-interactive <span> (mirroring
 // StatusFileRow's non-expandable branch): there is no text diff to show, so the
 // row is not clickable and not in the tab order.
-
-const BADGES: Record<FileStatus, string> = {
-  added: 'A',
-  modified: 'M',
-  deleted: 'D',
-  renamed: 'R',
-  typechange: 'T',
-  untracked: 'U',
-  conflicted: 'C',
-};
 
 export interface PrFileRowProps {
   header: FileDiffHeader;
@@ -34,7 +25,7 @@ export function PrFileRow({ header, active, onOpen }: PrFileRowProps) {
 
   const inner = (
     <>
-      <span className="file-badge mono">{BADGES[header.status]}</span>
+      <FileStatusBadge status={header.status} />
       {isRename ? (
         <span className="diff-card-path mono file-rename">
           {header.origPath} {'→'} {header.path}

@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from 'react';
 import type { ConflictFile, FileStatus, ImageDiff, LineSelection } from '../ipc';
+import { FileStatusBadge } from './FileStatusBadge';
 import { DiffSlotView } from './DiffView';
 import type { DiffSlot } from './DiffView';
 import { DiffImageView } from './DiffImageView';
@@ -15,16 +16,6 @@ const ConflictEditor = lazy(() => import('./ConflictEditor'));
 
 // P3a §2.2: full-pane diff overlay over the center graph pane. Purely
 // presentational — App owns the slot state, meta derivation, and Esc handling.
-
-const BADGES: Record<FileStatus, string> = {
-  added: 'A',
-  modified: 'M',
-  deleted: 'D',
-  renamed: 'R',
-  typechange: 'T',
-  untracked: 'A',
-  conflicted: 'C',
-};
 
 // P93: `pr` is deliberately absent — its chip is computed from the PR number
 // (the one kind whose label is not a static string), see `kindChip` below.
@@ -301,7 +292,7 @@ export function DiffOverlay({
             : 'diff-overlay-header'
         }
       >
-        {meta.status !== null && <span className="file-badge mono">{BADGES[meta.status]}</span>}
+        {meta.status !== null && <FileStatusBadge status={meta.status} />}
         {meta.origPath !== null ? (
           <span
             className="diff-overlay-path mono file-rename"

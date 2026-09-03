@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
-import type { FileDiffHeader, FileStatus, ListView } from '../ipc';
+import type { FileDiffHeader, ListView } from '../ipc';
+import { FileStatusBadge } from './FileStatusBadge';
 import { buildPathTree } from '../utils/pathTree';
 import type { TreeNode } from '../utils/pathTree';
 
@@ -12,16 +13,6 @@ import type { TreeNode } from '../utils/pathTree';
 // Tree binds dir-click to collapse, so it cannot express single-click
 // select-folder. This reuses buildPathTree for STRUCTURE only. Do NOT modify
 // Tree.tsx.
-
-const BADGES: Record<FileStatus, string> = {
-  added: 'A',
-  modified: 'M',
-  deleted: 'D',
-  renamed: 'R',
-  typechange: 'T',
-  untracked: 'U',
-  conflicted: 'C',
-};
 
 // P11g §6.2: the tree selection. `dir.prefix` is a TreeDir.fullPrefix
 // (no trailing '/'); `file.path` is a FileDiffHeader.path.
@@ -178,7 +169,7 @@ function DiffTreeFileRow({
       title={title}
       onClick={onSelect}
     >
-      <span className="file-badge mono">{BADGES[file.status]}</span>
+      <FileStatusBadge status={file.status} />
       {isRename ? (
         <span className="file-path mono file-rename">
           {file.origPath} {'→'} {file.path}

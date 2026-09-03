@@ -1,20 +1,11 @@
 import type { FileStatus } from '../ipc';
 import type { MoveTarget } from './repoWorkspace/useCommitComposer';
+import { FileStatusBadge } from './FileStatusBadge';
 
 // P54c: one presentational card in the composer review dialog — either a
 // commit group (editable message + file rows + drop/merge actions) or the
 // read-only "Unassigned" bucket (no message, no drop/merge). ALL state arrives
 // via props; this component owns no IPC and no local state.
-
-const BADGES: Record<FileStatus, string> = {
-  added: 'A',
-  modified: 'M',
-  deleted: 'D',
-  renamed: 'R',
-  typechange: 'T',
-  untracked: 'A',
-  conflicted: 'C',
-};
 
 /** A move-to option: another group (by index) or the unassigned bucket. */
 export interface MoveOption {
@@ -42,11 +33,6 @@ export interface ComposerGroupCardProps {
   /** Group variant only. */
   onDropGroup(): void;
   onMergeIntoNext(): void;
-}
-
-function badgeFor(path: string, statusByPath: Map<string, FileStatus>): string {
-  const s = statusByPath.get(path);
-  return s !== undefined ? BADGES[s] : '?';
 }
 
 /** P106 D1/AC12: hue-code the composer badge. Without the status-class ancestor the
@@ -135,7 +121,7 @@ export function ComposerGroupCard({
         <ul className="composer-files">
           {files.map((path) => (
             <li key={path} className={rowClassFor(path, statusByPath)} title={path}>
-              <span className="file-badge mono">{badgeFor(path, statusByPath)}</span>
+              <FileStatusBadge status={statusByPath.get(path) ?? 'unknown'} />
               <span className="composer-file-path mono">{path}</span>
               <select
                 className="composer-move-select"

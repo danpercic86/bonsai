@@ -1,20 +1,12 @@
 /** P67 §5.6: one working-dir file row, split out of `StatusPanel.tsx` verbatim.
- *  Also owns the low-level helpers its sibling sections share (`BADGES`,
- *  `entryPaths`, `splitPath`, `RowAction`) — this file imports no sibling, so the
- *  section files can depend on it without a cycle. */
-import type { FileStatus, StatusEntry } from '../ipc';
+ *  Also owns the low-level helpers its sibling sections share (`entryPaths`,
+ *  `splitPath`, `RowAction`) — this file imports only the leaf status badge, so
+ *  the section files can depend on it without a cycle. (P109 moved the letter
+ *  table out to `FileStatusBadge`, which owns the glyph and its name.) */
+import type { StatusEntry } from '../ipc';
+import { FileStatusBadge } from './FileStatusBadge';
 import { HistoryIcon, DeleteIcon, RevertIcon } from './menuIcons';
 import { EyeIcon } from './appIcons';
-
-export const BADGES: Record<FileStatus, string> = {
-  added: 'A',
-  modified: 'M',
-  deleted: 'D',
-  renamed: 'R',
-  typechange: 'T',
-  untracked: 'A',
-  conflicted: 'C',
-};
 
 /** Rename expansion (M3 contract §2.1): send BOTH sides of a rename. */
 export function entryPaths(e: StatusEntry): string[] {
@@ -106,12 +98,12 @@ export function StatusFileRow({
             action !== null && !disabled ? () => onAction(entryPaths(entry)) : undefined
           }
         >
-          <span className="file-badge mono">{BADGES[entry.status]}</span>
+          <FileStatusBadge status={entry.status} />
           {pathEl}
         </button>
       ) : (
         <span className="file-row-main">
-          <span className="file-badge mono">{BADGES[entry.status]}</span>
+          <FileStatusBadge status={entry.status} />
           {pathEl}
         </span>
       )}

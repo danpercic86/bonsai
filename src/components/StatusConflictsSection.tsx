@@ -13,7 +13,8 @@ import { SummarizeIcon } from './menuIcons';
 import type { DiffSlot } from './DiffView';
 import type { AiRowState } from './repoWorkspace/useAiRuns';
 import { isAiResolvableKind, type BulkAiControl } from './repoWorkspace/useBulkAiResolve';
-import { BADGES, splitPath } from './StatusFileRow';
+import { FileStatusBadge } from './FileStatusBadge';
+import { splitPath } from './StatusFileRow';
 
 // P3c §8.2: lowercase spaced text of ConflictKind for the per-row badge.
 const CONFLICT_KIND_LABELS: Record<ConflictKind, string> = {
@@ -121,7 +122,7 @@ function ConflictRow({
         aria-expanded={expanded}
         onClick={onToggleView}
       >
-        <span className="file-badge mono">{BADGES.conflicted}</span>
+        <FileStatusBadge status="conflicted" />
         <span className="file-path">
           {dir !== null && <span className="file-dir">{dir}</span>}
           <span className="file-name">{name}</span>
