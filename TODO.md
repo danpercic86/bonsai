@@ -572,6 +572,47 @@ CWD, capabilities narrowed deliberately, `script-src 'self'` with no `unsafe-inl
 
 ---
 
+## ✅ GATE STATE at `c218258` — **ALL 8 STEPS PASSED** (2026-09-03, later run)
+
+496.4 s total. Machine **not** fully idle this time — CPU sampled 21-64% with no build running (that
+is the harness/MCP floor), so these are pass/fail evidence and **must not be compared as timings**
+against the `5c2dcd2` baseline below. Recorded that way deliberately.
+
+| step | time |
+|---|---|
+| `cargo nextest` | 152.4 s (2334 passed, 8 skipped, 1 leaky) |
+| doctests | 3.8 s |
+| clippy | 5.5 s |
+| eslint | 12.7 s |
+| **file-size ratchet** | 0.89 s |
+| vitest | 73.7 s |
+| tsc + vite build | 13.4 s |
+| **e2e playwright** | **234.0 s** |
+
+Covers the 12 commits after `5c2dcd2`: the mock-IPC `window` guard, the launcher hoist + timer
+fix/revert, the P107 F2 chip, the `#8957e5` and P91-export doc corrections, the staleness sweep, and
+the SEC-2026-09-03 remediation.
+
+**The FIRST run of this gate FAILED**, and how it failed is worth keeping:
+
+- `cargo nextest` failed one test. My remediation brief scoped verification to
+  `cargo nextest -p bonsai-core`, so the `bonsai` crate's tests under `src-tauri/` never ran — and one
+  of them asserted the exact path-echo behaviour audit LOW-2 removed. **Give subagents
+  `--workspace`, not `-p <crate>`, whenever a change crosses a crate boundary.** Fixed in `c218258`
+  by repointing the assertion (not deleting it — its echo was the discriminator proving the error came
+  from *our* guard, a job the category string now does) and adding the file-target case MEDIUM-1 was
+  actually about, which had no test at all.
+- **I lost the failure detail by piping the gate through `tail -60`** and had to re-run the Rust leg
+  to find it. Redirect the whole log to a file; read the summary from there.
+- **The background wrapper reported exit 0 while the gate had failed** — that was the pipeline's exit
+  code, not the gate's. Read the `gate summary` block, never the exit status alone.
+
+**Minor, filed not fixed:** the gate script itself emits Node `DEP0190` — it passes args to a child
+process with `shell: true`, which concatenates rather than escapes them. Repo tooling, not shipped
+code, but it is the same argv-vs-shell class the audit just spent a day on.
+
+---
+
 ## ✅ GATE STATE at `5c2dcd2` — **ALL 8 STEPS PASSED** (2026-09-03)
 
 Run on a machine **verified idle first** — CPU sampled six times (~1% after the sampler's own
