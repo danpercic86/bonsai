@@ -459,6 +459,29 @@ grep-counting rules below.
 - **AC13** — screen-reader read-through in the native window with a real AT.
 - **AC14** — the `U` glyph read at 11 px in the native window: confirm `U` is instantly legible.
 
+### ✅ P107 F2 — the copy-candidate chip said "unchecked" on ticked rows — SHIPPED `8337d9b` (2026-09-03)
+
+Closed the last open item from P107's design review. Contract:
+`docs/contracts/P107-F2-copy-chip-ui.md`.
+
+`WorktreeCopyCandidates.tsx` rendered one danger-tinted chip for two conditions, and the
+`previewFailed` branch rendered the word **`unchecked`** — on rows where
+`needsDecision = isChecked && (…)`, so the chip appears **only when the box IS ticked**, inches from
+an actual checkbox. The word read as the exact opposite of the truth. Now `unknown`, with a neutral
+`.wt-copy-chip--unknown` modifier: danger means "this will destroy something", which fits `conflict`
+and not "we could not compute a verdict". `.wt-copy-chip` itself is byte-identical — P107 A16's
+contrast remediation (11.31 / 12.21) stands. Both branches gained a `title`; the row checkbox gained
+`aria-describedby` → the chip, so the reason reaches a screen reader.
+
+**Same increment, P91:** two shipped strings still promised the folder picker that security audit
+**F4** removed (`confirmLabel="Choose location…"`, and "Choose a different folder" on permission
+denial) — plus the success toast, which named no location while the page's `Show in folder` reveals
+`logs/` and the zip lands in the sibling `exports/`.
+
+**Why both went unnoticed: neither state was reachable in the harness.** Added
+`?wtCopyPreviewFail=1` and `?obsExportFail=space|permission|other`, the latter reaching three
+`exportErrorText` branches that had **no route at all**. Both verified in the harness.
+
 ### SEC-2026-09-03 — external-process launching: repo-authored paths are unvalidated — IN PROGRESS
 
 Full report: `docs/audit-2026-09-03-external-launch.md` (`7e426c3`). Remediation delegated the same
@@ -497,13 +520,15 @@ CWD, capabilities narrowed deliberately, `script-src 'self'` with no `unsafe-inl
   180 lines stale), well over the ~500-line soft limit → `refactorer`.
 - **`image_diff_cli_2.rs`** numbered split still owed — renaming changes nextest IDs, so it needs its
   own increment where that IS the expected diff.
-- **`.settings-toggle-btn.is-active` is dead styling** — closed as (b), NOT a product bug. `cf174ff`
-  added the rule for the git-config Local|Global toggle; `7354aca` (P69h) replaced that with
-  `SettingsSegmented` (`.settings-segment.is-selected`), orphaning `is-active`. All 29 surviving call
-  sites are one-shot **action** buttons. Honest close: delete both rules (optionally rename the
-  class). CSS left in place — correct but unreachable.
-- **`docs/contracts/pr-badge-placement-ui.md:106,116,156`** still documents the canvas merged pill as
-  `#8957e5`, stale since the `--merged` token landed. → contract owner.
+- ~~**`.settings-toggle-btn.is-active` is dead styling**~~ — **ALREADY DONE**, board was stale.
+  P107 `2168057` deleted both rules (its own message says so: "re-confirmed dead before deleting").
+  Verified 2026-09-03: zero `settings-toggle-btn` + `is-active` pairings in `src/**`, and the only
+  surviving rule is the live `min-width: 72px` at `settings-legacy-sections.css:93`. Second board
+  entry this session found stale in the same way as P109 — worth a curation sweep for more.
+- ~~**`pr-badge-placement-ui.md` documents the merged pill as `#8957e5`**~~ — **DONE** `fc9c36e`.
+  Worse than filed: `ui-reference.md` itself carried the stale literal at `:1038`/`:1048` while `:71`
+  recorded it as replaced — the canonical design system contradicting itself. All five repointed to
+  `--merged` and reworded, since the passages also called it theme-invariant and `--merged` is not.
 - **The 90-char branch-name chip** becomes a 50 px two-line stadium at `border-radius: 999px` —
   pre-existing, newly visible because P102/P105 added the fixture that reaches it.
 - **`ui-reference.md` is growing fast** (§2 now carries a 16-row evidence table) — worth its own
@@ -744,9 +769,17 @@ Ratchet baseline moved **27 offenders / 6241 excess → 20 / 3528**; full gate g
 - **Contract divergences the tests document as bugs-in-the-contract:** rebase §3.1.5/§9.7
   unstaged-changes precondition, and the libgit2-vs-CLI rename/delete conflict index-entry count.
   Plus a near-tautological `expected_presence` oracle.
-- **Duplicated external-tool launchers** — `App.tsx`'s trio is statement-for-statement identical to
-  `repoWorkspace/useExternalTools.ts`; hoist to `src/hooks/`. Also two timers with no unmount cleanup
-  (`sessionSaveTimer`, toast auto-dismiss).
+- ~~**Duplicated external-tool launchers**~~ — **DONE** `9273238`. Hoisted to
+  `src/hooks/useExternalTools.ts`; `App.tsx` 602 → 590, ratchet lowered by hand (not
+  `--update-baseline`, which rewrites the whole file and would have swept in in-flight work).
+  `sessionSaveTimer` fixed, with a **proven-red** test. **The toast auto-dismiss timer fix is
+  deliberately REVERTED** — `React.StrictMode` is on in `main.tsx`, so every dev mount runs
+  effects → cleanups → effects, and a toast pushed during the FIRST pass has already armed its
+  handle when that cleanup fires; cancelling on unmount strands it on screen permanently. A
+  dev-only behaviour regression traded for a dev-only timer leak. `useToastQueue.test.tsx` carries
+  the finding so nobody re-applies it. `useRepoTabs` is immune for a *specific* reason, not by luck:
+  its persist effect is gated on `sessionReadyRef`, which `App.tsx:339` sets only after an awaited
+  async restore, so nothing is armed during the synchronous double-mount.
 - **Duplicated helpers left visible, not merged** (behavior risk, not a move): atomic-write helpers
   across `assets/bundle/write.rs` + `assets/profiles/store.rs`; test helper families across
   `tests/diff/` and the four `tests/rebase_merge/*_support.rs`.
