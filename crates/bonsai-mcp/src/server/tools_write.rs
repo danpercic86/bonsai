@@ -16,6 +16,12 @@ use rmcp::{tool, tool_router};
 #[tool_router(router = write_router, vis = "pub(crate)")]
 impl BonsaiServer {
     /// Atomically stage a batch of repo-relative paths (worktree untouched).
+    ///
+    /// Stage the whole batch in one call rather than one path per call - it is atomic,
+    /// so either every path is staged or none is. Paths are repo-relative with forward
+    /// slashes and must come from `bonsai_get_status`; a path that does not exist fails
+    /// the batch. Requires `--allow-write`. Does not commit; follow with
+    /// `bonsai_commit`.
     #[tool]
     async fn bonsai_stage(&self, Parameters(args): Parameters<PathsArgs>) -> CallToolResult {
         match self
@@ -28,6 +34,11 @@ impl BonsaiServer {
     }
 
     /// Unstage a batch of repo-relative paths (never touches the worktree).
+    ///
+    /// The exact inverse of `bonsai_stage` and equally atomic: it moves paths out of
+    /// the index and leaves the file on disk untouched, so no edit can be lost this
+    /// way. Requires `--allow-write`. This is not a way to discard changes - there is
+    /// no discard tool on this server.
     #[tool]
     async fn bonsai_unstage(&self, Parameters(args): Parameters<PathsArgs>) -> CallToolResult {
         match self
@@ -41,6 +52,14 @@ impl BonsaiServer {
 
     /// Create a commit from the staged index. Errors clearly on empty message,
     /// missing git identity, or nothing-to-commit (preserved `kind`).
+    ///
+    /// Commits the index only - unstaged edits are left behind, so stage first.
+    /// Returns the new commit's oid, summary, and branch, plus a `hookWarning` when a
+    /// repository hook emitted output. Refusals arrive as typed kinds:
+    /// `emptyMessage`, `configMissing` (no user.name/user.email), `nothingToCommit`,
+    /// or `hookRejected` when a hook vetoed it. Requires `--allow-write`. Cannot
+    /// amend; there is no amend tool here. Use `bonsai_commit_merge` to conclude a
+    /// merge.
     #[tool]
     async fn bonsai_commit(&self, Parameters(args): Parameters<MessageArgs>) -> CallToolResult {
         match self
@@ -54,6 +73,13 @@ impl BonsaiServer {
 
     /// Resolve a conflicted file by writing AI-authored final content to the
     /// worktree and staging it (the primary AI resolution path).
+    ///
+    /// Writes `content` verbatim as the whole file, then stages it - the merged text
+    /// must therefore be complete and carry NO conflict markers, since nothing strips
+    /// them. Read the sides with `bonsai_get_conflict` first, and do not use this for
+    /// a binary, too-large, or missing-side conflict. Requires `--allow-write`. Errors
+    /// if the path is not currently conflicted. Resolving every path does not conclude
+    /// the operation; finish with `bonsai_commit_merge` or `bonsai_rebase_continue`.
     #[tool]
     async fn bonsai_resolve_conflict_text(
         &self,
@@ -71,6 +97,13 @@ impl BonsaiServer {
     }
 
     /// Resolve a conflicted file via take-ours / take-theirs / mark-resolved.
+    ///
+    /// The whole-side alternative to `bonsai_resolve_conflict_text`: use it when one
+    /// side wins outright, or for binary and delete/add conflicts where no merged text
+    /// exists. `resolution` accepts `ours`, `theirs`, or `markResolved` - an
+    /// unrecognized value fails with `invalidName`, and `markResolved` stages the file
+    /// as it currently stands on disk without changing it. Requires `--allow-write`.
+    /// Errors if the path is not currently conflicted.
     #[tool]
     async fn bonsai_resolve_conflict(
         &self,
@@ -93,6 +126,14 @@ impl BonsaiServer {
 
     /// Merge a branch into the current branch (FF / clean-merge / conflicts are
     /// distinguished in the typed outcome; autostash handled; never force).
+    ///
+    /// Read the outcome tag before doing anything else: `upToDate`, `fastForwarded`,
+    /// `merged`, `conflicts` (paused, worktree holds markers), or `stashPopConflicts`
+    /// (the merge landed but restoring the autostash conflicted). Only `conflicts`
+    /// starts the resolution loop - resolve each path, then `bonsai_commit_merge`, or
+    /// `bonsai_abort_merge` to unwind. Requires `--allow-write`. Never forces and
+    /// never discards work; a dirty worktree is autostashed and restored. Fails with
+    /// `operationInProgress` if a merge or rebase is already in flight.
     #[tool]
     async fn bonsai_merge_branch(&self, Parameters(args): Parameters<NameArgs>) -> CallToolResult {
         match self
@@ -105,6 +146,13 @@ impl BonsaiServer {
     }
 
     /// Finalize a paused merge (refuses on `unresolvedConflicts`).
+    ///
+    /// The concluding step after `bonsai_merge_branch` returned `conflicts` and every
+    /// path has been resolved; it writes the merge commit and clears the operation.
+    /// Refuses with `unresolvedConflicts` while any path is still conflicted - check
+    /// with `bonsai_list_conflicts` first - and with `noOperationInProgress` when no
+    /// merge is paused. Returns the new commit's oid, summary, and branch. Requires
+    /// `--allow-write`. Not for ordinary commits; use `bonsai_commit`.
     #[tool]
     async fn bonsai_commit_merge(
         &self,
@@ -119,7 +167,14 @@ impl BonsaiServer {
         }
     }
 
-    /// Abort an in-progress merge (worktree-destructive; gated by `--allow-write`).
+    /// Abort an in-progress merge, resetting the worktree and index to the
+    /// pre-merge state.
+    ///
+    /// Destructive: conflict-resolution edits made during the merge are discarded and
+    /// cannot be recovered - prefer resolving and `bonsai_commit_merge` when the work
+    /// is worth keeping. Requires `--allow-write`. Confirm a merge is actually paused
+    /// with `bonsai_get_op_state` first; aborting when none is in flight fails with
+    /// `noOperationInProgress`. Does not touch a rebase - use `bonsai_rebase_abort`.
     #[tool]
     async fn bonsai_abort_merge(&self) -> CallToolResult {
         match self.run_blocking(bonsai_core::git::merge::abort_merge).await {
@@ -130,6 +185,14 @@ impl BonsaiServer {
 
     /// Rebase the current branch onto another ref (typed FF/rebased/conflicts
     /// with step counters).
+    ///
+    /// Branch on the outcome tag: `upToDate`, `fastForwarded`, `rebased`, or
+    /// `conflicts` - the last pauses mid-rebase with markers in the worktree and step
+    /// counters showing progress. From a pause, resolve and `bonsai_rebase_continue`,
+    /// drop the current commit with `bonsai_rebase_skip`, or unwind everything with
+    /// `bonsai_rebase_abort`. Requires `--allow-write`. Rewrites the current branch's
+    /// history, so commit oids change. Fails with `operationInProgress` if another
+    /// operation is already in flight.
     #[tool]
     async fn bonsai_rebase_branch(&self, Parameters(args): Parameters<OntoArgs>) -> CallToolResult {
         match self
@@ -142,6 +205,12 @@ impl BonsaiServer {
     }
 
     /// Resume a paused rebase after resolving the current step's conflicts.
+    ///
+    /// Returns the same typed outcome as `bonsai_rebase_branch`, so a multi-commit
+    /// rebase can pause again on the next step - loop until the tag is no longer
+    /// `conflicts` rather than assuming one continue finishes it. Refuses with
+    /// `unresolvedConflicts` while any path is still conflicted, and with
+    /// `noOperationInProgress` when no rebase is paused. Requires `--allow-write`.
     #[tool]
     async fn bonsai_rebase_continue(&self) -> CallToolResult {
         match self
@@ -154,6 +223,13 @@ impl BonsaiServer {
     }
 
     /// Skip the current step of a paused rebase.
+    ///
+    /// Discards the commit currently being applied and moves to the next step - that
+    /// commit's changes are dropped from the rebased branch and are not recoverable
+    /// from the new history. Use it only when the commit is genuinely redundant;
+    /// otherwise resolve and continue. Returns the same typed outcome as
+    /// `bonsai_rebase_continue`, so the rebase may pause again. Requires
+    /// `--allow-write`.
     #[tool]
     async fn bonsai_rebase_skip(&self) -> CallToolResult {
         match self
@@ -165,7 +241,13 @@ impl BonsaiServer {
         }
     }
 
-    /// Abort an in-progress rebase (worktree-destructive; gated).
+    /// Abort an in-progress rebase, returning the branch to its pre-rebase tip.
+    ///
+    /// Destructive: commits already replayed by completed steps and any
+    /// conflict-resolution edits in the worktree are discarded. Requires
+    /// `--allow-write`. Confirm a rebase is actually paused with
+    /// `bonsai_get_op_state`; aborting when none is in flight fails with
+    /// `noOperationInProgress`. Does not touch a merge - use `bonsai_abort_merge`.
     #[tool]
     async fn bonsai_rebase_abort(&self) -> CallToolResult {
         match self
@@ -178,6 +260,12 @@ impl BonsaiServer {
     }
 
     /// Create a branch at HEAD (no checkout).
+    ///
+    /// Leaves HEAD, the index, and the worktree exactly as they are, so it is safe
+    /// with a dirty tree - a separate `bonsai_checkout_branch` switches to it. Fails
+    /// with `branchExists` if the name is taken and `invalidName` if it is not a legal
+    /// ref. Requires `--allow-write`. To branch from somewhere other than HEAD, use
+    /// `bonsai_create_branch_here`.
     #[tool]
     async fn bonsai_create_branch(&self, Parameters(args): Parameters<NameArgs>) -> CallToolResult {
         match self
@@ -189,7 +277,14 @@ impl BonsaiServer {
         }
     }
 
-    /// Create a branch at a specific commit (autostash across the checkout).
+    /// Create a branch at a specific commit and check it out (autostash across
+    /// the checkout).
+    ///
+    /// Unlike `bonsai_create_branch` this DOES move HEAD, so a dirty worktree is
+    /// autostashed and restored around the switch; the result reports whether a stash
+    /// was taken and how restoring it went. Requires a full 40-char hex oid. Fails
+    /// with `branchExists`, `invalidName`, or `checkoutConflict`. Requires
+    /// `--allow-write`.
     #[tool]
     async fn bonsai_create_branch_here(
         &self,
@@ -206,8 +301,15 @@ impl BonsaiServer {
         }
     }
 
-    /// Safely checkout a branch — never force; `checkoutConflict` surfaces
+    /// Safely checkout a branch - never force; `checkoutConflict` surfaces
     /// instead of clobbering the worktree.
+    ///
+    /// Refuses rather than overwriting: local edits that would be lost produce
+    /// `checkoutConflict` and nothing changes, so no work can be destroyed through
+    /// this tool. Also fails with `branchNotFound`, and with
+    /// `branchCheckedOutElsewhere` when another worktree already holds the branch.
+    /// Does not autostash - commit or stash first, or use
+    /// `bonsai_create_branch_here`, which does. Requires `--allow-write`.
     #[tool]
     async fn bonsai_checkout_branch(
         &self,
@@ -222,7 +324,14 @@ impl BonsaiServer {
         }
     }
 
-    /// Delete a branch — blocks unmerged deletion (`unmergedBranch`); no force.
+    /// Delete a local branch. Refuses with `unmergedBranch` when the branch
+    /// holds commits that would be lost; there is no force variant.
+    ///
+    /// Because there is no force path, an unmerged branch simply cannot be deleted
+    /// through this server - that is deliberate. Also fails with `branchNotFound`, and
+    /// refuses to delete the branch currently checked out. Deletes the local ref only:
+    /// the remote branch and its remote-tracking ref are untouched. Requires
+    /// `--allow-write`.
     #[tool]
     async fn bonsai_delete_branch(&self, Parameters(args): Parameters<NameArgs>) -> CallToolResult {
         match self
@@ -235,6 +344,13 @@ impl BonsaiServer {
     }
 
     /// Create a stash. `created=false` means nothing to stash (not an error).
+    ///
+    /// Check `created` before assuming a stash exists - a clean worktree yields
+    /// `created=false` with no error and no new entry. Set `includeUntracked` to sweep
+    /// untracked files in as well; without it they stay in the worktree. `message` is
+    /// optional. Stashing reverts the worktree to HEAD, so this is how work is set
+    /// aside before a checkout. New entries land at index 0 and shift every existing
+    /// index. Requires `--allow-write`.
     #[tool]
     async fn bonsai_create_stash(
         &self,
@@ -258,6 +374,12 @@ impl BonsaiServer {
 
     /// Apply a stash without dropping it; conflicts reported as typed paths.
     ///
+    /// The stash survives regardless of outcome, so this is the recoverable option -
+    /// `bonsai_pop_stash` also removes it. Branch on the outcome tag: `applied`,
+    /// `conflicts` (typed paths to resolve), `appliedPartially`, `notApplied`, or the
+    /// reserved-path cases below. Take `index` from `bonsai_list_stashes`; indices
+    /// shift after any stash mutation. Requires `--allow-write`.
+    ///
     /// If the stash contains Windows-reserved paths (e.g. `NUL`) that cannot be
     /// checked out, the first attempt (`skipReserved` false/omitted) applies
     /// nothing and returns a `reservedPaths` outcome listing them; retry with
@@ -280,6 +402,13 @@ impl BonsaiServer {
 
     /// Apply a stash and drop it on clean success only.
     ///
+    /// Same typed outcomes as `bonsai_apply_stash` - `applied`, `conflicts`,
+    /// `appliedPartially`, `notApplied`, plus the reserved-path cases - but the entry
+    /// is removed on a clean apply, which shifts every remaining index. On anything
+    /// less than clean the stash is KEPT, so nothing is lost; re-read
+    /// `bonsai_list_stashes` afterwards instead of reusing the old index. Requires
+    /// `--allow-write`.
+    ///
     /// If the stash contains Windows-reserved paths (e.g. `NUL`) that cannot be
     /// checked out, the first attempt (`skipReserved` false/omitted) applies
     /// nothing and returns a `reservedPaths` outcome listing them; retry with
@@ -301,7 +430,13 @@ impl BonsaiServer {
         }
     }
 
-    /// Permanently drop a stash (gated by `--allow-write`).
+    /// Permanently delete one stash entry by index, without applying it.
+    ///
+    /// This cannot be undone and the stashed changes are unrecoverable - inspect the
+    /// entry via `bonsai_list_stashes`, or apply it first, before dropping.
+    /// Indices are positional and shift after every drop, so re-read the stack rather
+    /// than dropping a second index from the same listing. Requires `--allow-write`.
+    /// Use `bonsai_pop_stash` to apply and remove in one step.
     #[tool]
     async fn bonsai_drop_stash(
         &self,

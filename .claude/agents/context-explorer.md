@@ -43,7 +43,7 @@ Your report has three parts. The parent agent reads it as **context it can use d
 ## Searched
 
 - "<query 1>" → top hits in: <dir1>, <dir2>
-- "<query 2, with pathFilter=<path>>" → narrowed; top hits: <files>
+- "<query 2, narrowed to <path>>" → narrowed; top hits: <files>
 - (omit this line if you stopped at one search)
 
 ## Read
