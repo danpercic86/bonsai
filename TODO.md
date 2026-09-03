@@ -349,7 +349,32 @@ as an authoritative status. Build diary: archive Part 44. Security arc: Part 42.
 
 ---
 
-## ✅ GATE STATE at `c6cd7dd` — GREEN, with a measurement caveat that matters
+## ✅ GATE STATE at `5c2dcd2` — **ALL 8 STEPS PASSED** (2026-09-03)
+
+Run on a machine **verified idle first** — CPU sampled six times (~1% after the sampler's own
+startup spike), **zero** `bonsai-scratch`/`load.mjs` processes, 42 GB free. 362.0 s total:
+
+| step | time |
+|---|---|
+| `cargo nextest` | 108.0 s |
+| doctests | 3.8 s |
+| clippy | 8.5 s |
+| eslint | 11.1 s |
+| **file-size ratchet** | 0.73 s |
+| vitest | 56.2 s |
+| tsc + vite build | 10.9 s |
+| **e2e playwright** | **162.7 s** |
+
+This covers everything shipped in the session, including P109's badge consolidation, the metrics
+snapshot-ordering fix, and both contract ratifications.
+
+**Verifying machine state before running is now a standing pre-gate step**, not a nicety — see the
+caveat section below for why. The earlier gate state at `c6cd7dd` is kept underneath because the
+reasoning is the point.
+
+---
+
+## 📌 The earlier gate state at `c6cd7dd` — kept for the reasoning, not the status
 
 **All 7 non-e2e steps have been green in every run tonight, regardless of machine load** —
 `cargo nextest`, doctests, clippy, eslint, the file-size ratchet, vitest, and tsc+build.
