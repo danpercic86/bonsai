@@ -2,12 +2,13 @@
 // filesystem path (repo / worktree / submodule). Never gated by
 // mutating/opActive — launches touch no git state. Failures surface via the
 // shared AppError→toast path; success is silent (the opened window is its own
-// feedback). Pure extraction from RepoWorkspace; no behavior change.
+// feedback). Shared by App (the tab strip's context menu) and RepoWorkspace;
+// no behavior change.
 import { useCallback } from 'react';
 
-import { ipc } from '../../ipc';
-import type { PushToast } from '../../ToastContext';
-import { errorMessage } from '../../utils/errors';
+import { ipc } from '../ipc';
+import type { PushToast } from '../ToastContext';
+import { errorMessage } from '../utils/errors';
 
 export interface ExternalTools {
   handleOpenInTerminal(path: string): void;

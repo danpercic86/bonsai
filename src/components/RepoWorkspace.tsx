@@ -105,7 +105,7 @@ import { useCommitComposer } from './repoWorkspace/useCommitComposer';
 import { usePalette } from './repoWorkspace/usePalette';
 import { useGraphFilterRefetch } from '../hooks/useGraphFilter';
 import { useGraphFilterWiring } from './repoWorkspace/useGraphFilterWiring';
-import { useExternalTools } from './repoWorkspace/useExternalTools';
+import { useExternalTools } from '../hooks/useExternalTools';
 import { bisectSummariesOf } from './repoWorkspace/bisectSummaries';
 import {
   graphFilterPaletteEntries,

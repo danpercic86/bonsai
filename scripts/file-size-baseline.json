@@ -14,7 +14,7 @@
     "src-tauri/src/commands/tests_ai_stream.rs": 545,
     "src-tauri/src/commands/tests_repo_session_misc.rs": 510,
     "src-tauri/src/settings_ui_tests.rs": 519,
-    "src/App.tsx": 602,
+    "src/App.tsx": 590,
     "src/components/RepoWorkspace.tsx": 2265,
     "src/components/WorkspaceGraphPane.tsx": 505,
     "src/graph/GraphCanvas.tsx": 784,

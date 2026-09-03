@@ -59,6 +59,17 @@ export function useRepoTabs(pushToast: PushToast): UseRepoTabs {
     }, 300);
   }, [pushToast]);
 
+  // Unmount-only: drop a pending debounced write so it cannot land after the
+  // tree is gone (`ipc.setSession` plus a `pushToast` with no host left).
+  // Empty deps by design — re-running on `persistSession` identity changes
+  // would cancel legitimate in-flight saves.
+  useEffect(
+    () => () => {
+      if (sessionSaveTimer.current !== null) window.clearTimeout(sessionSaveTimer.current);
+    },
+    [],
+  );
+
   // Persist on any tab / active change once launch reopen has settled.
   useEffect(() => {
     if (!sessionReadyRef.current) return;

@@ -21,6 +21,7 @@ import { UpdateDialog } from './components/UpdateDialog';
 import { useAiAvailability } from './hooks/useAiAvailability';
 import { useAppCommands } from './hooks/useAppCommands';
 import { useCloneFlow } from './hooks/useCloneFlow';
+import { useExternalTools } from './hooks/useExternalTools';
 import { useMcpControls } from './hooks/useMcpControls';
 import { usePaneWidthState } from './hooks/usePaneWidthState';
 import { useRepoTabs } from './hooks/useRepoTabs';
@@ -175,26 +176,13 @@ export default function App() {
   }, [listView, queueSettingsWrite]);
 
   // P49b: external-tool launchers for the per-tab context menu (the strip is
-  // App-owned, spanning all tabs). Same shape as RepoWorkspace's — never gated
-  // by any repo op; failures surface via the shared AppError→toast path.
-  const openInTerminal = useCallback(
-    (path: string) => {
-      void ipc.openInTerminal(path).catch((e) => pushToast('error', errorMessage(e)));
-    },
-    [pushToast],
-  );
-  const revealInFileManager = useCallback(
-    (path: string) => {
-      void ipc.revealInFileManager(path).catch((e) => pushToast('error', errorMessage(e)));
-    },
-    [pushToast],
-  );
-  const openInEditor = useCallback(
-    (path: string) => {
-      void ipc.openInEditor(path).catch((e) => pushToast('error', errorMessage(e)));
-    },
-    [pushToast],
-  );
+  // App-owned, spanning all tabs). Shared with RepoWorkspace via the hook —
+  // never gated by any repo op; failures surface via the AppError→toast path.
+  const {
+    handleOpenInTerminal: openInTerminal,
+    handleRevealInFileManager: revealInFileManager,
+    handleOpenInEditor: openInEditor,
+  } = useExternalTools(pushToast);
 
   // §8.3 / §8.4: the Claude Code CLI probe + the one-time AI consent dialog
   // (see hooks/useAiAvailability.ts).
