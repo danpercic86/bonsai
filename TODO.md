@@ -175,10 +175,14 @@ The curator refuses to resolve these; resolving any would upgrade a status.
 
 ---
 
-## AWAITING USER CHECKPOINT — five live milestones
+## AWAITING USER CHECKPOINT — seven live milestones
 
 None may be archived. The orchestrator never self-declares the native half. Each entry below is the
 resume summary; the full review/implementation narrative is in the archive part named.
+
+**Two of the seven are written further down, under PENDING / queued, to keep their narrative next to
+the work that produced them: P110 (selection flicker) and P109 (status-badge semantics). They are
+awaiting a checkpoint exactly like the five here — the placement is chronological, not a status.**
 
 ### P102 + P105 — hue audit — AI GATE GREEN, awaiting USER CHECKPOINT (AC18 / AC19 / AC20)
 
@@ -429,17 +433,36 @@ refresh before or after P110. Op-state freshness during a conflicted rebase ride
 churn. Deliberately left alone — changing it would widen which bursts fire.
 
 
-### P109 — the status badge has no accessible name, and `added`/`untracked` both render `A` — pending (filed 2026-09-03 from P106)
+### P109 — status-badge semantics — SHIPPED `5a254ba` / `5c2dcd2`, awaiting USER CHECKPOINT (AC13 / AC14)
 
-- Two distinct statuses render the **same character** (`StatusFileRow.tsx:15`), and the badge carries
-  **no accessible name** — the distinction is unavailable to a screen reader *and* ambiguous visually.
-- Deliberately **not** rolled into P106: one defect class per milestone is what kept
-  P95/P98/P100/P102/P105/P107 reviewable, and this is a11y/semantics, not contrast.
-- P106 makes the letter *legible*; P109 is about the letter being *insufficient*.
+**Current step:** AC1–AC12 green; AC13/AC14 are the native-window half and are the only thing left.
+*(This entry said "pending" until 2026-09-03 — a board defect. The work shipped in this session; the
+filing text was never upgraded. Corrected here so no future session re-opens it.)*
+
+**The defect, as filed from P106:** two distinct statuses rendered the **same character**
+(`StatusFileRow.tsx:15`) and the badge carried **no accessible name** — the distinction was
+unavailable to a screen reader *and* ambiguous visually. Deliberately **not** rolled into P106: one
+defect class per milestone is what kept P95/P98/P100/P102/P105/P107 reviewable, and this is
+a11y/semantics, not contrast. P106 makes the letter *legible*; P109 is about the letter being
+*insufficient*.
+
+**Shipped:** one `src/components/FileStatusBadge.tsx` (58 lines) replaces **six** independently
+drifted `BADGES` tables. `role="img"` + `aria-label`, names `Added / Modified / Deleted / Renamed /
+Type changed / Conflicted / Untracked / Status unknown`. AC8 held — `src/styles/**` byte-identical,
+zero token or geometry diff; contrast is carried over from P106, not re-derived (AC9).
+
+**It also corrected P106's premise.** P106 was filed believing `added` and `untracked` shared `A`
+across the board; they shared it in **3 of 6** tables. The delta was exact both times — see the
+grep-counting rules below.
+
+**Contract:** `docs/contracts/P109-status-badge-semantics-ui.md` (AC13/AC14 spelled out in §13).
+- **AC13** — screen-reader read-through in the native window with a real AT.
+- **AC14** — the `U` glyph read at 11 px in the native window: confirm `U` is instantly legible.
 
 ### Queued housekeeping (none blocking)
 
-- **`src/styles/forge-pr.css` is ~710 lines**, over the ~500-line soft limit → `refactorer`.
+- **`src/styles/forge-pr.css` is 890 lines** (measured 2026-09-03; the board said ~710, which was
+  180 lines stale), well over the ~500-line soft limit → `refactorer`.
 - **`image_diff_cli_2.rs`** numbered split still owed — renaming changes nextest IDs, so it needs its
   own increment where that IS the expected diff.
 - **`.settings-toggle-btn.is-active` is dead styling** — closed as (b), NOT a product bug. `cf174ff`
