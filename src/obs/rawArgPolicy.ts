@@ -1,5 +1,5 @@
 /**
- * P91 Amendment A26 (`docs/contracts/P91-raw-args-privacy.md`) — raw-mode `args`
+ * P91 Amendment A26 (`docs/contracts/P91-observability.md §7.4`) — raw-mode `args`
  * is an **allow-list, not a blanket include**.
  *
  * The one rule: `raw` mode widens **identifier** fidelity — repo path, file

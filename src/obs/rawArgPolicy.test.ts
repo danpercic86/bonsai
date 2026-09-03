@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * P91 Amendment A26 (`docs/contracts/P91-raw-args-privacy.md` §H, AC3–AC5) —
+ * P91 Amendment A26 (`docs/contracts/P91-observability.md §7.4.3` §H, AC3–AC5) —
  * the producer half of the raw-mode `args` allow-list.
  *
  * `vocabulary drift` is the forcing function on future additions: it must fail

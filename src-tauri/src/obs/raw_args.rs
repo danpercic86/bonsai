@@ -1,5 +1,5 @@
 //! P91 Amendment A26 — writer-side enforcement of the raw-mode `args` invariant
-//! (`docs/contracts/P91-raw-args-privacy.md` §C).
+//! (`docs/contracts/P91-observability.md §7.4.2` §C).
 //!
 //! **The producer proposes; the writer enforces.** This module deliberately does
 //! NOT read `src/obs/rawArgPolicy.json`: a table shared with the producer would

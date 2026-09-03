@@ -1,5 +1,5 @@
 //! P91 Amendment A26 — raw-mode `args` enforcement tests
-//! (`docs/contracts/P91-raw-args-privacy.md` §H, AC6–AC9).
+//! (`docs/contracts/P91-observability.md §7.4.3` §H, AC6–AC9).
 //!
 //! The centrepiece is [`raw_mode_drops_positionally_keyed_args_and_forge_tokens`]
 //! (AC6): it drives the writer with EXACTLY what the buggy producer emitted, so

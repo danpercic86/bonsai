@@ -42,6 +42,15 @@ list. Nothing in this contract is pending an answer.
 | `obs/metrics.rs` | `MetricsStore` (counters/histograms), aggregation cadence |
 | `obs/metrics_file.rs` | atomic load/save of `metrics/usage.json`, daily buckets, retention |
 | `obs/metrics_keys.rs` | **The metrics key privacy guard.** Sole home of the `<domain>.<action>` / `cmd.<name>` / error-code shape predicates that decide whether a string may become a key in `usage.json`. Separate from `metrics.rs` **by contract, not by size**: `usage.json` is durable, is not covered by `logs_delete_all` and has no redaction pass, so a user-derived key there is permanent, un-deletable repo content. |
+| `obs/strict.rs` | **Strict-mode enforcement, applied by the writer, not trusted to the producer** (§7.1): drops `args`, replaces paths/refs/URLs with ordinals in every string field of every record |
+| `obs/scrub.rs` | Credential scrubber (§7.2.1) — `is_sensitive_key` (`pub(super)`, reused by `raw_args.rs`), `looks_like_opaque_secret`, `scrub_value`, `scrub_salt`. Runs in **both** modes |
+| `obs/raw_args.rs` | **(§7.4.2)** Writer-side raw-mode `args` invariant (W1–W6). Shape + vocabulary only; deliberately does **not** read `rawArgPolicy.json` |
+| `obs/writer_files.rs` | Pure/stateless half of §6: file naming, chronological listing, start-of-session pruning, epoch/UTC helpers. Re-exported from `writer` |
+| `obs/fs_perm.rs` | Owner-only permissions (§6/§8): every obs file created `0600`, every obs directory `0700` |
+| `obs/histogram.rs` | Fixed 8-bucket duration `Histogram` + `percentile_ms`, shared by §5.1's `slow-command` baseline and §8.1's durable summaries. Bucket boundaries **frozen** |
+| `obs/metrics_cmds.rs` | **(§8.2 G2)** The generated 199-name `cmd.*` allow-list — an exact bijection with the `IpcApi` declarations, pinned by a drift test that re-derives it from the `.ts` sources |
+| `obs/metrics_map.rs` | **(§8.2 G3)** `MAX_KEYS_PER_MAP = 512` cardinality cap on every `MetricTotals` map, folding overflow into `meta.overflow`. No global cap (§13 row 29) |
+| `obs/metrics_persist.rs` | **(§8.3)** `flush` / `reset` / `persist` + the `rev`/`commit_rev` generation stamp that orders the snapshot, not just the commit. Split from `metrics.rs` to hold the 500-line cap |
 | `commands/obs.rs` | `log_append`, `log_session_info`, `log_reveal_dir`, `log_export_session`, `logs_delete_all`, `metrics_snapshot`, `metrics_reset` |
 
 `perf.rs` is **kept** as the hot-path atomic tally and is *absorbed*: `MetricsStore` reads
@@ -59,6 +68,9 @@ list. Nothing in this contract is pending an answer.
 | `obs/ipcProxy.ts` | `instrumentIpc(api: IpcApi): IpcApi` — the frontend choke point |
 | `obs/react.ts` | `useRenderCount()`, `useTracedEffect()`, `useStateTransitionLog()` (dev-mode-only) |
 | `obs/renderTally.ts` | aggregate-mode render accumulator (§9.2) — one record per window, not per render |
+| `obs/rawArgPolicy.json` | **(§7.4.1)** The raw-mode `args` allow-list. Data only, no logic — **this file *is* the spec** for which parameters may be logged |
+| `obs/rawArgPolicy.ts` | **(§7.4.1)** `RAW_ARG_POLICY`, `RAW_ARG_MAX_STR`, `isSensitiveParam`, `isFreeTextParam`, `buildRawArgs`. Its vocabulary is shared with §9.1 `briefString` |
+| `obs/gesture.ts` | `traced(origin, label, fn)` — gesture origination for the instrumented surfaces (§2.4/§2.5) |
 | `src/components/settings/catalog/dev.ts` | Dev-mode catalog rows |
 | `src/components/settings/categories/DevPage.tsx` | Dev-mode page (ui-designer owns visuals) |
 
@@ -304,7 +316,7 @@ args_omitted: Option<u32>,
 pre-release carve-out.
 
 **Why it was missing, recorded so the class of bug is not repeated.** `argsOmitted` was
-contract-declared (A26 §B.6) and producer-emitted, but absent from the Rust `IpcCall` variant, so
+contract-declared (§7.4.1) and producer-emitted, but absent from the Rust `IpcCall` variant, so
 `serde` silently dropped it when `log_append` deserialised the record. Writer rule **W6**
 (`argsOmitted` must be a non-negative integer, else remove) was therefore **dead in production** —
 it could never see the field it validates — while its unit test passed, because that test called
@@ -960,7 +972,7 @@ identifies the repo, its people or its contents does.
 | Trace ids, span ids, seq, timings, counts, scopes | kept | kept |
 | **`span` `op` / `phase` names, phase ms, queue/pool/deadline numbers** | kept (allow-listed symbols, never user data) | kept |
 | Component / effect / state-field names (source symbols, not user data) | kept | kept |
-| Argument **values** | **elided** → `argsHash` + `argsShape` | `argsHash` + `argsShape`, **plus** an `args` object carrying only the positions named by the per-command allow-list in `src/obs/rawArgPolicy.json` — **default DENY**, name-keyed, scalars only. See `docs/contracts/P91-raw-args-privacy.md`, which is authoritative for this row. |
+| Argument **values** | **elided** → `argsHash` + `argsShape` | `argsHash` + `argsShape`, **plus** an `args` object carrying only the positions named by the per-command allow-list in `src/obs/rawArgPolicy.json` — **default DENY**, name-keyed, scalars only. See **§7.4**, which is authoritative for this row. |
 | Repo path | `repo#<n>` | absolute path |
 | File paths | `path#<n>` (extension kept: `path#7.ts`) | real path |
 | Branch / tag / ref names | `ref#<n>` (kind kept: `ref#3(branch)`) | real name |
@@ -1145,6 +1157,215 @@ is subordinate to recall here, permanently.
   ui-designer's; the *content* is exactly the §7.1 table plus: "Logs are written only to this
   computer. Bonsai never uploads them." plus a pointer to the delete action **and the §6.2 line
   that exports saved outside Bonsai's folder are not removed**.
+
+### 7.4 Raw-mode `args` — per-command allow-list (Amendment A26)
+
+**RATIFIED 2026-09-02; shipped `c0abbe1` + `120cadd`.** Folded in from the retired
+`P91-raw-args-privacy.md`; the ruling's history is §13 rows 26, 30 and 31.
+
+> **The one rule.** `raw` widens **identifier** fidelity — repo path, file paths, ref names, remote
+> URLs, full SHAs — and **never** content fidelity. Free text and credentials are outside *both*
+> modes. There is no setting, present or future, under which a commit message, a search string, a
+> blame excerpt, file contents, an author name/email, or a token reaches a log file.
+
+#### 7.4.1 Producer (frontend) — allow-list, default DENY
+
+**`src/obs/rawArgPolicy.json` is the spec, not an illustration of it.** Data only, no logic, so it
+diffs and reviews on its own. Shape:
+
+```jsonc
+// key   = IpcApi method name (exact, camelCase)
+// value = one entry per positional parameter, IN ORDER:
+//           "<paramName>" → MAY be included in raw mode
+//           null          → always elided
+// Trailing actual args beyond the array are elided.
+{ "commit": ["repoId", null, "sign", "skipHooks"], "forgeSetToken": ["repoId", null] }
+```
+
+**An unlisted command is DENY — no `args` at all**, behaving exactly like strict mode (`argsHash` +
+`argsShape` and nothing else). A new IPC command added tomorrow cannot leak, because silence means
+deny. The list is sparse and opt-in; an exhaustive `Record<keyof IpcApi, …>` was rejected — churn
+without added safety once the default is deny, and a renamed command silently becomes deny (safe)
+rather than breaking the build. The forcing function sits on the dangerous action instead:
+**adding** a row.
+
+**Derivation rule — a parameter name may be listed only if all four hold:**
+1. its declared TS type is a **scalar** (`string`, `number`, `boolean`, a string-literal union, or
+   an `undefined`/`null` union thereof) — never an object, array, `unknown`, or `Record<…>`;
+2. it is an **identifier**: id/handle (`repoId`, `sha`, `oid`), path, ref/branch/tag/remote name,
+   URL, enum/flag, or count;
+3. its name fails both `isFreeTextParam` and `isSensitiveParam`;
+4. it cannot carry user-authored prose or a secret **by value**, whatever the type says.
+
+Anything else gets `null`. When in doubt: `null`.
+
+```ts
+// src/obs/rawArgPolicy.ts
+export const RAW_ARG_MAX_STR = 512;
+
+/** Credential vocabulary. Mirrors Rust `scrub.rs::is_sensitive_key` + explicit extras. */
+export function isSensitiveParam(name: string): boolean;
+//   /token|secret|password|passphrase|auth|credential|apikey|api_key|privatekey|sshkey|\bpat\b/i
+
+/** Free-text vocabulary — raw `args` keys and §9.1 `briefString` field names ONLY. */
+export function isFreeTextParam(name: string): boolean;
+//   /message|msg|query|search|text|body|prompt|descri|note|content|comment|title|
+//    subject|summary|patch|diff|blurb|input|reason/i
+
+export interface RawArgsResult { args?: Record<string, unknown>; omitted: number }
+export function buildRawArgs(cmd: string, args: readonly unknown[]): RawArgsResult;
+```
+
+`isFreeTextParam` is **scoped to raw `args` keys and `briefString` field names**. It must NOT be
+folded into the general scrubber's `is_sensitive_key`: `ErrorPayload.message` is a legitimate,
+already-scrubbed field and collapsing it would blind every error record.
+
+`buildRawArgs` includes position `i` iff **all** hold:
+- `RAW_ARG_POLICY[cmd]?.[i]` is a non-null string `name`;
+- `!isFreeTextParam(name) && !isSensitiveParam(name)`;
+- the actual value is a **scalar** — `string | number | boolean | null`. Objects, arrays and
+  functions are always elided regardless of the table; this alone kills a `SearchQuery` object and
+  any nested `{ token }`;
+- if a string: `length <= RAW_ARG_MAX_STR`, containing no `\n` or `\r`.
+
+The result is keyed **by parameter name** (`{ "repoId": "r1", "sign": false }`), never `"0"`/`"1"`.
+`omitted` counts the positions the policy or the checks removed; `args` is omitted entirely when
+empty. `obs/ipcProxy.ts` reaches `args` **only** through `buildRawArgs` — no positional
+construction anywhere.
+
+**Unchanged by this amendment:** `argsHash` is still the salted FNV-1a-64 over the **full**
+positional JSON array of **all** arguments, computed pre-injection (denied args still participate —
+the digest never leaves the process, the salt never reaches a file, and `dup-ipc` needs full
+discrimination); `argsShape` is still keyed `"0"`,`"1"`,… for **all** positions and is how a reader
+aligns the name-keyed `args` back to arity; `ipc.recv` still carries none of the three (§13 row
+20). Wire fields are declared on §3 `IpcCallPayload`.
+
+#### 7.4.2 Writer (Rust) — independent of the table, by design
+
+The producer proposes; the writer enforces. **`obs/raw_args.rs` does not read
+`rawArgPolicy.json`.** A shared table would be worthless against the failure mode that actually
+matters — a wrong row, or code that ignores the table. The writer instead enforces a
+**shape + vocabulary** invariant it can decide alone, which catches both a producer bug and a bad
+row.
+
+```rust
+// src-tauri/src/obs/raw_args.rs
+pub const RAW_ARG_MAX_STR: usize = 512;
+
+/// Enforces the raw-mode `args` invariant on a serialized record, IN PLACE.
+/// Runs in BOTH redaction modes, on every record. Returns true iff it dropped an
+/// `args` object, in which case it also sets `argsPolicyViolation: true`.
+pub fn enforce(v: &mut Value) -> bool;
+
+fn is_valid_param_key(k: &str) -> bool;   // ^[a-z][A-Za-z0-9]*$
+fn is_free_text_param(k: &str) -> bool;   // §7.4.1 vocabulary; NOT used by scrub.rs
+fn is_denied_param(k: &str) -> bool;      // is_free_text_param || scrub::is_sensitive_key + extras
+fn is_allowed_scalar(v: &Value) -> bool;  // bool|number|null|string(<=MAX, no \n/\r)
+```
+
+`scrub.rs::is_sensitive_key` is `pub(super)` so `raw_args.rs` reuses the one vocabulary instead of
+forking it; its behaviour is otherwise untouched, including the deliberate `auth`→`author` match.
+
+**Any violation drops the WHOLE `args` object, never just the offending entry** — a producer that
+mislabelled one argument is untrusted about the rest.
+
+| | Rule |
+|---|---|
+| W1 | `args` may appear only on `kind == "ipc.call"`. Anywhere else ⇒ remove (strict mode already removes it unconditionally; keep that) |
+| W2 | `args` must be a JSON **object** |
+| W3 | Every key matches `^[a-z][A-Za-z0-9]*$`. **A numeric key (`"0"`, `"1"`) fails ⇒ drop.** This single rule kills the original leak at the writer even if the frontend is never fixed |
+| W4 | No key satisfies `is_denied_param` |
+| W5 | Every value satisfies `is_allowed_scalar` — objects and arrays are categorically ineligible |
+| W6 | `argsOmitted`, if present, must be a non-negative integer; otherwise remove that field |
+
+Pipeline order in `writer.rs::append_record`:
+
+```
+serialize → strict::enforce (strict only) → raw_args::enforce (ALWAYS) → scrub_value → scrub_salt
+```
+
+`raw_args::enforce` runs **before** the credential scrubber so a violating object is gone before
+anything can partially "rescue" it; the surviving allow-listed scalars still pass through
+`scrub_value` and `scrub_salt` normally. `argsPolicyViolation` is injected into the
+`serde_json::Value` after serialisation and is **absent from the Rust `IpcCall` struct**, so a
+frontend-forged one is dropped as an unknown field.
+
+**Limit of the guarantee — see §7.1:** shape + vocabulary, *not* semantics. Any content that fits
+an identifier-named key, is ≤512 chars and single-line survives the writer; the **positional drift
+guard** in `rawArgPolicy.test.ts` is the sole defence on the semantic half, and **neither guard may
+be removed on the grounds that the other exists**.
+
+**Coverage:** every rule W1–W6 needs a `LogRecord` → `append_record` → read-the-file-back
+round-trip test (§3 binding test rule). W6 shipped **dead in production** while its
+synthetic-`Value` test passed; synthetic-`Value` tests are permitted in addition to, never instead
+of, a round-trip test.
+
+#### 7.4.3 Acceptance criteria (shipped `c0abbe1`/`120cadd`; retained as the regression contract)
+
+1. `src/obs/rawArgPolicy.json` exists and `rawArgPolicy.ts` exports `RAW_ARG_POLICY`,
+   `RAW_ARG_MAX_STR`, `isSensitiveParam`, `isFreeTextParam`, `buildRawArgs`.
+2. `obs/ipcProxy.ts` contains no `String(i)` / positional construction of `args`; grep for
+   `Object.fromEntries(args` returns nothing.
+3. **Default-deny (vitest):** an `ipc.call` for a command absent from the policy, in raw mode,
+   emits **no** `args` key and still emits `argsHash` + `argsShape`.
+4. **Producer (vitest):** `commit('r1','FIXTURE_MESSAGE_ZQX',false,true)` in raw mode emits
+   `args === { repoId:'r1', sign:false, skipHooks:true }`, `argsOmitted === 1`, and the serialised
+   record contains no occurrence of `FIXTURE_MESSAGE_ZQX`. Same for `forgeSetToken('r1','ghp_…')`
+   (only `repoId`), `forgeAddAccount('h','github','tok…')` (only `host`, `kind`), and
+   `searchCommits('r1', { text: 'FIXTURE_QUERY_ZQX' })` (object arg ⇒ elided by shape alone).
+5. **Vocabulary + drift (vitest, `rawArgPolicy.test.ts`):** every non-null name in the JSON fails
+   both `isFreeTextParam` and `isSensitiveParam`; every key of the JSON is an existing `IpcApi`
+   method name; and the **positional drift guard** re-parses the `IpcApi` declarations and asserts
+   that policy position *i* names the parameter actually declared at position *i*. This test is
+   the forcing function on future additions — it must fail if someone lists `message`, `token`,
+   `prompt`, … — and it is the only defence against a signature reorder relabelling a `message` as
+   a `targetOid`. Any change to `IpcApi` argument order must keep it green **before** the policy
+   JSON is edited.
+6. **NEGATIVE WRITER TEST (`cargo test`)** — open a `LogWriter` in `RedactionMode::Raw`, append
+   **three** `ipc.call` records, then read the file back:
+
+   | | Record | What it proves |
+   |---|---|---|
+   | (a) | `commit` with `args = {"0":"r1","1":"NEGTEST_COMMIT_MESSAGE_ZQX","2":false}` — exactly what the buggy producer emitted | **W3**: the numeric-key rule kills the leak at the writer even if the frontend is never fixed |
+   | (b) | `forgeSetToken` with `args = {"0":"r1","1":"a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"}` — 40-hex, producer-shaped | **W3 on the credential half**: 40-hex passes `looks_like_opaque_secret`'s hex exemption, so **only** the key rule can catch it |
+   | (c) | `forgeSetToken` with `args = {"repoId":"r1","token":"<40-hex>"}` | **W4**, the denied-key-name rule, independently of W3 |
+
+   Assert: the file bytes contain **neither** `NEGTEST_COMMIT_MESSAGE_ZQX` **nor** the token
+   substring; all three records carry `argsPolicyViolation: true`; all three still carry `cmd`,
+   `argsHash` and `argsShape`.
+
+   > **ERRATUM (architect, 2026-09-03) — do not "restore" the originally specified payload.**
+   > This AC originally specified **only** (a) and (c). Record (c) is keyed `{"repoId","token"}`,
+   > a form `scrub_value`'s `is_sensitive_key` **already caught before the fix** — so the token
+   > half of the assertion would have been **green on the buggy code** and could never have gone
+   > red. The implementer correctly kept (c) and added (b), which is the shape the producer
+   > actually emitted, chosen because 40-hex passes the hex exemption and therefore leaves the key
+   > rule as the only possible catcher. **All three records stay.** Row (c) is a W4 test, not the
+   > leak test.
+   >
+   > **GENERAL RULE, binding on every negative test in P91 and after: a negative test must be
+   > proven to fail on the unfixed code.** Stating "this test must fail on today's code" is not
+   > proof; run it against the pre-fix commit, or construct the payload from the *actual producer
+   > output* rather than from a plausible-looking hand-written one. A negative test that was
+   > always green tests nothing and, worse, is later cited as coverage.
+
+7. **Writer units (`cargo test`):** `raw_args::enforce` drops `args` on each of W1–W5
+   independently; preserves a conforming `{"repoId":"r1","sign":false}`; is a no-op on records
+   without `args`; and a producer-supplied `argsPolicyViolation: true` on an otherwise-clean record
+   does not survive (unknown field dropped at deserialisation). Each of W1–W6 additionally has the
+   round-trip test §3 requires.
+8. `raw_args::enforce` is called unconditionally in `writer.rs::append_record`, positioned after
+   `strict::enforce` and **before** `redact::scrub_value`. A test asserts strict mode still removes
+   `args` entirely (existing behaviour unregressed).
+9. `OBS_SCHEMA_VERSION` is still `1`; no field added by this amendment is required.
+10. **Harness (`VITE_MOCK_IPC=1`):** with raw mode on, `__bonsaiDumpLogs()` shows name-keyed `args`
+    for an allow-listed command and no `args` for an unlisted one; existing anomaly assertions
+    still pass and `dup-ipc` must still fire (`argsHash` is unchanged). The proxy wraps `IpcApi`
+    identically in mock and Tauri modes, so `buildRawArgs` is exercised with no Rust present, and
+    `src/ipc/mock.ts` needs **no** change — this amendment adds no command, event or channel. The
+    writer half has no mock counterpart and is covered by AC6/AC7.
+11. Consent copy is `ui-designer`'s: `docs/contracts/P91-privacy-copy-ui.md`, re-verified true
+    before the P91 USER CHECKPOINT.
 
 ---
 
@@ -1701,6 +1922,8 @@ whose phases plausibly explain where the time went**.
 
 ## 13. Decision record (all resolved — user, 2026-08-27)
 
+> **Archival candidate (architect, 2026-09-03) — `docs-curator` action, NOT to be taken yet.** Rows **1–15** are the original 2026-08-27 design decisions. All fifteen are implemented and ratified, no later row depends on their reasoning, and each is already restated where it lands (§2–§9), so they are pure history. They are the right block to lift losslessly into `docs/history/` **once the P91 USER CHECKPOINT is confirmed** — not before. Rows **16–33** stay: each records a defect class, a prohibition, a binding test rule or a rejected alternative that a future increment can still re-break.
+
 | # | Decision | Outcome | Where it lands |
 |---|---|---|---|
 | 1 | Trace transport | **APPROVED as specced** — injected `__trace`/`__span` args key + the Rust `ipc.recv` shim. Contingency retained in §2.3.1 with the exact visibility lost if the shim is dropped | §2.2, §2.3, §2.3.1, §12 inc. 3 |
@@ -1728,11 +1951,11 @@ whose phases plausibly explain where the time went**.
 | 23 | **`FramePayload.dim` is REQUIRED at schema 1** (edit by senior-dev in `8da1291`, ratified by architect) | **RATIFIED with a stated carve-out.** The discriminator is required, not optional-with-default: `gapMs: 0` on a paint record is a fabricated datum, and a default reintroduces exactly the ambiguity the field removes. It is nonetheless a **breaking change to the v1 `frame` shape**, permitted only because P91 is **pre-release** (branch-only, absent from `dev`) and **no Rust reader parses records from disk** — `LogRecord::Deserialize` serves the same-build `log_append` IPC path alone. `OBS_SCHEMA_VERSION` stays **1**. **The carve-out expires on merge to `dev`**; after that a required-field addition needs a version bump **and** a §3.2 reader rule. New §3.2 states the reader rules (skip unknown `kind`, ignore unknown fields, reject the malformed LINE not the file, never infer a missing discriminator, best-effort on a higher `schema`). **Orchestrator decision 2026-09-02: option A of the architect's three** — schema stays 1 with an expiring carve-out, rather than bumping to 2 now, because no v1 corpus exists to protect and a bump would manufacture a phantom version that future readers write compatibility code for | §3 amendment rule, §3.2 (new), §11 |
 | 24 | **`writeFailed` clears only while rotation is healthy** (edit by senior-dev in `8da1291`, ratified by architect) | **RATIFIED — the deviation from the literal old wording is the correct contract.** "Clears on any flush that reaches disk" let a persistent rotation block report healthy, because the writer still held the previous part's working `BufWriter`; the Dev status row and `DevModePill` flapped every idle flush. The flag means **"records are not reaching disk"**, and no clear rule may return `false` while that holds. State machine moved out of the `LogSessionInfo` doc comment into **§6.4**; `rotationBlocked` is writer-local and never crosses IPC; the exported surface stays a bare bool for privacy | §6 Commands, §6.4 (new), UI §8.4 |
 | 25 | **Metrics key predicates are a privacy guard, not a size split** (extended 2026-09-03) | **RATIFIED, with two corrections.** `obs/metrics_keys.rs` is contractually separate from `metrics.rs` because `usage.json` is durable, uncovered by `logs_delete_all` and unredacted — a user-derived key there is permanent repo content. (a) **`is_valid_counter_key` now literally requires the `<domain>.<action>` dot**, tightened beyond the original finding: a bare lowercase token (an oid, an id, a `ghp_…`) was otherwise shape-valid and would have been persisted the moment the guard began running in release. (b) **`bump_validated` is the single sink** both `bump_counter` and `fold_perf` pass through, as a **runtime `if`, not a `debug_assert`** — only now is "shape-valid decides persistence" true of the path that actually persists (`fold_perf` previously wrote unvalidated). §8/§8.1's "allow-list in `obs/metrics.rs`" pointers are corrected: names in `metrics.rs`, shape in `metrics_keys.rs`, `cmd.*` membership in `metrics_cmds.rs`, cardinality in `metrics_map.rs` — see new §8.2 | §1, §8, §8.1, §8.2 |
-| 26 | **Raw mode widens IDENTIFIER fidelity, never CONTENT fidelity** (contradiction found by the 2026-09-02 security audit; ruled by architect) | **RULED: line 910 was the defect; §7.1's two absolute "never" rows stand.** The table said argument values are "included as `args`" in raw, while the same table said commit messages and search queries are "never, in either mode" and tokens are "NEVER, under any setting". The implementation resolved the conflict in the leaking direction and wrote commit messages, search text and forge PATs to disk — while the consent dialog promised it would not. Grounds for the ruling: two absolute "never"s outrank one mechanism description that never mentions them; consent is bounded by what the dialog promised at the moment of consent; §7.1 line 922 already defines raw's purpose as *real names*; and the failure is unrecoverable in one direction only (a PAT in a mailed zip) versus mere reviewer legibility in the other. **Mechanism:** sparse per-command allow-list, **default DENY**, keyed by parameter NAME never position, scalars only — so `is_sensitive_key` becomes meaningful inside `args` for the first time. **Independent writer-side enforcement** (`obs/raw_args.rs`) deliberately does NOT consult the table: it enforces a shape+vocabulary invariant it can decide alone, and its key rule kills the leak even if the producer is never fixed. `OBS_SCHEMA_VERSION` stays 1 under the row-23 pre-release carve-out | §7.1 (row corrected), `P91-raw-args-privacy.md` |
+| 26 | **Raw mode widens IDENTIFIER fidelity, never CONTENT fidelity** (contradiction found by the 2026-09-02 security audit; ruled by architect) | **RULED: line 910 was the defect; §7.1's two absolute "never" rows stand.** The table said argument values are "included as `args`" in raw, while the same table said commit messages and search queries are "never, in either mode" and tokens are "NEVER, under any setting". The implementation resolved the conflict in the leaking direction and wrote commit messages, search text and forge PATs to disk — while the consent dialog promised it would not. Grounds for the ruling: two absolute "never"s outrank one mechanism description that never mentions them; consent is bounded by what the dialog promised at the moment of consent; §7.1 line 922 already defines raw's purpose as *real names*; and the failure is unrecoverable in one direction only (a PAT in a mailed zip) versus mere reviewer legibility in the other. **Mechanism:** sparse per-command allow-list, **default DENY**, keyed by parameter NAME never position, scalars only — so `is_sensitive_key` becomes meaningful inside `args` for the first time. **Independent writer-side enforcement** (`obs/raw_args.rs`) deliberately does NOT consult the table: it enforces a shape+vocabulary invariant it can decide alone, and its key rule kills the leak even if the producer is never fixed. `OBS_SCHEMA_VERSION` stays 1 under the row-23 pre-release carve-out | §7.1 (row corrected), §7.4 |
 | 27 | **`log_export_session` loses its `dest` parameter** (audit F4, fixed `120cadd`) | **RATIFIED.** The parameter was justified by a comment claiming the path came from an OS save dialog **that does not exist** — none was ever wired, and the only caller passed nothing. An `Option<String>` destination reachable from the webview is an unmediated arbitrary-directory-create + file-write primitive, and it silently escaped the §6.2 delete-all scope that decision 17 exists to guarantee. The command is now zero-arity on both sides and always writes to `exports/`, which restores the delete scope **by construction**. **RULE:** any future "Save as…" must take its path from a **backend-invoked** Tauri dialog, never a webview-supplied string, and must extend §6.2's honest-reporting paragraph before shipping | §6.2, §6 Commands, §10 |
 | 28 | **`cmd.*` metric keys recorded NOTHING in production** (audit F3, fixed `120cadd`) | **RATIFIED — and the failure mode is the durable part.** `is_valid_cmd_name` required all-lowercase; the producer (`obs/ipcProxy.ts`) sends **camelCase `IpcApi` method names**. The entire `cmd.*` histogram family was therefore silently empty in every real session, while the Rust tests stayed green because they fed the validator **snake_case** names. *Tests and production fed different-shaped inputs to the same validator, so everything was green while the feature did nothing.* Fix: authority moves to **exact membership in a generated 199-name allow-list** (`obs/metrics_cmds.rs`, an exact bijection with the `IpcApi` declarations, pinned by a drift test that re-derives it from the `.ts` sources); the shape predicate merely bounds it. **Binding rule:** a validator's tests must use inputs produced by the real producer, and a cross-boundary vocabulary must be pinned by a drift test — a predicate that rejects everything is indistinguishable from one that works unless something asserts a real input is **accepted** | §8, §8.2 |
 | 29 | **`MAX_KEYS_PER_MAP = 512` + `meta.overflow`** (new surface, `120cadd`) | **RATIFIED AS BUILT; NO global cap.** `obs/metrics_map.rs` caps `counters`/`durations`/`errors` in every `MetricTotals` — day buckets and the 400-day→`lifetime` roll-up — folding overflow into a `<domain>.<action>`-shaped `meta.overflow` bucket so counts are bounded but never lost. Worst-case cardinality is per-map-per-bucket, i.e. `400 × 3 × 513` ≈ **616k keys**, acknowledged. A global cap is **rejected**: it would make today's recording depend on history, so a long-lived install would stop minting keys and dump current activity into overflow, destroying the week-over-week comparison §8.1 exists for. The reachable key set is ~212 (allow-listed), so 512 is a runaway stop, not a sizing parameter. Total-file-size pressure has a different lever — a **size-triggered early roll-up** of the oldest `days[]` into `lifetime` — recorded as a **revisit trigger only** (threshold ~8 MB), not work in P91. §8.1's "~60 keys / 1.2 MB" ceiling is corrected to ~212 keys / ~4.3 MB worst case | §8, §8.1, §8.2 |
-| 30 | **`LogPayload::IpcCall` gains `args_omitted: Option<u32>`** (fixed `120cadd`) | **RATIFIED; `OBS_SCHEMA_VERSION` stays 1** under the row-23 pre-release carve-out (optional + `skip_serializing_if`). **Why it was missing:** the field was contract-declared (A26 §B.6) and producer-emitted but absent from the Rust struct, so serde dropped it at `log_append` deserialisation — writer rule **W6 was dead in production** while its test passed, because that test alone bypassed the `LogRecord`→`append_record` round-trip W1–W5 used. **Binding test rule:** a writer rule is covered only by a round-trip test (`LogRecord` → `append_record` → read the file back); a synthetic-`Value` test is permitted in addition, never instead | §3, `P91-raw-args-privacy.md` §C |
+| 30 | **`LogPayload::IpcCall` gains `args_omitted: Option<u32>`** (fixed `120cadd`) | **RATIFIED; `OBS_SCHEMA_VERSION` stays 1** under the row-23 pre-release carve-out (optional + `skip_serializing_if`). **Why it was missing:** the field was contract-declared (A26 §B.6) and producer-emitted but absent from the Rust struct, so serde dropped it at `log_append` deserialisation — writer rule **W6 was dead in production** while its test passed, because that test alone bypassed the `LogRecord`→`append_record` round-trip W1–W5 used. **Binding test rule:** a writer rule is covered only by a round-trip test (`LogRecord` → `append_record` → read the file back); a synthetic-`Value` test is permitted in addition, never instead | §3, §7.4.2 |
 | 31 | **`briefString` gates on field name in BOTH modes** (fixed `120cadd`) | **RATIFIED.** The raw branch returned 48 characters verbatim for any field, while the hook's doc claimed it was safe to wire "BY CONSTRUCTION" — true only in `strict`. It now applies the shared free-text/credential vocabulary (`isFreeTextParam`/`isSensitiveParam`) in both modes, so a `message`/`query`/`token`-shaped field name is ordinalised or reported as `str:<len>` regardless of mode. The gate must be **name-based here specifically** because `state` records ride **outside** the `raw_args` backstop (W1 scopes it to `kind == "ipc.call"`), making `briefString` the sole gate on that path | §7.1, §9.1 |
 | 32 | **`SAVE_LOCK` ordered the commit, not the snapshot** (increment-6 review item 1; fixed `bcb3720`) | **RATIFIED — generation stamp, NOT a wider lock.** `SAVE_LOCK` made the rename pair atomic but was acquired *after* the snapshot, so two savers could snapshot A→B and commit B→A, landing the **older** bytes last. The realised failure is the pair `SAVE_LOCK`'s own doc cited as its motivation: `reset()` snapshots the emptied file, an in-flight flush commits pre-reset bytes after it, **the reset is silently undone on disk**, and both paths clear `dirty` so nothing reschedules a corrective write. Fix: a monotone `Inner::rev` bumped through the single `MetricsState::mark_dirty` sink, plus `commit_rev: AtomicU64` **on the state, not in `Inner`** (it is read under `SAVE_LOCK`, not the state mutex); one door `persist()` captures `(path, file, rev)` under the state mutex and, **under `SAVE_LOCK`**, compare-then-commits — dropping a snapshot whose `rev` lost. **Why the wider lock lost:** `SAVE_LOCK` around snapshot+save is correct but nests `SAVE_LOCK` → state mutex, adding a **second lock order** to a module that already has a non-reentrant re-entry hazard (`fold_perf` holds the state mutex across its whole loop — the reason `bump_validated` takes already-locked totals); it would clone a 400-day `MetricsFile` under the IO lock, and leave the bad interleaving reproducible only by racing threads. The stamp keeps one lock order: state mutex, then **disjointly** `SAVE_LOCK` (never nested). **Three adjacent defects fixed in the same seam:** `dirty` is cleared only if `rev` has not moved (an observation recorded *during* a write survives); a failed commit leaves `dirty` set; and `fold_perf` no longer dirties on a zero delta — the old unconditional flag rewrote `usage.json` **every 60 s** and made `dirty` meaningless. Nothing persisted changed; `rev`/`commit_rev` are in-memory only; IPC untouched; `OBS_SCHEMA_VERSION` / `METRICS_SCHEMA_VERSION` stay **1**. `flush`/`reset`/`persist` moved to a new `obs/metrics_persist.rs` (which also kept `metrics.rs` under the 500-line cap). **Binding rule (§8.3): a lock that orders a commit does not order the snapshot the commit is derived from** — snapshot-under-A / commit-under-B requires a monotone stamp compared inside B, the losing write dropped, and any `dirty` flag cleared conditionally on that stamp | §8.3 (new), §1 |
 | 33 | **`last_fire` prune premise stated; a `cutoff` guard REJECTED on merit** (`bcb3720`) | **RATIFIED as a comment-only change — the guard is correctly absent.** `Sliding::prune` deletes `last_fire` entries on the same cutoff as `events`, which is correctness-preserving **only under the premise that every later `arm` sees a `now` no smaller than this one**. That premise is now stated in code rather than assumed; it is **not enforced**, because record `ts` merges two unsynchronised clocks (`Date.now()` in the webview, `now_ms()` in Rust) into one writer stream with no monotonic clamp. Consequence of a `ts` regression larger than the window: a dropped debounce entry ⇒ **at most one duplicate anomaly record**. A monotone-cutoff guard was **rejected**: the same monotone cutoff would also **retain more `events`**, which can turn a count rule's non-fire into a **fire** — trading a duplicate record for a **false positive**, i.e. a strictly worse failure for a diagnostic whose value is trust in its firings. **Both effects are bounded and self-healing** once `ts` advances past the window. **Revisit trigger (not work in P91, and an option deliberately left open rather than decided here):** if duplicate anomaly records are ever *observed* in a real log, the fix is a **monotonic clamp at the sink** (`seq` is already authoritative for ordering, §3) — not a cutoff guard in the rules — but that changes the semantics of the `ts` the user sees in exported logs and needs an explicit ruling before it ships | §5, §5.1, §8.3 (rule class) |

@@ -1,4 +1,4 @@
-# P91 — Dev-mode privacy consent copy (satisfies `P91-raw-args-privacy.md` AC12)
+# P91 — Dev-mode privacy consent copy (satisfies `P91-observability.md` §7.4.3 AC12)
 
 **Status:** SPEC — ui-designer, 2026-09-03. Branch `feat/p91-observability`.
 **Amends** `docs/contracts/P91-observability-ui.md` §7 (frozen privacy statement) and §4.3 (raw-names
@@ -6,7 +6,7 @@ confirmation), and §8.3's export content statement. Where this file and §7/§4
 **this file wins**; everything else in those sections (geometry, roles, live-region policy, states) is
 unchanged.
 
-**Input contracts:** `P91-raw-args-privacy.md` §A (the ruling) and §F (the flag); `P91-observability.md`
+**Input contracts:** `P91-observability.md` §7.4 (the ruling) + §13 row 26; `P91-observability.md`
 §7.1 (as replaced by A26), §7.2, §7.3, §6.1, §6.2, §8 (metrics).
 **Implementer:** `senior-dev`. **Files touched:** `src/components/settings/DevConfirmDialogs.tsx`,
 `src/components/settings/SettingsDevPrivacySection.tsx`. Copy only — no layout, no new component,
