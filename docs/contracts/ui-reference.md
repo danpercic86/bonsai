@@ -211,7 +211,9 @@ qualifier verbatim into this file.** An unverified fix on dead CSS is worse than
 the audit budget and leaves a false green in the record.
 
 **A THIRD FAILURE MODE, recorded 2026-09-03 (P106 landing) — the grep counts TEXT, not declarations,
-and this has now bitten three times.** An acceptance-criterion grep is a string search over source
+and this has now bitten three times.** Four distinct inflation mechanisms are known: prose comments,
+`var()` fallbacks, an inherited baseline, and (P109) **a name that is a substring of a longer name** —
+see rule (5) below. An acceptance-criterion grep is a string search over source
 bytes: **prose comments and `var(--x, #hex)` fallbacks inflate it**, and a stale baseline invalidates
 the delta it was supposed to prove. Both halves went wrong in P106 and were caught only by measuring
 the real pre-fix state instead of inferring it: its `R2` baseline was recorded as **50 and was
@@ -234,7 +236,22 @@ criterion and the line numbers are not** — any comment the fix itself adds shi
 it. P106's R4 predicted its five new declarations at `193, 198, 203, 216, 227` and shipped them at
 `193, 198, 203, 220, 231`: the count was exact, the lines drifted by the explanatory comments the
 same fix added. A reviewer checking lines rather than counts would have called a correct fix a
-miss.** The accent-fill shortfall is **closed** (P100); the accent-as-text
+miss; (5) **a token- or class-name grep matches SUBSTRINGS, so a longer name that contains yours
+inflates the count — anchor the pattern (word boundary, leading `-`/quote/space) or classify every
+hit before trusting a baseline.** Found by P109, verified in-tree: `settings-profile-badge` contains
+`file-badge`, so a bare `file-badge` grep counted an identity-profile chip that has nothing to do with
+status badges, inflating **two separate baselines** (`R6` in `src/components`, `R11` in `src/styles`).
+**It compounds with the traps above** rather than replacing them — R6's real composition was
+**8 JSX + 2 prose comments + 1 substring = 11**, where the contract predicted 10. This is why the
+implementer was right to refuse the instruction to treat the baseline as 10: the count disagreed, so
+the baseline was re-measured, per rule (3).
+
+**Evidence that "measure the baseline, never inherit it" is not a style preference — it has now paid
+twice.** P106: **2 of 10** baselines wrong, every delta exact. P109: **3 of 14** baselines wrong,
+every delta exact. The same signature both times — the *prediction* of what the fix does is reliable
+because it is reasoned from the change; the *starting number* is unreliable because it is a string
+search over a tree nobody re-ran. A pass that inherits its baseline will report a correct fix as a
+miss roughly a fifth of the time. The accent-fill shortfall is **closed** (P100); the accent-as-text
 (P105) and hardcoded-ink-on-hue-fill (P102) shortfalls **shipped 2026-09-02** in commit `0e5dcab`,
 enumerated in `docs/contracts/P102-P105-hue-audit-ui.md` §2–§3 and verified in the browser harness
 in both themes. All 93
@@ -326,9 +343,9 @@ the danger hue at all is a **tone** decision, not a contrast one, and P108 did n
 
 **The hue alphabet for any future search is
 `danger|success|warning|merged|accent|badge-good|badge-warn|badge-unknown|h`** — three tokens longer
-than the list P107 recorded. Also open: **P109** — the status badge has no accessible name, and
-`added`/`untracked` collide on `A` in 3 of the 6 badge tables while the other 3 already render `U`
-(§7, record correction 2026-09-03).
+than the list P107 recorded. **P109 shipped 2026-09-03 (`5a254ba`)**: the status badge now has an
+accessible name at all 8 sites and `untracked` renders `U` everywhere, from one `FileStatusBadge.tsx`
+— **zero CSS diff**, so no ratio in this section moved (§7).
 
 - **The full `--text-3` / `--text-2` matrix (P98 measured; the `--bg-3` row added by P101).** Read
   this before choosing either token on any surface.
@@ -1105,21 +1122,36 @@ Full contract: `docs/contracts/P92-multi-ref-commit-ui.md`. When a commit carrie
 
 ## 7. File status colors (right panel, M1+)
 
-**Current, as shipped (P106, `10ce967`, 2026-09-03).** The A/M/D/U/R letter badge is mono 11px / 600,
-12px wide, before the path, in **both** densities (it does not scale with `--rp-row-font`). Its ink is
-a `--*-strong` token in every case — the base hues remain correct for fills, bars and glyphs, but
-**not for this letter**:
+**Current, as shipped (P106, `10ce967`, 2026-09-03; letters and names by P109, `5a254ba`,
+2026-09-03).** The A/M/D/U/R letter badge is mono 11px / 600, 12px wide, before the path, in **both**
+densities (it does not scale with `--rp-row-font`). Its ink is a `--*-strong` token in every case —
+the base hues remain correct for fills, bars and glyphs, but **not for this letter**:
 
-| Status | Letter | Ink | Declaration |
-|---|---|---|---|
-| added | `A` | `--success-strong` | `status-panel.css:193` |
-| untracked | `A` **in 3 of 6 tables, `U` in the other 3 — see the correction below** | `--success-strong` (italic path) | `status-panel.css:220` |
-| modified | `M` | `--warning-strong` | `status-panel.css:198` |
-| typechange | `T` | `--warning-strong` | same rule |
-| deleted | `D` | `--danger-strong` | `status-panel.css:203` |
-| conflicted | `C` | `--danger-strong` | same rule |
-| renamed | `R` | `--accent-strong` (P105, `0e5dcab` — unchanged by P106) | `status-panel.css:214` |
-| — | `Conflicts` section label | `--danger-strong` (**7.62 / 6.01** on `--bg-1`) | `status-panel.css:231` |
+**One component owns all of this: `src/components/FileStatusBadge.tsx`** (P109). It replaced **six**
+duplicated `BADGES` lookup tables; `BADGES` is now absent from `src` entirely, and all **8** render
+sites import the component. Adding a status, a letter or a name is a one-file edit — never reintroduce
+a local table.
+
+| Status | Letter | Accessible name | Ink | Declaration |
+|---|---|---|---|---|
+| added | `A` | `Added` | `--success-strong` | `status-panel.css:193` |
+| untracked | `U` | `Untracked` | `--success-strong` (italic path) | `status-panel.css:220` |
+| modified | `M` | `Modified` | `--warning-strong` | `status-panel.css:198` |
+| typechange | `T` | `Type changed` | `--warning-strong` | same rule |
+| deleted | `D` | `Deleted` | `--danger-strong` | `status-panel.css:203` |
+| conflicted | `C` | `Conflicted` | `--danger-strong` | same rule |
+| renamed | `R` | `Renamed` | `--accent-strong` (P105, `0e5dcab` — unchanged by P106) | `status-panel.css:214` |
+| **(unknown)** | `?` | `Status unknown` | inherited `--text-1` | no hue rule — see the `unverified` note below |
+| — | `Conflicts` section label | — | `--danger-strong` (**7.62 / 6.01** on `--bg-1`) | `status-panel.css:231` |
+
+**The name is a prefix, not a replacement, and it must read in sequence with the path** —
+*"Untracked notes/todo.txt"*, *"Type changed scripts/build.sh"*. `Status unknown` is inverted on
+purpose: `Unknown notes/todo.txt` would read as if the *file* were unknown. The names are supplied via
+`role="img"` + `aria-label` (§11) — never `title` (it fights the row's path tooltip) and never
+`.sr-only` text (it stutters "Untracked U" across a 200-row list).
+
+**Eight statuses, not seven.** The `?` unknown state is the eighth and had never been enumerated by
+this programme before P109; it is a **live** code path (a status-refetch race), not dead code.
 
 **Never let color be the only carrier of meaning** — the A/M/D/U/R letter badge is the house
 precedent. Every new status indicator pairs its hue with a letter, word, or glyph. A **digit** counts
@@ -1164,7 +1196,9 @@ whole class" is how both prior counts in this programme went wrong.
 **Live-match confirmation — all 8 render sites reached, per site, with the route that reaches each**
 (P106 AC10, resolved 2026-09-03). A grep proves a declaration *exists*; only this proves it
 *renders* (§2, second failure mode). Four sites were unconfirmed at contract time and are now
-individually recorded — **no "unverified" qualifier survives on this family**:
+individually recorded. **The `file:line` values below are P106-era and P109's refactor shifted every
+one of them — the file and the route are the record, the line numbers are not** (§2, rule 4). The only
+qualifier that survives on this family is P109's `?` unknown, below:
 
 | Site | File | Route in the harness | Confirmed |
 |---|---|---|---|
@@ -1195,24 +1229,47 @@ measures the `Conflicts (3)` section label at **7.62 / 6.01** on `--bg-1`.
 - **AC9's real-repo half (USER CHECKPOINT, pending).** A genuine `typechange` (symlink → regular file)
   cannot be produced in the mock harness; the fixture proves the *rule*, the native app proves the
   *pipeline*.
-- **P109 (open).** The badge has **no accessible name**, and `added` and `untracked` render the same
-  letter — indistinguishable to a screen reader and ambiguous visually. P106 made the letter
-  *legible*; P109 is about the letter being *insufficient*.
-  > **RECORD CORRECTION 2026-09-03 (P109 §2), and it makes the defect worse than recorded above.**
-  > P106 wrote that `added` and `untracked` "deliberately share the letter `A` (`StatusFileRow.tsx:15`,
-  > P4c)". That is true of **3 of the 6 `BADGES` tables**. The other **3 already render `U`**:
-  > `DiffBrowser.tsx:32`, `DiffFileTree.tsx:22`, `prPanel/PrFileRow.tsx:20` (vs `A` in
-  > `StatusFileRow.tsx:15`, `DiffOverlay.tsx:25`, `ComposerGroupCard.tsx:15`). **The same untracked
-  > file renders `A` in the status panel and `U` in the diff file tree, in the shipped app** —
-  > `notes/todo.txt` is `untracked` in both `src/ipc/fixtures/status.ts:42` and
-  > `src/ipc/fixtures/diffs.ts:126`, so the collision is observable by switching panels. The `U` in
-  > this section's own family name "A/M/D/**U**/R" has had **no referent** under the mapping recorded
-  > in the table above. This is a record correction, not a proposal; the forward fix is
-  > `docs/contracts/P109-status-badge-semantics-ui.md` (recommendation: `U` everywhere, plus
-  > `role="img"` + `aria-label`), which lands under its own AC12.
+**P109 — SHIPPED 2026-09-03, commit `5a254ba`** (contract `72e1cdd`,
+`docs/contracts/P109-status-badge-semantics-ui.md`). **Closed except AC13/AC14**, both USER
+CHECKPOINTs, listed below. What it established:
 
-**No agent may self-declare the three checkpoint items** — the user's checkpoint authority did not
-reach this work, and no agent message closes them.
+- **The defect was six-way drift, not a missing letter.** P106 recorded that `added` and `untracked`
+  "deliberately share the letter `A`". That was true of only **3 of the 6 `BADGES` tables** — the other
+  3 already rendered `U`, so **the same untracked file showed `A` in the status panel and `U` in the
+  diff tree in the shipped app**. The `U` in this section's own family name "A/M/D/**U**/R" had no
+  referent under half the tables. The premise is now known false and the mapping above is the record;
+  **`untracked` renders `U` everywhere.**
+- **De-duplication was the fix.** Six tables → one component. A visual family split across six
+  hand-copied tables does not stay consistent; drift is the default outcome, and only a single owner
+  prevents it.
+- **Zero CSS, token and geometry diff.** `src/styles/**` is byte-identical, so **P106's family minimum
+  of 5.18 stands unrecomputed** — the letters and names changed, the ink did not.
+- **`?` unknown carries AC10's `unverified` verbatim.** The unknown *render path* is unreachable from
+  any harness fixture (the mock's composer partition covers every composer path), so it is
+  **unverified in the harness**. It is a live code path, not dead code, and the component's unknown
+  branch *is* unit-verified. **No fixture was invented to manufacture a pass** — that is the correct
+  call, and §2's rule (carry every qualifier verbatim) is why this sentence exists.
+
+**Still open on P109 — USER CHECKPOINTs, pending, not self-declarable:**
+- **AC13 (pending).** A real screen-reader read-through in the native window (`pnpm tauri dev` + a
+  real AT). The harness has no assistive technology; a role/name that computes correctly in the DOM is
+  not proof of how it is announced.
+- **AC14 (pending).** The `U` glyph read at 11px natively, in **both themes and both densities** —
+  instantly distinguishable from `A` at arm's length.
+
+**No agent may self-declare the five checkpoint items in this section** (P106 AC14/AC15, P106 AC9's
+real-repo half, P109 AC13/AC14) — the user's checkpoint authority did not reach this work, and no
+agent message closes them.
+
+**State vs consequence — reuse the vocabulary, do not mint a second one (P109).** The badge names the
+**state** (`Untracked`); destructive copy keeps the **consequence** wording (*"Delete new file"*,
+*"reverts modified files and deletes new files"*). These are not an inconsistency to reconcile: a
+badge answers *what is this row*, a confirm dialog answers *what will happen to it*. `Untracked` was
+chosen because it is **already in the app** — `DiffOverlay.tsx`, `WorktreeCopyCandidates.tsx` and
+`RepoHealthPanel.tsx` all use it — so no new word entered the product. Before naming any state, grep
+for the word the app already uses; a synonym is a second vocabulary the user has to learn. (Compare
+`Conflicted`, the badge state, vs the `Conflicts` section header, a bucket — the same distinction,
+already shipped.)
 
 **House glyph vocabulary** (use these, do not invent synonyms): `✓` good/ready/checked ·
 `⚠` warning/failed · `⊘` blocked/refused/cancelled · `●` neutral/informational ·
@@ -1259,6 +1316,11 @@ Settings → AI access — each needs an `aria-label` that **names the object**,
   block (§12.5).
 - leaves the **visible** text alone. Adding an `aria-label` to a button inside a copy-frozen section
   is not a string change.
+
+**This rule is for controls whose visible text is a word.** When the visible text is a *letter or
+glyph standing for a word* — the status badge, `✓`/`⚠`/`⊘` — the element is type-as-image and takes
+`role="img"` + `aria-label` instead, which replaces the glyph in the name rather than appending to it.
+Recipe and the three rejected alternatives: **§11, last bullet** (P109).
 
 ## 8. Empty / loading / error states
 
@@ -1480,6 +1542,23 @@ row badges (`.submodule-badge-*`, shared by submodule and worktree rows — `Sid
   span; use an explicit **`aria-label`** when punctuation matters, because name computation joins
   sibling nodes with a space and would produce `Git config , repository` (the shipped rail does
   exactly this). A purely visual pill leaves AT users without the qualifier.
+- **When the visible text IS the thing being renamed, use `role="img"` + `aria-label` on that span
+  (added 2026-09-03, P109).** A letter, glyph or digit that stands *for* a word — the A/M/D/U/R status
+  badge (§7), `✓`/`⚠`/`⊘`, a count glyph — is an image made of type. Put `role="img"` on the span and
+  the word in `aria-label`; the label then **replaces** the element's text rather than sitting beside
+  it, and the word folds into the ancestor row's name for free (`"Untracked notes/todo.txt"`).
+  The three alternatives are all worse, and each is ruled out for a stated reason:
+  - **bare `aria-label` with no role** — invalid on a `generic` element, which is P95 §1.2's own
+    finding; browsers may ignore it entirely;
+  - **`title`** — fights the row's existing path tooltip, and one element cannot own two;
+  - **`.sr-only` text beside the glyph** — the visible letter is still in the name, so it stutters
+    (`"Untracked U notes/todo.txt"`) once per row across a 200-row list.
+
+  Cost to state honestly: NVDA browse mode prefixes `role="img"` with "graphic". That is the price of
+  the only valid option, and it is paid once per row, not per word. The rule is scoped: **`role="img"`
+  is for type-as-image, not for pills.** A pill whose visible label is already the word keeps the §11
+  recipe above (`aria-hidden` glyph + visually-hidden or folded text) — do not relabel a word with a
+  word.
 
 ## 12. Settings surface (P69)
 
