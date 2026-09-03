@@ -17,6 +17,7 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -135,6 +136,11 @@ struct Inner {
     /// Last `PerfCounters` snapshot folded, so `fold_perf` records only deltas.
     perf_baseline: PerfCounters,
     dirty: bool,
+    /// Monotone revision of `file`, bumped by [`MetricsState::mark_dirty`] on
+    /// every accepted mutation. A saver stamps the revision its snapshot was
+    /// taken at, so a snapshot that lost the race to a newer one is recognisable
+    /// at commit time (see `metrics_persist.rs`) instead of overwriting it.
+    rev: u64,
     /// Epoch secs of the last `session_ms` attribution, for wall-time deltas.
     last_wall_secs: i64,
 }
@@ -146,11 +152,18 @@ struct Inner {
 /// recording zero-cost when Dev mode is off).
 pub struct MetricsState {
     inner: Mutex<Inner>,
+    /// Highest [`Inner::rev`] whose bytes have been committed to disk by THIS
+    /// store. Read and written only under `metrics_file`'s `SAVE_LOCK`, which is
+    /// what makes the compare-then-commit atomic between savers; it is an atomic
+    /// rather than an `Inner` field precisely so the commit path never nests the
+    /// state mutex inside `SAVE_LOCK`.
+    commit_rev: AtomicU64,
 }
 
 impl Default for MetricsState {
     fn default() -> Self {
         MetricsState {
+            commit_rev: AtomicU64::new(0),
             inner: Mutex::new(Inner {
                 path: None,
                 file: MetricsFile {
@@ -159,6 +172,7 @@ impl Default for MetricsState {
                 },
                 perf_baseline: PerfCounters::default(),
                 dirty: false,
+                rev: 0,
                 last_wall_secs: 0,
             }),
         }
@@ -170,6 +184,15 @@ impl MetricsState {
         self.inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Marks `file` unsaved AND advances its revision. Every writer goes through
+    /// here: the revision is what lets a saver tell "my snapshot is the newest"
+    /// from "someone committed a newer one while I was serializing", so a writer
+    /// that set `dirty` without bumping `rev` would be invisible to that check.
+    fn mark_dirty(inner: &mut Inner) {
+        inner.dirty = true;
+        inner.rev = inner.rev.saturating_add(1);
     }
 
     /// Loads `usage.json` (with `.bak` recovery) from `dir`, bumps `sessions` and
@@ -189,8 +212,8 @@ impl MetricsState {
         g.path = Some(path);
         g.file = file;
         g.perf_baseline = PerfCounters::default();
-        g.dirty = true;
         g.last_wall_secs = now_secs;
+        Self::mark_dirty(&mut g);
     }
 
     /// TEST ONLY — a store bound to `path` with no prior file. Loads whatever is
@@ -215,7 +238,7 @@ impl MetricsState {
             g.path = Some(path);
             g.file = file;
             g.last_wall_secs = now_secs;
-            g.dirty = true;
+            Self::mark_dirty(&mut g);
         }
         state
     }
@@ -292,7 +315,7 @@ impl MetricsState {
         let mut g = self.lock();
         let t = Self::totals_for(&mut g, today);
         if Self::bump_validated(t, key, n) {
-            g.dirty = true;
+            Self::mark_dirty(&mut g);
         }
     }
 
@@ -320,7 +343,7 @@ impl MetricsState {
                 metrics_map::bump(&mut t.errors, code, 1);
             }
         }
-        g.dirty = true;
+        Self::mark_dirty(&mut g);
     }
 
     /// Folds one backend `span` into the day bucket: `op.<op>` total, allow-listed
@@ -356,7 +379,7 @@ impl MetricsState {
         if let Some(q) = queued_ms {
             metrics_map::observe(&mut t.durations, "queue.blocking", q as u64);
         }
-        g.dirty = true;
+        Self::mark_dirty(&mut g);
     }
 
     /// Folds `PerfState::snapshot()` DELTAS into `perf.*` counters (§8). Monotone
@@ -366,48 +389,25 @@ impl MetricsState {
         let mut g = self.lock();
         let baseline = g.perf_baseline.clone();
         let t = Self::totals_for(&mut g, today);
+        let mut recorded = false;
         for (key, get) in PERF_KEYS {
             let delta = get(snap).saturating_sub(get(&baseline));
             if delta > 0 {
                 // Same validated sink as `bump_counter` (audit F2 follow-up): the
                 // `PERF_KEYS` literals are const today, but the guard must not be
                 // reachable only from the entry point with no production caller.
-                let _recorded = Self::bump_validated(t, key, delta);
+                recorded |= Self::bump_validated(t, key, delta);
             }
         }
+        // Re-baselining alone changes nothing PERSISTED (`perf_baseline` lives in
+        // `Inner`, not in `MetricsFile`), so a delta-free fold must not dirty the
+        // file: `flush` calls this every 60 s, and marking dirty unconditionally
+        // would rewrite `usage.json` forever and make the `dirty` flag meaningless
+        // as a "something is unsaved" signal.
         g.perf_baseline = snap.clone();
-        g.dirty = true;
-    }
-
-    // ------------------------------------------------------------- flushing
-
-    /// Folds perf deltas + wall time, then persists atomically if dirty. Blocking
-    /// (writes a file). `now_secs` fixes both "today" and the wall-time delta.
-    pub fn flush(&self, perf: &PerfCounters, now_secs: i64) -> Result<(), bonsai_core::error::AppError> {
-        let today = writer::utc_date(now_secs);
-        self.fold_perf(perf, &today);
-        {
-            let mut g = self.lock();
-            let wall = (now_secs - g.last_wall_secs).max(0) as u64 * 1000;
-            g.last_wall_secs = now_secs;
-            if wall > 0 {
-                let t = Self::totals_for(&mut g, &today);
-                t.session_ms = t.session_ms.saturating_add(wall);
-            }
+        if recorded {
+            Self::mark_dirty(&mut g);
         }
-        let (path, file, dirty) = {
-            let g = self.lock();
-            (g.path.clone(), g.file.clone(), g.dirty)
-        };
-        let Some(path) = path else {
-            return Ok(()); // not initialised (no config dir) — nothing to write.
-        };
-        if !dirty {
-            return Ok(());
-        }
-        metrics_file::save(&path, &file)?;
-        self.lock().dirty = false;
-        Ok(())
     }
 
     /// Read API for the future Statistics page (§8). Returns a clone of the
@@ -420,31 +420,6 @@ impl MetricsState {
         }
         derive_totals(&mut file.lifetime);
         file
-    }
-
-    /// `metrics_reset()` — clears every aggregate to a fresh file and persists.
-    /// Headless: exposed as a command but never surfaced in a settings catalog.
-    pub fn reset(&self, now_secs: i64) -> Result<(), bonsai_core::error::AppError> {
-        let path = {
-            let mut g = self.lock();
-            g.file = MetricsFile {
-                schema: METRICS_SCHEMA_VERSION,
-                first_seen: writer::utc_date(now_secs),
-                sessions: 0,
-                days: Vec::new(),
-                lifetime: MetricTotals::default(),
-            };
-            g.perf_baseline = PerfCounters::default();
-            g.last_wall_secs = now_secs;
-            g.dirty = true;
-            g.path.clone()
-        };
-        if let Some(path) = path {
-            let file = self.lock().file.clone();
-            metrics_file::save(&path, &file)?;
-            self.lock().dirty = false;
-        }
-        Ok(())
     }
 }
 
@@ -484,6 +459,10 @@ fn derive_totals(totals: &mut MetricTotals) {
         *h = h.clone().with_derived_percentiles();
     }
 }
+
+/// §8 persistence — `flush`/`reset` and the snapshot-ordering rule they share.
+#[path = "metrics_persist.rs"]
+mod metrics_persist;
 
 #[cfg(test)]
 #[path = "tests_metrics.rs"]

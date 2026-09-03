@@ -50,9 +50,27 @@ impl Sliding {
         let cutoff = now - window;
         self.events.retain(|e| e.ts >= cutoff);
         // `last_fire` is pruned on the SAME cutoff, and that is a correctness-
-        // preserving deletion, not a heuristic: `arm` rejects a key only while
+        // preserving deletion, not a heuristic — **given one stated premise**:
+        // that every later `arm` on this rule sees a `now` no smaller than this
+        // one. Under that premise `arm` rejects a key only while
         // `now - prev < window`, so an entry at or before the cutoff can never
-        // change an `arm` answer again.
+        // change an `arm` answer again. (Every rule pairs `prune` and `arm` with
+        // the identical window constant, so the two cutoffs cannot disagree.)
+        //
+        // The premise is NOT enforced anywhere. Record `ts` is merged from two
+        // unsynchronised clocks — `Date.now()` in the webview (`src/obs/log.ts`)
+        // and `now_ms()` in Rust (`sink.rs`) — into one writer stream via batched
+        // `log_append`, with no monotonic clamp on the pipeline. A `ts` that
+        // regresses by more than the window can therefore drop a `last_fire`
+        // entry that would have debounced the next fire.
+        // **Blast radius: one duplicate anomaly record, never a missed one** —
+        // `events` above already carries the same exposure, and a duplicate
+        // `dup-ipc` warning is strictly less harmful than an unbounded map. We
+        // deliberately do NOT clamp `ts` to fix this: clamping would rewrite
+        // recorded timestamps (they are diagnostic data), and a monotone cutoff
+        // here would retain MORE `events` on a regression, which can turn a
+        // count rule's non-fire into a fire — trading a duplicate for a false
+        // positive.
         //
         // Why it matters (increment-5 review): every other rule keys on a finite
         // catalogue (refresh scope, event name, a constant), but `dup-ipc` keys on

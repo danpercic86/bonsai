@@ -49,7 +49,7 @@ fn read_valid(path: &Path) -> Option<MetricsFile> {
     serde_json::from_slice::<MetricsFile>(&bytes).ok()
 }
 
-/// Serializes the whole commit sequence below.
+/// Serializes the **rename pair** below — and nothing beyond it.
 ///
 /// `save` runs OUTSIDE the `MetricsState` mutex (it must — it does file IO while
 /// counters keep being bumped), so two overlapping savers are reachable in
@@ -63,23 +63,61 @@ fn read_valid(path: &Path) -> Option<MetricsFile> {
 /// mutex is the fix and the temp name stays fixed (and therefore self-cleaning:
 /// the next save truncates any file a crash left behind).
 ///
+/// **What it deliberately does NOT order (increment-6 review, item 1):** the
+/// callers' *snapshot* of `MetricsFile` is taken under the `MetricsState` mutex
+/// and this lock is acquired only afterwards, so two savers can snapshot A→B yet
+/// commit B→A and land the OLDER bytes last. That ordering is the
+/// `MetricsState::persist` revision stamp's job, not this mutex's — see
+/// `metrics_persist.rs`. Widening this lock to cover the snapshot would instead
+/// nest `SAVE_LOCK` → `MetricsState` mutex, adding a second lock order to a
+/// module that already has one non-reentrant re-entry hazard (`fold_perf` holds
+/// the state mutex across its whole loop).
+///
 /// Cross-process concurrency is deliberately out of scope: two app instances
 /// sharing a config dir already conflict at the in-memory level (each holds its
 /// own `MetricsFile`), which no temp-file scheme can repair.
 static SAVE_LOCK: Mutex<()> = Mutex::new(());
+
+/// Exclusive right to run the commit sequence. Held across the caller's
+/// staleness check *and* the commit, so "is my snapshot the newest committed?"
+/// and "commit it" are one atomic step (see `MetricsState::persist`).
+pub struct SaveGuard {
+    /// Held only for its `Drop`: the lock IS this type's whole purpose.
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+/// Acquires [`SAVE_LOCK`].
+///
+/// A poisoned lock means a previous saver panicked mid-sequence; the on-disk
+/// state is still one of the two consistent files (`load` recovers from `.bak`),
+/// and metrics must never block or fail the app, so we take the guard anyway
+/// rather than propagating the poison.
+pub fn begin_save() -> SaveGuard {
+    SaveGuard {
+        _lock: SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner()),
+    }
+}
+
+impl SaveGuard {
+    /// [`save`], with the lock already held by this guard.
+    pub fn commit(&self, path: &Path, file: &MetricsFile) -> Result<(), AppError> {
+        save_locked(path, file)
+    }
+}
 
 /// Persists `file` atomically: temp + fsync → rotate primary to `.bak` → rename
 /// temp onto primary → fsync the parent directory. `std::fs::rename` replaces the
 /// destination on all three targets, so a crash between the two renames leaves a
 /// good `.bak` that `load` recovers.
 ///
-/// Serialized process-wide by [`SAVE_LOCK`]; see its doc for the race it closes.
+/// Serialized process-wide by [`SAVE_LOCK`]; see its doc for the race it closes
+/// and the one it does not.
 pub fn save(path: &Path, file: &MetricsFile) -> Result<(), AppError> {
-    // A poisoned lock means a previous saver panicked mid-sequence; the on-disk
-    // state is still one of the two consistent files (`load` recovers from
-    // `.bak`), and metrics must never block or fail the app, so we take the guard
-    // anyway rather than propagating the poison.
-    let _guard = SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    begin_save().commit(path, file)
+}
+
+/// The commit sequence itself. Callers must hold [`SAVE_LOCK`].
+fn save_locked(path: &Path, file: &MetricsFile) -> Result<(), AppError> {
     if let Some(parent) = path.parent() {
         super::fs_perm::create_dir_private(parent)
             .map_err(|e| AppError::Io(format!("cannot create metrics dir: {e}")))?;
