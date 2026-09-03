@@ -371,6 +371,41 @@ as an authoritative status. Build diary: archive Part 44. Security arc: Part 42.
 
 ## PENDING / queued
 
+### P110 — selection flicker on a background graph re-stream — SHIPPED, awaiting USER CHECKPOINT (2026-09-03)
+
+**Current step:** AI gate green (all 8 steps, 479.3s); native-window confirmation is the only half left.
+
+User report: after checking out an older branch with many commits after it, the right panel and the
+graph selection flipped between the selected commit and the working-directory ("Uncommitted changes")
+view several times over a few seconds, on every background refresh round.
+
+- **Root cause:** the selection was a ROW INDEX, but every refresh round re-streams the graph from
+  row 0. Between the first paintable chunk and the chunk carrying the selected commit's row,
+  `graph.nodes[selectedIndex]` was `undefined`; `WorkspaceRightPanel` fell back to the status panel
+  by design, and `selectedOid` went null — also resetting `scope` and closing the commit browser.
+  The deeper the selected commit sits, the longer that gap is visible.
+- **Fix:** `useStickySelection.ts` anchors the selection to an `(index, node)` pair and holds it ONLY
+  while the index is unchanged (the re-stream gap). `WorkspaceRightPanel` now takes `selectedNode`
+  and never indexes `graph.nodes`, so the audit §2.2 deref is structurally impossible.
+  `useWipSummary.ts` stabilises `WipSummary` identity, and `useGraphCanvasEffects` deps on
+  `wip !== null` — the boolean it actually reads — so staging a file no longer re-runs the
+  scroll-into-view adjustment.
+- **Reviewer:** approve, no MUST-FIX. SHOULD-FIX 1 was pulled forward, not deferred: the anchor
+  originally survived an index CHANGE to an unstreamed row, reachable via `handleSelectParent`, which
+  would have shown the previous commit's details *and its action targets* under a moved selection.
+  Its regression test was verified failing (2 failed / 8 passed) against the pre-fix implementation.
+- **Deliberately NOT done:** the canvas selected-row highlight is not sticky. The highlight is
+  row-index-based and there is no honest row to draw while the row is absent from the partial layout;
+  anchoring it to a stale index is exactly the wrong-commit hazard the fix removes.
+- **USER CHECKPOINT:** `pnpm tauri dev`, check out an old branch with heavy history after it, select a
+  commit deep in the graph and leave the window alone through several refresh rounds — the right panel
+  must stay on that commit.
+- **Follow-up worth considering (not filed as a defect):** the *frequency* of these rounds. A checkout
+  that rewrites thousands of working-tree files storms the `notify` watcher, and each debounced burst
+  runs a `full` scope round, which includes a complete graph re-stream. The flicker is now invisible,
+  but the work is still being done.
+
+
 ### P109 — the status badge has no accessible name, and `added`/`untracked` both render `A` — pending (filed 2026-09-03 from P106)
 
 - Two distinct statuses render the **same character** (`StatusFileRow.tsx:15`), and the badge carries

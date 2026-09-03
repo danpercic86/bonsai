@@ -3,7 +3,7 @@ import type {
   CommitDiff,
   CompareDiff,
   GraphColorMode,
-  GraphLayout,
+  GraphNode,
   GraphPrefs,
 } from '../../ipc';
 import type { GraphDisplayOptions } from '../../graph/rightColumns';
@@ -66,8 +66,9 @@ export function prDefaultBaseOf(
 export function diffBrowserViewOf(args: {
   compare: { oid: string } | null;
   compareData: CompareDiff | null;
-  selectedIndex: number | null;
-  graph: GraphLayout | null;
+  /** The OID-anchored selected commit (see useStickySelection) — sticky across a
+   *  re-stream, so an open commit browser survives a background refetch. */
+  selectedNode: GraphNode | null;
   commitBrowserOpen: boolean;
   commitDiff: CommitDiff | null;
   headBranch: { name?: string | null } | null;
@@ -77,8 +78,7 @@ export function diffBrowserViewOf(args: {
   const {
     compare,
     compareData,
-    selectedIndex,
-    graph,
+    selectedNode,
     commitBrowserOpen,
     commitDiff,
     headBranch,
@@ -97,23 +97,17 @@ export function diffBrowserViewOf(args: {
   }
   // PR mode: AUTO-OPENED by the PR panel (beats commit; compare beats it).
   // Commit mode: EXPLICIT-open only.
-  if (selectedIndex !== null && graph !== null && commitBrowserOpen && commitDiff !== null) {
-    // Mid-stream partial layout: the selected commit's row is not in the
-    // streamed window yet -> fall through to null (no browser) until the
-    // refetch remap re-points selectedIndex and this memo re-runs.
-    const node = graph.nodes[selectedIndex];
-    if (node) {
-      const oid = node.id;
-      return {
-        source: {
-          mode: 'commit' as const,
-          oid,
-          title: `${shortOid(oid)} · ${commitDiff.details.summary}`,
-        },
-        files: commitDiff.files,
-        onClose: () => setCommitBrowserOpen(false),
-      };
-    }
+  if (selectedNode !== null && commitBrowserOpen && commitDiff !== null) {
+    const oid = selectedNode.id;
+    return {
+      source: {
+        mode: 'commit' as const,
+        oid,
+        title: `${shortOid(oid)} · ${commitDiff.details.summary}`,
+      },
+      files: commitDiff.files,
+      onClose: () => setCommitBrowserOpen(false),
+    };
   }
   return null;
 }

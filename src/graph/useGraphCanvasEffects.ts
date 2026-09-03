@@ -105,10 +105,12 @@ export function useScrollSelectionIntoView(
       scroller.clientHeight,
     );
     if (next !== null) scroller.scrollTop = next;
-    // The dep array is deliberately EXACTLY the pre-split one. `scrollerRef` /
-    // `metricsRef` are stable ref objects the container owns; the rule can no
-    // longer see that from here (they arrive as parameters), so it is silenced
-    // rather than the deps being changed.
+    // `scrollerRef` / `metricsRef` are stable ref objects the container owns;
+    // the rule can no longer see that from here (they arrive as parameters), so
+    // it is silenced rather than those deps being added.
+    // The `wip` dep is deliberately the BOOLEAN the body actually consumes (the
+    // one-row offset), not the object: a WIP *count* change (staging or editing
+    // a file) must not re-run the scroll adjustment and jump the view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scrollTarget, wip]);
+  }, [scrollTarget, wip !== null]);
 }

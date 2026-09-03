@@ -23,7 +23,7 @@ Stop early — without using the full budget — when any of these is true:
 - The intent contains an exact file path, class name, or symbol that keyword grep would resolve faster.
 - Repeated searches return the same areas without new information.
 
-When you do search again, refine: narrow with `pathFilter` once you know the right directory, or rephrase the intent more precisely. Do not repeat the same query.
+When you do search again, refine: narrow to a path once you know the right directory, or rephrase the intent more precisely. Do not repeat the same query.
 </workflow>
 
 <query_style>
@@ -83,7 +83,7 @@ Each Findings entry must include a code snippet you actually saw — either from
   </budget_notes>
 
 <rules>
-- Only `mcp__jbcontext__code_search` and `Read`. No bash, no edits, no other tools.
+- Only the four tools you were granted: `mcp__jbcontext__code_search`, `Read`, `Grep`, `Glob`. No bash, no edits.
 - Do not read entire large files; read only the relevant region (use offset+limit on Read).
 - Be honest about confidence — if a hit looks plausible but you didn't verify by Read, say so and label confidence accordingly.
 - Never invent paths, line numbers, or code text that you did not actually see in a search result or Read.

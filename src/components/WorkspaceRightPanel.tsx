@@ -18,7 +18,7 @@ import type {
   AiDiffTarget,
   BranchInfo,
   CommitVerification,
-  GraphLayout,
+  GraphNode,
   HeadInfo,
   ListView,
   PanelDensity,
@@ -102,8 +102,15 @@ export interface WorkspaceRightPanelProps {
   setScope: ComparePanelProps['onSelectScope'];
   clearCompare(): void;
 
-  selectedIndex: number | null;
-  graph: GraphLayout | null;
+  /** The OID-anchored selected commit, resolved by the container's
+   *  `useStickySelection` — `null` means "render the working-dir view".
+   *  Deliberately a NODE, not a row index (audit §2.2): a mid-stream partial
+   *  layout has no row for a deep selection (and a rebased/GC'd commit never
+   *  comes back), so a panel-side `graph.nodes[i]` would hand CommitPanel's
+   *  non-optional `node` an `undefined` → TypeError → the ErrorBoundary tears
+   *  the workspace down. Resolving it in the container also makes it sticky, so
+   *  the panel no longer flips to the status view mid-refresh. */
+  selectedNode: GraphNode | null;
   commitDiff: CommitPanelProps['data'];
   commitDiffLoading: boolean;
   commitDiffError: CommitPanelProps['error'];
@@ -199,8 +206,7 @@ export function WorkspaceRightPanel({
   scope,
   setScope,
   clearCompare,
-  selectedIndex,
-  graph,
+  selectedNode,
   commitDiff,
   commitDiffLoading,
   commitDiffError,
@@ -269,22 +275,11 @@ export function WorkspaceRightPanel({
   useRenderCount('WorkspaceRightPanel', {
     repoId,
     rightPaneTab,
-    selectedIndex,
+    selectedOid: selectedNode?.id ?? null,
     scope,
     mutating,
     listView,
   });
-  // Audit §2.2: `selectedIndex` can point PAST the end of `graph.nodes` — a
-  // streaming refetch publishes its first partial batch BEFORE the progressive
-  // selection remap runs, and a rebased/GC'd commit never comes back at all.
-  // `graph.nodes[i]` is then `undefined`, and CommitPanel (non-optional `node`)
-  // would deref it → TypeError → the ErrorBoundary tears down the workspace.
-  // Derive the node ONCE and gate BOTH uses on it; until the row arrives (or the
-  // stream ends and RepoWorkspace clears the selection) we fall back to the
-  // status panel, exactly like the commit-diff effect already skips.
-  const selectedNode =
-    selectedIndex !== null && graph !== null ? (graph.nodes[selectedIndex] ?? null) : null;
-
   return (
     <aside className="right-panel" data-density={panelDensity} style={{ width: rightPanelWidth }}>
       <div className="right-pane-tabs" role="tablist" aria-label="Right panel view">

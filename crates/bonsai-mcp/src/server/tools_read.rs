@@ -19,8 +19,8 @@ impl BonsaiServer {
     ///
     /// WARNING: returns the ENTIRE layout in one response — for very large
     /// histories (tens of thousands of commits) this can be a multi-MB payload.
-    /// Incremental/paged loading is not yet available (P65 deferred); prefer the
-    /// narrower diff/status tools when you do not need the whole topology.
+    /// There is no incremental or paged variant; prefer the narrower diff/status
+    /// tools when you do not need the whole topology.
     #[tool]
     async fn bonsai_get_graph(&self) -> CallToolResult {
         match self.run_blocking(bonsai_core::graph::compute_graph).await {
@@ -199,7 +199,7 @@ impl BonsaiServer {
         }
     }
 
-    /// Enumerate the repos the user has OPEN in Bonsai (P16 §4b, D-2). Each
+    /// Enumerate the repos the user currently has open in Bonsai. Each
     /// summary carries a HEAD summary and a `selected` flag marking this
     /// session's currently-selected repo. Standalone (`Fixed`) servers report
     /// their single `--repo`; embedded (`Session`) servers snapshot the app's
@@ -240,7 +240,7 @@ impl BonsaiServer {
         }
     }
 
-    /// Set the CALLING SESSION's selected repo to `repoId` (P16 §4b, D-2).
+    /// Set the CALLING SESSION's selected repo to `repoId`.
     /// Validates `repoId` against the currently-open set (unknown/closed →
     /// `invalidName`); `Fixed` (standalone) servers reject selection. Returns
     /// the now-selected repo's summary. Never disturbs other sessions or the

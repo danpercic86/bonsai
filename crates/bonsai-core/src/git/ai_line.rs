@@ -20,7 +20,7 @@ use crate::git::timefmt::epoch_to_ymd;
 /// SINGLE line — on Windows the `claude` CLI is a `.cmd` shim and Rust's
 /// `Command` REFUSES an argv arg containing a newline (same rule as the P15
 /// prompts). Multi-line grounding only ever flows through the stdin payload.
-const LINE_SYSTEM_PROMPT: &str = "You are explaining WHY a specific line of code exists to a teammate. Standard input gives the line, the commit that introduced it (with its message), and that commit's change to the file. Explain the intent behind the line — what problem it solves and why it was written this way — grounded in the commit's stated purpose. Do not merely restate the diff. Two or three sentences. Output prose only — no markdown code fences.";
+const LINE_SYSTEM_PROMPT: &str = "You are explaining WHY a specific line of code exists to a teammate. Standard input gives the line, the commit that introduced it (with its message), and that commit's change to the file. Explain the intent behind the line — what problem it solves and why it was written this way — grounded in the commit's stated purpose. Do not merely restate the diff. This is read in a small inline panel, so answer the question and stop. Output prose only — no markdown code fences.";
 
 /// The `-p` positional prompt for line-why (§3.2, verbatim single line).
 const LINE_PROMPT: &str = "Explain why the line described on standard input exists.";

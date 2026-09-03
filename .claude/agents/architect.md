@@ -16,8 +16,7 @@ For the milestone you are handed, write a contract file containing:
 - Concrete interface contracts the senior-dev can implement verbatim: Rust type signatures
   and function signatures, the matching TypeScript types, and the exact Tauri command /
   event / channel surface for this milestone.
-- For the commit-graph milestone specifically: the lane-assignment + edge-routing algorithm
-  as clear pseudocode, and the `GraphLayout` data shape.
+- Any non-obvious algorithm as clear pseudocode, plus the data shape it produces.
 
 Hold these invariants in every design:
 - Rust owns ALL Git logic AND the commit-graph layout math. React only renders.

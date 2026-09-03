@@ -9,13 +9,16 @@
  *  ErrorBoundary tears down the workspace.
  *
  *  These render inside the real ErrorBoundary: a boundary fallback means the
- *  crash reproduced. Expected behaviour is a graceful fall back to the status
- *  panel until the row arrives (or the stream ends and the selection clears). */
+ *  crash reproduced. The panel is now handed an already-narrowed
+ *  `GraphNode | null` (resolved by `useStickySelection` in the container), so the
+ *  deref is structurally impossible AND the selected commit stays on screen
+ *  while its row is missing from a partial layout. */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 import { ErrorBoundary } from '../ErrorBoundary';
 import { WorkspaceRightPanel } from '../WorkspaceRightPanel';
+import { resolveStickySelection } from '../repoWorkspace/useStickySelection';
 import type { WorkspaceRightPanelProps } from '../WorkspaceRightPanel';
 import type { GraphLayout, GraphNode, HeadInfo, StatusSnapshot } from '../../ipc';
 
@@ -93,8 +96,7 @@ function renderPanel(over: Partial<WorkspaceRightPanelProps>) {
     scope: { kind: 'root' },
     setScope: vi.fn(),
     clearCompare: vi.fn(),
-    selectedIndex: null,
-    graph: null,
+    selectedNode: null,
     commitDiff: null,
     commitDiffLoading: false,
     commitDiffError: null,
@@ -151,26 +153,33 @@ function crashed(): boolean {
   return screen.queryByRole('button', { name: /Try again/i }) !== null;
 }
 
-describe('WorkspaceRightPanel out-of-range selectedIndex (audit §2.2)', () => {
-  it('mid-stream selection past the last streamed row falls back to the status panel', () => {
-    // Selection at row 600 while only the first 512-row batch has landed.
-    renderPanel({ graph: partialLayout(512), selectedIndex: 600 });
+describe('WorkspaceRightPanel selection rendering (audit §2.2)', () => {
+  it('a null selected node renders the working-dir status panel', () => {
+    // The container resolves the node (sticky by OID) — `null` is the only way
+    // the panel is told "no commit selected", so it can never deref undefined.
+    renderPanel({ selectedNode: null });
 
     expect(crashed()).toBe(false);
-    // Fell back to the working-dir status + commit box, not the commit panel.
     expect(screen.getByPlaceholderText('Commit message')).toBeInTheDocument();
     expect(screen.queryByText(/commit 600/)).not.toBeInTheDocument();
   });
 
-  it('an empty layout with a stale selection does not crash', () => {
-    renderPanel({ graph: partialLayout(0), selectedIndex: 0 });
+  it('a sticky node whose row is not in the partial layout still renders it', () => {
+    // Mid-stream: only the first 512-row batch has landed and the selected
+    // commit sat at row 600. The sticky anchor keeps the commit panel up
+    // instead of flipping to the working-dir view (the reported "jump").
+    const sticky =
+      resolveStickySelection(600, partialLayout(512), { index: 600, node: node(600) })?.node ??
+      null;
+    renderPanel({ selectedNode: sticky });
 
     expect(crashed()).toBe(false);
-    expect(screen.getByPlaceholderText('Commit message')).toBeInTheDocument();
+    expect(screen.getByText('commit 600')).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Commit message')).not.toBeInTheDocument();
   });
 
   it('an in-range selection still renders the commit panel', () => {
-    renderPanel({ graph: partialLayout(512), selectedIndex: 3 });
+    renderPanel({ selectedNode: node(3) });
 
     expect(crashed()).toBe(false);
     expect(screen.getByText('commit 3')).toBeInTheDocument();

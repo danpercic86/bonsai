@@ -42,6 +42,8 @@ import { useCompareMode } from './repoWorkspace/useCompareMode';
 import { useWorkspaceDialogState } from './repoWorkspace/useWorkspaceDialogState';
 import { useDiffOverlayView } from './repoWorkspace/useDiffOverlayView';
 import { useSigningStatus } from './repoWorkspace/useSigningStatus';
+import { useStickySelection } from './repoWorkspace/useStickySelection';
+import { useWipSummary } from './repoWorkspace/useWipSummary';
 import type { IncrementalEdgeIndex } from '../graph/incrementalEdgeIndex';
 import { ipc } from '../ipc';
 import type {
@@ -492,14 +494,10 @@ export function RepoWorkspace({
   const canPullPush =
     head != null && !head.detached && !head.unborn && !opActive;
 
-  const wip: WipSummary | null = useMemo(() => {
-    if (status === null || head?.unborn === true) return null;
-    const paths = new Set<string>();
-    for (const s of [status.staged, status.unstaged, status.untracked, status.conflicted]) {
-      for (const e of s) paths.add(e.path);
-    }
-    return paths.size > 0 ? { fileCount: paths.size } : null;
-  }, [status, head]);
+  // The WIP row summary (useWipSummary.ts): identity is stable across a status
+  // refetch with an unchanged file count, so the scroll-into-view effect (which
+  // deps on `wip`) no longer re-runs on every refresh round.
+  const wip: WipSummary | null = useWipSummary(status, head);
 
   // P53c: is there any working change to name a branch from? Gates the AI
   // "Suggest name" affordance in the branch-create dialog (clean tree => no
@@ -947,16 +945,20 @@ export function RepoWorkspace({
     if (active) void refreshRef.current('activation', 'full');
   }, [active]);
 
+  // The OID-anchored selection (useStickySelection.ts): a background refetch
+  // re-streams from row 0, so the selected ROW is briefly absent from the
+  // partial layout. `node` bridges that gap; `oid` is a value-stable identity.
+  const sticky = useStickySelection(selectedIndex, graph);
+  const selectedNode = sticky.node;
+  const selectedOid = sticky.oid;
+
   // Selection -> commit diff (M4 §4.4). Every selection change resets the shared
-  // expansion slot (its keys belong to the previous mode/commit).
+  // expansion slot (its keys belong to the previous mode/commit). Keyed on the
+  // sticky OID, so a refetch that only shifts (or briefly loses) the row never
+  // re-fetches the same commit diff.
   useEffect(() => {
-    if (selectedIndex !== null && graph !== null) {
-      const node = graph.nodes[selectedIndex];
-      // Mid-stream partial layout: the selected commit's row is not in the
-      // streamed window yet. Skip — leave the current panel untouched until the
-      // refetch remap re-points selectedIndex and this effect re-runs.
-      if (!node) return;
-      const oid = node.id;
+    if (selectedOid !== null) {
+      const oid = selectedOid;
       const key = `${repoId}:${oid}`;
       // Same commit as already loaded (a refetch only shifted its row, or the
       // graph object churned) -> keep the panel + open file diff untouched.
@@ -987,16 +989,14 @@ export function RepoWorkspace({
       setCommitDiffLoading(false);
       setCommitDiffError(null);
     }
-  }, [selectedIndex, graph, repoId]);
+  }, [selectedOid, repoId]);
 
   // P11g-rev §4.2: reset scope + close the commit browser whenever the active
   // source changes (new compare target, or a DIFFERENT commit selected). Keyed
-  // on the selected commit's OID — not the row index — so a background refetch
-  // that merely shifts rows never closes an open browser (same-OID preservation,
-  // mirroring the commit-diff effect above). Compare auto-open then renders at
-  // root; commit mode returns to closed.
-  const selectedOid =
-    selectedIndex !== null && graph !== null ? (graph.nodes[selectedIndex]?.id ?? null) : null;
+  // on the sticky commit OID — not the row index, and not a mid-stream `null` —
+  // so a background refetch that merely shifts (or briefly loses) rows never
+  // closes an open browser. Compare auto-open then renders at root; commit mode
+  // returns to closed.
   useEffect(() => {
     setScope({ kind: 'root' });
     setCommitBrowserOpen(false);
@@ -1806,8 +1806,8 @@ export function RepoWorkspace({
   // mode AUTO-OPENS once data has loaded (≥1 file); commit mode is EXPLICIT-open
   // (gated on commitBrowserOpen). null → browser not rendered.
   const diffBrowserView = useMemo(
-    () => diffBrowserViewOf({ compare, compareData, selectedIndex, graph, commitBrowserOpen, commitDiff, headBranch, clearCompare, setCommitBrowserOpen }),
-    [compare, compareData, selectedIndex, graph, commitBrowserOpen, commitDiff, headBranch, clearCompare],
+    () => diffBrowserViewOf({ compare, compareData, selectedNode, commitBrowserOpen, commitDiff, headBranch, clearCompare, setCommitBrowserOpen }),
+    [compare, compareData, selectedNode, commitBrowserOpen, commitDiff, headBranch, clearCompare],
   );
 
   return (
@@ -2003,8 +2003,7 @@ export function RepoWorkspace({
           scope={scope}
           setScope={setScope}
           clearCompare={clearCompare}
-          selectedIndex={selectedIndex}
-          graph={graph}
+          selectedNode={selectedNode}
           commitDiff={commitDiff}
           commitDiffLoading={commitDiffLoading}
           commitDiffError={commitDiffError}
