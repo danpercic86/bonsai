@@ -157,6 +157,11 @@ export interface MockRepoState {
 export const repos = new Map<string /* repoId */, MockRepoState>();
 
 export function query(name: string): string | null {
+  // Node-environment guard: every caller below reads this at module init, so an
+  // unguarded `window` deref forces the whole mock IPC layer -- and anything that
+  // transitively imports it -- into a DOM test environment. Absent a URL there is
+  // no query string, so "flag not set" is the correct answer, not a crash.
+  if (typeof window === 'undefined') return null;
   return new URLSearchParams(window.location.search).get(name);
 }
 
