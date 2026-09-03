@@ -9,7 +9,13 @@
  * lands when Settings is already open on another category.
  */
 import { test, expect } from './fixtures';
-import { gotoHarness, openPalette, openRepo, skipOnboarding } from './helpers';
+import {
+  FIRST_PAINT_TIMEOUT,
+  gotoHarness,
+  openPalette,
+  openRepo,
+  skipOnboarding,
+} from './helpers';
 import type { Locator, Page } from '@playwright/test';
 
 function settingsDialog(page: Page): Locator {
@@ -231,7 +237,9 @@ test.describe('24 settings shell — header identity @smoke', () => {
 
   test('no repo open ⇒ no identity control at all', async ({ page }) => {
     await gotoHarness(page);
-    await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible({
+      timeout: FIRST_PAINT_TIMEOUT,
+    });
     await expect(identityTrigger(page)).toHaveCount(0);
   });
 

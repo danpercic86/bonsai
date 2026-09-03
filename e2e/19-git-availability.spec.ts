@@ -12,7 +12,7 @@
  * Harness rows: UI §11.4 (`?git=missing`, `?git=badpath`, `&gitDelay=`).
  */
 import { test, expect } from './fixtures';
-import { gotoHarness } from './helpers';
+import { FIRST_PAINT_TIMEOUT, gotoHarness } from './helpers';
 
 const BANNER = '.git-banner';
 const BTN = '.git-banner-btn';
@@ -22,7 +22,7 @@ test.describe('19 git availability', () => {
     page,
   }) => {
     await gotoHarness(page, { flags: { git: 'missing', gitDelay: '0' } });
-    await expect(page.locator(BANNER)).toBeVisible();
+    await expect(page.locator(BANNER)).toBeVisible({ timeout: FIRST_PAINT_TIMEOUT });
     await expect(page.locator('.git-banner-title')).toHaveText('Git is not available');
 
     const btn = page.locator(BTN);
@@ -62,7 +62,7 @@ test.describe('19 git availability', () => {
   ] as const) {
     test(`?git=${flag}: the announcement matches the visible copy`, async ({ page }) => {
       await gotoHarness(page, { flags: { git: flag } });
-      await expect(page.locator(BANNER)).toBeVisible();
+      await expect(page.locator(BANNER)).toBeVisible({ timeout: FIRST_PAINT_TIMEOUT });
       await expect(page.locator('.git-banner-title')).toHaveText(title);
 
       const parts = await page.evaluate(() => ({

@@ -4,7 +4,7 @@
  * repo shapes are seeded via bonsai.mockSession (repoState.ts path substrings).
  */
 import { test, expect } from './fixtures';
-import { gotoHarness, graphCanvas, openRepo, skipOnboarding } from './helpers';
+import { FIRST_PAINT_TIMEOUT, gotoHarness, graphCanvas, openRepo, skipOnboarding } from './helpers';
 
 test.describe('01 boot & onboarding @smoke', () => {
   test('fresh boot shows Welcome, Skip lands on the EmptyState', async ({ page }) => {
@@ -31,7 +31,9 @@ test.describe('01 boot & onboarding @smoke', () => {
     // a visible signal (warning toast) BEFORE we click — clicking earlier
     // loses the tab to the boot effect's setTabs (FINDINGS [T4.1]).
     await gotoHarness(page, { recents: ['C:/mock/not-a-repo'] });
-    await expect(page.locator('.toast-stack').getByText(/Could not reopen/)).toBeVisible();
+    await expect(page.locator('.toast-stack').getByText(/Could not reopen/)).toBeVisible({
+      timeout: FIRST_PAINT_TIMEOUT,
+    });
     await page.getByRole('button', { name: 'Open repository' }).click();
     await expect(graphCanvas(page)).toBeVisible();
     await expect(page.getByText('main', { exact: true }).first()).toBeVisible();
@@ -46,7 +48,7 @@ test.describe('01 boot & onboarding @smoke', () => {
     await gotoHarness(page, {
       session: { openRepos: ['C:/mock/unborn-repo'], activeRepo: 'C:/mock/unborn-repo' },
     });
-    await expect(page.getByText('No commits yet')).toBeVisible();
+    await expect(page.getByText('No commits yet')).toBeVisible({ timeout: FIRST_PAINT_TIMEOUT });
     await expect(page.getByTestId('status-panel')).toBeVisible();
     await expect(page.getByPlaceholder('Commit message')).toBeVisible();
   });
@@ -56,7 +58,9 @@ test.describe('01 boot & onboarding @smoke', () => {
       session: { openRepos: ['C:/mock/not-a-repo'], activeRepo: 'C:/mock/not-a-repo' },
     });
     // Boot reopen fails with a warning toast; the EmptyState remains usable.
-    await expect(page.locator('.toast-stack').getByText(/Could not reopen/)).toBeVisible();
+    await expect(page.locator('.toast-stack').getByText(/Could not reopen/)).toBeVisible({
+      timeout: FIRST_PAINT_TIMEOUT,
+    });
     const openButton = page.getByRole('button', { name: 'Open repository' });
     await expect(openButton).toBeVisible();
     await openButton.click();
@@ -67,7 +71,9 @@ test.describe('01 boot & onboarding @smoke', () => {
     // A non-usable recents path keeps the EmptyState visible (the back-compat
     // boot path auto-reopens recents[0]; a usable path would open a tab).
     await gotoHarness(page, { recents: ['C:/mock/not-a-repo'] });
-    await expect(page.getByRole('button', { name: 'Open repository' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open repository' })).toBeVisible({
+      timeout: FIRST_PAINT_TIMEOUT,
+    });
     await expect(page.getByRole('button', { name: /not-a-repo/ })).toBeVisible();
   });
 });

@@ -9,6 +9,44 @@ import { expect } from './fixtures';
 import { shortcutKeys, shortcutLabel } from '../src/utils/platform';
 
 export const FIXTURE_REPO = 'C:\\mock\\bonsai-fixture';
+
+/** Timeout for the FIRST assertion after a page load - the one gated on the
+ *  app's whole boot chain (mock session restore -> openRepo -> graph stream ->
+ *  first React commit), not on any behaviour under test.
+ *
+ *  WHY IT IS NOT THE 5 s DEFAULT. Measured on this box (22 cores, msedge
+ *  channel, dev-server mode) by instrumenting `openRepo` to record `page.goto`
+ *  duration and load->canvas latency SEPARATELY, N = 414 boots over three runs:
+ *
+ *    idle full suite   (3.0 min, N=171)   first paint p50 949  p95 1466 max 1798
+ *    loaded subset     (16 hog threads)   first paint p50 1202 p95 1667 max 1884
+ *    loaded full suite (4.2x wall, N=171) first paint p50 1141 p99 1966 max 9203
+ *
+ *  The distribution is tight (p99 = 2.0 s) with a rare heavy tail: under CPU
+ *  starvation ONE boot in 171 took 9203 ms. The 5 s default sits in the middle
+ *  of that tail - which is exactly the observed ~3-failures-in-20-runs flake.
+ *
+ *  This is NOT cold-boot cost and NOT a stalled navigation. Both were ruled
+ *  out by measurement, not assumed:
+ *    - the 9203 ms boot had `goto` = 1023 ms, `loadEventEnd` = 986 ms,
+ *      readyState 'complete', navType 'navigate' (so no Vite full-reload) and a
+ *      slowest module transform of 116 ms. The page load was entirely healthy;
+ *      all 9.2 s was spent AFTER load, inside the app's own async boot chain.
+ *    - the first boot on each worker against a genuinely cold dev server
+ *      (goto 565-863 ms, first paint 921-1410 ms) was no slower than the steady
+ *      state, because Vite's dep cache in node_modules/.vite is already warm.
+ *      There is no cold-start cliff to wait out.
+ *  What stretches is the chain of mock-IPC `delay()` timers plus React commits,
+ *  which is at the mercy of a starved renderer's task queue.
+ *
+ *  15 s = 1.6x the worst boot ever observed, under a synthetic load 2.6x
+ *  heavier than the worst real gate run (12.5 min wall against a 3.0 min
+ *  baseline, vs 4.2 min for the run that actually flaked), and 7.6x p99.
+ *  Deliberately scoped to first-paint assertions rather than raised globally:
+ *  every assertion about behaviour under test keeps the 5 s default, so a real
+ *  regression still fails fast. A genuinely dead boot still fails HERE, with
+ *  this name on it, well inside the 30 s test budget. */
+export const FIRST_PAINT_TIMEOUT = 15_000;
 export const DEFAULT_ROW_HEIGHT = 32; // GraphPrefs default (persistence.ts)
 
 export interface HarnessOptions {
@@ -72,7 +110,8 @@ export async function gotoHarness(page: Page, opts?: HarnessOptions): Promise<vo
  *  never happens. */
 export async function skipOnboarding(page: Page): Promise<void> {
   const welcome = page.getByRole('dialog', { name: 'Welcome to Bonsai' });
-  await expect(welcome).toBeVisible();
+  // First paint - gated on the whole boot chain (see FIRST_PAINT_TIMEOUT).
+  await expect(welcome).toBeVisible({ timeout: FIRST_PAINT_TIMEOUT });
   await welcome.getByRole('button', { name: 'Skip' }).click();
   await expect(welcome).toBeHidden();
   await page.waitForFunction(
@@ -101,7 +140,7 @@ export async function skipOnboarding(page: Page): Promise<void> {
 export async function openRepo(page: Page, opts?: HarnessOptions): Promise<void> {
   const session = opts?.session ?? { openRepos: [FIXTURE_REPO] };
   await gotoHarness(page, { ...opts, session });
-  await expect(graphCanvas(page)).toBeVisible();
+  await expect(graphCanvas(page)).toBeVisible({ timeout: FIRST_PAINT_TIMEOUT });
 }
 
 /** Graph scroll container + canvas locators (data-testid, contract §4). */
