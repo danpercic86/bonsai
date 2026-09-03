@@ -757,6 +757,39 @@ had to be replaced by inverted emphasis (§12.5).
   the Settings overlay, dialogs, and app chrome (header, workspace toolbar, the §10 notice bar) have
   one geometry in both densities.
 
+### 3.0 A pill is one line — ref/path truncation inside a stadium (added 2026-09-03, P111)
+
+Full contract: `docs/contracts/P111-pill-truncation-ui.md`.
+
+`border-radius: 999px` clamps to half the shorter side, so a box that wraps to a second line stops
+being a pill and becomes a lozenge — a shape the app uses nowhere. **The radius is not the bug; the
+second line is.** Three rules, in force order:
+
+- **R1 — line guard.** Any box with `border-radius: 999px` that can hold variable-length text
+  declares `white-space: nowrap`. Content that may legitimately take two lines does not get a 999px
+  radius; it gets the §11 `8px`, or `6px`/`4px`. A pill that can wrap is a defect, and the review
+  question is "what is the longest string this can hold", not "does the fixture look right".
+- **R2 — the width threshold is relative to the surface, never a constant tuned to one input.**
+  A chip that is the row's own content (a chip in a wrapping chip-strip) takes `max-width: 100%`: as
+  wide as its text needs, up to its container, then it truncates — correct at every window width. A
+  ref that is one field of a dense metadata row takes an `Nch` cap in the app's 20–26ch band, because
+  there it must yield space to its siblings. Precedents: `controls.css:57` `.pill` (160px),
+  `graph-filter.css:54` `.graph-filter-chip-label` (260px), `git-dock.css:18` `.toolbar-phase` (22ch),
+  `forge-account.css:99` (20ch), canvas ref pills (§6, 160px).
+- **R3 — truncate the leading segments of a ref or path, never the last one.** Refs are
+  distinguished by their tail (`feature/api/retry-budget` vs `…/retry-window`), so plain
+  `text-overflow: ellipsis` clips exactly the identifying part. Use `RefLabel`
+  (`src/components/RefLabel.tsx`) — `splitPath()` from `StatusFileRow.tsx:16` into a shrinkable
+  ellipsized `.ref-label-head` plus a `flex: none` `.ref-label-leaf`. Same idiom the AI dock header
+  already uses at `.ai-dock-subject`/`-dir`/`-name`. Flat words (forge labels, model ids) are not
+  refs and keep plain tail ellipsis.
+
+**Truncation is CSS-only, always.** The DOM keeps the whole string, so the accessible name stays
+complete; a JS `slice` + `…` puts a *wrong* ref into the accessible name, and a truncated branch name
+is a wrong branch name. Where the truncated ref sits inside an interactive control, give the control
+an explicit `aria-label` holding the exact ref — name computation joins the two spans and can insert
+a separating space (the `Git config , repository` failure, §11). Always pair truncation with `title`.
+
 ### 3.1 Hit-target floor (WCAG 2.2 · 2.5.8)
 
 - Every interactive control is **≥24 × 24 CSS px**, in every density and both themes. There is no
@@ -1391,6 +1424,17 @@ Full contract: `docs/contracts/P68e-ai-activity-dock.md`. Canonical geometry:
   (`Bonsai never asks for passwords or tokens. Don’t paste secrets here.`), both `--text-1` with
   hue only as an `aria-hidden` `⚠` glyph, and the reply box's `aria-describedby` names the guard
   line **first**. See `P68e-ai-activity-dock.md` §4.1/§4.5 and `P68g-ui.md` §3.
+- **A collapsed dock bar toggles from its chevron button, not from the bar (added 2026-09-03, P87b
+  FU-4).** Both docks (`.ai-dock`, `.git-activity-dock`) put exactly one `<button>` in the a11y tree
+  for collapse — the leading `.*-dock-toggle`, with `aria-expanded` + `aria-controls` on the button,
+  the glyph `aria-hidden`, and a box at `--*-dock-ctl-h` (28px cozy / 24px compact). The bar's
+  remaining spans stay non-interactive so their `title` tooltips survive (the AI bar alone has six
+  that are the only recovery path for truncated or unexplained values), and the bar's other buttons
+  — `Clear`, `Review`, `Answer`, `Cancel`, `Dismiss` — stay siblings, never descendants of a
+  bar-wide click surface. Discovery of the dock is the command palette's job
+  (`Ctrl/Cmd+Shift+L` git · `Ctrl/Cmd+Shift+A` AI) plus the clickable toolbar phase readout, not the
+  bar. This supersedes `archive/P87-ui.md` §5-1's "click anywhere on it", which never shipped in
+  either dock; full reasoning in `docs/contracts/P87b-FU1-FU4-git-dock-ui.md` §1.
 - Streaming output is **not** an `aria-live` region. A separate visually-hidden
   `role="status" aria-live="polite"` element announces status transitions only.
 - Motion: the dock never animates its height (a height transition would force repeated
@@ -1545,6 +1589,11 @@ row badges (`.submodule-badge-*`, shared by submodule and worktree rows — `Sid
   (`checking out…`, `updating…`) in the hueless style and the row gets `aria-busy="true"` (§8). The
   pill drops its `title` entirely while busy — the participle is the whole message.
 - **Density-invariant** — pills live in the sidebar and chrome, which have one geometry (§3).
+- **A pill is one line (§3.0, P111).** Every pill here is `flex: none` with a closed-set label, so it
+  is already safe. The rule matters for the *other* stadium boxes — chips holding a branch name, a
+  forge label, a model id — which must declare `white-space: nowrap` and a surface-relative
+  `max-width`. Three shipped 999px rules had neither and could wrap into a lozenge
+  (`.branch-name-chip`, `.pr-label`, `.asset-chip`); see §3.0 R1–R3.
 - **A pill that carries meaning must also be in the accessible name.** When a pill qualifies an
   interactive row (e.g. the Settings rail's `repo` scope pill, §12.1), the pill itself is
   `aria-hidden` and its text is folded into the control's accessible name. Prefer a visually-hidden
@@ -2045,7 +2094,11 @@ dock** (View D, a twin of the §9 AI dock). Reuses §9 geometry, §11 pills, the
   Status hue via local `--h`. Same alias discipline as `--ai-dock-*`.
 - **Run row anatomy.** Summary line: `.file-chevron` disclosure → category glyph (`aria-hidden`,
   reuse `PushIcon`/`FetchIcon`/`PullIcon`/`MergeIcon`/`RefDotIcon`) → noun `--text-1` → target
-  (`→ origin/main`, `--text-2`, ellipsis + `title`) → optional `⋯ trimmed` hueless chip → status pill
+  (**revised 2026-09-03, FU-1: `origin/main`, no arrow** — the noun already carries direction; 11px
+  mono `--text-2`, `max-width: 22ch`, `RefLabel` leaf-preserving truncation per §3.0 + `title`;
+  absent target renders nothing, never a placeholder; `fetch` with no target reads `all remotes`.
+  Strings and the required `target?: string | null` content guarantees:
+  `docs/contracts/P87b-FU1-FU4-git-dock-ui.md` §3) → optional `⋯ trimmed` hueless chip → status pill
   → duration + `HH:MM` timestamp (both `--text-2`, never `--text-3` for read text; timestamp `title` =
   full date-time). Expanded: per-hook sub-rows (`✓ exit 0` / `⚠ exit N` verdict pills — exit code
   inside the label, never colour-only) → the output log (reuse `.ai-log`: mono, `--bg-0`, `pre-wrap`,

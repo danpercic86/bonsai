@@ -628,7 +628,9 @@ that legitimately opens `ai-dock-log.css`, or as a standalone comment-only commi
 sweep with a residue prediction.
 
 **F2 — `.wt-copy-chip` renders `unchecked` in danger styling** (§10, `WorktreeCopyCandidates.tsx:107`).
-**Specced 2026-09-03 in `docs/contracts/P107-F2-copy-chip-ui.md`; awaiting implementation.** That
+**Specced 2026-09-03 in `docs/contracts/P107-F2-copy-chip-ui.md`; SHIPPED `8337d9b` the same day —
+verified 2026-09-03 against `dialogs-forms.css:151` + `WorktreeCopyCandidates.tsx:118`. F2 is
+closed.** That
 contract keeps the `.wt-copy-chip--unknown` modifier on a 12% `--text-2` tint as recommended here,
 but with **`--text-1` ink, not `--text-2`** (10.80 dark / 12.87 light over the dialog's `--bg-1`) —
 the chip's `conflict` sibling sits next to it in the same list and already uses `--text-1`, so

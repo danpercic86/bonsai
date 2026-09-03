@@ -221,6 +221,10 @@ split it to `GitActivityRunLog.tsx`; otherwise inline it.
 - **Glyph** = `categoryMeta.glyph` (`aria-hidden`); **noun** in `--text-1`; **target** (branch /
   `origin/name`) in `--text-2`, single-line ellipsis + `title`. Target is `→ <upstream>` for
   push/pull/force-push, the branch for commit/amend, `(merge)` for mergeCommit, blank for fetch-all.
+  *(Never implemented — `GitActivityRun` shipped with no target field at all; that is FU-1.
+  **Revised 2026-09-03:** the arrow and `(merge)` are dropped, fetch-all reads `all remotes` rather
+  than blank, and truncation is leaf-preserving. The live spec is
+  `docs/contracts/P87b-FU1-FU4-git-dock-ui.md` §3, not this bullet.)*
 - **`⋯ trimmed` chip** (only when `linesDropped > 0`): hueless informational pill (§11), `title`
   `Bonsai keeps the last 500 output lines per run`.
 - **Status pill** (§4.4).
@@ -316,8 +320,14 @@ scroll in rows.
 
 Restraint: **no new top-level toolbar button.** Three entry points, all reusing existing affordances:
 
-1. **The collapsed dock bar itself** — always visible once the first op ran; click anywhere on it (or
-   its chevron) to expand. Primary discovery path.
+1. **The collapse chevron on the dock bar** — the bar itself is always visible once the first op ran;
+   its leading `⌃`/`⌄` button expands and collapses the log. The button is the *only* toggle target:
+   the rest of the bar is a readout whose spans own `title` tooltips, and it carries **Clear** (and,
+   in the AI dock, Review/Answer/Cancel/Dismiss), so a bar-wide click surface would suppress those
+   tooltips and sit under those actions. Discovery is carried by entry points 2 and 3 below, not by
+   the bar. *(Revised 2026-09-03, FU-4: this entry originally read "click anywhere on it (or its
+   chevron) to expand", which never shipped in either dock — see
+   `docs/contracts/P87b-FU1-FU4-git-dock-ui.md` §1 and `ui-reference.md` §9.)*
 2. **Command palette** — one row: `Git activity` (id `git.activity`, keywords
    `log output hooks push pull fetch history`), rendered via the existing palette-entries plumbing
    (mirror `aiPaletteEntries` → add a `gitPaletteEntries`/entry). Enabled once `runs.length > 0`
