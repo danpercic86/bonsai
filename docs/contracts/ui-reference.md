@@ -1035,8 +1035,12 @@ left edge: CI dot centered at `leftX + ciBadgeSize/2`, then the PR pill (`signal
 or hugging `leftX` when there is no CI). The pill is `pillHeight` tall, `prBadgeMaxWidth` 56px max.
 The row shows the signals of its first branch entity that carries any.
 
-PR pill fills: open `--badge-good`, merged `#8957e5` (fixed violet, both themes), closed
-`--badge-warn`, draft grey **outline** (`--bg-2` fill, `--text-3` border, `--text-2` label).
+PR pill fills: open `--badge-good`, merged `--merged` (**theme-specific** violet — `#a371f7` dark /
+`#8250df` light, §2; it is *not* one fixed hex across both themes, and no colour literal appears
+outside `tokens-and-base.css`), closed `--badge-warn`, draft grey **outline** (`--bg-2` fill,
+`--text-3` border, `--text-2` label). The merged pill's label is `--merged-text` (**5.30:1** dark /
+**5.05:1** light), which is near-black in dark and white in light — do not assume white ink the way
+the `--badge-good`/`--badge-warn` fills allow.
 
 **PR-state glyph (non-colour carrier).** Colour alone must never carry PR lifecycle (§7 house rule).
 A leading glyph sits inside the pill, before `#num`, in the label colour. This is a distinct
@@ -1045,7 +1049,7 @@ extension of the house glyph vocabulary (§7), not a synonym of the CI dot glyph
 | State  | Pill                  | Glyph | Meaning carrier |
 |--------|-----------------------|-------|-----------------|
 | open   | filled `--badge-good` | `○`   | hollow ring = active/open |
-| merged | filled `#8957e5`      | `◆`   | filled diamond = merged |
+| merged | filled `--merged`     | `◆`   | filled diamond = merged |
 | closed | filled `--badge-warn` | `✕`   | house dismiss/close glyph |
 | draft  | grey **outline**      | `○`   | open family, distinguished by outline fill |
 
@@ -1505,7 +1509,12 @@ row badges (`.submodule-badge-*`, shared by submodule and worktree rows — `Sid
 - **Hueless / informational pills** — no verdict, just a fact or an in-flight state: label
   `--text-2` over its own 12% tint (**5.79:1** dark / **6.22:1** light, §2). No glyph, no hue — but
   keep `border: 1px solid transparent` so hueless and verdict pills are the same **19.94 px** height
-  in a shared list.
+  in a shared list. Instances: `.checks-rollup-pill--neutral` (`checks-panel.css:122`) and
+  `.wt-copy-chip--unknown` (`dialogs-forms.css`, `P107-F2-copy-chip-ui.md`). **"Unknown" is a
+  hueless state, not a danger one** — a verdict Bonsai could not compute must never wear the tint of
+  a verdict it computed as destructive. Both instances keep `--text-1` ink instead of `--text-2`
+  because they sit beside a `--text-1` verdict sibling; the `--text-2` figure above is for a
+  standalone hueless pill.
 - **Verdict pills** — good/warning/bad: label `--text-1`, hue in the 40% border and in a 100%
   `aria-hidden` glyph over a 14% tint (`✓`, `⚠`, `⊘`). The glyph is the accessible hue carrier
   (measured 2026-08-19: `✓` **4.61:1** dark / **3.94:1** light, `⚠` **5.64:1** / **3.80:1** — both

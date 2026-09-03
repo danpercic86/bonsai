@@ -458,7 +458,8 @@ prediction stops being checkable.
   `WorktreeCopyCandidates.tsx:107` renders **`unchecked`** through `.wt-copy-chip`, the *danger*-tinted
   chip — a neutral, not-yet-known state wearing the alarm styling. Recommend a
   `.wt-copy-chip--unknown` neutral variant (`--text-2` on a 12% `--text-2` tint, the §11 hueless
-  recipe, measured 5.80 / 6.22). Component change; file as a follow-up.
+  recipe, measured 5.80 / 6.22). Component change; file as a follow-up. **Followed up 2026-09-03 —
+  `docs/contracts/P107-F2-copy-chip-ui.md`** (word → `unknown`, ink kept at `--text-1`; see §12 F2).
 
 ---
 
@@ -627,7 +628,11 @@ that legitimately opens `ai-dock-log.css`, or as a standalone comment-only commi
 sweep with a residue prediction.
 
 **F2 — `.wt-copy-chip` renders `unchecked` in danger styling** (§10, `WorktreeCopyCandidates.tsx:107`).
-Component change; recommended `.wt-copy-chip--unknown` at `--text-2` on a 12% `--text-2` tint
-(5.80 / 6.22). Still open.
+**Specced 2026-09-03 in `docs/contracts/P107-F2-copy-chip-ui.md`; awaiting implementation.** That
+contract keeps the `.wt-copy-chip--unknown` modifier on a 12% `--text-2` tint as recommended here,
+but with **`--text-1` ink, not `--text-2`** (10.80 dark / 12.87 light over the dialog's `--bg-1`) —
+the chip's `conflict` sibling sits next to it in the same list and already uses `--text-1`, so
+matching ink keeps them one family. It also fixes the word (`unchecked` → `unknown`, which inverts
+its meaning next to a real checkbox) and the missing screen-reader association.
 
 **F3 — P108 seeds** (§9). Six seeds recorded, scope deliberately un-enumerated.

@@ -103,8 +103,16 @@ inside `layoutRefLabels`.)
 
 ## 3. Visual treatment & PR-state glyph (a11y MUST-FIX)
 
-Pill colours are unchanged from today: open `--badge-good`, merged `#8957e5`, closed
+Pill colours are unchanged from today: open `--badge-good`, merged `--merged`, closed
 `--badge-warn`, draft grey outline (`bg-2` fill, `text-3` border, `text-2` label).
+
+> **Amended 2026-09-03.** This section originally named a hardcoded violet hex for the merged fill,
+> which is what shipped when the contract was written. P102/P105 replaced it with the **`--merged`
+> token** (`#a371f7` dark / `#8250df` light) and its ink `--merged-text` — the merged hue is now
+> **theme-specific**, not one violet reused in both themes. Every mention below reads `--merged`;
+> the literal must not come back (it would break the "no colour literal outside
+> `tokens-and-base.css`" grep). The rejected-alternative record of the literal lives in
+> `P102-P105-hue-audit-ui.md`.
 
 **Colour is currently the ONLY carrier distinguishing open / merged / closed** (all three read
 `#num`) — a house-rule violation (§7 of ui-reference). Fix by drawing a leading **PR-state glyph**
@@ -113,7 +121,7 @@ inside the pill, before `#num`, in the pill font/label colour:
 | State  | Pill                     | Leading glyph | Meaning carrier |
 |--------|--------------------------|---------------|-----------------|
 | open   | filled `--badge-good`    | `○`           | hollow ring = active/open |
-| merged | filled `#8957e5`         | `◆`           | filled diamond = merged |
+| merged | filled `--merged`        | `◆`           | filled diamond = merged |
 | closed | filled `--badge-warn`    | `✕`           | house "dismiss/close" glyph |
 | draft  | grey **outline** pill    | `○`           | outline shape (a draft is an open-but-unready PR; same family as open, distinguished by fill-vs-outline) |
 
@@ -152,11 +160,13 @@ CI dot glyphs are unchanged (`✓`/`✕`/pending dot/neutral dash from `ciBadgeV
   `!compact` by the caller), so `forgeShown` is false and the column is not reserved — the summary
   reclaims the width. No compact geometry needed. Unchanged behaviour.
 - **Cozy:** as specced above; forge cell is vertically centred on the 32px row, pill height 18px.
-- **Both themes:** pill fills are theme tokens (`--badge-good`/`--badge-warn`) plus the fixed
-  merged violet `#8957e5` and draft grey — all inherited unchanged and already shipping. White
-  label on `--badge-good`/`--badge-warn`/violet and `text-2` on the draft grey all currently meet
-  ≥4.5:1 in both themes (unchanged pairs; no new token, so no new ratio to clear). The new glyph
-  uses the same label colour as `#num`, so its contrast equals the label's.
+- **Both themes:** every pill fill is a theme token — `--badge-good`, `--badge-warn`, `--merged`
+  (violet, **different in each theme**: `#a371f7` dark / `#8250df` light) and the draft grey. All
+  inherited from the existing pill styles; this contract introduces no fill of its own. Ink is
+  white on `--badge-good`/`--badge-warn`, **`--merged-text` on `--merged`** (`#16181d` dark /
+  `#ffffff` light — **5.30:1** / **5.05:1**), and `text-2` on the draft grey; each clears 4.5:1 in
+  both themes. No new token here, so no new ratio to clear. The new glyph uses the same label
+  colour as `#num`, so its contrast equals the label's.
 
 ---
 

@@ -492,18 +492,54 @@ announced.
      > `{raw}` → `Raw names are on: this log contains your real branch, tag, file and repository names. Commit messages, file contents, names and email addresses, passwords and tokens are still not in the file.` *(leading `--warning` bar block + shield glyph)*
      >
      > `Open the file and read it before sending it to anyone.`
-   - Primary: `Choose location…` · Secondary: `Cancel`
-3. Native save dialog (`log_export_session(dest)`).
-4. Cancelled save dialog → **no toast**, no error; the user chose nothing.
-5. Success → success toast (§10.2 recipe): `Session log exported.` with action button
-   **`Show in folder`** → reveals the export's parent directory. This is the "find the file" step of
-   the workflow, so it must not require a second hunt.
-6. Failure → danger toast, dedupe key `dev-export`:
-   - generic: `Couldn't export the log. {reason}` where `{reason}` is a mapped sentence, never raw
-     libgit2/OS text.
-   - disk full → `Not enough space to write the export. Free some space and try again.`
-   - permission → `Bonsai isn't allowed to write there. Choose a different folder.`
-   - folder missing / logs pruned mid-flight → `Those log files are no longer there. Turn on Dev mode and reproduce the problem again.`
+   - Primary: `Export` · Secondary: `Cancel`
+3. **Bonsai writes the zip immediately** — `log_export_session()` takes **no destination**. The file
+   always lands in the app-managed `exports/` directory (`<app_config_dir>/exports`, a **sibling of
+   `logs/`**), and the command resolves with the absolute path it wrote.
+4. The dialog's `Cancel` / `Esc` is the only cancel point → nothing runs, **no toast**.
+5. Success → success toast, dedupe key `dev-export`:
+   `Session log exported. It is in the exports folder, next to your logs.`
+   Live-region announcement: `Session log exported.`
+6. Failure → danger toast, dedupe key `dev-export`. Every string is a **mapped sentence**, never raw
+   OS/libgit2 text; the mapping is `exportErrorText()` in
+   `src/components/settings/devLogMessages.ts`, keyed off substrings of the backend message:
+   - `space` → `Not enough space to write the export. Free some space and try again.`
+   - `permission` / `allowed` / `denied` → `Bonsai isn't allowed to write to its exports folder. Check the folder's permissions and try again.`
+   - `no log` / `no longer` / `not found` → `Those log files are no longer there. Turn on Dev mode and reproduce the problem again.`
+   - anything else → `Couldn't export the log.`
+   Live-region announcement in every failure case: `The log was not exported.`
+
+> **AMENDED 2026-09-03 — the destination picker is gone; do not re-add it (security audit F4).**
+> Steps 1–6 above originally read `Choose location…` → *native save dialog* →
+> `log_export_session(dest)`. A caller-supplied `dest` arriving from the webview is **not** a
+> user-chosen path — it is a webview-chosen path — so **F4 removed the parameter**. The shipped
+> command is `log_export_session()` with **no argument** (`src-tauri/src/commands/obs.rs`,
+> `src/ipc/types/ipc-api-obs.ts` → `logExportSession(): Promise<string>`), and
+> `src/ipc/mock/obsExport.test.ts` is a regression test pinning the zero-arity signature at all
+> three layers. Two consequences carried into the steps above:
+>
+> - **Two shipped strings still describe the removed picker and are now wrong.** Fix both:
+>   1. `src/components/settings/DevConfirmDialogs.tsx:74` — `confirmLabel="Choose location…"` →
+>      `confirmLabel="Export"`. Nothing is chosen; pressing it writes the file. `Export` is the verb
+>      that matches the dialog title `Export this session's log`, and it is a `primary` confirm, so
+>      no other change.
+>   2. `src/components/settings/devLogMessages.ts:65` — the permission branch's
+>      `Bonsai isn't allowed to write there. Choose a different folder.` → the string in step 6
+>      above. The user has no folder to choose; the sentence must name the folder Bonsai actually
+>      failed to write and give an action that exists.
+> - **The success toast never had an action button and cannot get one.** `PushToast` is
+>   `(tone, text, key?) => void` (`src/ToastContext.ts:11`) and `Toasts.tsx` renders exactly one
+>   button per toast — dismiss. The `Show in folder` action promised in the original step 5 was
+>   never implementable, so the toast **text** carries the findability instead. This matters more
+>   than it did with a picker: the on-page `Show in folder` button reveals **`logs/`**, and the zip
+>   is in the **sibling `exports/`** — the toast is what tells the user that. Shipped copy today is
+>   the bare `Session log exported.`; step 5's sentence is the one-string fix.
+>
+> **OPEN (orchestrator call, low priority).** If naming the folder in the toast proves too weak in
+> practice, the fuller fix is a second reveal target for `exports/` — either a `dest: 'logs' |
+> 'exports'` argument on `log_reveal_dir` or a `Show exports folder` control on the page.
+> **Recommendation: do neither for now.** It costs a backend argument and a fifth control on a page
+> that already has three buttons and no primary action (§8.1), to save one folder step.
 
 `Show in folder` failure (directory missing): danger toast, dedupe key `dev-reveal` —
 `Couldn't open the logs folder. It may have been moved or deleted.`
@@ -677,7 +713,12 @@ Existing `ConfirmDialog`, **`confirmVariant: 'danger'`** — unlike the raw-name
 
 - `rolled: false` → success: `Deleted {n} log files. {size} freed.`
 - `rolled: true` → success: `Deleted {n} log files. {size} freed. Still recording — Bonsai started a new log file.`
-- partial (`failedFiles > 0`) → danger: `Deleted {n} of {total} log files. {failedFiles} could not be deleted — they may be open in another program.` with an action button `Show in folder` so the user can finish the job manually.
+- partial (`failedFiles > 0`) → danger: `Deleted {n} of {total} log files. {failedFiles} could not be deleted — they may be open in another program.`
+  *(Corrected 2026-09-03: this line originally promised an action button `Show in folder` on the
+  toast. Toasts in this app carry no actions — `PushToast` is `(tone, text, key?)` and `Toasts.tsx`
+  renders only a dismiss button — so no such button shipped or can ship without a toast-API change.
+  The page's own `Show in folder` button, two rows up and still enabled, is the affordance for
+  finishing the job manually; the sentence stands as shipped.)*
 - total failure → danger: `Couldn't delete the log files. {reason}` — mapped sentences only
   (`Bonsai isn't allowed to delete files in that folder.` / `The logs folder is no longer there.`),
   never raw OS text.
@@ -948,19 +989,29 @@ selectable by a mock scenario key:
 | `dev-trace` | on, `level:'trace'` | `Frame timing` forced checked+disabled with its note |
 | `dev-dropped` | `dropped: 1_204` | the dropped-records line + tooltip |
 | `dev-sink-error` | on, write failure flag set | `▲ Not writing`, danger toast, header pill danger variant |
-| `dev-export-fail` | `log_export_session` rejects with each mapped code | all four failure toasts |
+| `dev-export-fail` | **NOT fully built — see below.** `log_export_session` rejects | the failure toasts of §8.3 step 6 |
 | `dev-reveal-fail` | `log_reveal_dir` rejects | reveal failure toast |
 | **`dev-delete-off`** | **off**, 5 files, 15.8 MB; `logs_delete_all` → `{deletedFiles:5, deletedBytes:16_567_501, failedFiles:0, activeFile:'', rolled:false}` after 400ms | the Dev-mode-off purge: two-paragraph confirm (no roll sentence), busy state, `Deleted 5 log files. 15.8 MB freed.`, row collapsing to the disabled/empty state, focus staying on the button, status card → `No logs yet.` |
 | **`dev-delete-rolled`** | **on**, 5 files incl. the active one, raw names on; → `{deletedFiles:5, deletedBytes:16_567_501, failedFiles:0, activeFile:'bonsai-2026-08-27T15-02-40-b71c.jsonl', rolled:true}` | **the roll-then-purge path** — `{n}` includes the active file in note *and* dialog, the three-paragraph confirm, `Still recording — Bonsai started a new log file.`, status card immediately showing `● Recording · 1 file · 0 bytes · 0 records` + the new `activeFile`, header pill never unmounting, delete button staying enabled |
-| **`dev-delete-partial`** | 5 files; → `{deletedFiles:4, failedFiles:1, rolled:true}` | externally-locked-file path: partial danger toast with `Show in folder`, note recomputed from fresh info |
+| **`dev-delete-partial`** | 5 files; → `{deletedFiles:4, failedFiles:1, rolled:true}` | externally-locked-file path: partial danger toast (text only — no toast action button, see §8.5.5), note recomputed from fresh info |
 | **`dev-delete-fail`** | `logs_delete_all` rejects with permission / folder-missing codes | both mapped total-failure toasts; button returns to enabled; no stale note |
 | `dev-pathological` | 8 files, `bytes: 268_435_456`, `records: 9_999_999`, dir = a 240-char nested path, `activeFile` at full length | truncation with `title`, no wrapping, no row growth, both densities; the delete note's large `{n}`/`{size}` formatting |
 | `sidebar-churn` | mock ref-set driver with **awaitable** steps: 5 checkouts, a fetch adding ~40 remote refs, a ref deletion, a section toggle | **§9.1(B)** — the sidebar high-churn no-visual-change comparison |
 
+**`dev-export-fail` gap (2026-09-03).** The mock reaches only **one** of the four branches:
+`src/ipc/mock/handlers/obs.ts:188` throws `there are no log files to export` when Dev mode is off
+**and** the ring holds 0 records, which maps to the `no log` sentence. The other three are
+unreachable in the harness. Add a query knob in the same handler, matching the house pattern
+(`obsDeleteFail`, `obsTruncated`): **`?obsExportFail=space|permission|other`** throwing a message
+containing `no space left on device` / `permission denied` / `zip writer failed` respectively, so
+each mapped sentence — including the generic fallback — can be seen in a browser. The success path
+needs no knob: it already resolves with a path.
+
 `log_reveal_dir` in mock is a no-op that resolves, and mock `logs_delete_all` mutates only the mock's
 in-memory file list, synthesising a new `activeFile` when `dev.enabled` is true (there is no OS folder
-in a browser) — **the actual folder opening, the native save dialog, and real on-disk deletion are
-USER CHECKPOINT items**, matching architect §12's checkpoint (a)/(b). Add one: **(e) with Dev mode ON,
+in a browser) — **the actual folder opening, the real zip written to `exports/`, and real on-disk
+deletion are USER CHECKPOINT items**, matching architect §12's checkpoint (a)/(b). (There is no
+native save dialog to check: audit F4 removed it — §8.3.) Add one: **(e) with Dev mode ON,
 `Delete logs…` leaves the logs folder holding exactly one new file, the old files are gone from disk,
 and that new file grows as you keep using the app.** Everything else above is AI-gate verifiable.
 
@@ -1110,7 +1161,9 @@ Singular/plural: `1 exported log archive` / `{n} exported log archives`. Title/b
 ### 16.3 Export content-statement dialog — same caveat (amends §8.3)
 
 Backend §6.2: the caveat goes in **both** the delete confirm and the post-export content statement.
-Append to the §8.3 body, after the "read it before sending" line, before `Choose location…`:
+Append to the §8.3 body, after the "read it before sending" line, above the confirm row (whose
+primary is now `Export` — the `Choose location…` label this line originally pointed at is removed,
+§8.3 amendment):
 
 > `Exports you saved elsewhere are not removed by "Delete all log files".`
 
