@@ -122,6 +122,30 @@ describe('submoduleMenuItems', () => {
     itemByLabel(items, 'Remove…').onSelect?.();
     expect(deps.setPendingRemoveSubmodule).toHaveBeenCalledWith('the-name');
   });
+
+  // Security audit 2026-09-03: the backend nulls `absPath` for a hostile
+  // `.gitmodules` path (rooted / UNC / traversal). The row still lists its git
+  // actions, but open-in-tab is DISABLED and every external-tool item is
+  // OMITTED — no external process can be pointed at the malformed submodule.
+  it('absPath=null withholds open-in-tab (disabled) and all external-tool items', () => {
+    const deps = makeDeps();
+    const items = createWorkspaceMenus(deps).submoduleMenuItems(makeSubmodule({ absPath: null }));
+    // Git actions survive; the external trio is gone entirely.
+    expect(labelsOf(items)).toEqual([
+      'Initialize and check out',
+      'Update',
+      'Sync',
+      'Deinitialize…',
+      'Remove…',
+      'Open in new tab',
+    ]);
+    const openTab = itemByLabel(items, 'Open in new tab');
+    expect(openTab.disabled).toBe(true);
+    openTab.onSelect?.();
+    expect(deps.onOpenRepoPath).not.toHaveBeenCalled();
+    const labels = labelsOf(items);
+    for (const l of EXT_LABELS) expect(labels).not.toContain(l);
+  });
 });
 
 describe('worktreeMenuItems', () => {

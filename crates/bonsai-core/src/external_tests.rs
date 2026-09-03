@@ -6,6 +6,13 @@
 //! Covers: template tokenization/substitution safety, the per-`TargetOs`
 //! ladder tables (including the F-MAC-1 `wait_for_exit` flags), and the
 //! `launch_first` fallback logic driven by a `FakeRunner` that never spawns.
+//!
+//! PATH hostility (audit 2026-09-03) is deliberately NOT tested here: a
+//! `.gitmodules` path can never reach a `LaunchSpec` unvalidated, because the
+//! containment gate is at the PRODUCER, not this launcher. Those cases live
+//! with the code that owns them — `git::submodule_abs_path` (pure validator)
+//! and `git::submodule` tests (`list_submodules_*`, proving a rooted/UNC path
+//! becomes `abs_path: None`). Testing them here would test the wrong layer.
 
 use super::*;
 use std::cell::RefCell;

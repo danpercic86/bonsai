@@ -3,7 +3,10 @@ export type SubmoduleStatus = 'uninitialized' | 'upToDate' | 'outOfSync' | 'modi
 export interface SubmoduleInfo {
   name: string;              // stable key for init/update/sync
   path: string;              // repo-relative, forward slashes
-  absPath: string;           // absolute workdir path — feed to open-in-tab
+  absPath: string | null;    // absolute workdir path — feed to open-in-tab.
+                             // null = the .gitmodules path was unsafe (rooted /
+                             // UNC / traversal); the row is still listed but no
+                             // external tool / open-in-tab may target it.
   url: string | null;
   headOid: string | null;    // commit in superproject HEAD
   indexOid: string | null;   // commit in superproject index

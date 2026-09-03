@@ -50,9 +50,14 @@ pub struct SubmoduleInfo {
     pub name: String,
     /// Repo-relative path, forward slashes on the wire. `Submodule::path()`.
     pub path: String,
-    /// ABSOLUTE workdir path for open-in-tab (§OPEN-1): superproject workdir
-    /// joined with `path`. Fed verbatim to the existing open-repo/tab flow.
-    pub abs_path: String,
+    /// ABSOLUTE, containment-checked workdir path for open-in-tab (§OPEN-1) and
+    /// the external-tool ladder: superproject workdir joined with `path`.
+    /// `None` (wire `absPath: null`) when the declared `.gitmodules` `path` is
+    /// unsafe (rooted / UNC / traversal) — see [`super::submodule_abs_path`].
+    /// The row is still LISTED so the malformed submodule stays visible, but a
+    /// `None` here means no external tool / open-in-tab may target it. Callers
+    /// MUST treat `None` as "not launchable", never fall back to the raw join.
+    pub abs_path: Option<String>,
     /// Configured URL from .gitmodules/.git config. `Submodule::url()`.
     pub url: Option<String>,
     /// Commit recorded in the superproject HEAD tree. `Submodule::head_id()`.
@@ -110,7 +115,10 @@ fn submodule_info(
     Ok(SubmoduleInfo {
         name,
         path: sm.path().to_string_lossy().replace('\\', "/"), // forward slashes on the wire
-        abs_path: sm_workdir.join(sm.path()).to_string_lossy().into_owned(),
+        // SECURITY (audit 2026-09-03): validate at the producer. A rooted/UNC
+        // `.gitmodules` path escapes `join`; `contained_abs_path` returns None so
+        // the row is inert (no `p.exists()` SMB callout, no `wt -d <path>`).
+        abs_path: super::submodule_abs_path::contained_abs_path(sm_workdir, sm.path()),
         url: sm.url().ok().flatten().map(str::to_string),
         head_oid: sm.head_id().map(|o| o.to_string()),
         index_oid: sm.index_id().map(|o| o.to_string()),

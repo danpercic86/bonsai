@@ -70,5 +70,19 @@ export function seedSubmodules(kind: RepoKind, graphFixture: GraphFixture): Subm
       wtOid: null,
       status: 'uninitialized',
     },
+    // Security audit 2026-09-03: a hostile `.gitmodules` path (here a UNC value)
+    // the backend rejected → `absPath: null`. The row still LISTS, but the
+    // context menu withholds open-in-tab (disabled) and every external-tool
+    // item, so a malformed submodule can never target an external process.
+    {
+      name: 'vendor/unsafe',
+      path: '//attacker.example/share',
+      absPath: null,
+      url: 'https://example.com/unsafe.git',
+      headOid: fixtureOid(3),
+      indexOid: fixtureOid(3),
+      wtOid: fixtureOid(3),
+      status: 'upToDate',
+    },
   ];
 }

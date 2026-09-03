@@ -76,6 +76,9 @@ pub mod stale;
 pub mod stash;
 pub mod status;
 pub mod submodule;
+/// Producer-side containment gate for a submodule's `abs_path` (security audit
+/// 2026-09-03; private to `git`).
+mod submodule_abs_path;
 /// P73 reconnect/salvage machinery for `submodule` (private to `git`).
 mod submodule_reconnect;
 /// P73 clone-path rollback for `submodule` (private to `git`).

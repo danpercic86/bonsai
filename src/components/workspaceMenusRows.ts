@@ -106,15 +106,21 @@ export function submoduleMenuItems(
       tone: 'danger',
       onSelect: () => setPendingRemoveSubmodule(sub.name),
     },
+    // SECURITY (audit 2026-09-03): `absPath` is null when the backend rejected
+    // an unsafe `.gitmodules` path (rooted / UNC / traversal). The row still
+    // lists, but open-in-tab and every external-tool item are withheld — never
+    // fall back to a raw path. Open-in-tab is disabled (visible but inert);
+    // the external-tool items are omitted entirely (they carry a path arg).
     {
       label: 'Open in new tab',
       icon: createElement(CompareIcon),
-      disabled: uninit,
-      onSelect: () => onOpenRepoPath(sub.absPath),
+      disabled: uninit || sub.absPath === null,
+      onSelect: () => sub.absPath !== null && onOpenRepoPath(sub.absPath),
     },
     // P49: launch external tools at the submodule's absolute workdir. Always
-    // enabled (they touch no git state) — never gated by `gate` above.
-    ...externalToolsItems(sub.absPath, extHandlers),
+    // enabled when a path exists (they touch no git state) — never gated by
+    // `gate` above.
+    ...(sub.absPath !== null ? externalToolsItems(sub.absPath, extHandlers) : []),
   ];
 }
 

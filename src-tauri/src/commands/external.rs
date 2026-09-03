@@ -69,8 +69,18 @@ async fn launch_inner(
 ) -> Result<(), AppError> {
     tauri::async_runtime::spawn_blocking(move || {
         let p = std::path::Path::new(&path);
-        if !p.exists() {
-            return Err(AppError::Io(format!("path no longer exists: {path}")));
+        // EXPLICIT directory precheck (audit 2026-09-03, MEDIUM-1): the target
+        // must exist AND be a directory — it becomes the child's `cwd`
+        // (`LaunchSpec` invariant). `is_dir()` is false for both a missing path
+        // and a file, so it subsumes the old `exists()` check and stops relying
+        // on the accidental `NotADirectory` spawn failure a file used to hit.
+        // LOW-2: the error is CATEGORY-ONLY and never echoes `path` — a
+        // repo-authored path can be long / RTL-overridden / a system-message
+        // lookalike, exactly the rule `validate_web_url` already documents.
+        if !p.is_dir() {
+            return Err(AppError::Io(
+                "target folder no longer exists".to_string(),
+            ));
         }
         let os = TargetOs::host();
         let runner = SpawnRunner;

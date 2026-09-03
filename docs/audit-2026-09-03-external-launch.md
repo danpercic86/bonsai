@@ -60,8 +60,13 @@ this `wt` behaviour as fact.
 **Gain:** arbitrary command execution as the user, from cloning a repo and one context-menu click.
 **Reachable with no user template at all**, because `wt` is rung 1 of the default ladder.
 
-*Unverified step:* `wt -d` splitting on `;` was not executed (running an injected sub-command was out
-of bounds for the audit). Confirm with a benign `wt -d "C:\Users; new-tab"` on a dev box.
+**CONFIRMED 2026-09-03** (remediation pass): spawning `wt -d "<dir with ;>"` exactly as
+`SpawnRunner` does, `wt` split the single `-d` argv token at `;` and did not start in the intended
+directory. Settled without executing any injected payload — the discriminator is where `wt` starts,
+not what it runs.
+
+**Nuance found while measuring, and it matters:** the value must be **quoted** in `.gitmodules`.
+Unquoted, `;` and `#` are git-config comment characters and the path never reaches us at all.
 
 ### HIGH-2 — `.gitmodules` `path` can be rooted or UNC, and `Path::exists()` dials it
 
@@ -72,7 +77,8 @@ of bounds for the audit). Confirm with a benign `wt -d "C:\Users; new-tab"` on a
 | `vendor/lib` | `D:\Data\Repos\myrepo\vendor/lib` (contained) |
 | `/Windows/System32` | `D:/Windows/System32` (escapes to drive root) |
 | `//attacker.example/share` | `//attacker.example/share` (**base discarded**) |
-| `C:/Windows` | `C:/Windows` (base discarded; separately blocked by libgit2's trailing-colon rule) |
+| `C:/Windows` | **never reaches `join`** — libgit2 drops it from `submodules()` (measured) |
+| `../escape`, `..\escape`, `vendor/../../escape` | **never reaches `join`** — libgit2 drops them (measured) |
 
 libgit2's `path_is_valid` clears `GIT_FS_PATH_REJECT_EMPTY_COMPONENT` for submodule paths, so a
 leading `/` or `//` is accepted; it also normalizes backslashes *before* validating, which makes the
@@ -81,12 +87,18 @@ backslash-rejection flag inert here.
 `src-tauri/src/commands/external.rs:72` then calls `p.exists()` on that value -> Win32 performs an
 SMB/WebDAV connection to an attacker-controlled host -> **NetNTLMv2 disclosure**, relayable.
 
-**Possible zero-click variant, UNVERIFIED and the first thing to check:** `list_submodules`
-(`submodule.rs:132-141`) calls `repo.submodule_status(&name, SubmoduleIgnore::None)` for every row,
-and the sidebar fetches it automatically (`useSidebarCollections.ts:56-67`). If libgit2 stats the
-joined path the same way, the SMB callout happens **on repo open, before any click**, and the
-external-tool surface is merely the second beneficiary. Verify with a network capture against a
-scratch repo.
+**The zero-click variant is DISPROVEN** (remediation pass, 2026-09-03) — this **lowers HIGH-2 to
+click-triggered**. The hypothesis was that `repo.submodule_status(&name, SubmoduleIgnore::None)`,
+called for every row at `submodule.rs:110` and fetched automatically by the sidebar, would stat the
+escaped path on repo open. Tested by building a superproject with a real index+HEAD gitlink and
+planting a real submodule repo at (a) the Rust-`join` location and (b) the workdir-**concatenated**
+location: only (b) flipped the status flags (`WD_DELETED` -> `IN_WD | WD_MODIFIED`).
+**libgit2 concatenates `sm->path` under the superproject workdir and does not honour the rooted/UNC
+escape that Rust's `Path::join` does.** `submodule_info` itself only string-joins and touches no
+filesystem.
+
+The SMB callout is real but happens at `p.exists()` in the launch command — measured on this host:
+UNC-loopback `exists()` **6.6 ms** vs **19 us** local. It dials. It just needs the click.
 
 ### MEDIUM-1 — There is no containment check anywhere
 
@@ -187,7 +199,29 @@ exactly the assumption stated in the module header, and exactly the assumption t
 
 ## Status
 
-Audit run 2026-09-03. Findings reported, **no code changed by the audit itself**. Remediation of
-HIGH-1 / HIGH-2 / MEDIUM-1 tracked on `TODO.md`. The `wt ;` step and the zero-click variant of HIGH-2
-are explicitly marked unverified above — neither was executed, and both should be confirmed before
-the severities are treated as final.
+Audit run 2026-09-03; **no code changed by the audit itself**. Remediation landed the same day.
+
+**Both unverified steps were then measured, and one of them changed a severity:**
+
+| claim | outcome |
+|---|---|
+| `wt` splits `;` inside one argv token | **CONFIRMED** — HIGH-1 stands |
+| HIGH-2 is zero-click via `submodule_status` | **DISPROVEN** — libgit2 concatenates; click-triggered only |
+| `C:/Windows` and `..` reach `Path::join` | **WRONG in this report** — libgit2 drops them first |
+| MEDIUM-1's accidental `NotADirectory` defence | **reproduced as described** |
+
+The residual admitted-and-escaping set is therefore exactly **rooted** (`/x`) and **UNC**
+(`//h/s`, `\\h\s`). `;` and spaces are admitted but stay contained — they are dangerous only once a
+path has *also* escaped, or via the `wt` delimiter on a contained path.
+
+**Closed by `contained_abs_path`** (`crates/bonsai-core/src/git/submodule_abs_path.rs`), a
+producer-side gate: HIGH-1, HIGH-2, MEDIUM-1, LOW-3, plus LOW-2's path echo and MEDIUM-1's implicit
+directory assumption at the command layer. `..` and drive-letter paths are rejected there too as
+defence in depth, even though libgit2 clears them today.
+
+**Still open, each its own increment:** MEDIUM-2 (`terminalCommand`/`editorCommand` unvalidated),
+LOW-1 (cwd DLL search order), INFO (CSP `form-action`/`base-uri`/`object-src`).
+
+**One residual documented rather than closed:** a symlink introduced *inside* an already-checked-out
+superproject at a not-yet-created leaf path bypasses the canonicalize recheck, since `canonicalize`
+fails on a missing leaf. The primary vectors are closed lexically regardless of filesystem state.

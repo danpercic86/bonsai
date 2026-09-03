@@ -18,9 +18,14 @@
 //! token**, so a path with spaces or a shell metacharacter (`;`, `&&`, `|`) can
 //! never break out into a second command — nothing is ever handed to a shell.
 //!
-//! ACCEPTED RESIDUAL RISKS (not exploitable from Bonsai's own inputs; the
-//! template is USER-configured and `{path}` is a repo path the user already
-//! opened — so this is self-inflicted at worst, never attacker-controlled):
+//! WHERE `{path}` COMES FROM (corrected 2026-09-03 — the old note here falsely
+//! called `{path}` "never attacker-controlled", which was load-bearing):
+//! `{path}` is also `sub.absPath`, a repo-authored `.gitmodules` path.
+//! Containment is upheld one layer UP, at the producer —
+//! `git::submodule_abs_path::contained_abs_path` rejects any rooted/UNC/
+//! traversing path (→ `absPath: null`), so a path reaching a `LaunchSpec` here
+//! is always workdir-contained. The residual risks below are about the
+//! USER-configured TEMPLATE, not `{path}`:
 //!  * **Windows `.cmd`/`.bat` shims** (e.g. VS Code's `code.cmd`): when the
 //!    resolved program is a batch shim, Windows runs it via `cmd.exe`, which
 //!    performs `%VAR%` environment-variable expansion on the argv it receives.
@@ -73,6 +78,10 @@ impl TargetOs {
 pub struct LaunchSpec {
     pub program: String,
     pub args: Vec<String>,
+    /// INVARIANT: `cwd` MUST be an existing DIRECTORY (every runner sets it as
+    /// the child's `current_dir`). The command layer rejects a non-directory
+    /// target EXPLICITLY (audit 2026-09-03 MEDIUM-1), not via the accidental
+    /// `NotADirectory` spawn failure a file used to hit.
     pub cwd: PathBuf,
     /// Windows only: suppress the transient console window a `.cmd` shim (VS
     /// Code's `code.cmd`) or `explorer` would flash. MUST be `false` for
