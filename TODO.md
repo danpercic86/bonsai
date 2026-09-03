@@ -459,6 +459,38 @@ grep-counting rules below.
 - **AC13** — screen-reader read-through in the native window with a real AT.
 - **AC14** — the `U` glyph read at 11 px in the native window: confirm `U` is instantly legible.
 
+### SEC-2026-09-03 — external-process launching: repo-authored paths are unvalidated — IN PROGRESS
+
+Full report: `docs/audit-2026-09-03-external-launch.md` (`7e426c3`). Remediation delegated the same
+day; this entry is the resume point.
+
+**The finding in one line:** `crates/bonsai-core/src/external.rs:21-23` accepts residual risks on the
+stated grounds that `{path}` "is a repo path the user already opened — so this is self-inflicted at
+worst, never attacker-controlled". That is false. `{path}` is also `sub.absPath`, built at
+`crates/bonsai-core/src/git/submodule.rs:113` as `sm_workdir.join(sm.path())` with **no validation**,
+from a `.gitmodules` value authored by whoever wrote the cloned repo.
+
+- **HIGH-1** — a `;` in a tracked directory name reaches `wt -d`, and `wt` splits its own arguments
+  into sub-commands. Reachable with **no user template**, since `wt` is rung 1 of the default ladder.
+- **HIGH-2** — `Path::join` **discards the base** for a rooted or UNC path, so `//host/share` reaches
+  `Path::exists()` (`src-tauri/src/commands/external.rs:72`) and Win32 dials it → NetNTLMv2.
+- **MEDIUM-1** — no containment check anywhere. A hostile `payload.exe` as a submodule path is
+  currently blocked only **by accident**: `cwd` is the target and `current_dir` on a file fails with
+  `NotADirectory` before ShellExecute. Adding `explorer /select,<file>` would silently remove it.
+- **MEDIUM-2 / LOW-1 / LOW-2 / LOW-3 / INFO(CSP)** — see the report; each is its own increment.
+
+**Two steps are UNVERIFIED and must not be treated as settled:** the `wt ;` splitting was never
+executed, and whether `submodule_status` stats the joined path on **repo open** — which would make
+HIGH-2 zero-click rather than one-click — was not resolved from source review.
+
+**What is well defended, recorded so it is not re-audited:** shell-free spawn on every platform,
+`tauri-plugin-shell` not a dependency at all, `parse_template` substitutes inside an already-tokenized
+argv element, private URL ladder behind mandatory validation, `resolve_program` never consults the
+CWD, capabilities narrowed deliberately, `script-src 'self'` with no `unsafe-inline`.
+
+**Test gap, and it is the same shape as the comment:** `external_tests.rs` is thorough on hostile
+**templates** and has **zero** path-hostility cases. `submodule_info`'s `abs_path` has no test at all.
+
 ### Queued housekeeping (none blocking)
 
 - **`src/styles/forge-pr.css` is 890 lines** (measured 2026-09-03; the board said ~710, which was
