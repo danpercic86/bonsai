@@ -20,16 +20,23 @@
  *    viewport, and scrollHeight clamps to clientHeight — the shrink would be
  *    invisible. The spacer is the true content extent at any size.
  *  - Toggle-ON re-requests the stream (async) → every height change is polled.
- *  - The BASELINE extent is read via settledGraph(), never straight after
- *    openRepo: the WIP row only exists once the first status round lands, so an
- *    early read is one row short and skews every derived assertion.
+ *  - The BASELINE extent is read via the shared settledGraph() (helpers.ts),
+ *    never straight after openRepo: the WIP row only exists once the first
+ *    status round lands, so an early read is one row short and skews every
+ *    derived assertion.
  */
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
-import { DEFAULT_ROW_HEIGHT, clickGraphRow, graphScroller, openRepo } from './helpers';
+import {
+  DEFAULT_ROW_HEIGHT,
+  clickGraphRow,
+  graphContentHeight,
+  graphScroller,
+  openRepo,
+  settledGraph,
+} from './helpers';
 
 const FLAT = { onboardingSeen: true, listView: 'flat' };
-const MODEL_ROWS = 33; // 3 stash nodes + 30 base rows
 const SPAN_HIDDEN = 20; // model rows 10..29
 const SPAN_START = 10;
 
@@ -52,46 +59,12 @@ async function toggleFold(page: Page, opener: 'fab' | string): Promise<void> {
   await expect(popover).toBeHidden();
 }
 
-/** True content extent — the virtualization spacer's height (see header note
- *  on why scroller.scrollHeight cannot be used here). */
-async function graphContentHeight(page: Page): Promise<number> {
-  return graphScroller(page)
-    .locator('.graph-spacer')
-    .evaluate((el) => parseFloat((el as HTMLElement).style.height));
-}
-
-/** THE baseline reading — every pre-fold measurement must come from here.
- *
- *  The content extent has TWO async inputs and `openRepo` waits for NEITHER
- *  (it only waits for the canvas to be *visible*, which the pane renders
- *  before any data lands):
- *    1. the graph stream (meta -> batch -> done, `mock/handlers/graphStream.ts`)
- *       supplies the model rows, and
- *    2. the first working-dir status round supplies the WIP display row —
- *       RepoWorkspace derives `wip` from `status`, so display row 0 does not
- *       exist until that round lands.
- *  Sampling the baseline inside that window yields an extent exactly ONE row
- *  short, and every later assertion derived from it is then off by one
- *  DEFAULT_ROW_HEIGHT. That is the 32 px flake seen under worker contention
- *  (gate: `Expected: 456, Received: 488` — 456 = 33 rows, 488 = 33 rows + WIP);
- *  it moved between tests run to run purely by which round won the race.
- *  Waiting on both signals removes it at the source — no timeout was raised.
- *
- *  The WIP offset stays MEASURED, never assumed (header note): status landing
- *  is what makes the row possible, not proof that the fixture produced one. */
-async function settledGraph(page: Page): Promise<{ full: number; wip: number }> {
-  // (2) Status landed: StatusPanel renders section headers only for a non-null
-  // snapshot, and that is the same React commit that hands GraphCanvas its
-  // `wip` prop — so this header being visible means the spacer already counts
-  // the WIP row. (Same signal e2e/04's openWithStatus uses.)
-  await expect(page.getByTestId('status-panel').getByText(/Staged \(/)).toBeVisible();
-  // (1) Rows landed: the extent covers at least the whole model.
-  await expect
-    .poll(() => graphContentHeight(page))
-    .toBeGreaterThanOrEqual(MODEL_ROWS * DEFAULT_ROW_HEIGHT + 8);
-  const full = await graphContentHeight(page);
-  return { full, wip: Math.round((full - 8) / DEFAULT_ROW_HEIGHT) - MODEL_ROWS };
-}
+/* THE baseline reading is the SHARED `settledGraph()` (e2e/helpers.ts): it
+ * waits for both async inputs of the extent — the graph stream's `meta` chunk
+ * and the first status round — and returns ONE consistent sample of the extent
+ * plus the measured WIP offset. Its default `modelRows` is MOCK_MODEL_ROWS =
+ * the 33 rows this spec's header documents. See that helper for the mechanism.
+ */
 
 /** The sr-only active-descendant row the scroller currently points at. */
 async function activeRow(page: Page) {

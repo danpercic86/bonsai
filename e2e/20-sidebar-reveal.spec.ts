@@ -14,15 +14,19 @@
  *    → the graceful miss path.
  */
 import { test, expect } from './fixtures';
-import { openRepo } from './helpers';
+import { openRepo, waitForGraphSettled } from './helpers';
 import type { Locator, Page } from '@playwright/test';
 
 const FLAT = { uiSettings: { onboardingSeen: true, listView: 'flat' } };
 
-/** openRepo + wait for status so the layout (incl. stash offshoots) is stable. */
+/** openRepo + wait for BOTH inputs of the display-row map: the graph stream
+ *  (rows/refs — a reveal against an unloaded graph announces "is not in the
+ *  loaded history" instead of hitting) AND the first status round (the WIP row
+ *  at display 0, which shifts every reveal target by one). Status alone does
+ *  NOT imply the layout has arrived — they are independent rounds. */
 async function openWithStatus(page: Page): Promise<void> {
   await openRepo(page, FLAT);
-  await expect(page.getByTestId('status-panel').getByText(/Staged \(/)).toBeVisible();
+  await waitForGraphSettled(page);
 }
 
 /**

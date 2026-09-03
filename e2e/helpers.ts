@@ -187,6 +187,89 @@ export async function graphScrollHeight(page: Page): Promise<number> {
   return graphScroller(page).evaluate((el) => el.scrollHeight);
 }
 
+/** Model rows every non-20k/non-detached mock fixture boots with: 3 stash
+ *  offshoots + 30 base rows (`resolveLayout` = prependCommits(buildMockGraph(),
+ *  []) + withStashNodes). The `op: merge` / `op: rebase` / `remote:` flags seed
+ *  operation state, never extra layout rows — so this holds for those too. */
+export const MOCK_MODEL_ROWS = 33;
+
+/** True content extent of the graph — the virtualization spacer's height,
+ *  `(displayRows) * rowHeight + 8`.
+ *
+ *  Prefer this over `graphScrollHeight` for any exact arithmetic: a graph
+ *  SHORTER than the scroller's viewport has `scrollHeight === clientHeight`
+ *  (the browser clamps), so a shrink below the viewport is invisible there.
+ *  The spacer is the true extent at any size. */
+export async function graphContentHeight(page: Page): Promise<number> {
+  return graphScroller(page)
+    .locator('.graph-spacer')
+    .evaluate((el) => parseFloat((el as HTMLElement).style.height));
+}
+
+/** Wait until BOTH async inputs of the graph extent have landed.
+ *
+ *  `openRepo` waits for NEITHER — it waits only for the canvas to be *visible*,
+ *  which the pane renders before any data arrives. The extent then moves twice:
+ *    1. the graph stream's `meta` chunk supplies `totalRows` (GraphCanvas.tsx:
+ *       `Math.max(layout.nodes.length, totalRows ?? 0)`), and
+ *    2. the first working-dir status round supplies the WIP display row —
+ *       RepoWorkspace derives `wip` from `status`, so display row 0 does not
+ *       exist until that round lands.
+ *  A baseline sampled inside that window is exactly one row short, and every
+ *  assertion derived from it inherits the error (the recurring 32 px flake:
+ *  `Expected 1064, Received 1096` — 1064 = 33 rows, 1096 = 33 rows + WIP).
+ *  Waiting on both signals removes it at the source; raising a timeout cannot,
+ *  because the baseline was already wrong when it was captured.
+ *
+ *  SCOPE — this proves the extent, and (for the small fixtures) the rows with
+ *  it, but it is NOT a general "stream finished" signal. The extent is
+ *  `max(loadedRows, meta.total)` and `meta` is the FIRST chunk. The mock emits
+ *  `meta` and the first batch back-to-back with no await between them, so for a
+ *  fixture that fits one batch (MOCK_MODEL_ROWS = 33 << the 512-row first
+ *  batch) React applies both in the same render and a full extent does imply
+ *  the rows. A MULTI-batch fixture (20k) is different: there the extent is full
+ *  while only 512 rows exist — see e2e/03's `streamComplete`.
+ *
+ *  Status signal: StatusPanel renders its section headers only for a non-null
+ *  snapshot, and that is the SAME React commit that hands GraphCanvas its `wip`
+ *  prop (e2e/04's `openWithStatus` uses the same signal). It requires a fixture
+ *  with working-dir changes — every mock fixture except an intentionally clean
+ *  one, which renders "No changes" and has no WIP row to wait for anyway.
+ *  Either section header proves the snapshot: a paused merge/rebase fixture
+ *  leads with Conflicts (e2e/07's own waitStatus used the same alternation). */
+export async function waitForGraphSettled(
+  page: Page,
+  modelRows: number = MOCK_MODEL_ROWS,
+): Promise<void> {
+  await expect(
+    page.getByTestId('status-panel').getByText(/(Staged|Conflicts) \(/).first(),
+  ).toBeVisible();
+  await expect
+    .poll(() => graphContentHeight(page))
+    .toBeGreaterThanOrEqual(modelRows * DEFAULT_ROW_HEIGHT + 8);
+}
+
+/** THE settled baseline: `waitForGraphSettled`, then ONE measurement of the
+ *  extent and the WIP offset derived from it.
+ *
+ *  Returning both from a single sample also closes the weaker sibling of the
+ *  same defect — reading the offset and the height as two separate samples,
+ *  where status landing in between yields `wip: 0` with a WIP-inclusive height.
+ *  The offset stays MEASURED, never assumed: status landing is what makes the
+ *  row possible, not proof that the fixture produced one. The sanity assert
+ *  catches a wrong `modelRows` constant (which would otherwise silently under-
+ *  wait). */
+export async function settledGraph(
+  page: Page,
+  modelRows: number = MOCK_MODEL_ROWS,
+): Promise<{ full: number; wip: number }> {
+  await waitForGraphSettled(page, modelRows);
+  const full = await graphContentHeight(page);
+  const wip = Math.round((full - 8) / DEFAULT_ROW_HEIGHT) - modelRows;
+  expect([0, 1]).toContain(wip);
+  return { full, wip };
+}
+
 /** Set scroller.scrollTop via evaluate; returns the resulting scrollTop. */
 export async function scrollGraphTo(page: Page, px: number): Promise<number> {
   return graphScroller(page).evaluate((el, top) => {

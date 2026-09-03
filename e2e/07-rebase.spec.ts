@@ -10,6 +10,7 @@ import {
   openBranchContextMenu,
   openRepo,
   rightClickGraphRow,
+  waitForGraphSettled,
 } from './helpers';
 import type { Page } from '@playwright/test';
 
@@ -21,8 +22,12 @@ function banner(page: Page) {
   return page.locator('.op-banner[role="status"]');
 }
 
+/** Both inputs of the graph extent: the stream's `meta` chunk AND the first
+ *  status round (which adds the WIP display row). `openRepo` waits for neither
+ *  — only for the canvas to be VISIBLE — so a `before` baseline captured
+ *  earlier is one row short and the `before + N*32` polls below never match. */
 async function waitStatus(page: Page): Promise<void> {
-  await expect(page.getByTestId('status-panel').getByText(/(Staged|Conflicts) \(/)).toBeVisible();
+  await waitForGraphSettled(page);
 }
 
 test.describe('07 rebase @destructive', () => {
@@ -33,6 +38,7 @@ test.describe('07 rebase @destructive', () => {
     await expect(banner(page).getByText('Rebasing feature/topic')).toBeVisible();
     await expect(banner(page).getByText(/step 2\/3/)).toBeVisible();
     await expect(banner(page).getByRole('button', { name: 'Continue' })).toBeDisabled();
+    await waitStatus(page);
     const before = await graphScrollHeight(page);
 
     await page.getByRole('button', { name: 'Take our version of src/auth.ts' }).click();
@@ -54,6 +60,7 @@ test.describe('07 rebase @destructive', () => {
   test('abort clears the paused rebase after confirm', async ({ page }) => {
     await openRepo(page, { flags: { op: 'rebase' } });
     await expect(banner(page).getByText('Rebasing feature/topic')).toBeVisible();
+    await waitStatus(page);
     const before = await graphScrollHeight(page);
     await banner(page).getByRole('button', { name: 'Abort' }).click();
     await confirm(page, 'Abort rebase?', 'Abort rebase');

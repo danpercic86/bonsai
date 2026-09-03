@@ -15,13 +15,19 @@ import {
   graphCanvas,
   openRepo,
   scrollGraphTo,
+  waitForGraphSettled,
 } from './helpers';
 import type { Page } from '@playwright/test';
 
-/** openRepo + wait for status (⇒ the WIP row exists and offsets are stable). */
+/** openRepo + wait for BOTH graph-extent inputs — the stream's `meta` chunk and
+ *  the first status round (⇒ the WIP row exists, display-row offsets are stable
+ *  and the scroll extent covers the whole model). `openRepo` itself waits only
+ *  for the canvas to be VISIBLE, which the pane renders before any data lands:
+ *  the scroll assertion below needs an extent that already exceeds the
+ *  viewport, and every `clickGraphRow(4)` here needs the WIP row counted. */
 async function openWithStatus(page: Page, flags?: Record<string, string>): Promise<void> {
   await openRepo(page, flags ? { flags } : undefined);
-  await expect(page.getByTestId('status-panel').getByText(/Staged \(/)).toBeVisible();
+  await waitForGraphSettled(page);
 }
 
 test.describe('02 graph interaction @smoke', () => {

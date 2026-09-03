@@ -18,7 +18,7 @@
  */
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
-import { graphScroller, openRepo } from './helpers';
+import { graphScroller, openRepo, waitForGraphSettled } from './helpers';
 
 const rail = (page: Page) => page.getByTestId('graph-rail');
 
@@ -124,6 +124,12 @@ test.describe('30 graph overview rail @smoke', () => {
     // Seed always-show directly — this test exercises the thumb, not the
     // settings UI (covered above). No search open → no tick can intercept.
     await openRepo(page, { uiSettings: { onboardingSeen: true, graphMinimapAlwaysShow: true } });
+    // The rail mounts from the SETTING, with or without graph data, and the
+    // thumb maps rail px → scrollTop through the content extent. Wait for both
+    // extent inputs (stream `meta` + first status round) first: with a partial
+    // extent the content can still be shorter than the viewport, and then the
+    // click below scrolls nothing and `scrollTop > 0` never becomes true.
+    await waitForGraphSettled(page);
     const r = rail(page);
     await expect(r).toBeVisible();
     const scroller = graphScroller(page);

@@ -28,6 +28,7 @@ import {
   errorToast,
   graphScroller,
   openRepo,
+  waitForGraphSettled,
 } from './helpers';
 
 /** openRepo + wait for status so the WIP row exists and row offsets are stable
@@ -37,7 +38,11 @@ async function openWithStatus(
   opts?: Parameters<typeof openRepo>[1],
 ): Promise<void> {
   await openRepo(page, opts);
-  await expect(page.getByTestId('status-panel').getByText(/Staged \(/)).toBeVisible();
+  // Both extent inputs, not just status: `sweepRefBand(page, 5, …)` addresses a
+  // DISPLAY row (WIP 1 + 3 stash offshoots + HEAD), so it needs the WIP row AND
+  // the streamed rows — an unloaded row 5 draws no ref band and the sweep finds
+  // nothing to hover.
+  await waitForGraphSettled(page);
 }
 
 /** Switch the right pane to the PR panel. */

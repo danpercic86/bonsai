@@ -5,12 +5,23 @@
  * stage/unstage button labels (section membership drives the label).
  */
 import { test, expect } from './fixtures';
-import { clickGraphRowUntilVisible, confirm, graphScrollHeight, openRepo } from './helpers';
+import {
+  clickGraphRowUntilVisible,
+  confirm,
+  graphScrollHeight,
+  openRepo,
+  waitForGraphSettled,
+} from './helpers';
 import type { Page } from '@playwright/test';
 
+/** openRepo + wait for BOTH inputs of the graph extent (stream `meta` + the
+ *  first status round). `openRepo` waits for neither — only for the canvas to
+ *  be VISIBLE — so a `before` baseline taken straight after it can miss the WIP
+ *  row and/or the streamed rows, and the later `before + 32` poll then never
+ *  matches (helpers.ts `waitForGraphSettled`). */
 async function openWithStatus(page: Page, flags?: Record<string, string>): Promise<void> {
   await openRepo(page, flags ? { flags } : undefined);
-  await expect(page.getByTestId('status-panel').getByText(/Staged \(/)).toBeVisible();
+  await waitForGraphSettled(page);
 }
 
 test.describe('04 working-dir @smoke @destructive', () => {

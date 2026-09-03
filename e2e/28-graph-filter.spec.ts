@@ -14,17 +14,33 @@
  *    vanish (rows 1, 2, 4).
  *  - Solo dev drops the disconnected gh-pages component (2 rows) + the 3 stash
  *    offshoots (stash tips are never seeded under a restricted seed).
- *  - Row-count changes are observed via graphScrollHeight (rows × rowHeight —
- *    the canvas itself is opaque to DOM queries); filter reloads are async, so
- *    every change is polled.
+ *  - Row-count changes are observed via the .graph-spacer extent
+ *    (graphContentHeight — display rows × rowHeight + 8; the canvas itself is
+ *    opaque to DOM queries), NOT scroller.scrollHeight, which clamps to
+ *    clientHeight once a filtered graph is shorter than the viewport. Filter
+ *    reloads are async, so every change is polled.
+ *  - Exact row counts (verified against the mock `applyGraphFilter`): full 33,
+ *    solo dev 28, solo dev + first-parent 25, solo feat 28.
+ *  - Every BASELINE goes through the shared settledGraph() (helpers.ts). The
+ *    extent has TWO async inputs — the graph stream and the first status round
+ *    (which supplies the WIP display row) — and openRepo waits for neither, so
+ *    a baseline read straight after it is one row short and every assertion
+ *    derived from it inherits the error.
  */
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import {
-  graphScrollHeight,
+  DEFAULT_ROW_HEIGHT,
+  graphContentHeight,
   openBranchContextMenu,
   openRepo,
+  settledGraph,
 } from './helpers';
+
+const FULL_ROWS = 33; // 3 stash offshoots + 30 base rows
+const SOLO_DEV_ROWS = 28; // − the gh-pages component (2) − the stash offshoots (3)
+const SOLO_DEV_FP_ROWS = 25; // − the feat/exp side lines (rows 1, 2, 4)
+const SOLO_FEAT_ROWS = 28; // same drops as solo dev
 
 const FLAT = { onboardingSeen: true, listView: 'flat' };
 
@@ -50,7 +66,7 @@ test.describe('28 graph declutter filters @smoke', () => {
       uiSettings: { ...FLAT, graphRefFilter: { mode: 'solo', refs: ['refs/heads/dev'] } },
     });
     await expect(chip(page, 'Solo: dev')).toBeVisible();
-    const soloHeight = await graphScrollHeight(page);
+    const { full: soloHeight } = await settledGraph(page, SOLO_DEV_ROWS);
 
     // Open the popover from the chip; toggle the first-parent switch.
     await chip(page, 'Solo: dev').click();
@@ -61,7 +77,9 @@ test.describe('28 graph declutter filters @smoke', () => {
     // Chip label gains the first-parent segment; the feat/exp side lines
     // (3 rows) drop out of the layout.
     await expect(chip(page, 'First-parent · Solo: dev')).toBeVisible();
-    await expect.poll(() => graphScrollHeight(page)).toBeLessThan(soloHeight);
+    await expect
+      .poll(() => graphContentHeight(page))
+      .toBe(soloHeight - (SOLO_DEV_ROWS - SOLO_DEV_FP_ROWS) * DEFAULT_ROW_HEIGHT);
 
     // Esc closes the popover and restores focus to the chip (§2.1).
     await page.keyboard.press('Escape');
@@ -72,7 +90,7 @@ test.describe('28 graph declutter filters @smoke', () => {
     page,
   }) => {
     await openRepo(page, { uiSettings: FLAT });
-    const fullHeight = await graphScrollHeight(page);
+    const { full: fullHeight } = await settledGraph(page, FULL_ROWS);
     await expect(filterFab(page)).toBeVisible();
 
     // Solo `feat` from its sidebar row menu (§3.1).
@@ -81,13 +99,15 @@ test.describe('28 graph declutter filters @smoke', () => {
 
     // AC5 indicator + row shrink (gh-pages component + stash offshoots drop).
     await expect(chip(page, 'Solo: feat')).toBeVisible();
-    await expect.poll(() => graphScrollHeight(page)).toBeLessThan(fullHeight);
+    await expect
+      .poll(() => graphContentHeight(page))
+      .toBe(fullHeight - (FULL_ROWS - SOLO_FEAT_ROWS) * DEFAULT_ROW_HEIGHT);
     // §3.3 sidebar marker (sr-only text on the solo'd row).
     await expect(page.getByText(", solo'd in graph")).toBeAttached();
 
     // Clear-all (chip ✕) → full graph back, chip collapses to the quiet fab.
     await clearButton(page).click();
-    await expect.poll(() => graphScrollHeight(page)).toBe(fullHeight);
+    await expect.poll(() => graphContentHeight(page)).toBe(fullHeight);
     await expect(filterFab(page)).toBeVisible();
     await expect(page.getByText(", solo'd in graph")).not.toBeAttached();
   });

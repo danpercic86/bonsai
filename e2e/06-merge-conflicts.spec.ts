@@ -12,6 +12,7 @@ import {
   graphScrollHeight,
   openBranchContextMenu,
   openRepo,
+  waitForGraphSettled,
 } from './helpers';
 import type { Page } from '@playwright/test';
 
@@ -96,6 +97,10 @@ test.describe('06 merge & conflicts @destructive', () => {
     page,
   }) => {
     await openPausedMerge(page);
+    // Both extent inputs first (stream `meta` + the first status round): a
+    // baseline taken before the WIP row lands is one row short, so the
+    // `before + 32` poll below would never match (helpers `waitForGraphSettled`).
+    await waitForGraphSettled(page);
     const before = await graphScrollHeight(page);
     // Resolve all three conflicts via quick actions.
     await page.getByRole('button', { name: 'Take our version of src/auth.ts' }).click();
@@ -131,7 +136,7 @@ test.describe('06 merge & conflicts @destructive', () => {
 
   test('fresh clean merge commits a new merge node', async ({ page }) => {
     await openRepo(page, FLAT);
-    await expect(page.getByTestId('status-panel').getByText(/Staged \(/)).toBeVisible();
+    await waitForGraphSettled(page);
     const before = await graphScrollHeight(page);
     await page.getByRole('button', { name: 'Create branch' }).click();
     const input = page.getByPlaceholder('new-branch-name');
