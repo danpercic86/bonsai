@@ -42,6 +42,59 @@ however old they are.
 
 ## FOR USER — open decisions (nobody else may resolve these)
 
+### 0. Adopt happy-dom for the vitest DOM project? — MEASURED, HELD FOR THE USER (2026-09-03)
+
+**Patch is saved at `docs/proposals/happy-dom.patch`** — apply with
+`git apply docs/proposals/happy-dom.patch` then `pnpm install`. The working tree was **restored to
+jsdom** so nothing downstream is measured against an unapproved toolchain.
+
+**The win is real and measured**, five jsdom runs against four happy-dom runs, machine-load sampled
+before each, plus a back-to-back control 45 seconds apart so it is not a stale-baseline artifact:
+
+| | wall (median) | environment CPU | tests CPU |
+|---|---|---|---|
+| jsdom 30.0.1 | 60.3 s | 574 s | ~118 s |
+| happy-dom + shim | **44.6 s** | **321 s** | **~64 s** |
+
+**−26% wall, −44% environment CPU, −46% test CPU**, and variance tightens from ±6 s to ±0.4 s.
+
+**Two things make this your call, not mine.**
+
+1. **A dependency add:** `happy-dom ^20.12.2` as a devDependency (+13 transitive, −4). `jsdom` is
+   deliberately **left installed** so the shim's self-guard stays meaningful and rollback is one line.
+2. **It needs a hand-maintained shim, and that is the part I would weigh hardest.** happy-dom's
+   `getComputedStyle` omits the UA default stylesheet — `display` on every inline element and
+   `visibility` on all elements come back `""`. `dom-accessibility-api` branches on `display` to
+   decide whether to insert a space between child text alternatives, so three tests computed
+   `"Added src/ app.rs"` instead of `"Addedsrc/app.rs"` — **a space injected mid-path**. The shim
+   supplies the missing UA values and is self-guarding (inert under jsdom, verified by flipping the
+   config back). But it is **a hand-maintained subset of the UA stylesheet**, and *if a future test
+   uses an inline tag outside that set it silently gets `display: block`.*
+
+   **Exposure:** 715 `ByRole(…, { name })` call sites across 77 files depend on that computation;
+   712 are unaffected today only because they target leaf elements with flat text. So the
+   silent-failure mode sits precisely in accessibility-name computation — the area where this
+   session found several real defects. That is the trade: **26% faster tests against a maintained
+   shim with a quiet failure mode in a11y naming.**
+
+**Option 2 (`environmentMatchGlobs`, so only DOM-touching files pay) is DEAD** — and the reason is
+worth keeping. Of 156 DOM-project files, 137 use the DOM directly; the other 19 *look* DOM-free but
+**all 19 fail in a node environment for one root cause**: `src/ipc/mock/repoState.ts:160` calls
+`new URLSearchParams(window.location.search)` at **module init**, so anything that transitively
+imports the mock IPC layer needs `window`. Measured anyway: 57.0 s with 18 files failing, and its
+theoretical ceiling was only ~6.7% of total CPU.
+
+**Filed follow-up (unlocks option 2, ~3-line app change, not made):** make that `window.location`
+read **lazy** in `repoState.ts`. It would move ~19 files to the node environment, worth roughly a
+further 70 s of CPU, and is worth doing *regardless* of the happy-dom decision.
+
+**Verified clean, no shim needed:** `Range`, `Selection`, `createRange`, `MutationObserver`,
+`IntersectionObserver` (happy-dom *has* it and jsdom does not — a gain), canvas stubs, `DOMRect`,
+`requestAnimationFrame`, `structuredClone`. `toBeVisible()` was checked against jsdom on all six
+hiding mechanisms — **no silent-pass hazard**.
+
+---
+
 ### 1. Flip the e2e bundle default? — READY, HELD FOR THE USER (2026-09-02)
 
 - P104 is cleared, so nothing blocks the flip; the orchestrator deliberately did **not** make it.
