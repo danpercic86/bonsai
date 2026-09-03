@@ -13,7 +13,7 @@ import type { Page } from '@playwright/test';
  *  ('1d · 11/1/2026, 7:39:22 PM') CONTAINS the counter text, which makes the
  *  page-wide match resolve to two nodes and fail strict mode on exactly the
  *  days the calendar spells it (see e2e/30's note — '1/2' vs '9/1/2026'). */
-const searchCount = (page: Page) => page.locator('.commit-search-count');
+const searchCount = (page: Page) => page.getByTestId('commit-search-count');
 
 /** Two consecutive identical scroll extents = the P65 graph stream has finished. */
 async function settleGraph(page: Page): Promise<void> {

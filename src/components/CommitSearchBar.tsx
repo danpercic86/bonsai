@@ -167,7 +167,7 @@ export function CommitSearchBar({
           </button>
         )}
 
-        <span className="commit-search-count" aria-live="polite">
+        <span className="commit-search-count" data-testid="commit-search-count" aria-live="polite">
           {loading ? '…' : results === null ? '' : `${position}/${total}`}
         </span>
         {results?.truncated && (

@@ -254,8 +254,11 @@
 
 /* Fixed chrome the model cannot influence. P68g §3.1: 12px/600 --text-1 words plus
    ONE --warning glyph — --warning as small text is only 3.47:1 in light theme, so
-   the hue is used as a graphic (5.4:1 dark / 3.6:1 light) and never as the carrier
-   of the meaning. */
+   the hue is used as a graphic and never as the carrier of the meaning.
+   P107 F1 correction: the glyph measures 5.64:1 dark / 3.80:1 light for --warning ink
+   on the 14% --warning tint over --bg-1 — .ai-dock-ask's own surface, which is what the
+   glyph actually sits on. The 5.4/3.6 pair quoted here before named no base and was not
+   that surface. Bucket B verdict unchanged: judged at the 3:1 graphics bar, 3.80 clears it. */
 .ai-dock-ask-guard {
   display: flex;
   gap: 6px;

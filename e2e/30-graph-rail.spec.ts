@@ -29,7 +29,7 @@ const rail = (page: Page) => page.getByTestId('graph-rail');
  *  the counter. (Observed 2026-09-03: '1/2' matched '9/1/2026'.) Scope to the
  *  element that actually carries the count; `{ exact: true }` would NOT help,
  *  since getByText already matches whole-substring against each candidate. */
-const searchCount = (page: Page) => page.locator('.commit-search-count');
+const searchCount = (page: Page) => page.getByTestId('commit-search-count');
 
 async function openSearch(page: Page, query: string): Promise<void> {
   await page.keyboard.press('ControlOrMeta+f');
