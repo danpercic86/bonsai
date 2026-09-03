@@ -101,13 +101,17 @@ however old they are.
 
 The curator refuses to resolve these; resolving any would upgrade a status.
 
-- **P107's board heading says "CONTRACT DONE, IMPL PENDING", but the implementation shipped at
-  `2168057`** (2026-09-03), with errata `ef06e6b`. Someone must restate P107's status; the
-  orchestrator's brief treats AC11/AC12/AC13 as pending USER CHECKPOINTs.
-- **`no_proxy_client()` is claimed both open and closed.** The live follow-up list carries it as an
-  open DEP-REFRESH item; the P91 audit's "Verified CLEAN" section says its raw `.expect` is in a
-  `#[cfg(test)]` module that never compiles into the shipped binary and that **the follow-up "can be
-  CLOSED."** Both lines are kept.
+- ~~**P107's board heading says "CONTRACT DONE, IMPL PENDING"**~~ — **RESOLVED by the orchestrator
+  2026-09-03.** The heading predated `2168057` and was stale; it is restated in P107's own section.
+  This records a shipped fact and **does not** touch AC11/AC12/AC13, which remain pending USER
+  CHECKPOINTs.
+- ~~**`no_proxy_client()` is claimed both open and closed.**~~ — **RESOLVED: CLOSED, verified by the
+  orchestrator 2026-09-03.** Checked directly rather than taken from the audit report:
+  `src-tauri/src/mcp.rs:411` declares `#[cfg(test)] mod http_support;`, so the module carrying the
+  raw `.expect("build reqwest client")` (`http_support.rs:221`) **is never compiled into a shipped
+  binary**. The DEP-REFRESH follow-up filed it as a panic path reachable in production; that premise
+  is false, so the item is closed on evidence rather than on a report's say-so. Closing a follow-up
+  on a verified fact is not a status upgrade — no checkpoint is involved.
 - **Four follow-ups from the 2026-09-02 file-size refactor look addressed by later commits on this
   branch, but nothing records them closed:** `52c815e`/`6092eb3`/`338d71f` (reflog + overlay
   teardown), `1d9d9bf` (armed dialogs during confirm dialogs), `734b310` (the `ai::session*` clock
@@ -166,12 +170,16 @@ Contract `docs/contracts/P106-status-badge-ink-ui.md`. Full narrative: archive P
   deliberately droppable AC12); `--warning-strong` dark = `#e3b341`; AC13's `ui-reference.md` update
   lands **after** implementation, from the shipped commit.
 
-### P107 — hue-over-own-tint — the board heading is STALE; see FOR USER item 6
+### ✅ P107 — hue-over-own-tint — SHIPPED `2168057`, ⏳ AWAITING USER CHECKPOINT (AC11/AC12/AC13)
 
-Contract `docs/contracts/P107-hue-over-own-tint-ui.md` (`59061b2`). Impl shipped **`2168057`**;
-errata **`ef06e6b`**. Full narrative: archive Part 40. The orchestrator's brief lists **AC11 / AC12 /
-AC13 as pending USER CHECKPOINTs**; the archived heading still reads *"CONTRACT DONE, IMPL
-PENDING"* — the curator did not change it.
+Contract `docs/contracts/P107-hue-over-own-tint-ui.md` (`59061b2`). Impl shipped **`2168057`**
+(7/7 predicted residue metrics matched); errata **`ef06e6b`**. Full narrative: archive Part 40.
+
+**Status restated by the orchestrator, 2026-09-03.** The old heading "CONTRACT DONE, IMPL PENDING"
+was written before `2168057` and was simply stale. The curator correctly refused to change it —
+restating a status is not a curator's call — so it is corrected here instead. **This records what
+shipped; it does not upgrade a checkpoint:** AC11 / AC12 / AC13 remain **pending USER CHECKPOINTs**
+and only the user can close them.
 
 - Population is **38 call sites**, not the 16 found first and not the **6** `ui-reference.md` §2
   claimed. Buckets: **17 failing text · 19 compliant glyph KEEPS · 1 failing glyph state · 1 owned
