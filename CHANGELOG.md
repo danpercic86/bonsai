@@ -6,6 +6,13 @@ All notable changes to Bonsai are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **A commit that carries several refs is now actionable.** Its context menu offers a branch picker,
+  so Merge, Rebase and the other branch actions can be aimed at the branch you mean instead of
+  whichever ref happened to come first, and the "+N" chip that hid the extra refs is clickable
+  rather than hover-only.
+
 ### Fixed
 
 - **Brand-new files could be destroyed by a branch switch.** A dirty-tree switch auto-stashes with
@@ -20,12 +27,52 @@ All notable changes to Bonsai are documented here. The format is based on
   auto-stash fails once the switch has already happened, the operation now succeeds with a
   structured "not applied" outcome that names `stash@{0}`, instead of surfacing a bare error next to
   a working directory that suddenly looks empty.
+- **Two borders in the merge editor now actually render.** The split-label underline and the
+  OURS/THEIRS divider referred to a colour token that does not exist, so they had been invisible
+  since they were written.
+- **Settings no longer ignores your first keystroke after you close the identity menu.** Dismissing
+  the menu with `Esc` left a stale keyboard handler in place for exactly one more keypress, so the
+  next `Ctrl`/`Cmd`-`,` did nothing and you had to press it again. Only reproducible in a release
+  build, which is why it looked like a flaky test for so long.
+- **macOS: the folder-access prompt should stop coming back.** The release `.app` was only
+  linker-ad-hoc-signed — no sealed resources and an unstable identifier — so macOS had nothing to
+  anchor a permission grant to and re-prompted after you clicked Allow. The bundle is now properly
+  ad-hoc signed, taking effect from the next tagged release. Gatekeeper's "unidentified developer"
+  warning is unchanged; that needs a Developer ID and notarization.
 
 ### Changed
 
 - **Two stash actions instead of three.** The commit-panel `⋯` menu now offers **Stash** — the whole
   working directory, staged, unstaged and brand-new files alike — and **Stash staged**. The old
   "Stash all" (which quietly left untracked files behind) and "Stash all + untracked" are gone.
+
+- **A pull request's file diffs open in the center overlay** instead of the narrow right panel, so a
+  changed file gets the full width of the window to be read in.
+
+- **The commit graph is usable with a screen reader.** It previously announced itself as a grid
+  while containing no rows — the rows are drawn on canvas and have never existed as DOM. It is now
+  one labelled, focusable region, and each settled selection is spoken once: the commit summary,
+  author, relative date, "Row *n* of *N*", and the refs on that row. A visually-hidden hint says
+  that the arrow keys move between commits and that the Menu key (or `Shift`-`F10`) opens the
+  actions for the selected one.
+
+- **Arrow-key navigation now moves focus into the graph**, so the keyboard actions menu for a commit
+  is reachable that way instead of only after tabbing to it. Arrow keys pressed inside the
+  git-activity log no longer also move the graph's selection behind it.
+
+- **Dimmed text is legible throughout the app.** Every use of the dimmest text colour was
+  enumerated — 124 of them — and 93 moved a step brighter wherever the text is something you have to
+  read in order to act: timestamps, section labels, directory and branch names, option hints,
+  counts, and the reflog's abbreviated object ids. Disabled controls, placeholders and purely
+  decorative glyphs stay dim deliberately. Separately, ten toolbar and tab labels — the diff
+  overlay's toggles, the right-panel tabs, the tab close button and the partial-staging gutter
+  buttons — were below the contrast floor at rest and were raised.
+
+- **The selected row is no longer flooded with the accent colour.** Selected rows, active list
+  options and segmented-control segments now use a quieter selection fill with a leading accent bar,
+  because white text on the accent fill fell below the contrast floor in dark mode. Primary buttons
+  keep the loud accent fill and take dark ink instead, and their hover deepens in light mode rather
+  than washing out.
 
 - **Dependency refresh (maintenance).** Frontend majors: ESLint 9 → 10, Vite 7 → 8,
   TypeScript 5.9 → 6.0, jsdom 26 → 30, `@testing-library/jest-dom` 6 → 7, and
@@ -99,6 +146,15 @@ keyboard-navigable sidebar — plus a batch of performance, accessibility, and s
   fetch.
 - **Keyboard-navigable sidebar** (`role=tree` with roving tabindex) and improved graph a11y
   (grid semantics, light-mode lane palette, higher-contrast ref pills).
+  > **The graph's "grid semantics" have since been removed — see [Unreleased].** They shipped in
+  > 1.3.0 exactly as described here (`role="grid"` + `aria-rowcount` on the graph scroller,
+  > `src/graph/GraphCanvas.tsx` at tag `v1.5.0`), but a `grid` with no `role="row"` children is
+  > malformed, and the graph's rows are canvas pixels that never exist as DOM. The graph is now a
+  > labelled focusable group whose selection is announced through a live region.
+  > `role="grid"`, `aria-rowcount`, `role="row"` and `aria-rowindex` are **forbidden** on the graph
+  > by `docs/contracts/ui-reference.md` §4.1 (revised 2026-08-31), and the 2026-08-22 design review
+  > that recommended them is archived as **SUPERSEDED — do not implement**. The light-mode lane
+  > palette and the higher-contrast ref pills from this release are unaffected.
 - **First-time per-repo git-hook execution disclosure** and an AI conflict novel-content gate.
 
 ### Changed
