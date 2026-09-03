@@ -57,11 +57,41 @@ fn external_launch_rejects_missing_path_before_spawning() {
         matches!(err, AppError::Io(_)),
         "missing path must surface as AppError::Io, got {err:?}"
     );
-    // The precheck echoes the offending path — confirms this is *our* Io
-    // guard (not some incidental filesystem error) and that we never spawned.
+    // The precheck's message is CATEGORY-ONLY as of the 2026-09-03 audit
+    // (LOW-2): it must NOT echo the path, which is repo-authored and can be
+    // long, RTL-overridden, or a system-message lookalike. This test used to
+    // assert the opposite — the echo was how it proved the error came from
+    // *our* guard rather than an incidental filesystem error. The exact
+    // category string is just as specific a discriminator and leaks nothing,
+    // so it takes over that job.
     assert!(
-        err.to_string().contains(&missing_str),
-        "the precheck error must name the offending path: {err}"
+        err.to_string().contains("target folder no longer exists"),
+        "the precheck must return the category-only message: {err}"
+    );
+    assert!(
+        !err.to_string().contains(&missing_str),
+        "the precheck must NOT echo the offending path (audit LOW-2): {err}"
+    );
+}
+
+/// The precheck requires a DIRECTORY, not merely an existing path (audit
+/// 2026-09-03 MEDIUM-1). A file used to get past `exists()` and be stopped only
+/// by the child's `current_dir` failing with `NotADirectory` — an accidental,
+/// undocumented defence that an `explorer /select,<file>` feature would remove.
+#[test]
+fn external_launch_rejects_a_file_target_not_just_a_missing_one() {
+    let dir = tempfile::TempDir::new().expect("temp dir");
+    let file = dir.path().join("a-file-not-a-dir");
+    std::fs::write(&file, b"x").expect("write probe file");
+    assert!(file.is_file(), "precondition: the target must be a file");
+
+    let err = tauri::async_runtime::block_on(reveal_in_file_manager(
+        file.to_string_lossy().into_owned(),
+    ))
+    .expect_err("a file target must be rejected by the precheck");
+    assert!(
+        matches!(err, AppError::Io(_)),
+        "a file target must surface as AppError::Io, got {err:?}"
     );
 }
 
