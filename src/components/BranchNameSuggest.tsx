@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import type { BranchNameProposal } from '../ipc';
+import { RefLabel } from './RefLabel';
 import { SummarizeIcon } from './menuIcons';
 import { errorMessage } from '../utils/errors';
 
@@ -80,14 +81,19 @@ export function BranchNameSuggest({ aiEligible, workingDirty, onPick, suggest }:
       {names !== null && names.length > 0 && (
         <div className="branch-name-suggest-chips">
           {names.map((name) => (
+            // P111 §5: the chip carries an explicit `aria-label` because RefLabel's
+            // two spans would otherwise let name computation join them with a
+            // separating space — a truncated/altered branch name is a wrong branch
+            // name. `title` reads the action for the sighted mouse user.
             <button
               key={name}
               type="button"
               className="branch-name-chip"
+              aria-label={name}
               title={`Use "${name}"`}
               onClick={() => onPick(name)}
             >
-              {name}
+              <RefLabel value={name} />
             </button>
           ))}
         </div>

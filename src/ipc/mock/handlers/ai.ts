@@ -2,6 +2,7 @@
 import type { IpcApi } from '../../types';
 import { AI_OFF, delay, requireRepo, stripConflictMarkers } from '../repoState';
 import { resolutionIsNovel } from '../aiNovel';
+import { BRANCH_NAMES_FROM_RANGE, BRANCH_NAMES_FROM_WORKING } from '../../fixtures/branchNames';
 import { MAIN_RS_PATH, linesEqual } from '../statusHelpers';
 import type { AiAnalysis, AiAnalysisMode, AiAvailability, AiChangelog, AiDiffTarget, AiDigestRange, AiResolveProposal, AiSummary, AppError, BranchNameProposal, BranchNameSource, ChangelogRange, CommitMessageProposal, ComposeGroup, ComposeProposal, OperationPlan } from '../../types';
 
@@ -271,18 +272,7 @@ export const aiHandlers = {
       throw err;
     }
     return {
-      names:
-        source.kind === 'working'
-          ? [
-              'feat/ai-why-layer',
-              'ai-why-layer',
-              'feature/blame-why',
-              // P102/P105 §8 pathological case: a 90-char branch name, so the
-              // harness can prove `.branch-name-chip` (now --text-1 on its accent
-              // tint) wraps at the container and never mid-token.
-              'feature/observability/rewrite-the-per-commit-blame-why-layer-behind-a-cached-lane-index-v2',
-            ]
-          : ['feat/range-work', 'range-work', 'topic/selected-commits'],
+      names: source.kind === 'working' ? BRANCH_NAMES_FROM_WORKING : BRANCH_NAMES_FROM_RANGE,
       costUsd: 0.003,
     };
   },

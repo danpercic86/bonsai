@@ -283,7 +283,16 @@
   gap: 6px;
 }
 
+/* P111 R1/R2: a pill is one line. `inline-flex` + `min-width: 0` builds the
+   truncation chain RefLabel's head needs; `max-width: 100%` caps the chip at the
+   (wrapping) strip's width instead of a tuned px number; `min-height` states the
+   24px hit floor rather than inheriting it from body's line-height. */
 .branch-name-chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 24px;
   padding: 3px 10px;
   border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
   border-radius: 999px;
@@ -294,6 +303,7 @@
   color: var(--text-1);
   font-family: var(--font-mono);
   font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
 }
 

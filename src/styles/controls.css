@@ -79,6 +79,46 @@
   border: 1px solid var(--border);
 }
 
+/* P111 R3 — the leaf-preserving ref/path label. The LEADING segments ellipsize;
+   the last segment never truncates, because that is the part that identifies the
+   ref. Same idiom as .ai-dock-subject/.ai-dock-dir/.ai-dock-name, extracted so
+   chips and dense rows share one policy. Sets no colour and no font: it inherits
+   from whatever chip or row hosts it, so it adds no token and cannot drift. */
+.ref-label {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* The head absorbs essentially all of the shrinking: a shrink factor of 999
+   against the leaf's 1 means flexbox consumes the head down to zero before it
+   takes a single pixel from the leaf. That is the whole policy expressed as a
+   ratio, so it holds at any container width without a media query. */
+.ref-label-head {
+  flex: 0 999 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The leaf must ALSO be able to ellipsize, even though it is the part we protect.
+   Measured 2026-09-03: with `flex: none` a leaf wider than the chip (a long final
+   segment, or a ref with no `/` at all, where the whole string IS the leaf)
+   overflowed by 174px and was HARD-CLIPPED by the wrapper's `overflow: hidden` —
+   cut with no ellipsis, so a truncated ref looked like a complete one. That is
+   the exact "a truncated branch name is a wrong branch name" hazard this contract
+   exists to prevent, reintroduced visually. Shrinking last is the protection;
+   refusing to shrink is not. */
+.ref-label-leaf {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ---------- Buttons ---------- */
 
 .btn-primary {

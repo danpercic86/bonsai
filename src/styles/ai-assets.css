@@ -132,6 +132,9 @@ button.asset-row-clickable:hover {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-1);
+  /* P111 R1: one of these chips holds a user-typed model id. `white-space` does
+     not affect the measured 19.9375px height (P102/P105 AC12). */
+  white-space: nowrap;
 }
 
 .asset-chip-canonical {

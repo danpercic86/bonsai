@@ -301,7 +301,15 @@ export const FORGE_PR_DETAIL: PrDetail = {
   additions: 214,
   deletions: 37,
   changedFiles: 9,
-  labels: ['enhancement', 'graph', 'phase-4'],
+  // P111 §8: the last label is a pathological forge label (a maintainer can type
+  // anything) so the harness can prove `.pr-label` stays one line + ellipsizes,
+  // with the whole string recoverable from its `title`.
+  labels: [
+    'enhancement',
+    'graph',
+    'phase-4',
+    'needs-design-review: canvas lane colours must stay stable while scrolling',
+  ],
 };
 
 /** Merged review (diff-line) + conversation comments for PR #128, sorted

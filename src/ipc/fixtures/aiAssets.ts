@@ -222,7 +222,9 @@ export const mockProfiles: ProfileStore = {
     {
       name: 'cheap-terse',
       description: 'Minimal instructions for a cheap/fast model.',
-      model: 'haiku',
+      // P111 §8: a long free-text model id — the one variable-length `.asset-chip`
+      // call site, so the harness can prove the chip stays one line at 19.94px.
+      model: 'claude-haiku-4-5-20260101-preview-cheap',
       targets: [{ assetId: 'claude', content: CHEAP_TERSE_BODY }],
     },
   ],

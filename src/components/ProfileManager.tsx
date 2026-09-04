@@ -251,7 +251,11 @@ export function ProfileManager({
                     <span className="asset-chip asset-chip-active">active</span>
                   )}
                   {profile.model != null && profile.model !== '' && (
-                    <span className="asset-chip asset-chip-muted">{profile.model}</span>
+                    // P111 §4.3: the only variable-length `.asset-chip` — a
+                    // user-typed model id, now one line with a `title` recovery.
+                    <span className="asset-chip asset-chip-muted" title={profile.model}>
+                      {profile.model}
+                    </span>
                   )}
                 </div>
                 {profile.description != null && profile.description !== '' && (

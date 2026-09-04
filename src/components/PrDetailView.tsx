@@ -147,7 +147,9 @@ export function PrDetailView({
         {detail.labels.length > 0 && (
           <div className="pr-labels">
             {detail.labels.map((label) => (
-              <span key={label} className="pr-label">
+              // P111 §4.2: forge label text is arbitrary and now truncates with an
+              // ellipsis, so the `title` is the recovery channel it lacked.
+              <span key={label} className="pr-label" title={label}>
                 {label}
               </span>
             ))}
