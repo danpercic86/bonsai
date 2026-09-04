@@ -55,91 +55,71 @@ the tree** (`734b310`), and the M1 design-review residue was telling sessions to
 
 ---
 
-## ⏸ RESUME HERE — session stopped mid-increment 2026-09-03 ~17:45
+## ⏸ RESUME HERE — updated 2026-09-04
 
-**Branch `feat/p91-observability`. Nothing pushed, by instruction. 26 commits ahead of `5c2dcd2`
-(one of them, `2a0b8f1`, is a PEER session's MCP work — not this session's).**
+**Branch `feat/p91-observability`. Nothing pushed, by instruction. Tree CLEAN.** 28 commits ahead of
+`5c2dcd2` (one, `2a0b8f1`, is a PEER session's MCP work — not this session's).
 
-### P111 is HALF-IMPLEMENTED AND UNCOMMITTED — deal with this first
+### ✅ P111 is DONE — `1192f2a`
 
-A `senior-dev` was stopped mid-run implementing `docs/contracts/P111-pill-truncation-ui.md`. Its
-work is in the working tree, **unreviewed, unverified, and not known to compile**:
+The interrupted senior-dev work was finished rather than reverted: it compiled and its unit tests
+passed, so the cheaper path was to verify it against the contract. Doing so found a defect the
+interrupted work had **decided to accept** (its own fixture comment said the no-slash case
+"hard-clips and the `title` recovers it"): `.ref-label-leaf` was `flex: none`, so a leaf wider than
+the chip overflowed by a measured **174px** and was hard-clipped by `overflow: hidden` — cut with no
+ellipsis. Worse than the original bug, because a hard clip makes a truncated ref look **complete**
+and `title` is hover-only. Fixed by shrink ratio (head `flex-shrink: 999` vs leaf `1`), so the leaf
+ellipsizes only as a last resort. `e2e/33-pill-truncation.spec.ts` guards it, proven red.
 
-```
- M src/components/BranchNameSuggest.tsx      M src/styles/ai-assets.css
- M src/components/PrDetailView.tsx           M src/styles/controls.css
- M src/components/ProfileManager.tsx         M src/styles/dialogs.css
- M src/ipc/fixtures/aiAssets.ts              M src/styles/forge-pr-detail.css
- M src/ipc/fixtures/forge.ts
- M src/ipc/mock/handlers/ai.ts
-?? src/components/RefLabel.tsx  ?? src/components/RefLabel.test.tsx
-?? src/components/BranchNameSuggest.test.tsx  ?? src/ipc/fixtures/branchNames.ts
-?? e2e/zz-p111-temp.spec.ts   <- SCRATCH, delete it; the `zz-` prefix and `-temp` are the tell
-```
+**Residue, filed not fixed:** `.asset-chip` got the R1 line guard but no R2 `max-width`, so a model
+id far longer than the fixture would widen the chip rather than ellipsize.
 
-**Decide before touching anything else:** either finish it against the contract (run `tsc`, `eslint`,
-`vitest`, and the browser-harness checks the contract's ACs require), or
-`git checkout -- <the M files>` and delete the `??` ones and re-commission cleanly. Do **not** commit
-it as-is — it was interrupted at "now the temp harness spec", so the last file it touched may be
-half-written.
+### Next, in order
 
-**The contract is committed and sound** (`763866a`); only the implementation is unfinished.
-
-### What P111 actually is
-
-Three `border-radius: 999px` chips hold variable-length text with no line guard, so a long value
-wraps to two lines and the radius exceeds half the height — it renders as a lozenge.
-`.branch-name-chip` (reported), `.pr-label` (**no `title` at all**, so a truncation there is
-unrecoverable without the recovery channel the contract adds), `.asset-chip`. The contract's
-load-bearing rule: **truncation is CSS-only, a JS `slice` is prohibited** — the DOM must always hold
-the whole ref, because a truncated branch name is a *wrong* branch name.
-
-### Queued behind it, in order
-
-1. **FU-1** — both halves are specced and committed: `docs/contracts/P87b-FU1-git-dock-ui.md`
-   (rendering, exact strings) and `docs/contracts/P87b-FU1-run-target.md` (data model, per-operation
-   target table). Not started. It needs `RefLabel` from P111, so it goes **after**. The architect
-   noted FU-1 must build the row's accessible name explicitly now that FU-3 has landed.
-2. **Reviewer follow-ups still open** from the `a82740ff` pass (MUST-FIX and two SHOULD-FIX are
+1. **FU-1 — both halves specced and committed, NOT started.**
+   `docs/contracts/P87b-FU1-git-dock-ui.md` (rendering, exact strings, accessible names) and
+   `docs/contracts/P87b-FU1-run-target.md` (data model, per-operation target table, four content
+   guarantees). It needs `RefLabel`, which now exists. The architect flagged that FU-1 must build the
+   row's accessible name **explicitly**, since FU-3 has already moved `role="button"` onto the row.
+2. **Reviewer follow-ups still open** from the `a82740ff` pass (its MUST-FIX and two SHOULD-FIX are
    already fixed in `151232d`):
-   - NIT 5 — `GitActivityRow.tsx` chevron is still a `<button>` inside `role="button"`, which is
-     invalid ARIA (children-presentational) and still takes DOM focus on click. Should become
+   - `GitActivityRow.tsx` chevron is still a `<button>` inside `role="button"` — invalid ARIA
+     (children-presentational) and still takes DOM focus on click. Should be
      `<span aria-hidden="true">` with the handler dropped; the existing a11y tests would still hold.
-   - NIT 6 — `useStickySelection.ts:76-78` introduces a render-phase ref write in the same batch
-     where `GitActivityDock.tsx` removed one. Defensible (it is idempotent) but the two now model
-     the same hazard two ways with no cross-reference.
-   - NIT 8 — `spawn-tool.mjs` `PATH_EXTS` omits `''`, so `whichAll('foo.exe')` finds nothing; no
-     caller passes an extension today. Also `existsSync` there does not exclude directories.
-   - NIT 8 — `watcher/classify.rs:72` uses `starts_with("packed-refs")` for a single file;
+   - `useStickySelection.ts:76-78` introduces a render-phase ref write in the same batch where
+     `GitActivityDock.tsx` removed one. Defensible (idempotent) but the two model the same hazard
+     two ways with no cross-reference.
+   - `spawn-tool.mjs` `PATH_EXTS` omits `''`, so `whichAll('foo.exe')` finds nothing; no caller
+     passes an extension today. Its `existsSync` also does not exclude directories.
+   - `watcher/classify.rs:72` uses `starts_with("packed-refs")` for a single file;
      `== Path::new("packed-refs")` matches the `HEAD`/`index` lines above it.
-   - NIT 8 — `commands/external.rs:78`: `is_dir()` is also false when the stat fails on permissions,
-     so "target folder no longer exists" can be wrong. Wording, not logic.
-   - NIT 8 — `obs/raw_args.rs:2` has a malformed doc ref (two section markers).
-   - NIT 8 — the `forge-pr.css` split headers say "extracted verbatim"; one grouped rule was inlined
-     into two rules. Computed styles identical, wording inaccurate.
+   - `commands/external.rs:78` — `is_dir()` is also false when the stat fails on permissions, so
+     "target folder no longer exists" can be wrong. Wording, not logic.
+   - `obs/raw_args.rs:2` has a malformed doc ref (two section markers).
+   - The `forge-pr.css` split headers say "extracted verbatim"; one grouped rule was inlined into
+     two. Computed styles identical, wording inaccurate.
 3. **Security, still open** (`docs/audit-2026-09-03-external-launch.md`): MEDIUM-2
    (`terminalCommand`/`editorCommand` unvalidated — renderer compromise still converts to local
-   execution) and LOW-1 (cwd DLL search order). **Both were deliberately left for the user**: the
-   audit's suggested remedy for MEDIUM-2 breaks a legitimate absolute path to a portable editor, and
-   LOW-1's mitigation changes launch behaviour. They need a product call, not a patch.
+   execution) and LOW-1 (cwd DLL search order). **Both deliberately left for the user:** MEDIUM-2's
+   suggested remedy breaks a legitimate absolute path to a portable editor, and LOW-1's mitigation
+   changes launch behaviour. Product calls, not patches.
 
 ### Verification state
 
-- **Full 8-step gate green at `c218258`** (see the gate block below). Since then: `833f2f9`,
-  `151232d`, `e149382`, `8dd5b24` and the docs commits. The Rust leg was re-run green at `151232d`
-  (280.1s, 3 steps, under `--throw-deprecation`). **The frontend and e2e legs have NOT been re-run
-  since `c218258`** — run the full `pnpm gate` before trusting the branch.
-- **Verify the machine is idle first** and **redirect the whole log to a file** — piping `pnpm gate`
-  through `tail` lost a failure detail today and cost a re-run.
-- Port **1420 is free** (checked). Keep it that way: `strictPort: true` means a held port breaks
-  `pnpm tauri dev`, which every pending checkpoint needs.
+- **Full 8-step gate green at `c218258`.** Since then: the Rust leg re-run green at `151232d`
+  (280.1s, under `--throw-deprecation`), and the frontend leg green at `1192f2a` (100.4s, 4 steps).
+  **The full e2e leg has not run since `c218258`** — run the bare `pnpm gate` before trusting the
+  branch.
+- Verify the machine is idle first, and **redirect the whole log to a file** — piping `pnpm gate`
+  through `tail` lost a failure detail and cost a re-run.
+- Port **1420 is free**. Keep it so: `strictPort: true` means a held port breaks `pnpm tauri dev`.
 
-### One thing that needs saying about the checkpoints
+### The checkpoints have not moved
 
-**Seven milestones are awaiting a USER CHECKPOINT and none of them moved today** — P102+P105, P106,
-P107, P108, P91, P110, P109. The CSP change in `8dd5b24` adds an eighth thing needing native
-verification (it applies to the Tauri webview only, so neither the harness nor e2e exercises it).
-Roughly 470 board lines are archivable the moment those clear and not one line before.
+**Seven milestones await a USER CHECKPOINT** — P102+P105, P106, P107, P108, P91, P110, P109 — and the
+CSP change in `8dd5b24` adds an eighth thing needing native verification (it applies to the Tauri
+webview only, so neither the harness nor e2e exercises it). Roughly 470 board lines become
+archivable the moment those clear, and not one line before.
 
 ---
 
