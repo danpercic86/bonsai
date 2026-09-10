@@ -10,6 +10,10 @@ inner functions for command tests.
 Harness traps (cost a session each): the hidden Browser pane reports `innerWidth/innerHeight = 0`, so
 every `vh`/`vw` rule evaluates to 0 — call `resize_window` (1440×900) before any layout measurement;
 `setTimeout` is throttled to ~1 s in a hidden page, so batch tool dispatches instead of many `await`s;
+To drive the git dock in the harness you must seed `bonsai.mockUiSettings` (`{onboardingSeen:true}`)
+and `bonsai.mockSession` (`{openRepos:['C:\mock\bonsai-fixture']}`) into localStorage before load —
+otherwise you land on the no-repo empty state; and select the toolbar Push button by its `title`, not
+its `aria-label` (the label changes with the ahead-count once a push has landed).
 never remove React-owned DOM nodes to "reset" a menu (throws `removeChild` on the next render) —
 dismiss with Escape; headless preview pauses `requestAnimationFrame`, so canvas repaint/scroll-feel
 ACs can only be checked in the native window.
@@ -55,10 +59,13 @@ the tree** (`734b310`), and the M1 design-review residue was telling sessions to
 
 ---
 
-## ⏸ RESUME HERE — updated 2026-09-04
+## ⏸ RESUME HERE — updated 2026-09-10
 
-**Branch `feat/p91-observability`. Nothing pushed, by instruction. Tree CLEAN.** 28 commits ahead of
-`5c2dcd2` (one, `2a0b8f1`, is a PEER session's MCP work — not this session's).
+**Branch `feat/p91-observability`. Nothing pushed, by instruction.** 30 commits ahead of `5c2dcd2`
+(one, `2a0b8f1`, is a PEER session's MCP work — not this session's).
+**Tree is NOT clean, and deliberately so:** `CLAUDE.md` and `.claude/agents/context-explorer.md`
+carry uncommitted edits that predate the 2026-09-10 session and are **not** FU-1's — they were left
+unstaged on purpose. Don't spend time reconciling them; find out whose they are first.
 
 ### ✅ P111 is DONE — `1192f2a`
 
@@ -75,6 +82,10 @@ ellipsizes only as a last resort. `e2e/33-pill-truncation.spec.ts` guards it, pr
 id far longer than the fixture would widen the chip rather than ellipsize.
 
 ### Next, in order
+
+**Current step: FU-1 is done and committed. Nothing is in progress.** Next actionable work is item 2
+(six reviewer follow-ups, all small); the two security items in item 3 are FOR-USER decisions, not
+patches.
 
 1. **✅ FU-1 is DONE — `1d8c6f9`.** Both halves shipped, both reviews approved with **no
    MUST-FIX**, all 5 SHOULD-FIX + 7 NITs applied, **full 8-step gate green (452.5s, 2344 Rust
@@ -102,6 +113,21 @@ id far longer than the fixture would widen the chip rather than ellipsize.
      `strip_control_chars`, including that Rust's `bidi ∪ zero_width` sets happen to form the
      contiguous `200B–200F` range the mock uses.
 
+1c. **Small follow-ups filed from the FU-1 pass (velocity mode — none blocking).**
+   - `.git-run-noun` lacks the `white-space: nowrap` that `.git-dock-noun` has — the second
+     bar-vs-row asymmetry after the `font-weight: 600` one FU-1 fixed. Found by the fix pass.
+   - `.git-run-summary`'s gap is a hardcoded `8px` while `.git-dock-header` uses `--git-dock-gap`
+     (6px compact). **Pre-existing**, not from FU-1 (ui-designer NIT 5).
+   - Size-ratchet baseline drift: it reports `RepoWorkspace.tsx 2265 → 2264 (1 reclaimed)`, which
+     predates FU-1 and wants `pnpm lint:size -- --update-baseline`.
+   - Mock target fidelity is on disk as **F-F(a)** in `P87b-FU1-FU4-git-dock-ui.md` §5 (call sites
+     pass literal `'main'`/`'origin/main'` regardless of the fixture's HEAD, so a `detached`/
+     `unborn` mock fixture would render `Commit main`). Per spec; only matters if those seams are
+     used with the dock open.
+   - Code-reviewer NIT 7 (the running row's `aria-label` re-renders each tick because
+     `durationWords` uses `.toFixed(1)`) was **judged conformant** with §3.7, which includes the
+     duration in its own examples. Deliberately not filed as a defect.
+
 1b. **Doc corrections owed from the FU-1 pass (three one-liners, none blocking).** Filed rather than
    fixed, to respect contract ownership:
    - **`docs/contracts/P87b-FU1-run-target.md` §4** — its unborn-HEAD rationale is **factually
@@ -117,6 +143,12 @@ id far longer than the fixture would widen the chip rather than ellipsize.
      Amend, target, …)`). This stale line has now caused **two separate agents** to report a
      nonexistent FU-2 gap (architect's F-4 refuted it; the refutation never made it into the UI
      contract, so the next reader picked the wrong one up again). Highest-value of the three.
+
+   **Batch these into the next `architect` / `ui-designer` spawn rather than spawning for them.**
+   Lesson from this pass: F-E was known stale *before* ui-designer was invoked (both senior-devs were
+   told so in their prompts) and the designer was editing §5 of that very file — the correction should
+   have been in its prompt. When an agent that OWNS a contract is spawned for any reason, hand it the
+   known corrections to that contract.
 
 2. **Reviewer follow-ups still open** from the `a82740ff` pass (its MUST-FIX and two SHOULD-FIX are
    already fixed in `151232d`):
@@ -143,10 +175,12 @@ id far longer than the fixture would widen the chip rather than ellipsize.
 
 ### Verification state
 
-- **Full 8-step gate green at `c218258`.** Since then: the Rust leg re-run green at `151232d`
-  (280.1s, under `--throw-deprecation`), and the frontend leg green at `1192f2a` (100.4s, 4 steps).
-  **The full e2e leg has not run since `c218258`** — run the bare `pnpm gate` before trusting the
-  branch.
+- **Full 8-step gate green at `1d8c6f9` (2026-09-10, 452.5s)** — 2344 Rust tests, 185 e2e passed /
+  1 skipped. Per step: nextest 133.2s · doctests 3.7s · clippy 22.8s · eslint 12.7s · size ratchet
+  0.9s · vitest 82.9s · tsc+build 15.3s · e2e 181.1s. **The e2e leg no longer needs a re-run** —
+  this superseded the `c218258` state, which had been the last full run.
+- Exit code 0 is not sufficient evidence on its own: **grep the log** for failures. Many test NAMES
+  contain `error`/`failed`, so a naive scan returns false positives — filter them.
 - Verify the machine is idle first, and **redirect the whole log to a file** — piping `pnpm gate`
   through `tail` lost a failure detail and cost a re-run.
 - Port **1420 is free**. Keep it so: `strictPort: true` means a held port breaks `pnpm tauri dev`.
@@ -686,6 +720,9 @@ CWD, capabilities narrowed deliberately, `script-src 'self'` with no `unsafe-inl
 ---
 
 ## ✅ GATE STATE at `c218258` — **ALL 8 STEPS PASSED** (2026-09-03, later run)
+
+> **Superseded by `1d8c6f9` (2026-09-10, 452.5s, all 8 green)** — see "Verification state" in the
+> RESUME HERE block for the per-step numbers. Kept for the archive trail; curator may fold it in.
 
 496.4 s total. Machine **not** fully idle this time — CPU sampled 21-64% with no build running (that
 is the harness/MCP floor), so these are pass/fail evidence and **must not be compared as timings**
