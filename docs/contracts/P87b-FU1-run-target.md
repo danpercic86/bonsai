@@ -402,7 +402,7 @@ New seams, in the file's existing `const X = query('x') !== null` idiom at `:58-
 | `?fetchAll` | `null` on fetch | already the default; the seam exists so the case is addressable by name |
 | `?gitNoTarget` | forces `null` for **every** category | the absent-field path (§7) |
 | `?gitLongTarget` | `'origin/feature/very-long-experimental-branch/with-many-nested-path-segments/retry-budget-tuning'` (**95 chars**) on push | 22ch ellipsis + `title` recovery |
-| `?gitBidiTarget` | `'origin/ma‮in'` (write the escape, not the literal char) fed through `mockActivityTarget` | proves the funnel is modeled; the emitted string must be exactly `origin/main` |
+| `?gitBidiTarget` | `'origin/ma\u{202e}in'` (written as the escape — this row previously embedded the raw char) fed through `mockActivityTarget` | proves the funnel is modeled; the emitted string must be exactly `origin/main` |
 | `?pushSlow` | unchanged + a target | immutability across a 1500 ms Network phase |
 
 **Corrected 2026-09-10 — the `?gitLongTarget` literal.** This row previously read
@@ -452,13 +452,16 @@ like the rest. Flagged **F-4**.
 7. `gitActivityFormat.test.ts` — §3.3's table, incl. `fetch` + `null` → `all remotes`, and
    `runRowName` for §3.7's six rows (ui-designer's half; listed so the gate is complete).
 8. Fixture guard: no mock target string contains a space, `→`, `'`, or `"` (guarantee 1, mock
-   side); `mockActivityTarget('origin/ma‮in') === 'origin/main'`.
+   side); `mockActivityTarget('origin/ma\u{202e}in') === 'origin/main'`.
 
 **Browser harness** (`pnpm dev`, `VITE_MOCK_IPC=1`) — all assertions read via `javascript_tool`, no
 screenshot required:
 9. `?gitBidiTarget` + push → `document.querySelector('.git-run-target').textContent` is exactly
    `'origin/main'`, and
-   `!/[​-‏‪-‮⁦-⁩﻿]/.test(el.textContent)` is `true`.
+   `!/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/.test(el.textContent)` is `true`.
+    (**4-digit `\uXXXX`, not `\u{XXXX}`** — this regex carries no `u` flag, so a braced escape
+    would match the literal characters `u{200b}` instead, and the assertion would silently pass
+    on text that still contained an override.)
    **This is the §3.10 bidi proof.**
 10. `?gitLongTarget` + push → `.git-run-target`'s `title` equals the full ≥90-char ref, and its row's
     `offsetHeight` equals the `offsetHeight` of a `?gitNoTarget` row (no reflow, no wrap).
