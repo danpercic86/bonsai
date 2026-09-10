@@ -12,6 +12,11 @@ All notable changes to Bonsai are documented here. The format is based on
   so Merge, Rebase and the other branch actions can be aimed at the branch you mean instead of
   whichever ref happened to come first, and the "+N" chip that hid the extra refs is clickable
   rather than hover-only.
+- **The git-activity log names what each run was aimed at.** A row in the activity dock now carries
+  the branch or remote-tracking ref the operation targeted — "Push origin/main" rather than just
+  "Push" — so a log of several fetches, pushes and commits stays readable after the fact instead of
+  reading as a list of verbs. Refs that arrive with control characters in them are stripped before
+  display, and a name too long for the row is truncated rather than allowed to push the row wider.
 
 ### Security
 
@@ -27,6 +32,10 @@ All notable changes to Bonsai are documented here. The format is based on
   that Git itself reports would be its own kind of wrong, so the row still lists with its name and
   status; it simply carries no absolute path, which means **"Open in new tab" is disabled and every
   external-tool item is absent from its menu**. No raw path is ever used as a fallback.
+- **The content-security policy now also pins `form-action`, `base-uri` and `object-src`.** Script
+  sources were already restricted to the application itself, with no inline script and no `eval`.
+  These three directives close the remaining ways a compromised renderer could aim a form submission
+  somewhere else, rewrite how relative URLs resolve, or embed a plugin object.
 
 ### Fixed
 
@@ -70,6 +79,16 @@ All notable changes to Bonsai are documented here. The format is based on
   anchor a permission grant to and re-prompted after you clicked Allow. The bundle is now properly
   ad-hoc signed, taking effect from the next tagged release. Gatekeeper's "unidentified developer"
   warning is unchanged; that needs a Developer ID and notarization.
+- **Two different file statuses no longer show the same letter.** The badge beside a changed file was
+  produced by six independently drifted tables, three of which gave "added" and "untracked" the same
+  `A` — and the badge carried no accessible name at all, so the distinction was unavailable to a
+  screen reader as well as ambiguous on screen. All eight places that render one now come from a
+  single component, and each badge announces itself: Added, Modified, Deleted, Renamed, Type changed,
+  Conflicted, Untracked, or Status unknown.
+- **A branch name too long for its ref pill no longer gets cut off silently.** An over-wide ref was
+  hard-clipped, which makes a truncated name look like a complete one, and the full text was only
+  available by hovering. Long refs now stay on one line and ellipsize: the remote prefix gives way
+  first, and the branch name itself is shortened only as a last resort.
 
 ### Changed
 
@@ -98,6 +117,17 @@ All notable changes to Bonsai are documented here. The format is based on
   decorative glyphs stay dim deliberately. Separately, ten toolbar and tab labels — the diff
   overlay's toggles, the right-panel tabs, the tab close button and the partial-staging gutter
   buttons — were below the contrast floor at rest and were raised.
+
+- **Coloured text is legible on every surface it appears on.** Four further audits enumerated every
+  place a hue — accent blue, danger red, success green, warning amber — is used as *text* or as a
+  status letter rather than as a fill, and recorded a verdict for each one: 38 instances of hue text
+  sitting on its own tint, 62 sitting on a neutral background, the eight status-badge letters, and
+  the accent-as-text and white-ink-on-red cases. Anything you have to **read** moved onto a matching
+  stronger ink; glyphs and decoration that only have to be **seen** were deliberately left as they
+  were, so the app has not lost its colour. Two of the findings were plain bugs rather than contrast
+  misses: one rule painted a colour token that is defined nowhere and had therefore always fallen
+  back to a hardcoded literal, and another served one declaration to both an icon and a text
+  selector, so only half of it was ever compliant.
 
 - **The selected row is no longer flooded with the accent colour.** Selected rows, active list
   options and segmented-control segments now use a quieter selection fill with a leading accent bar,

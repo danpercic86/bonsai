@@ -48,20 +48,23 @@ carries open, tracked work).
 | `pr-badge-placement-ui.md` | — | Move the forge PR badge + CI dot out of the ref-column band into a right-aligned forge column. | spec — implementation status unverified |
 | `settings-ai-autonomy-disabled-ui.md` | — | "Why is the autonomy choice disabled?" single-row variant of the disabled-group pattern. | spec, not yet implemented |
 | `002-bonsai-graph-theme-ui.md` | spec-002 | Commit-graph theme: lane palette, dots, ref pills, canvas metrics. | spec — own header says "ready for implementation"; implementation status unverified |
-| `P110-watcher-burst-scoping.md` | P110 | Watcher path classification (`Worktree`/`Refs`) carried into `repo-changed` so a worktree-only burst refreshes narrowly instead of re-streaming the graph. | awaiting USER CHECKPOINT — shipped `84bbf85` + `1be3a85` (status was `working tree, awaiting review sign-off`; stale as of 2026-09-03) |
-| `P91-observability.md` | P91 | Architecture of record: Dev mode, JSONL logs, trace ids, spans, anomaly rules, durable metrics, redaction. | living — milestone awaiting USER CHECKPOINT (never presented) |
+| `P110-watcher-burst-scoping.md` | P110 | Watcher path classification (`Worktree`/`Refs`) carried into `repo-changed` so a worktree-only burst refreshes narrowly instead of re-streaming the graph. | done — shipped `84bbf85` + `1be3a85`; checkpoint confirmed USER **2026-09-10** (archive Part 55); **archive-eligible** |
+| `P111-pill-truncation-ui.md` | P111 | Ref-pill / chip truncation policy: long refs stay one line, the leaf ellipsizes instead of hard-clipping (head `flex-shrink: 999` vs leaf `1`). | done — implemented `1192f2a`, e2e `e2e/33-pill-truncation.spec.ts`. **`:326` states "Not a USER CHECKPOINT — every surface here is reachable in the browser harness"**, so no native half is owed. Open: `.asset-chip` has no R2 `max-width` (`TODO.md`). **archive-eligible** |
+| `P87b-FU1-run-target.md` | P87b FU-1 | Git-activity runs carry their target ref: backend resolution, the `?gitNoTarget` / `?gitLongTarget` / `?gitBidiTarget` harness seams, AC §9.1-13. | done — implemented `1d8c6f9`; **§9 header states "AI gate — no USER CHECKPOINT item"** (`:425`). **Kept active: five contract-hygiene corrections are owed** (`TODO.md` items `1b` / `1d`), the highest-value being that §8's own `?gitBidiTarget` row embeds literal U+202E / zero-width characters while the same section forbids exactly that |
+| `P87b-FU1-FU4-git-dock-ui.md` | P87b FU-1 / FU-4 | Git-dock UI for the run target: row copy, `.git-run-noun` / `.git-run-summary` geometry, the FU-4 clickable-dock-bar rejection, and the §5 F-A…F-G findings. | done — implemented `1d8c6f9`; **`:385` states "No USER CHECKPOINT item in this contract"**. **Kept active: F-E is stale and has now misled two separate agents** — it claims `commitAmend` is not activity-wrapped, but it is (`src-tauri/src/commands/staging.rs:179`). F-G was resolved 2026-09-10; F-F(a) mock-target fidelity stays open (`TODO.md` `1b`/`1c`) |
+| `P91-observability.md` | P91 | Architecture of record: Dev mode, JSONL logs, trace ids, spans, anomaly rules, durable metrics, redaction. | living — checkpoint confirmed USER **2026-09-10**, but **kept active**: branch `feat/p91-observability` is unmerged by user instruction, the real `logs/*.jsonl` parse is still owed, and the §6/§8/§8.1/§10 contract follow-ups are open (`TODO.md`) |
 | `P91-observability-ui.md` | P91 | Dev-mode Settings surface + React causality instrumentation on the six surfaces. | living — awaiting USER CHECKPOINT. The `:496`/`:951` save-dialog staleness was **fixed in `fc9c36e`** (§ now states `log_export_session()` takes no destination and always writes to `<app_config_dir>/exports`); the old note here was itself stale as of 2026-09-03 |
-| `P91-privacy-copy-ui.md` | P91 | Dev-mode privacy consent copy across all three surfaces (satisfies raw-args AC12). | spec — §2-§5 implemented (`b26833f`); the rest is held pending the F6 user decision |
+| `P91-privacy-copy-ui.md` | P91 | Dev-mode privacy consent copy across all three surfaces (satisfies raw-args AC12). | spec — §2-§5 implemented (`b26833f`); the rest is held pending the F6 user decision, which the 2026-09-10 checkpoint confirmation did not resolve |
 | `P98-text3-readtext-ui.md` | P98 | `--text-3` read-text sweep; §8.8 is the canonical enumerate/bucket/verdict audit method. | done — checkpoint confirmed USER 2026-09-01; kept active because §8.8 is still the method of record |
 | `P100-accent-fill-ui.md` | P100 | Accent-fill contrast: recipe A (a state demotes to `--selection`) vs recipe B (an action keeps the fill, flips the ink). | done — checkpoint confirmed USER 2026-09-02 (archive Part 47); archive-eligible |
 | `design-review-2026-09-01-P100.md` | P100 | Design review + contract amendments. Verdict: APPROVE with amendments, no MUST-FIX. | done — archive-eligible with P100 |
 | `P101-text3-audit-ui.md` | P101 | The full `--text-3` audit: 124 declarations, each with a recorded bucket and verdict (§3). | done — checkpoint confirmed USER 2026-09-02 (archive Part 47); archive-eligible |
-| `P102-P105-hue-audit-ui.md` | P102 + P105 | Two defects of one shape: `--accent` as text, and hardcoded `#ffffff` as ink on a `--danger` fill. Introduces `--accent-strong`, `--danger-text`, `--success-text`, `--merged`. | awaiting USER CHECKPOINT (AC18/AC19/AC20) — implemented `0e5dcab`, fixes `185c352` |
-| `P106-status-badge-ink-ui.md` | P106 | Status-badge ink (the A/M/D/U/R/T/C letter family): 8 render sites, 3 new ink-only `-strong` tokens. | awaiting USER CHECKPOINT (AC14/AC15 + the real-repo half of AC9) — implemented `10ce967` |
-| `P107-hue-over-own-tint-ui.md` | P107 | Hue text over its own tint: 38 call sites (§2 had claimed 6); the three-pass search incl. `--h` indirection. | awaiting USER CHECKPOINT (AC11/AC12/AC13) — implemented `2168057`, errata `ef06e6b`. (The "board heading is stale" note was itself stale: `TODO.md` FOR USER item 6 records that resolved 2026-09-03.) |
+| `P102-P105-hue-audit-ui.md` | P102 + P105 | Two defects of one shape: `--accent` as text, and hardcoded `#ffffff` as ink on a `--danger` fill. Introduces `--accent-strong`, `--danger-text`, `--success-text`, `--merged`. | done — implemented `0e5dcab`, fixes `185c352`; AC18/AC19/AC20 confirmed USER **2026-09-10** (archive Part 54.2); **archive-eligible** |
+| `P106-status-badge-ink-ui.md` | P106 | Status-badge ink (the A/M/D/U/R/T/C letter family): 8 render sites, 3 new ink-only `-strong` tokens. | done — implemented `10ce967`; AC14/AC15 + the real-repo half of AC9 confirmed USER **2026-09-10** (archive Part 54.3); **archive-eligible** |
+| `P107-hue-over-own-tint-ui.md` | P107 | Hue text over its own tint: 38 call sites (§2 had claimed 6); the three-pass search incl. `--h` indirection. | done — implemented `2168057`, errata `ef06e6b`; AC11/AC12/AC13 confirmed USER **2026-09-10** (archive Part 54.4); **archive-eligible**. Must not be re-opened against the original AC2 wording — see the errata. |
 | `P107-F2-copy-chip-ui.md` | P107 F2 | The copy-candidate chip's `unknown` verdict gets its own neutral variant; resolves P107 §10/§12 F2. Touches `WorktreeCopyCandidates.tsx`, `dialogs-forms.css`, one mock knob. | implemented `8337d9b` — **contract's own header still says "spec complete, awaiting implementation"; that header is stale, the board is right** |
-| `P109-status-badge-semantics-ui.md` | P109 | The status letter's *meaning*, not its ink: one `FileStatusBadge.tsx` replaces 8 drifted render sites; badges get accessible names. Zero CSS/token/geometry diff. | awaiting USER CHECKPOINT (AC13/AC14) — implemented `5a254ba`, recorded `5c2dcd2` |
-| `P108-hue-as-text-on-neutral-ui.md` | P108 | Hue used as text over a NEUTRAL `--bg-*` surface: 62 call sites, 28 fixes, no new tokens. | awaiting USER CHECKPOINT (AC12/AC13/AC14); **AC11 is OWED — source-derived and unverified** |
+| `P109-status-badge-semantics-ui.md` | P109 | The status letter's *meaning*, not its ink: one `FileStatusBadge.tsx` replaces 8 drifted render sites; badges get accessible names. Zero CSS/token/geometry diff. | done — implemented `5a254ba`, recorded `5c2dcd2`; AC13/AC14 confirmed USER **2026-09-10** (archive Part 55); **archive-eligible** |
+| `P108-hue-as-text-on-neutral-ui.md` | P108 | Hue used as text over a NEUTRAL `--bg-*` surface: 62 call sites, 28 fixes, no new tokens. | in-progress — `AC11` owed. Implemented `42206fd`; AC12/AC13/AC14 confirmed USER **2026-09-10** (archive Part 54.5) — **kept active: `AC11` is still OWED**, an AI-gate contrast measurement a native confirmation cannot close (`.file-count-del` selected and `.context-menu-item[data-tone='danger']` hovered, both source-derived at 3.05) |
 | `spec-003-ui.md` | spec-003 | Graph declutter modes (first-parent, seed-ref filtering) — UI contract. | implemented; e2e `e2e/28-graph-filter.spec.ts`. No USER CHECKPOINT record mapped |
 | `spec-004-ui.md` | spec-004 | Fold linear runs: the fold pill as a frontend display row over `FoldSpan` metadata. | implemented; e2e `e2e/29-graph-fold.spec.ts`. Open bug: the fold-pill cursor is dead (`TODO.md`) |
 | `spec-005-ui.md` | spec-005 | Graph overview rail: match ticks + on-demand minimap. | implemented; e2e `e2e/30-graph-rail.spec.ts`. No USER CHECKPOINT record mapped |
@@ -86,6 +89,24 @@ carries open, tracked work).
 > `P91-observability-ui.md` (its staleness note was fixed by `fc9c36e`), `P107-hue-over-own-tint-ui.md`
 > (pointed at a `TODO.md` contradiction that item 6 has since resolved), `P68e-ai-activity-dock.md`
 > (1064 → 1123 lines). No file was moved in this pass either.
+
+> **2026-09-10 sweep (all eight USER CHECKPOINTs confirmed).** The user confirmed every outstanding
+> native checkpoint on 2026-09-10 (`548cc0a`), so **eight statuses moved**: `P102-P105`, `P106`,
+> `P107`, `P109` and `P110` are now `done — checkpoint confirmed` and **archive-eligible**;
+> `P108` is confirmed but **stays active because `AC11` is still OWED** (an AI-gate contrast
+> measurement, which a native confirmation cannot close); the three `P91-*` files stay active
+> because the branch is unmerged by user instruction, the real `logs/*.jsonl` parse is owed, and
+> the F6 copy decision is still with the user. **Three files had no row and are added:**
+> `P111-pill-truncation-ui.md`, `P87b-FU1-run-target.md`, `P87b-FU1-FU4-git-dock-ui.md` — all three
+> **explicitly declare no USER CHECKPOINT item**, so their milestones are fully closed; two are kept
+> active only for owed contract corrections. **No file was moved in this pass** (`git mv` is outside
+> the curator's file allowlist). The archive-eligible set is now `P95-a11y-ui.md` (with its stated
+> §4.1 caveat), `P98`, `P100`, `design-review-2026-09-01-P100`, `P101`, `P102-P105`, `P106`, `P107`,
+> `P109`, `P110` and `P111` — eleven files still sitting in the live read path.
+>
+> **One contradiction recorded, not resolved:** this index says `P91-observability-ui.md`'s
+> `:496`/`:951` save-dialog staleness was fixed in `fc9c36e`; `TODO.md` still carries it as an open
+> `ui-designer` follow-up. Verify before acting on either.
 
 > **Why the P68 cluster stays active despite `done`.** `TODO.md` §"P68 contract debt" schedules edits
 > *to these files* (apply the `P68g-ui.md` §3.1–3.5 splice into `P68e-ai-activity-dock.md`, then

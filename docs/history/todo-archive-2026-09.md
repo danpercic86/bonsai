@@ -3565,3 +3565,682 @@ bucket, record a verdict per site, predict the post-fix residue, then verify the
   hardcoded 30 s CDP close window and a blocking `taskkill`; under load that is minutes of dead air
   that reads as a hang. `gate.mjs` is strictly serial, so the gate itself is safe.
 - **A flake that reproduces deterministically in a production bundle is not a flake** (P103).
+
+---
+
+## Part 54 — The `USER CHECKPOINTS — ALL CONFIRMED 2026-09-10` block, verbatim, moved off the board 2026-09-10 after the user confirmed all eight native-verification items (`548cc0a`). Covers P102+P105, P106, P107, P108 and P91, plus the `8dd5b24` CSP item named in the banner. **Two things did NOT move and stay live on the board:** P108's `AC11` (an owed AI-gate contrast measurement, not a native checkpoint — carried verbatim on the board including its qualifier), and P91's owed `logs/*.jsonl` parse plus its do-not-merge instruction. P91's user decisions and its three architectural rulings were relocated to the board's `## Accepted decisions that must survive compaction` section; its open security findings (F7, F9) and its **seven** SHOULD-FIX / contract follow-ups were relocated to `### P91 — open items` under `## OPEN follow-ups`. Nothing here was closed by the curator.
+
+**Sub-part map** (the section headings below are verbatim, so the `54.x` numbers cited from
+`TODO.md`, `docs/history/README.md` and `docs/contracts/INDEX.md` resolve as follows):
+**54.1** = the `USER CHECKPOINTS — ALL CONFIRMED 2026-09-10` banner ·
+**54.2** = `P102 + P105 — hue audit` ·
+**54.3** = `P106 — status-badge ink` ·
+**54.4** = `P107 — hue-over-own-tint` ·
+**54.5** = `P108 — hue-as-text on neutral surfaces` ·
+**54.6** = `P91 — Observability`.
+
+## ✅ USER CHECKPOINTS — ALL CONFIRMED 2026-09-10
+
+The user confirmed **all eight** native-verification items in one pass on 2026-09-10: the seven
+milestones below plus the `8dd5b24` CSP change. Each section keeps its own AC list as the record of
+what was verified. **This whole block is now archivable** — it was the thing blocking ~470 lines of
+compaction.
+
+**One item in this block is NOT closed by that confirmation: P108's `AC11`.** It is an owed
+*AI-gate* contrast measurement, not a native checkpoint — two states could not be reached in the
+harness and the two figures are source-derived. A human cannot confirm a 3.05 contrast ratio by
+looking at it, so it stays open. See P108 below.
+
+None may be archived. The orchestrator never self-declares the native half. Each entry below is the
+resume summary; the full review/implementation narrative is in the archive part named.
+
+**Two of the seven are written further down, under PENDING / queued, to keep their narrative next to
+the work that produced them: P110 (selection flicker) and P109 (status-badge semantics). They are
+awaiting a checkpoint exactly like the five here — the placement is chronological, not a status.**
+
+### ✅ P102 + P105 — hue audit — **DONE** (AI gate green; AC18 / AC19 / AC20 **USER CHECKPOINT CONFIRMED by the user 2026-09-10.**)
+
+**Current step:** AI gate green; milestone complete bar the checkpoint.
+Contract `7c623d8` (`docs/contracts/P102-P105-hue-audit-ui.md`) → impl `0e5dcab` → both reviews
+APPROVE after fixes `185c352`. Full narrative: archive Part 37.
+
+- **Gate:** `--quick` all 7 steps green (255.9s) **and** e2e **181 passed / 1 skipped** (2.7m).
+- **AC18** — the updater panel is Tauri-only, but its `.btn-danger` shares the exact rule measured at
+  4.80/4.93 rest and 5.18/5.49 hover, so the question is "does it look right", not "is it legible".
+- **AC19** — `--accent-strong` holds hue within **0.7°** of `--accent` in both themes (219.0° vs
+  219.7°); the open question is purely whether the dark `#7fabff` reads washed-out.
+- **AC20** — no `filter` remains on any of the four hover targets, so nothing is left to flicker and
+  layout cannot move (background-only swap); fill-change feel alone is judged.
+- The user's 2026-09-02 checkpoint authority was scoped to P100 + P101 and explicitly does **not**
+  reach work created that session.
+- **The predicted grep residue matched reality on every line** — the first milestone in the
+  programme to do so, and the standard the later ones inherited.
+- **Orchestrator decision (§5.4, Option A):** added `--merged` / `--merged-text` rather than keep the
+  merged-PR purple `#8957e5` literal — a token-consistency call inside the design system's own
+  logic, **not** a product-identity call, therefore not a checkpoint.
+- **AC16 is partial:** its stylelint clause is **unsatisfiable — no stylelint exists in this repo**.
+- **No architect pass**, consistent with P100/P101: a CSS contrast audit has no module boundary, IPC
+  surface or algorithm. Recorded so the skipped step is not read as an oversight.
+
+### ✅ P106 — status-badge ink — **DONE** `10ce967` (AC14 / AC15 + the real-repo half of AC9 **USER CHECKPOINT CONFIRMED by the user 2026-09-10.**)
+
+Contract `docs/contracts/P106-status-badge-ink-ui.md`. Full narrative: archive Part 38.
+
+- 8 render sites in 7 files; buckets **5 FIX · 1 KEEP · 2 no-hue**.
+- **The letter is the SOLE status carrier at all 8 sites**, so nothing is exempt; the badge does not
+  scale with `--rp-row-font`, so this holds in both densities.
+- Three new **ink-only** tokens (`--danger-strong`, `--success-strong`, `--warning-strong`) mirroring
+  `--accent-strong`. **`--warning-text` was explicitly NOT the answer** — the `--*-text` family is
+  **fill-ink** and measures 1.19/1.16 as ink on the staged tint.
+- **Shipped result:** worst live badge anywhere is **5.18** (the `C` on a selected row in light) —
+  exactly the predicted floor, verified live in both themes with the full ancestor stack composited.
+- A **fourth** search pass was added over P107's three — imperative canvas rendering
+  (`rg "FileStatus" src/graph` → 0) — because "the search couldn't see a whole class" is how both
+  prior counts in this programme went wrong.
+- Orchestrator decisions: D1 accepted (the two colourless badges get hue, isolated as the
+  deliberately droppable AC12); `--warning-strong` dark = `#e3b341`; AC13's `ui-reference.md` update
+  lands **after** implementation, from the shipped commit.
+
+### ✅ P107 — hue-over-own-tint — **DONE** `2168057` (AC11 / AC12 / AC13 **USER CHECKPOINT CONFIRMED by the user 2026-09-10.**)
+
+Contract `docs/contracts/P107-hue-over-own-tint-ui.md` (`59061b2`). Impl shipped **`2168057`**
+(7/7 predicted residue metrics matched); errata **`ef06e6b`**. Full narrative: archive Part 40.
+
+**Status restated by the orchestrator, 2026-09-03.** The old heading "CONTRACT DONE, IMPL PENDING"
+was written before `2168057` and was simply stale. The curator correctly refused to change it —
+restating a status is not a curator's call — so it is corrected here instead. **This records what
+shipped; it does not upgrade a checkpoint:** AC11 / AC12 / AC13 remain **pending USER CHECKPOINTs**
+and only the user can close them.
+
+- Population is **38 call sites**, not the 16 found first and not the **6** `ui-reference.md` §2
+  claimed. Buckets: **17 failing text · 19 compliant glyph KEEPS · 1 failing glyph state · 1 owned
+  by P106**. All seven predicted residue metrics matched exactly.
+- The 19 keeps matter as much as the fixes — a blanket sweep would have wrecked the toast,
+  submodule, ai-dock and git-dock pill recipes.
+- The three-pass search is the durable deliverable: (i) same-rule-block; (ii) a multiline
+  descendant-combinator grep; (iii) two classes even (ii) cannot see — **unqualified child classes
+  whose only parent is tinted** (found by reading the 25 tinted containers' components) and
+  **custom-property indirection via `--h`** (11 instances across 4 families no hue-name grep reaches).
+- **Zero new tokens.** Recorded trap: `--danger-text` on a 14% danger tint is **1.27:1**.
+- A `ui-reference.md` §2 recipe was **retracted, not patched**: a 35% hue edge measures 1.58/1.69 —
+  decoration, never an identity carrier. Solid-hue bars pass (4.41-7.92) and stay.
+- **Errata reported rather than papered over** (`ef06e6b`): AC2's thresholds were default-state
+  minima, restated per state; §5's "2.76 / 3.07" does not reproduce — the real value is 3.37 / 3.30.
+  **P107 must not be re-opened against the original AC2 wording.**
+
+### ⚠️ P108 — hue-as-text on neutral surfaces — `42206fd`; AC12 / AC13 / AC14 **USER CHECKPOINT CONFIRMED by the user 2026-09-10.**
+**NOT fully done — `AC11` is still OWED** and is an AI-gate measurement, not a native checkpoint, so
+the user's confirmation does not close it. This is the only milestone in the block that stays open.
+
+Contract `8027cef` (`docs/contracts/P108-hue-as-text-on-neutral-ui.md`) → impl `42206fd`.
+17 CSS files, no TS/TSX, no DOM change, no new tokens. Full narrative: archive Part 39.
+
+- All five residue rows matched, and all five pre-fix baselines were **re-measured in this tree**
+  rather than inherited. Post-fix minimum anywhere is **5.10** (`--danger-strong` on `--bg-3`,
+  light), matching the predicted family minimum exactly.
+- **The count was 62, not the 48 handed over — the FIFTH wrong count in this programme.**
+- Two defects a grep structurally could not find: `settings-legacy-sections.css:134` was
+  `color: var(--warn, #b8860b)` and **`--warn` is defined NOWHERE**, so it had always painted a
+  theme-invariant literal at 3.25:1 in light; and `commit-panel.css:98-100` served **one declaration
+  to two selectors**, icon half a compliant glyph, text half failing at 4.41 dark.
+- The canvas pass found **zero** — 7 draw sites in `src/graph/**`, all glyph, all ≥3:1. 0 fixes,
+  **but only because it was measured**.
+- `--warning-text` is **undefined**, so a naive probe returns the *inherited* colour (13.54/15.42),
+  not the 1.09/1.07 the contract cites — same undefined-property trap class as `--warn`.
+- §9's four mock fixture states were **not** added: three are already reachable; only the long-error
+  and `dev-status-write-failed` states would need new mock code.
+
+**AC11 is OWED — recorded, not quietly dropped** (carried verbatim; the qualifier is the point):
+
+> Two states could not be reached: `.file-count-del` selected (3.05) and
+> `.context-menu-item[data-tone='danger']` hovered (3.05). **The orchestrator also tried and
+> failed**, across ~8 harness rounds: keyboard nav focuses `.graph-scroll` but never mounts the diff
+> panes; `?forge=auth` does not render `.file-count-*`; and synthetic `contextmenu` events do not
+> open the menu because React requires **trusted** input. Both figures are source-derived and
+> unverified. Recording it as owed rather than manufacturing a pass — the same call the implementing
+> agent made, and the standard this programme applies to its agents applies to the orchestrator too.
+
+### ⚠️ P91 — Observability: Dev mode, structured logs, local telemetry & metrics — checkpoint **USER CHECKPOINT CONFIRMED by the user 2026-09-10.**
+**One AI-gate item may still be owed:** the real `logs/*.jsonl` parse from a `pnpm tauri dev`
+boot+idle. If the user's verification run booted the app, those logs now exist on disk and this is
+finally doable — the orchestrator should offer to parse them rather than assume either way.
+**Branch merge is a separate decision and is NOT covered by the checkpoint confirmation** — see the
+do-not-merge note below.
+
+Branch `feat/p91-observability` (this branch). **Not merged to `dev`; do not merge without the user**
+— the user confirmed 2026-08-31 that the branch is WIP, and its own commit messages must not be read
+as an authoritative status. Build diary: archive Part 44. Security arc: Part 42. Audit: Part 43.
+
+- **Contracts:** `docs/contracts/P91-observability.md` · `P91-observability-ui.md` ·
+  `P91-raw-args-privacy.md` · `P91-privacy-copy-ui.md` · `ui-reference.md` §12.11.
+- **Goal:** make unintended app behaviour mechanically visible — double triggers, redundant IPC,
+  effects on unchanged deps, echo-induced refreshes, superseded results — without reading 50k lines.
+- All 7 increments implemented, reviewed and committed; the security arc is complete
+  (`a287a53` → `834f2d1` → `120cadd` → `c0abbe1` → `2523426` → `2fb647e` → `0a785b3` → `b26833f`).
+- **Full gate green at `b26833f`** (7 non-e2e steps); **e2e 181 passed / 1 skipped / 0 failed** after
+  `23ee2b0`. `cargo obs::` went **135 → 146 → 158 → 162** across the arc.
+- **Still owed:** the real `logs/*.jsonl` parse from a `pnpm tauri dev` boot+idle, and USER
+  CHECKPOINT (a)-(f) plus the 7b/7c native items — **asked, not declared**.
+
+**User decisions on P91 that must survive compaction (all 2026-08-27 unless noted):**
+
+- Redaction conservative by default, opt-in raw-names toggle; credentials never logged in any mode.
+- Metrics storage = **rolled-up JSON**, not SQLite.
+- React instrumentation = **SIX surfaces** — the user added the **left sidebar** to the original five.
+- Logs are **NOT** auto-deleted when Dev mode goes off (prune by caps only); per-session log files;
+  `metrics_reset` ships headless.
+- Decision 7 — **"Delete all log files" ships in v1**, model = **roll-then-purge**, scope hard-limited
+  to `logs/*.jsonl` + `.tmp`, never `metrics/` or `settings.json`. Success copy must say "Still
+  recording" when `rolled:true`.
+- **USER GATE (2026-08-27):** each increment requires its own explicit go from the user.
+- **Branch policy (USER, 2026-09-02):** everything this session lands on `feat/p91-observability`;
+  local commits only, no push.
+
+**Three architectural rulings not to re-open:**
+
+- **NO global cap on metric keys.** Worst case is genuinely per-map-per-bucket, ~616k keys, accepted
+  rather than glossed: a global cap would make *today's* recording depend on *history*. 512 is a
+  **runaway stop, not a sizing parameter**. File-size pressure has a different lever (size-triggered
+  early roll-up) — revisit trigger only, ~8 MB, no work now.
+- **The writer's limit, recorded honestly in both contracts:** `raw_args.rs` enforces **shape +
+  vocabulary, not semantics**. Content under an identifier-named key, ≤512 chars, single-line,
+  **survives**. Its only defence is the positional drift guard in `rawArgPolicy.test.ts`.
+  **Neither guard may be removed citing the other.**
+- **The raw-args ruling (`834f2d1`):** raw mode widens **IDENTIFIER** fidelity (repo path, file
+  paths, ref names, remote URLs, full SHAs) and **never CONTENT** fidelity. Free text and credentials
+  are outside both modes, permanently.
+
+**Security findings still open** (F1-F5 fixed; full text archive Part 43):
+
+- **F6** — `usage.json` disclosure → FOR USER item 2 above.
+- **Home-directory / username masking** → FOR USER item 3 above.
+- **F7 — LOW, mostly latent.** `redact_names` misses bare ref/file names and never touches JSON keys;
+  a branch like `feature/acme-client-migration` would be written verbatim into a strict file. Not
+  reachable today, but `strict::enforce` is the **sole** enforcement point for both Rust and frontend
+  records, so a gap there is a single point of failure.
+- **F9 — INFO.** The two redactors cannot disagree, because **only one enforces**: `redact.ts` has no
+  equivalent of `redact_names`. That is the correct architecture, and it is why F7's gaps matter more
+  than their reachability suggests.
+- **Verified CLEAN, so a later session does not re-audit:** CSP + capabilities (script-src self-only,
+  no unsafe-inline/eval, no shell or fs plugin) · updater trust chain, no key material in the repo ·
+  external-process launching uses argument vectors, never a shell string · forge credentials via the
+  OS keychain · log rotation/purge have no traversal · error strings never cross IPC ·
+  zero-cost-when-off is structural on both sides.
+
+**P91 SHOULD-FIX follow-ups, still open** (non-blocking; full text archive Part 45):
+
+- **`SAVE_LOCK` orders the rename pair but NOT the snapshot** (`metrics.rs:379-382`, `:409-425`).
+  Two savers can snapshot A→B but acquire `SAVE_LOCK` B→A, so older bytes land last — and the
+  dangerous instance is exactly the pair the doc cites as its motivation: **a `metrics_reset` can be
+  silently undone on disk**. No deadlock risk (verified). Fix, or amend the overstated doc at
+  `metrics_file.rs:52-66`.
+- **The `last_fire` prune assumes non-decreasing `ts`** (`window.rs:52-63`) and the comment states it
+  unconditionally. `ts` comes from two unsynchronised clocks (`src/obs/log.ts:43`, `sink.rs:385`)
+  with no monotonic clamp. Blast radius is a **duplicate** anomaly record, never a missed one.
+- **NIT:** `dup_ipc_debounce_map_stays_bounded_over_a_long_session` spaces events 100 ms apart against
+  a 300 ms window, making `len <= 4` nearly tautological. `last_fire` has **no numeric cap**, unlike
+  `open_calls` (FIFO 1024) and `slow` (LRU 200).
+- **`P91-observability-ui.md:496` and `:951` are stale** — both still describe
+  `log_export_session(dest)` and a native save dialog **that never existed**. → `ui-designer`.
+- **Contract consolidation (architect recommendation, not done):** fold `P91-raw-args-privacy.md`
+  into `P91-observability.md` (≈ −250 active lines) when §13 rows 1-15 are archived; keep
+  `P91-privacy-copy-ui.md` standalone since it is `ui-designer`-owned.
+- **Contract follow-ups owed to `architect`:** §6/§10 still specify the removed
+  `log_export_session(dest?)`; §8/§8.1 must record that `cmd.*` keys are camelCase `IpcApi` names
+  **and that they recorded nothing before the fix**; `MAX_KEYS_PER_MAP = 512` + the `meta.overflow`
+  bucket needs ratification; decision 25's counter-key shape now literally requires the dot.
+- **`.forge-connect-link:hover` is now a no-op** — the resting-underline MUST-FIX means hover
+  declares the same underline, so the link has **no hover feedback at all**. → `ui-designer`.
+
+
+---
+
+## Part 55 — P110 (selection flicker on a background graph re-stream + watcher burst scoping) and P109 (status-badge semantics), verbatim, moved off the board 2026-09-10. Both were in the `## PENDING / queued` section rather than the checkpoint block, "chronological, not a status" per the board's own note. Both had their USER CHECKPOINT confirmed by the user 2026-09-10 (`548cc0a`). **P110's "latent pre-existing gap" candidate follow-up (op-state files excluded from the watcher filter) is carried forward as a live one-liner on the board.**
+
+## PENDING / queued
+
+### ✅ P110 — selection flicker on a background graph re-stream — **DONE** (**USER CHECKPOINT CONFIRMED by the user 2026-09-10.**)
+
+**Current step:** both parts AI-gate green (flicker fix `84bbf85`, 479.3s; watcher scoping, 617.9s);
+native-window confirmation is the only half left.
+
+User report: after checking out an older branch with many commits after it, the right panel and the
+graph selection flipped between the selected commit and the working-directory ("Uncommitted changes")
+view several times over a few seconds, on every background refresh round.
+
+- **Root cause:** the selection was a ROW INDEX, but every refresh round re-streams the graph from
+  row 0. Between the first paintable chunk and the chunk carrying the selected commit's row,
+  `graph.nodes[selectedIndex]` was `undefined`; `WorkspaceRightPanel` fell back to the status panel
+  by design, and `selectedOid` went null — also resetting `scope` and closing the commit browser.
+  The deeper the selected commit sits, the longer that gap is visible.
+- **Fix:** `useStickySelection.ts` anchors the selection to an `(index, node)` pair and holds it ONLY
+  while the index is unchanged (the re-stream gap). `WorkspaceRightPanel` now takes `selectedNode`
+  and never indexes `graph.nodes`, so the audit §2.2 deref is structurally impossible.
+  `useWipSummary.ts` stabilises `WipSummary` identity, and `useGraphCanvasEffects` deps on
+  `wip !== null` — the boolean it actually reads — so staging a file no longer re-runs the
+  scroll-into-view adjustment.
+- **Reviewer:** approve, no MUST-FIX. SHOULD-FIX 1 was pulled forward, not deferred: the anchor
+  originally survived an index CHANGE to an unstreamed row, reachable via `handleSelectParent`, which
+  would have shown the previous commit's details *and its action targets* under a moved selection.
+  Its regression test was verified failing (2 failed / 8 passed) against the pre-fix implementation.
+- **Deliberately NOT done:** the canvas selected-row highlight is not sticky. The highlight is
+  row-index-based and there is no honest row to draw while the row is absent from the partial layout;
+  anchoring it to a stale index is exactly the wrong-commit hazard the fix removes.
+- **USER CHECKPOINT:** `pnpm tauri dev`, check out an old branch with heavy history after it, select a
+  commit deep in the graph and leave the window alone through several refresh rounds — the right panel
+  must stay on that commit.
+- **Follow-up DONE (user asked for it the same session):** the *frequency* of these rounds. A checkout
+  that rewrites thousands of working-tree files storms the `notify` watcher, and each debounced burst
+  ran a `full` scope round including a complete graph re-stream. Contract:
+  `docs/contracts/P110-watcher-burst-scoping.md`.
+  - The watcher ALREADY classified paths (`is_relevant`) and threw the answer away. `classify()` is now
+    both the relevance filter and the graph-affecting classification, so the two cannot drift.
+  - A burst is refs-class if ANY path in it is refs-class (`refs |= t.refs`); worktree-only bursts emit
+    `reason: "fsWorktree"` → `refresh('watcher', 'worktree')`. Same origin (still echo-suppressible),
+    narrower scope. `"fs"` keeps its exact prior meaning; unknown reason still → `full`.
+  - **`.git/index` is refs-class, deliberately.** Post-change, correctness depends on observing the
+    REF-file event specifically, and ReadDirectoryChangesW drops events on Windows — the index write is
+    the redundancy that survives a dropped `refs/heads/main`. Costs one graph re-stream per checkout
+    (the index is written once), not one per burst.
+  - **`submodules` added to the `worktree` slice** — a regression the increment itself introduced:
+    `git -C sub checkout other` writes refs under `.git/modules/sub/refs/**` (classified noise,
+    pre-existing) + worktree files, so the burst is worktree-only and the submodule panel went stale.
+    Fixed by restoring the refresh BEHAVIOUR, not by widening WHICH bursts fire.
+  - Reviewer walked every git op (commit/reset/merge/rebase/cherry-pick/stash/fetch/gc/submodule) for a
+    graph-affecting change landing in a worktree-only burst: none found. Relevance set proven unchanged.
+  - The accumulation rule is now proven by mutation: deleting `refs |= t.refs` fails
+    `burst_accumulation_is_conservative` deterministically. The prior test passed without it.
+
+**Latent pre-existing gap, NOT introduced here (candidate follow-up):** op-state files (`MERGE_HEAD`,
+`REBASE_HEAD`, `rebase-merge/**`, `CHERRY_PICK_HEAD`) are excluded by the filter and never triggered a
+refresh before or after P110. Op-state freshness during a conflicted rebase rides on incidental worktree
+churn. Deliberately left alone — changing it would widen which bursts fire.
+
+
+### ✅ P109 — status-badge semantics — **DONE** `5a254ba` / `5c2dcd2` (AC13 / AC14 **USER CHECKPOINT CONFIRMED by the user 2026-09-10.**)
+
+**Current step:** AC1–AC12 green; AC13/AC14 are the native-window half and are the only thing left.
+*(This entry said "pending" until 2026-09-03 — a board defect. The work shipped in this session; the
+filing text was never upgraded. Corrected here so no future session re-opens it.)*
+
+**The defect, as filed from P106:** two distinct statuses rendered the **same character**
+(`StatusFileRow.tsx:15`) and the badge carried **no accessible name** — the distinction was
+unavailable to a screen reader *and* ambiguous visually. Deliberately **not** rolled into P106: one
+defect class per milestone is what kept P95/P98/P100/P102/P105/P107 reviewable, and this is
+a11y/semantics, not contrast. P106 makes the letter *legible*; P109 is about the letter being
+*insufficient*.
+
+**Shipped:** one `src/components/FileStatusBadge.tsx` (58 lines) replaces **six** independently
+drifted `BADGES` tables. `role="img"` + `aria-label`, names `Added / Modified / Deleted / Renamed /
+Type changed / Conflicted / Untracked / Status unknown`. AC8 held — `src/styles/**` byte-identical,
+zero token or geometry diff; contrast is carried over from P106, not re-derived (AC9).
+
+**It also corrected P106's premise.** P106 was filed believing `added` and `untracked` shared `A`
+across the board; they shared it in **3 of 6** tables. The delta was exact both times — see the
+grep-counting rules below.
+
+**Contract:** `docs/contracts/P109-status-badge-semantics-ui.md` (AC13/AC14 spelled out in §13).
+- **AC13** — screen-reader read-through in the native window with a real AT.
+- **AC14** — the `U` glyph read at 11 px in the native window: confirm `U` is instantly legible.
+
+
+---
+
+## Part 56 — The `Closed on 2026-09-03` one-liners and the full `SEC-2026-09-03` external-process-launching section, verbatim, moved off the board 2026-09-10. Their remediations are all committed. **What stays live on the board:** SEC's residual symlink case, its test-gap line (now partially closed and flagged as a contradiction), and MEDIUM-2 / LOW-1, which are FOR USER item 3. The section's INFO(CSP) item was fixed in `8dd5b24` and user-confirmed 2026-09-10.
+
+### ✅ Closed on 2026-09-03 — one line each, narratives in archive Part 52
+
+The board's own record of having been wrong stayed useful twice today, so these lines stay even
+though the work is done. Full text: `docs/history/todo-archive-2026-09.md` Part 52.
+
+- **P107 F2 — the copy-candidate chip said "unchecked" on ticked rows** — SHIPPED `8337d9b`.
+  Contract `docs/contracts/P107-F2-copy-chip-ui.md`. `WorktreeCopyCandidates.tsx`'s `previewFailed`
+  branch read as the exact opposite of the truth; now `unknown` on a neutral
+  `.wt-copy-chip--unknown`. `.wt-copy-chip` itself byte-identical, so P107 A16's 11.31 / 12.21 stands.
+- **Same increment, P91:** two shipped strings still promised the folder picker security audit **F4**
+  removed; corrected. Both states were unreachable in the harness until `?wtCopyPreviewFail=1` and
+  `?obsExportFail=space|permission|other` were added — the latter reached three `exportErrorText`
+  branches that had **no route at all**. Both verified in the harness.
+- ~~**`.settings-toggle-btn.is-active` is dead styling**~~ — **ALREADY DONE**; P107 `2168057` had
+  deleted both rules two commits earlier. Board was stale (2nd such miss that day, after P109).
+- ~~**`pr-badge-placement-ui.md` documents the merged pill as `#8957e5`**~~ — **DONE** `fc9c36e`.
+  Worse than filed: `ui-reference.md` carried the stale literal at `:1038`/`:1048` while `:71`
+  recorded it replaced — the canonical design system contradicting itself. All five repointed.
+
+### ✅ SEC-2026-09-03 — external-process launching: repo-authored paths were unvalidated — REMEDIATED `0806596`
+
+Full report: `docs/audit-2026-09-03-external-launch.md` (`7e426c3`). Remediation delegated the same
+day; this entry is the resume point.
+
+**The finding in one line:** `crates/bonsai-core/src/external.rs:21-23` accepts residual risks on the
+stated grounds that `{path}` "is a repo path the user already opened — so this is self-inflicted at
+worst, never attacker-controlled". That is false. `{path}` is also `sub.absPath`, built at
+`crates/bonsai-core/src/git/submodule.rs:113` as `sm_workdir.join(sm.path())` with **no validation**,
+from a `.gitmodules` value authored by whoever wrote the cloned repo.
+
+- **HIGH-1** — a `;` in a tracked directory name reaches `wt -d`, and `wt` splits its own arguments
+  into sub-commands. Reachable with **no user template**, since `wt` is rung 1 of the default ladder.
+- **HIGH-2** — `Path::join` **discards the base** for a rooted or UNC path, so `//host/share` reaches
+  `Path::exists()` (`src-tauri/src/commands/external.rs:72`) and Win32 dials it → NetNTLMv2.
+- **MEDIUM-1** — no containment check anywhere. A hostile `payload.exe` as a submodule path is
+  currently blocked only **by accident**: `cwd` is the target and `current_dir` on a file fails with
+  `NotADirectory` before ShellExecute. Adding `explorer /select,<file>` would silently remove it.
+- **MEDIUM-2 / LOW-1 / LOW-2 / LOW-3 / INFO(CSP)** — see the report; each is its own increment.
+
+**Both formerly-unverified steps were measured, and one moved a severity:**
+- `wt` splitting `;` inside one argv token — **CONFIRMED**. HIGH-1 stands.
+- HIGH-2 zero-click via `submodule_status` — **DISPROVEN**, so it is **click-triggered**. libgit2
+  concatenates `sm->path` under the workdir and does not honour the escape Rust's `join` does. The
+  SMB callout is real (UNC-loopback `exists()` 6.6 ms vs 19 µs local — it dials); it needs the click.
+- The audit was **wrong** that `C:/Windows` and `..` reach `join` — libgit2 drops both first. The
+  residual escaping set is exactly **rooted** and **UNC**. The path must also be **quoted** in
+  `.gitmodules`, or `;`/`#` are config comments and never reach us.
+
+**Fixed** by `contained_abs_path` (`crates/bonsai-core/src/git/submodule_abs_path.rs`): all-`Normal`
++ relative proves containment **without touching the filesystem**, so an uninitialized submodule
+still works; when the target exists it also canonicalizes and re-checks against symlink escape. A
+rejected submodule is **still listed** with `absPath: null` rather than dropped — hiding a submodule
+git itself reports is its own correctness bug. Proven red both ways, with positive controls that
+stayed green so the validator is not the vacuous kind.
+
+**STILL OPEN, each its own increment:** MEDIUM-2 (`terminalCommand`/`editorCommand` unvalidated —
+renderer compromise still converts to local execution), LOW-1 (cwd DLL search order), INFO (CSP
+`form-action` / `base-uri` / `object-src`).
+
+**One residual documented, not closed:** a symlink introduced inside an already-checked-out
+superproject at a not-yet-created leaf bypasses the canonicalize recheck (`canonicalize` fails on a
+missing leaf). Primary vectors are closed lexically regardless of filesystem state.
+
+**What is well defended, recorded so it is not re-audited:** shell-free spawn on every platform,
+`tauri-plugin-shell` not a dependency at all, `parse_template` substitutes inside an already-tokenized
+argv element, private URL ladder behind mandatory validation, `resolve_program` never consults the
+CWD, capabilities narrowed deliberately, `script-src 'self'` with no `unsafe-inline`.
+
+**Test gap, and it is the same shape as the comment:** `external_tests.rs` is thorough on hostile
+**templates** and has **zero** path-hostility cases. `submodule_info`'s `abs_path` has no test at all.
+
+
+---
+
+## Part 57 — The `Queued housekeeping (none blocking)` section, verbatim, moved off the board 2026-09-10. The `src/styles/forge-pr.css` split (`e149382`) is DONE and its proof narrative moved here in full. **What stays live on the board, condensed to one line each:** the three items found during the split and deliberately NOT fixed (`context-menu.css:89` pointing into `forge-account.css`, the duplicate `.pr-create-actions` rule, the misplaced generic `.btn-secondary-danger`), the owed `image_diff_cli_2.rs` numbered split, the 90-char branch-name chip, the `ui-reference.md` curation pass, and the two deliberately-not-taken velocity items.
+
+### Queued housekeeping (none blocking)
+
+- ~~**`src/styles/forge-pr.css` is 890 lines**~~ — **DONE** `e149382`. Split into five modules
+  (213 / 207 / 220 / 180 / 87). Cascade order was the constraint, so every chunk is a **contiguous
+  original line range in original order** — correct by construction. Proven twice: the concatenation
+  diffs empty against the original body (887 lines each side), and the **emitted stylesheet is
+  byte-identical** — `pnpm build` yields the same Vite content-hashed filename before and after, and
+  since Vite derives that name from the content, the match *is* the proof.
+  *(The curator observed this mid-flight and correctly logged it as "in flight, not a status
+  upgrade" rather than ticking it. It was this session's own uncommitted work, not a peer's.)*
+- **The ~500-line limit had never been enforced for CSS** — `scripts/check-file-size.mjs`
+  `SCAN_TARGETS` covered `crates/**.rs`, `src-tauri/src/**.rs`, `src/**.{ts,tsx}` and **no `.css` at
+  all**, which is how 890 lines went unnoticed. `.css` added in `e149382`, and it was **free**: after
+  the split zero CSS files exceed the limit, so it added no baseline entries and
+  `file-size-baseline.json` is byte-unchanged. Three items were found during the split and
+  deliberately NOT fixed (each would reorder the cascade or cross into another file):
+  `context-menu.css:89` now points at a rule that lives in `forge-account.css`; a duplicate
+  `.pr-create-actions` rule in `forge-pr-create.css`; and the generic `.btn-secondary-danger`
+  sitting in `forge-pr-create.css` where it thematically belongs with `controls.css`.
+- **`image_diff_cli_2.rs`** numbered split still owed — renaming changes nextest IDs, so it needs its
+  own increment where that IS the expected diff. Path re-verified 2026-09-03:
+  `crates/bonsai-core/tests/diff/image_diff_cli_2.rs` (it moved under `tests/diff/`; the board never
+  carried a path).
+- **The 90-char branch-name chip** becomes a 50 px two-line stadium at `border-radius: 999px` —
+  pre-existing, newly visible because P102/P105 added the fixture that reaches it.
+- **`ui-reference.md` is growing fast** (§2 now carries a 16-row evidence table) — worth its own
+  curation pass.
+- **Two velocity items filed and deliberately NOT taken** (2026-09-03): C1 could drop 17s → 11s by
+  giving one surface its own test and its own corrupted repo — **not taken**, it changes the shape of
+  a crash-safety test for ~6s; and `crates/bonsai-mcp/tests/common/mod.rs:131-133` still spawns 3
+  `git config` calls (board said `:127`; re-measured 2026-09-03 — same fix applies verbatim; left
+  alone to keep the blast radius in one crate).
+
+
+---
+
+## Part 58 — The `GATE STATE at c218258` block and the `Earlier gate states` block, verbatim, moved off the board 2026-09-10. Both are **superseded**: the current gate state is the full 8-step green at `1d8c6f9` (2026-09-10, 452.5s) recorded in the board's RESUME HERE "Verification state", plus the later 542.4s run over the `e9d025d` + `7f9f16b` pair (`7f9f16b` is docs/contracts only, so the gate cannot have run *at* it). **The rules these blocks earned stay live on the board** — they were consolidated into `## Durable lessons — the rules` as `### The gate-running rules`, and they are: verify machine state at the time a timing-sensitive failure ran; a slow timing number is evidence about the machine until proven otherwise; verifying machine state is a standing pre-gate step; the e2e leg will fail intermittently on a loaded machine (P104); run the gate idle or e2e with `--workers=1`; **give subagents `--workspace`, not `-p <crate>`, whenever a change crosses a crate boundary**; redirect the whole gate log to a file; and read the `gate summary` block, never the exit status alone. The `FIRST_PAINT_TIMEOUT = 15 s` fact (`c6cd7dd`, measured at 7.6x p99) is recorded here.
+
+## ✅ GATE STATE at `c218258` — **ALL 8 STEPS PASSED** (2026-09-03, later run)
+
+> **Superseded by `1d8c6f9` (2026-09-10, 452.5s, all 8 green)** — see "Verification state" in the
+> RESUME HERE block for the per-step numbers. Kept for the archive trail; curator may fold it in.
+
+496.4 s total. Machine **not** fully idle this time — CPU sampled 21-64% with no build running (that
+is the harness/MCP floor), so these are pass/fail evidence and **must not be compared as timings**
+against the `5c2dcd2` idle baseline (archive Part 51). Recorded that way deliberately.
+
+| step | time |
+|---|---|
+| `cargo nextest` | 152.4 s (2334 passed, 8 skipped, 1 leaky) |
+| doctests | 3.8 s |
+| clippy | 5.5 s |
+| eslint | 12.7 s |
+| **file-size ratchet** | 0.89 s |
+| vitest | 73.7 s |
+| tsc + vite build | 13.4 s |
+| **e2e playwright** | **234.0 s** |
+
+Covers the 12 commits after `5c2dcd2`: the mock-IPC `window` guard, the launcher hoist + timer
+fix/revert, the P107 F2 chip, the `#8957e5` and P91-export doc corrections, the staleness sweep, and
+the SEC-2026-09-03 remediation.
+
+**The FIRST run of this gate FAILED**, and how it failed is worth keeping:
+
+- `cargo nextest` failed one test. My remediation brief scoped verification to
+  `cargo nextest -p bonsai-core`, so the `bonsai` crate's tests under `src-tauri/` never ran — and one
+  of them asserted the exact path-echo behaviour audit LOW-2 removed. **Give subagents
+  `--workspace`, not `-p <crate>`, whenever a change crosses a crate boundary.** Fixed in `c218258`
+  by repointing the assertion (not deleting it — its echo was the discriminator proving the error came
+  from *our* guard, a job the category string now does) and adding the file-target case MEDIUM-1 was
+  actually about, which had no test at all.
+- **I lost the failure detail by piping the gate through `tail -60`** and had to re-run the Rust leg
+  to find it. Redirect the whole log to a file; read the summary from there.
+- **The background wrapper reported exit 0 while the gate had failed** — that was the pipeline's exit
+  code, not the gate's. Read the `gate summary` block, never the exit status alone.
+
+**Minor, filed not fixed:** the gate script itself emits Node `DEP0190` — it passes args to a child
+process with `shell: true`, which concatenates rather than escapes them. Repo tooling, not shipped
+code, but it is the same argv-vs-shell class the audit just spent a day on.
+
+---
+
+## Earlier gate states — archived, with the rules they earned
+
+- **`5c2dcd2` — ALL 8 STEPS PASSED, 362.0 s (2026-09-03)**, on a machine verified idle first (CPU
+  ~1%, zero `bonsai-scratch`/`load.mjs` processes, 42 GB free). This is the **idle baseline** the
+  `c218258` block above must not be timed against. Per-step table: archive Part 51.
+- **`c6cd7dd`** — kept on the board until 2026-09-03 for its reasoning, not its status; now archive
+  Part 51. All 7 non-e2e steps green in every run regardless of load; e2e 181 passed / 1 skipped in
+  172.2 s run alone on a verified-idle machine.
+- The **e2e mis-diagnosis story** (three "failing" gate runs, none a code defect: my own diagnosis
+  agent's 18-thread `load.mjs` generator left running, an overlapping agent run I asserted was clean,
+  and 34 "leaking Playwright browsers" that were the user's own `msedge`) is archive Part 51.
+
+**Rules earned there — these stay on the board:**
+
+- **Before trusting any timing-sensitive failure, verify machine state AT THE TIME IT RAN** — sample
+  CPU repeatedly, look for scratch/load processes, confirm no agent is mid-run.
+- A slow timing number is **evidence about the machine** until proven otherwise. Timing analogue of
+  the grep-counting rule: *measure the baseline, do not infer it.*
+- **Verifying machine state before running the gate is a standing pre-gate step**, not a nicety.
+- The e2e leg **will** fail intermittently on a loaded machine — expected, documented at P104 (Edge
+  misses a hardcoded 30 s CDP close window, then a blocking `taskkill` runs).
+- `FIRST_PAINT_TIMEOUT = 15 s` (`c6cd7dd`) removed the largest source, measured at 7.6× p99.
+- **Run the gate on an otherwise-idle machine, or run e2e with `--workers=1`.**
+
+
+---
+
+## Part 59 — The 2026-09-10 session: the P111 pill-truncation fix, the P87b FU-1 run-target milestone, and the closure of the six remaining reviewer follow-ups — verbatim, moved off the board 2026-09-10. **All three contracts explicitly declare no USER CHECKPOINT item** (`P111-pill-truncation-ui.md:326` "Not a USER CHECKPOINT — every surface here is reachable in the browser harness"; `P87b-FU1-run-target.md:425` "AI gate — **no USER CHECKPOINT item**"; `P87b-FU1-FU4-git-dock-ui.md:385` "**No USER CHECKPOINT item** in this contract"), so archiving their detail does not archive a pending native half. **What stays live on the board:** P111's `.asset-chip` R2 `max-width` residue; RESUME HERE items `1b` / `1c` / `1d` (the doc + hygiene residue owed to `architect` / `ui-designer`), item `2b` (the `src/obs/types.ts:68` A26 letter-scheme decision), item `3` (the two open security calls); and the `whichAll` PATH_EXTS trap, kept as a one-line standing warning because it is exactly the kind of fix a later session would "simplify" back.
+
+### 59.1 — P111 (`1192f2a`)
+
+### ✅ P111 is DONE — `1192f2a`
+
+The interrupted senior-dev work was finished rather than reverted: it compiled and its unit tests
+passed, so the cheaper path was to verify it against the contract. Doing so found a defect the
+interrupted work had **decided to accept** (its own fixture comment said the no-slash case
+"hard-clips and the `title` recovers it"): `.ref-label-leaf` was `flex: none`, so a leaf wider than
+the chip overflowed by a measured **174px** and was hard-clipped by `overflow: hidden` — cut with no
+ellipsis. Worse than the original bug, because a hard clip makes a truncated ref look **complete**
+and `title` is hover-only. Fixed by shrink ratio (head `flex-shrink: 999` vs leaf `1`), so the leaf
+ellipsizes only as a last resort. `e2e/33-pill-truncation.spec.ts` guards it, proven red.
+
+**Residue, filed not fixed:** `.asset-chip` got the R1 line guard but no R2 `max-width`, so a model
+id far longer than the fixture would widen the chip rather than ellipsize.
+
+
+### 59.2 — P87b FU-1 (`1d8c6f9`)
+
+1. **✅ FU-1 is DONE — `1d8c6f9`.** Both halves shipped, both reviews approved with **no
+   MUST-FIX**, all 5 SHOULD-FIX + 7 NITs applied, **full 8-step gate green (452.5s, 2344 Rust
+   tests, 185 e2e)**. Contracts: `docs/contracts/P87b-FU1-run-target.md` and
+   `docs/contracts/P87b-FU1-FU4-git-dock-ui.md` (the board previously mis-cited the latter as
+   `P87b-FU1-git-dock-ui.md`, which never existed — fixed 2026-09-10).
+   Built as two concurrent senior-dev passes on disjoint file sets (run-target F-5 said the halves
+   are independent; that held). Harness ACs §9.9-13 all verified — the bidi proof is a code-point
+   dump (`6f 72 69 67 69 6e 2f 6d 61 69 6e`, no U+202E), and immutability was proven with a
+   **positive control** (7 observer callbacks, elapsed ticking 0.0→2.0→3.0s, target unchanged).
+   **AC §9.11 substituted push for commit** — `?gitNoTarget` forces `null` for every category, so
+   push exercises the identical path without driving the commit form. Same assertion, not the
+   literal AC text.
+   **Deliberately folded in and now closed:** the `GitActivityRow.tsx` chevron follow-up
+   (`<button aria-hidden>` inside `role="button"` → `<span>`), verified live: 0 buttons inside
+   `.git-run-summary`.
+   **Two things worth keeping:**
+   - `push_target_matches_push_result` was renamed `push_target_agrees_with_push_result_remote`
+     because `PushResult.branch` carries the **local** branch name — the old name overclaimed and
+     the test would have failed *falsely* on a divergent upstream. The real gap (Push's use of
+     `branch.<x>.merge` for divergent names) is now pinned on the `renamed` fixture, and the fix
+     was **mutation-proved**: mutating the resolver makes the new assertion fail while the old test
+     still passes.
+   - The mock's `mockActivityTarget` was verified **code-point-equivalent** to Rust's
+     `strip_control_chars`, including that Rust's `bidi ∪ zero_width` sets happen to form the
+     contiguous `200B–200F` range the mock uses.
+
+
+### 59.3 — The six remaining reviewer follow-ups (`e9d025d` / `7f9f16b` / `c03d11d`)
+
+2. **✅ All reviewer follow-ups from the `a82740ff` pass are CLOSED — `e9d025d` / `7f9f16b`**
+   (full 8-step gate green, 542.4s). Its MUST-FIX + two SHOULD-FIX had landed earlier in `151232d`;
+   the chevron closed in `1d8c6f9` as FU-1 scope. The last six closed 2026-09-10. Three of the six
+   were not what the board said, so the corrections are recorded here:
+   - **`whichAll` in `scripts/lib/spawn-tool.mjs` — the obvious fix was a trap.** Prepending `''`
+     to the Windows `PATH_EXTS` would have *regressed* tool resolution: npm/corepack install
+     **extensionless POSIX shell scripts** beside every shim (`pnpm`, `npm`, `npx`, `corepack` all
+     exist that way on this machine), and `resolveTool` picks `hits.find(p => !isBatch(p))` as the
+     real executable — so `''` first selects an unrunnable script. `pnpm` itself survives only
+     because `pnpmJsEntry` short-circuits, so this would have surfaced on some *other* tool. `''`
+     is now gated behind `hasExecExt`. Also `existsSync` accepted a **directory** named `pnpm.EXE`
+     as an executable hit. 3 regression tests, 9/9.
+   - **`watcher/classify.rs` was cosmetic, not a bug** — and the board's path was wrong
+     (`src-tauri/src/watcher/`, not `crates/bonsai-core/src/watcher/`). `Path::starts_with` matches
+     whole components, so `starts_with("packed-refs")` never matched `packed-refs.lock` either. The
+     change buys consistency with the `==` lines above it, nothing more.
+   - **The `forge-pr.css` "verbatim" claim was misattributed.** The split (`e149382`) *was*
+     byte-identical; the grouped-rule expansion happened later in `833f2f9` and only in
+     `forge-pr-create.css`. Separately `forge-pr-detail.css` is **also** not verbatim, for a reason
+     nobody had noticed: P111 (`1192f2a`) added the `.pr-label` one-line guard — a real behaviour
+     change. `forge-pr-changes.css` is genuinely verbatim. Each header now states its own
+     provenance. `src/styles/forge-account.css` carries the same claim and it is currently **true**.
+   - `external.rs` wording now true on all three branches (missing / a file / **stat failure** —
+     permission denied, unreachable share, broken reparse point), still category-only per audit
+     LOW-2. Its one pinning test was updated in the same increment.
+   - `raw_args.rs` doc ref fixed; that orphaned three siblings still on the retired Amendment-A26
+     letter scheme, so they moved to live section numbers too.
+   - `useStickySelection.ts` ↔ `GitActivityDock.tsx` now cross-reference each other. The stated
+     distinction is the true one: the anchor re-derives from current props, the latch records
+     **history**, so a discarded render's write would be observable as the dock staying shown after
+     Clear — which is why only one of them may write during render.
+
+
+---
+
+## Part 60 — The board's own record of the 2026-09-10 confirmation (the `The checkpoints are CLEARED` sub-block of RESUME HERE), verbatim, moved off the board 2026-09-10. Retained because it is the only place that states *why* the `8dd5b24` CSP change needed a native checkpoint at all. Its two "does NOT close" items stay live on the board as `### P108 — AC11 is still OWED` and `### P91 — open items` under `## OPEN follow-ups`; the confirmation fact itself is recorded on the board under `## Accepted decisions that must survive compaction`.
+
+### ✅ The checkpoints are CLEARED (2026-09-10)
+
+**The user confirmed all eight native-verification items** — P102+P105, P106, P107, P108, P91, P110,
+P109, and the `8dd5b24` CSP change (which applies to the Tauri webview only, so neither the harness
+nor e2e ever exercised it). The ~470 board lines they were blocking are now archivable; hand that to
+`docs-curator`.
+
+**Two things the confirmation does NOT close** — both are AI-gate items, not native checkpoints:
+- **P108 `AC11`** — two contrast states unreachable in the harness (`.file-count-del` selected and
+  `.context-menu-item[data-tone='danger']` hovered, both source-derived at 3.05). A person cannot
+  confirm a numeric contrast ratio by eye, so this stays owed.
+- **P91's `logs/*.jsonl` parse** from a real `pnpm tauri dev` boot+idle. Now *possible* for the first
+  time if the verification run booted the app — the logs would exist on disk.
+
+
+---
+
+## Part 61 — Superseded curator bookkeeping from the board, verbatim, replaced 2026-09-10. Nothing here is project history; it is the board's own navigation and self-measurement text, kept so the 2026-09-10 pass is lossless down to the meta-lines it rewrote. Contains: the pre-pass `Where the rest of the board went` body, the pre-pass RESUME HERE `Next, in order` preamble, the pre-pass `Verification state` block, and the **2026-09-03 curator note with its measured line-count composition** (the note whose "~470 lines become archivable the instant the seven USER CHECKPOINTs and seven FOR USER decisions clear" prediction this pass tested — 557 lines were archived, ~193 of which were live remnant that had to be relocated rather than removed, so the board fell 1244 → 915, not 1244 → 774).
+
+### 61.1 — `Where the rest of the board went`, as it stood before 2026-09-10
+
+## Where the rest of the board went
+
+Full detail for everything compacted out of this file is in `docs/history/` — start at
+`docs/history/README.md`. The 2026-09-03 sweeps are `docs/history/todo-archive-2026-09.md`
+**Parts 36-53**; the archive table at the bottom is the short form. Nothing below was closed by the
+curator: a milestone with a pending USER CHECKPOINT stays here, and open follow-ups stay here
+however old they are.
+
+**2026-09-03 compaction pass (Parts 51-53).** Moved off the board: the `5c2dcd2` and `c6cd7dd` gate
+states plus the e2e-contention narrative (Part 51); the narratives behind items closed that day
+(Part 52); and the stories behind the durable lessons (Part 53). The **rules** those stories taught
+stayed here. **1068 → ~1000 lines** — the ~300-line target is unreachable while seven USER
+CHECKPOINTs and seven FOR USER decisions are open; see the residual note in the Archive section.
+
+**2026-09-03 staleness sweep (no archiving, facts only).** Prompted by two same-day misses of one
+shape — work landed, the entry that filed it was never upgraded (P109 fixed in `5a68e00`;
+`.settings-toggle-btn.is-active` fixed in `112800c`). **35 open entries were cross-checked against
+the tree; 11 had drifted.** Corrections are inline below, each marked `re-verified 2026-09-03` or
+struck through with its SHA. The board's own record of being wrong is kept deliberately. Two
+findings are worth reading before trusting anything nearby: the `ai::session*` clock seam **is in
+the tree** (`734b310`), and the M1 design-review residue was telling sessions to delete
+`aria-activedescendant`, which `ui-reference.md:865` explicitly sanctions.
+
+
+### 61.2 — RESUME HERE `Next, in order` preamble, as it stood before 2026-09-10
+
+### Next, in order
+
+**Current step: nothing is in progress.** FU-1 and every reviewer follow-up are done and committed.
+The next items on this list are **all FOR-USER decisions, not patches** — item 3's two security
+calls, plus the seven open decisions in the FOR USER section and the eight native USER CHECKPOINTs.
+There is no unblocked implementation work left in this block; pick from `1b`/`1c`/`1d` (doc + small
+hygiene) or the "OPEN follow-ups" section further down if you want code work.
+
+
+### 61.3 — `Verification state`, as it stood before 2026-09-10
+
+### Verification state
+
+- **Full 8-step gate green at `1d8c6f9` (2026-09-10, 452.5s)** — 2344 Rust tests, 185 e2e passed /
+  1 skipped. Per step: nextest 133.2s · doctests 3.7s · clippy 22.8s · eslint 12.7s · size ratchet
+  0.9s · vitest 82.9s · tsc+build 15.3s · e2e 181.1s. **The e2e leg no longer needs a re-run** —
+  this superseded the `c218258` state, which had been the last full run.
+- Exit code 0 is not sufficient evidence on its own: **grep the log** for failures. Many test NAMES
+  contain `error`/`failed`, so a naive scan returns false positives — filter them.
+- Verify the machine is idle first, and **redirect the whole log to a file** — piping `pnpm gate`
+  through `tail` lost a failure detail and cost a re-run.
+- Port **1420 is free**. Keep it so: `strictPort: true` means a held port breaks `pnpm tauri dev`.
+
+
+### 61.4 — The 2026-09-03 curator note, verbatim (its composition numbers are the baseline this pass is measured against)
+
+### Why this board is ~1000 lines, not ~300 (curator note, 2026-09-03)
+
+Residual composition, measured after the Parts 51-53 pass: FOR USER decisions **135** · awaiting
+USER CHECKPOINT **198** · P110 + P109 **~84** · SEC-2026-09-03 **~52** · durable-lesson rules
+**~97** · accepted decisions **~44** · open follow-ups **~214** · header/conventions/gate/archive
+**~180**.
+
+**~470 of those lines become archivable the instant the seven USER CHECKPOINTs and seven FOR USER
+decisions clear** — and not before. Going further today would mean archiving a pending checkpoint
+(forbidden) or stripping the 2026-09-03 sweep's freshly-verified `file:line` citations out of the
+open follow-ups, which is the evidence a cold resume needs most.
