@@ -83,9 +83,11 @@ id far longer than the fixture would widen the chip rather than ellipsize.
 
 ### Next, in order
 
-**Current step: FU-1 is done and committed. Nothing is in progress.** Next actionable work is item 2
-(six reviewer follow-ups, all small); the two security items in item 3 are FOR-USER decisions, not
-patches.
+**Current step: nothing is in progress.** FU-1 and every reviewer follow-up are done and committed.
+The next items on this list are **all FOR-USER decisions, not patches** — item 3's two security
+calls, plus the seven open decisions in the FOR USER section and the eight native USER CHECKPOINTs.
+There is no unblocked implementation work left in this block; pick from `1b`/`1c`/`1d` (doc + small
+hygiene) or the "OPEN follow-ups" section further down if you want code work.
 
 1. **✅ FU-1 is DONE — `1d8c6f9`.** Both halves shipped, both reviews approved with **no
    MUST-FIX**, all 5 SHOULD-FIX + 7 NITs applied, **full 8-step gate green (452.5s, 2344 Rust
@@ -172,23 +174,42 @@ patches.
    have been in its prompt. When an agent that OWNS a contract is spawned for any reason, hand it the
    known corrections to that contract.
 
-2. **Reviewer follow-ups still open** from the `a82740ff` pass (its MUST-FIX and two SHOULD-FIX are
-   already fixed in `151232d`):
-   - ~~`GitActivityRow.tsx` chevron is still a `<button>` inside `role="button"`~~ — **FIXED in
-     `1d8c6f9`** as deliberate FU-1 scope (it was the same `<div role="button">` that gained an
-     explicit `aria-label`). Verified live: `.git-run-summary` contains 0 buttons.
-   - `useStickySelection.ts:76-78` introduces a render-phase ref write in the same batch where
-     `GitActivityDock.tsx` removed one. Defensible (idempotent) but the two model the same hazard
-     two ways with no cross-reference.
-   - `spawn-tool.mjs` `PATH_EXTS` omits `''`, so `whichAll('foo.exe')` finds nothing; no caller
-     passes an extension today. Its `existsSync` also does not exclude directories.
-   - `watcher/classify.rs:72` uses `starts_with("packed-refs")` for a single file;
-     `== Path::new("packed-refs")` matches the `HEAD`/`index` lines above it.
-   - `commands/external.rs:78` — `is_dir()` is also false when the stat fails on permissions, so
-     "target folder no longer exists" can be wrong. Wording, not logic.
-   - `obs/raw_args.rs:2` has a malformed doc ref (two section markers).
-   - The `forge-pr.css` split headers say "extracted verbatim"; one grouped rule was inlined into
-     two. Computed styles identical, wording inaccurate.
+2. **✅ All reviewer follow-ups from the `a82740ff` pass are CLOSED — `e9d025d` / `7f9f16b`**
+   (full 8-step gate green, 542.4s). Its MUST-FIX + two SHOULD-FIX had landed earlier in `151232d`;
+   the chevron closed in `1d8c6f9` as FU-1 scope. The last six closed 2026-09-10. Three of the six
+   were not what the board said, so the corrections are recorded here:
+   - **`whichAll` in `scripts/lib/spawn-tool.mjs` — the obvious fix was a trap.** Prepending `''`
+     to the Windows `PATH_EXTS` would have *regressed* tool resolution: npm/corepack install
+     **extensionless POSIX shell scripts** beside every shim (`pnpm`, `npm`, `npx`, `corepack` all
+     exist that way on this machine), and `resolveTool` picks `hits.find(p => !isBatch(p))` as the
+     real executable — so `''` first selects an unrunnable script. `pnpm` itself survives only
+     because `pnpmJsEntry` short-circuits, so this would have surfaced on some *other* tool. `''`
+     is now gated behind `hasExecExt`. Also `existsSync` accepted a **directory** named `pnpm.EXE`
+     as an executable hit. 3 regression tests, 9/9.
+   - **`watcher/classify.rs` was cosmetic, not a bug** — and the board's path was wrong
+     (`src-tauri/src/watcher/`, not `crates/bonsai-core/src/watcher/`). `Path::starts_with` matches
+     whole components, so `starts_with("packed-refs")` never matched `packed-refs.lock` either. The
+     change buys consistency with the `==` lines above it, nothing more.
+   - **The `forge-pr.css` "verbatim" claim was misattributed.** The split (`e149382`) *was*
+     byte-identical; the grouped-rule expansion happened later in `833f2f9` and only in
+     `forge-pr-create.css`. Separately `forge-pr-detail.css` is **also** not verbatim, for a reason
+     nobody had noticed: P111 (`1192f2a`) added the `.pr-label` one-line guard — a real behaviour
+     change. `forge-pr-changes.css` is genuinely verbatim. Each header now states its own
+     provenance. `src/styles/forge-account.css` carries the same claim and it is currently **true**.
+   - `external.rs` wording now true on all three branches (missing / a file / **stat failure** —
+     permission denied, unreachable share, broken reparse point), still category-only per audit
+     LOW-2. Its one pinning test was updated in the same increment.
+   - `raw_args.rs` doc ref fixed; that orphaned three siblings still on the retired Amendment-A26
+     letter scheme, so they moved to live section numbers too.
+   - `useStickySelection.ts` ↔ `GitActivityDock.tsx` now cross-reference each other. The stated
+     distinction is the true one: the anchor re-derives from current props, the latch records
+     **history**, so a discarded render's write would be observable as the dock staying shown after
+     Clear — which is why only one of them may write during render.
+
+2b. **One follow-up NOT taken (deliberate).** `src/obs/types.ts:68` still cites `A26 §D`, the same
+   dead lettered scheme retired inside `raw_args.rs`. A repo-wide letter→section migration is a
+   decision, not a drive-by; flagged rather than half-migrated.
+
 3. **Security, still open** (`docs/audit-2026-09-03-external-launch.md`): MEDIUM-2
    (`terminalCommand`/`editorCommand` unvalidated — renderer compromise still converts to local
    execution) and LOW-1 (cwd DLL search order). **Both deliberately left for the user:** MEDIUM-2's
