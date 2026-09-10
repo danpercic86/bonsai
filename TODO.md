@@ -228,12 +228,19 @@ hygiene) or the "OPEN follow-ups" section further down if you want code work.
   through `tail` lost a failure detail and cost a re-run.
 - Port **1420 is free**. Keep it so: `strictPort: true` means a held port breaks `pnpm tauri dev`.
 
-### The checkpoints have not moved
+### ✅ The checkpoints are CLEARED (2026-09-10)
 
-**Seven milestones await a USER CHECKPOINT** — P102+P105, P106, P107, P108, P91, P110, P109 — and the
-CSP change in `8dd5b24` adds an eighth thing needing native verification (it applies to the Tauri
-webview only, so neither the harness nor e2e exercises it). Roughly 470 board lines become
-archivable the moment those clear, and not one line before.
+**The user confirmed all eight native-verification items** — P102+P105, P106, P107, P108, P91, P110,
+P109, and the `8dd5b24` CSP change (which applies to the Tauri webview only, so neither the harness
+nor e2e ever exercised it). The ~470 board lines they were blocking are now archivable; hand that to
+`docs-curator`.
+
+**Two things the confirmation does NOT close** — both are AI-gate items, not native checkpoints:
+- **P108 `AC11`** — two contrast states unreachable in the harness (`.file-count-del` selected and
+  `.context-menu-item[data-tone='danger']` hovered, both source-derived at 3.05). A person cannot
+  confirm a numeric contrast ratio by eye, so this stays owed.
+- **P91's `logs/*.jsonl` parse** from a real `pnpm tauri dev` boot+idle. Now *possible* for the first
+  time if the verification run booted the app — the logs would exist on disk.
 
 ---
 
@@ -372,7 +379,17 @@ The curator refuses to resolve these; resolving any would upgrade a status.
 
 ---
 
-## AWAITING USER CHECKPOINT — seven live milestones
+## ✅ USER CHECKPOINTS — ALL CONFIRMED 2026-09-10
+
+The user confirmed **all eight** native-verification items in one pass on 2026-09-10: the seven
+milestones below plus the `8dd5b24` CSP change. Each section keeps its own AC list as the record of
+what was verified. **This whole block is now archivable** — it was the thing blocking ~470 lines of
+compaction.
+
+**One item in this block is NOT closed by that confirmation: P108's `AC11`.** It is an owed
+*AI-gate* contrast measurement, not a native checkpoint — two states could not be reached in the
+harness and the two figures are source-derived. A human cannot confirm a 3.05 contrast ratio by
+looking at it, so it stays open. See P108 below.
 
 None may be archived. The orchestrator never self-declares the native half. Each entry below is the
 resume summary; the full review/implementation narrative is in the archive part named.
@@ -381,7 +398,7 @@ resume summary; the full review/implementation narrative is in the archive part 
 the work that produced them: P110 (selection flicker) and P109 (status-badge semantics). They are
 awaiting a checkpoint exactly like the five here — the placement is chronological, not a status.**
 
-### P102 + P105 — hue audit — AI GATE GREEN, awaiting USER CHECKPOINT (AC18 / AC19 / AC20)
+### ✅ P102 + P105 — hue audit — **DONE** (AI gate green; AC18 / AC19 / AC20 **USER CHECKPOINT CONFIRMED by the user 2026-09-10.**)
 
 **Current step:** AI gate green; milestone complete bar the checkpoint.
 Contract `7c623d8` (`docs/contracts/P102-P105-hue-audit-ui.md`) → impl `0e5dcab` → both reviews
@@ -405,7 +422,7 @@ APPROVE after fixes `185c352`. Full narrative: archive Part 37.
 - **No architect pass**, consistent with P100/P101: a CSS contrast audit has no module boundary, IPC
   surface or algorithm. Recorded so the skipped step is not read as an oversight.
 
-### P106 — status-badge ink — SHIPPED `10ce967`, awaiting USER CHECKPOINT (AC14 / AC15 + the real-repo half of AC9)
+### ✅ P106 — status-badge ink — **DONE** `10ce967` (AC14 / AC15 + the real-repo half of AC9 **USER CHECKPOINT CONFIRMED by the user 2026-09-10.**)
 
 Contract `docs/contracts/P106-status-badge-ink-ui.md`. Full narrative: archive Part 38.
 
@@ -424,7 +441,7 @@ Contract `docs/contracts/P106-status-badge-ink-ui.md`. Full narrative: archive P
   deliberately droppable AC12); `--warning-strong` dark = `#e3b341`; AC13's `ui-reference.md` update
   lands **after** implementation, from the shipped commit.
 
-### ✅ P107 — hue-over-own-tint — SHIPPED `2168057`, ⏳ AWAITING USER CHECKPOINT (AC11/AC12/AC13)
+### ✅ P107 — hue-over-own-tint — **DONE** `2168057` (AC11 / AC12 / AC13 **USER CHECKPOINT CONFIRMED by the user 2026-09-10.**)
 
 Contract `docs/contracts/P107-hue-over-own-tint-ui.md` (`59061b2`). Impl shipped **`2168057`**
 (7/7 predicted residue metrics matched); errata **`ef06e6b`**. Full narrative: archive Part 40.
@@ -451,7 +468,9 @@ and only the user can close them.
   minima, restated per state; §5's "2.76 / 3.07" does not reproduce — the real value is 3.37 / 3.30.
   **P107 must not be re-opened against the original AC2 wording.**
 
-### P108 — hue-as-text on neutral surfaces — SHIPPED `42206fd`, awaiting USER CHECKPOINT (AC12 / AC13 / AC14), and **AC11 is OWED**
+### ⚠️ P108 — hue-as-text on neutral surfaces — `42206fd`; AC12 / AC13 / AC14 **USER CHECKPOINT CONFIRMED by the user 2026-09-10.**
+**NOT fully done — `AC11` is still OWED** and is an AI-gate measurement, not a native checkpoint, so
+the user's confirmation does not close it. This is the only milestone in the block that stays open.
 
 Contract `8027cef` (`docs/contracts/P108-hue-as-text-on-neutral-ui.md`) → impl `42206fd`.
 17 CSS files, no TS/TSX, no DOM change, no new tokens. Full narrative: archive Part 39.
@@ -481,7 +500,12 @@ Contract `8027cef` (`docs/contracts/P108-hue-as-text-on-neutral-ui.md`) → impl
 > unverified. Recording it as owed rather than manufacturing a pass — the same call the implementing
 > agent made, and the standard this programme applies to its agents applies to the orchestrator too.
 
-### P91 — Observability: Dev mode, structured logs, local telemetry & metrics — code + contract complete, USER CHECKPOINT never presented
+### ⚠️ P91 — Observability: Dev mode, structured logs, local telemetry & metrics — checkpoint **USER CHECKPOINT CONFIRMED by the user 2026-09-10.**
+**One AI-gate item may still be owed:** the real `logs/*.jsonl` parse from a `pnpm tauri dev`
+boot+idle. If the user's verification run booted the app, those logs now exist on disk and this is
+finally doable — the orchestrator should offer to parse them rather than assume either way.
+**Branch merge is a separate decision and is NOT covered by the checkpoint confirmation** — see the
+do-not-merge note below.
 
 Branch `feat/p91-observability` (this branch). **Not merged to `dev`; do not merge without the user**
 — the user confirmed 2026-08-31 that the branch is WIP, and its own commit messages must not be read
@@ -572,7 +596,7 @@ as an authoritative status. Build diary: archive Part 44. Security arc: Part 42.
 
 ## PENDING / queued
 
-### P110 — selection flicker on a background graph re-stream — SHIPPED, awaiting USER CHECKPOINT (2026-09-03)
+### ✅ P110 — selection flicker on a background graph re-stream — **DONE** (**USER CHECKPOINT CONFIRMED by the user 2026-09-10.**)
 
 **Current step:** both parts AI-gate green (flicker fix `84bbf85`, 479.3s; watcher scoping, 617.9s);
 native-window confirmation is the only half left.
@@ -630,7 +654,7 @@ refresh before or after P110. Op-state freshness during a conflicted rebase ride
 churn. Deliberately left alone — changing it would widen which bursts fire.
 
 
-### P109 — status-badge semantics — SHIPPED `5a254ba` / `5c2dcd2`, awaiting USER CHECKPOINT (AC13 / AC14)
+### ✅ P109 — status-badge semantics — **DONE** `5a254ba` / `5c2dcd2` (AC13 / AC14 **USER CHECKPOINT CONFIRMED by the user 2026-09-10.**)
 
 **Current step:** AC1–AC12 green; AC13/AC14 are the native-window half and are the only thing left.
 *(This entry said "pending" until 2026-09-03 — a board defect. The work shipped in this session; the
