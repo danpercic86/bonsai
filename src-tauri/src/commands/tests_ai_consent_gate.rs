@@ -30,11 +30,11 @@ fn open_url_command_rejects_a_non_web_scheme_without_echoing_it() {
     }
 }
 
-/// P49 (reviewer gap): the shared `launch_inner` missing-path precheck
-/// returns `AppError::Io` — and launches **nothing** — when the target path
-/// no longer exists. `reveal_in_file_manager` is the runtime-free command (it
-/// takes neither an `AppHandle` nor state), so it drives the exact precheck
-/// (`commands/external.rs` `launch_inner`, the `!p.exists()` guard) directly.
+/// P49 (reviewer gap): the shared `launch_inner` directory precheck returns
+/// `AppError::Io` — and launches **nothing** — when the target path is not an
+/// accessible directory. `reveal_in_file_manager` is the runtime-free command
+/// (it takes neither an `AppHandle` nor state), so it drives the exact precheck
+/// (`commands/external.rs` `launch_inner`, the `!p.is_dir()` guard) directly.
 /// `open_in_terminal`/`open_in_editor` funnel through the *same* precheck but
 /// first need an `AppHandle` to resolve the settings template, so they cannot
 /// be driven runtime-free here (the tauri "test" feature is avoided on this
@@ -65,7 +65,7 @@ fn external_launch_rejects_missing_path_before_spawning() {
     // category string is just as specific a discriminator and leaks nothing,
     // so it takes over that job.
     assert!(
-        err.to_string().contains("target folder no longer exists"),
+        err.to_string().contains("target folder is missing or not accessible"),
         "the precheck must return the category-only message: {err}"
     );
     assert!(

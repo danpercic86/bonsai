@@ -1,7 +1,16 @@
 /* Bonsai — Right-pane PR panel: the create-PR form, the P83 actions/merge surfaces
-   that sit between its rules, and the forge-connect (token) form. Split out of
-   forge-pr.css verbatim; cascade order is fixed by the import list in
-   src/styles.css — do not reorder these rules or files. */
+   that sit between its rules, and the forge-connect (token) form. Extracted from
+   forge-pr.css in `e149382` as a contiguous, unmodified line range; cascade order
+   is fixed by the import list in src/styles.css — do not reorder these rules or
+   files.
+
+   NOT byte-identical to the pre-split original any more, so a diff against it is
+   not expected to be clean: `833f2f9` expanded the grouped
+   `.pr-draft-toggle, .pr-create-actions { display/align-items/gap }` rule into
+   one rule per class (same property union per selector — computed styles
+   unchanged), and grew the `.btn-secondary-danger` comment. Those two hunks are
+   the ONLY changes since the split (`git diff e149382 HEAD --
+   src/styles/forge-pr-create.css`, verified 2026-09-10). */
 
 /* ----- create form + connect ----- */
 

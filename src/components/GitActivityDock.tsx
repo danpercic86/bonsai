@@ -73,6 +73,12 @@ export const GitActivityDock = forwardRef<GitActivityDockHandle, GitActivityDock
     // empties `runs` must not unmount the live region. A latched state (not a ref
     // written during render): `shown` is a pure function of props + state, so
     // StrictMode's double render and any concurrent re-render agree on it.
+    // SIBLING treatment of the same hazard: `useStickySelection`
+    // (src/components/repoWorkspace/useStickySelection.ts) keeps its anchor in a
+    // render-phase ref instead. The difference is what the value IS: that anchor
+    // is a re-derivation of the current props, this one is HISTORY — a ref
+    // written by a discarded or duplicated render would be directly observable
+    // (the dock staying shown after a Clear), so it belongs in state.
     const [everShown, setEverShown] = useState(runs.length > 0);
     const shown = everShown || runs.length > 0;
     useEffect(() => {

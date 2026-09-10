@@ -1,5 +1,5 @@
 //! P91 Amendment A26 — writer-side enforcement of the raw-mode `args` invariant
-//! (`docs/contracts/P91-observability.md §7.4.2` §C).
+//! (`docs/contracts/P91-observability.md` §7.4.2 — writer rules W1–W6).
 //!
 //! **The producer proposes; the writer enforces.** This module deliberately does
 //! NOT read `src/obs/rawArgPolicy.json`: a table shared with the producer would
@@ -40,12 +40,12 @@ use super::scrub::is_sensitive_key;
 /// Deliberately left as-is; neither side changes.
 pub const RAW_ARG_MAX_STR: usize = 512;
 
-/// Writer-set marker: this record carried an `args` object that failed §C.
+/// Writer-set marker: this record carried an `args` object that failed §7.4.2.
 const VIOLATION_KEY: &str = "argsPolicyViolation";
 const ARGS_KEY: &str = "args";
 const OMITTED_KEY: &str = "argsOmitted";
 
-/// §B.3 free-text vocabulary — applied to raw `args` KEYS only.
+/// §7.4.1 free-text vocabulary — applied to raw `args` KEYS only.
 ///
 /// It is deliberately NOT folded into [`is_sensitive_key`]: `ErrorPayload.message`
 /// is a legitimate, already-scrubbed field, and collapsing it there would blind
@@ -112,7 +112,7 @@ fn is_valid_param_key(k: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric())
 }
 
-/// §B.3 free-text vocabulary. Not used by `scrub.rs` — see [`FREE_TEXT`].
+/// §7.4.1 free-text vocabulary. Not used by `scrub.rs` — see [`FREE_TEXT`].
 fn is_free_text_param(k: &str) -> bool {
     let lower = k.to_ascii_lowercase();
     FREE_TEXT.iter().any(|w| lower.contains(w))

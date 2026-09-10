@@ -74,6 +74,10 @@ export function useStickySelection(
   // / `useDeferredValue` sits above this container — under a transition React
   // may DISCARD a render, and the mutation below would strand the ref on an
   // anchor that was never committed.
+  // SIBLING treatment of the same hazard: `GitActivityDock`'s `everShown`
+  // (src/components/GitActivityDock.tsx) needs render/StrictMode agreement too,
+  // but it records HISTORY rather than re-deriving props, so it latches in state
+  // instead of a render-phase ref.
   const anchorRef = useRef<StickyAnchor | null>(null);
   const anchor = resolveStickySelection(selectedIndex, graph, anchorRef.current);
   anchorRef.current = anchor;

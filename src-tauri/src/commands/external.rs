@@ -19,7 +19,7 @@ enum Action {
 
 /// Open the OS terminal at `path`, using the configured `terminalCommand`
 /// template (empty ⇒ per-OS auto-detect). Rejects `externalToolFailed` when no
-/// candidate launches, or `io` when `path` no longer exists.
+/// candidate launches, or `io` when `path` is not an accessible directory.
 #[tauri::command]
 pub async fn open_in_terminal(app: tauri::AppHandle, path: String) -> Result<(), AppError> {
     let file = settings::settings_file(&app)?;
@@ -71,15 +71,19 @@ async fn launch_inner(
         let p = std::path::Path::new(&path);
         // EXPLICIT directory precheck (audit 2026-09-03, MEDIUM-1): the target
         // must exist AND be a directory — it becomes the child's `cwd`
-        // (`LaunchSpec` invariant). `is_dir()` is false for both a missing path
-        // and a file, so it subsumes the old `exists()` check and stops relying
-        // on the accidental `NotADirectory` spawn failure a file used to hit.
+        // (`LaunchSpec` invariant). `is_dir()` is false for a missing path, for
+        // a file, AND whenever the stat itself fails (permission denied, an
+        // unreachable network share, a broken reparse point) — in that last
+        // case the folder may exist perfectly well. So it subsumes the old
+        // `exists()` check and stops relying on the accidental `NotADirectory`
+        // spawn failure a file used to hit, and the message must stay true for
+        // all three branches: "not accessible", not "does not exist".
         // LOW-2: the error is CATEGORY-ONLY and never echoes `path` — a
         // repo-authored path can be long / RTL-overridden / a system-message
         // lookalike, exactly the rule `validate_web_url` already documents.
         if !p.is_dir() {
             return Err(AppError::Io(
-                "target folder no longer exists".to_string(),
+                "target folder is missing or not accessible".to_string(),
             ));
         }
         let os = TargetOs::host();

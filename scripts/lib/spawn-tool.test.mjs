@@ -7,7 +7,7 @@
  *  place quoting is ours to get right.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -98,6 +98,46 @@ describe('resolveTool', () => {
       // Off Windows there is no PATHEXT: `toolx` itself is not on this PATH.
       expect(r.file).toBe('toolx');
     }
+  });
+
+  it('resolves a name that already carries its extension', () => {
+    // PATHEXT never contains an empty entry, so probing `toolx.exe` used to try
+    // `toolx.exe.COM`, `toolx.exe.EXE`, … and find nothing.
+    const dir = mkTempDir();
+    writeFileSync(join(dir, isWin ? 'toolx.exe' : 'toolx'), '');
+    if (!isWin) chmodSync(join(dir, 'toolx'), 0o755);
+    setPath(dir);
+
+    const r = resolveTool(isWin ? 'toolx.exe' : 'toolx', ['a']);
+
+    expect(r.file.toLowerCase()).toBe(join(dir, isWin ? 'toolx.exe' : 'toolx').toLowerCase());
+    expect(r.verbatim).toBe(false);
+  });
+
+  it('never resolves to a directory that merely has an executable name', () => {
+    const dir = mkTempDir();
+    mkdirSync(join(dir, isWin ? 'toolx.exe' : 'toolx'));
+    setPath(dir);
+
+    // No file hit at all → the bare name falls through to the ENOENT path.
+    expect(resolveTool('toolx', ['a']).file).toBe('toolx');
+  });
+
+  it.runIf(isWin)('ignores an extensionless sibling of a Windows shim', () => {
+    // npm/corepack ship a POSIX shell script beside every `.cmd` shim
+    // (`pnpm`, `pnpm.cmd`, `pnpm.ps1`); CreateProcess cannot run it, so it must
+    // never be picked as the "real executable".
+    const dir = mkTempDir();
+    writeFileSync(join(dir, 'toolx'), '#!/bin/sh\nexit 0\n');
+    writeFileSync(join(dir, 'toolx.cmd'), '@echo off\r\n');
+    setPath(dir);
+    delete process.env.npm_execpath;
+
+    const r = resolveTool('toolx', ['a']);
+
+    // The batch shim is the only usable hit → ComSpec last resort, not the script.
+    expect(r.verbatim).toBe(true);
+    expect(r.args[3].toLowerCase()).toContain('toolx.cmd');
   });
 });
 

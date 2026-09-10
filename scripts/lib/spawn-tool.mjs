@@ -28,14 +28,22 @@
 // Zero dependencies; identical behaviour on Windows, macOS and Linux.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { delimiter, dirname, join } from 'node:path';
 
 const isWin = process.platform === 'win32';
 
-/** Extensions a bare command name may resolve to. `['']` off Windows. */
+/**
+ * Extensions a command name may resolve to. `['']` off Windows.
+ *
+ * On Windows `''` leads the list so a name given WITH its extension
+ * (`whichAll('foo.exe')`) resolves as itself, in PATH order, instead of being
+ * probed as `foo.exe.COM`, `foo.exe.EXE`, … and never found. PATHEXT never
+ * contains an empty entry, so without this a caller passing a full filename got
+ * zero hits.
+ */
 const PATH_EXTS = isWin
-  ? (process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)
+  ? ['', ...(process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)]
   : [''];
 
 function pathDirs() {
@@ -46,13 +54,42 @@ function pathDirs() {
     .filter(Boolean);
 }
 
-/** Every PATH hit for `name`, in PATH order then PATHEXT order. */
+/**
+ * A hit must be a FILE. `existsSync` is also true for a directory, and a
+ * directory named `pnpm.EXE` sitting on PATH would otherwise be handed to
+ * `spawnSync` as an executable. A failing stat (EACCES, a broken junction)
+ * counts as "no hit" rather than throwing out of PATH resolution.
+ */
+function isFileSafe(candidate) {
+  try {
+    return statSync(candidate).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Windows only: an executable hit must carry an executable extension. npm and
+ * corepack install an EXTENSIONLESS POSIX shell script beside every shim
+ * (`pnpm`, `pnpm.cmd`, `pnpm.ps1`), which CreateProcess cannot run — with `''`
+ * leading PATH_EXTS that script would otherwise be the first hit and
+ * `resolveTool` would pick it as a "direct" executable. So `''` buys an exact
+ * match for a name that already ends in a PATHEXT entry (`foo.exe`,
+ * `pnpm.cmd`), and nothing else.
+ */
+function hasExecExt(candidate) {
+  if (!isWin) return true;
+  const lower = candidate.toLowerCase();
+  return PATH_EXTS.some((ext) => ext !== '' && lower.endsWith(ext.toLowerCase()));
+}
+
+/** Every PATH hit for `name`, in PATH order then PATH_EXTS order. */
 function whichAll(name) {
   const hits = [];
   for (const dir of pathDirs()) {
     for (const ext of PATH_EXTS) {
       const candidate = join(dir, name + ext);
-      if (existsSync(candidate)) hits.push(candidate);
+      if (hasExecExt(candidate) && isFileSafe(candidate)) hits.push(candidate);
     }
   }
   return hits;

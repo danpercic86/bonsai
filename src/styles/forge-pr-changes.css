@@ -1,6 +1,9 @@
 /* Bonsai — PR changed-files section (P89/P93): the section wrapper, head and the
-   compact file rows built on the diff-card geometry. Split out of forge-pr.css
-   verbatim; cascade order is fixed by the import list in src/styles.css — do not
+   compact file rows built on the diff-card geometry. Extracted from forge-pr.css
+   in `e149382` as a contiguous, unmodified line range and untouched since —
+   `git diff e149382 HEAD -- src/styles/forge-pr-changes.css` is empty (verified
+   2026-09-10), so a diff against the pre-split forge-pr.css body IS clean for this
+   file. Cascade order is fixed by the import list in src/styles.css — do not
    reorder these rules or files. */
 
 

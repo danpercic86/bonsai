@@ -1,7 +1,14 @@
 /* Bonsai — Right-pane PR panel: the selected-PR detail header (title, meta, stats,
-   mergeable state, labels, body) and the comment list. Split out of forge-pr.css
-   verbatim; cascade order is fixed by the import list in src/styles.css — do not
-   reorder these rules or files. */
+   mergeable state, labels, body) and the comment list. Extracted from forge-pr.css
+   in `e149382` as a contiguous, unmodified line range; cascade order is fixed by
+   the import list in src/styles.css — do not reorder these rules or files.
+
+   NOT byte-identical to the pre-split original any more, so a diff against it is
+   not expected to be clean: `1192f2a` (P111 R1/R2) gave `.pr-label` the one-line
+   guard (`display`/`max-width`/`overflow`/`text-overflow`/`white-space`) — a real
+   behaviour change, not a comment. That is the ONLY change since the split
+   (`git diff e149382 HEAD -- src/styles/forge-pr-detail.css`, +8 lines, verified
+   2026-09-10). */
 
 /* ----- PR detail ----- */
 

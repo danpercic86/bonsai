@@ -68,8 +68,10 @@ pub fn classify(path: &Path, git_dir: &Path) -> Option<PathClass> {
     // bursts).
     if rel == Path::new("HEAD")
         || rel == Path::new("index")
+        // `refs` is a DIRECTORY, so component-wise `starts_with` is right; the
+        // other three are single files and compare by equality.
         || rel.starts_with("refs")
-        || rel.starts_with("packed-refs")
+        || rel == Path::new("packed-refs")
     {
         return Some(PathClass::Refs);
     }
