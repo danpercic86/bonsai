@@ -113,6 +113,28 @@ patches.
      `strip_control_chars`, including that Rust's `bidi ∪ zero_width` sets happen to form the
      contiguous `200B–200F` range the mock uses.
 
+1d. **Contract-hygiene residue surfaced 2026-09-10 (architect's own list, filed not fixed).**
+   All in `docs/contracts/P87b-FU1-run-target.md`. Hand these to the **next** architect spawn that
+   touches the file — none is worth a spawn of its own:
+   - The header blockquote still says "as of HEAD (`1be3a85`)" and "a senior-dev is mid-change in
+     `GitActivity*` / `stash.ts` / `styles/`" — a pre-implementation snapshot. F-4 says the same.
+   - §3's `remote_push_activity.rs:67-94` / `:226-256` line ranges have drifted (upstream
+     resolution now starts ~`:56` and ~`:215`).
+   - §8 understates the shipped seams: `?gitLongTarget` and `?gitBidiTarget` apply to
+     `push || forcePush`, not push alone; the exported `MOCK_LONG_TARGET` / `MOCK_BIDI_TARGET`
+     consts are never named; the `query()` idiom is at `:70-79`, not `:58-63`.
+   - **§8's `?gitBidiTarget` row and §9 items 8-9 embed literal U+202E / zero-width characters
+     while the same section instructs "write the escape, not the literal char"** — the contract
+     violates its own rule. Same defect class as the one fixed in `gitActivityFormat.test.ts`
+     during FU-1. Highest-value of this group.
+   - §1's line-count estimates and §9's "`activity.rs` lands ~430" were never verified (it shipped
+     at 437).
+
+   **Closed 2026-09-10:** the designer's **F-G** (the two contracts disagreeing on the
+   `MOCK_LONG_TARGET` literal) — the architect corrected §8 to the shipped 95-char string, and the
+   orchestrator marked F-G resolved in `P87b-FU1-FU4-git-dock-ui.md` §5, since that section is
+   addressed to the orchestrator. Both contracts now agree with the code.
+
 1c. **Small follow-ups filed from the FU-1 pass (velocity mode — none blocking).**
    - `.git-run-noun` lacks the `white-space: nowrap` that `.git-dock-noun` has — the second
      bar-vs-row asymmetry after the `font-weight: 600` one FU-1 fixed. Found by the fix pass.

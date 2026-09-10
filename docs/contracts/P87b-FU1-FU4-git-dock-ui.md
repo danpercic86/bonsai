@@ -429,6 +429,12 @@ imports adjacent and in this order.
 
 ## 5. Flags for the orchestrator
 
+**Counterpart list:** the architect's flags for this same increment are in
+`docs/contracts/P87b-FU1-run-target.md` §10 (F-1…F-5). The two lists cover one increment from two
+sides and must be read together. **When they disagree, check the tree and correct the wrong one in
+place** — do not leave both standing (that is exactly how F-E below survived long enough to mislead
+two agents).
+
 - **F-C (sequencing).** FU-1 needs the architect's `target` before it can render anything real, but
   **FU-3 must land with it, not after** (§3.7) — the row's accessible name has to be built explicitly
   the moment the target becomes two spans. Recommend commissioning FU-1 + FU-3 as one senior-dev pass,
@@ -442,17 +448,34 @@ imports adjacent and in this order.
   repo's HEAD — §8 of the run-target contract specified literals, so this is per spec, but a
   `detached`/`unborn` fixture would render `Commit main`, which claims a fact. Fix when a
   detached/unborn mock fixture exists: derive from the fixture HEAD and pass `null` when there is no
-  branch. (b) `src/ipc/mock/handlers/stash.ts` wraps `commitAmend` in `runMockActivity('amend',
-  'main', …)` while F-E records that the **backend** does not wrap it — so the harness shows an
-  amend row the real app cannot produce. Harmless for design verification (it is how `Amend main`
-  got specced at all), but it means the harness is ahead of the app; close it by fixing the backend
-  (FU-2), not by removing the mock wrap.
-- **F-G (not my file).** `docs/contracts/P87b-FU1-run-target.md` §8 still carries the 83-char
-  `?gitLongTarget` literal that §3.10 above corrects to the 95-char shipped fixture. The architect
-  owns that file; the code is right and both contracts should agree.
-- **F-E (FU-2, out of scope, noted while here).** `commitAmend` (`stash.ts`) is still not
-  activity-wrapped, so an amend produces no dock row at all — and therefore no target either. Not
-  fixed here; it is a backend wrapping gap, not a rendering one.
+  branch. (b) **WITHDRAWN 2026-09-10 — this half was false.** It claimed the mock wrapped
+  `commitAmend` while the backend did not, and recommended "fix the backend (FU-2)". It rested
+  entirely on F-E, which was wrong (see below). Both halves wrap amend, so the harness's
+  `Amend main` row is exactly what the app produces. **Do not unwrap the mock and do not open a
+  FU-2 backend task** — acting on the original text would have removed working coverage.
+- **F-G (RESOLVED 2026-09-10 by the orchestrator — the flag was addressed to it, and is answered).**
+  It read: `P87b-FU1-run-target.md` §8 still carries the 83-char `?gitLongTarget` literal that §3.10
+  corrects to the 95-char shipped fixture. The architect has since corrected §8 to the shipped
+  95-char string, with a dated note quoting the prior literal. **Both contracts now agree with the
+  code.** Nothing to do; kept as a record of the disagreement and its resolution.
+- **F-E (CORRECTED 2026-09-10 — the original claim was false; kept as a record, not as a task).**
+  The original text asserted that `commitAmend` was not activity-wrapped, so an amend produced no
+  dock row and therefore no target, and filed that as an out-of-scope backend gap "FU-2".
+  **That was wrong at the time it was written and is wrong now.** Verified at HEAD:
+  - `src-tauri/src/commands/staging.rs:171-191` — `commit_amend_inner` resolves
+    `activity_target(state, repo_id, GitActivityCategory::Amend)` (l.178) and runs the whole
+    operation inside `with_activity(state.git_activity_hub(), GitActivityCategory::Amend, target,
+    …)` (l.179).
+  - The mock mirrors it: `src/ipc/mock/handlers/stash.ts:148` —
+    `runMockActivity('amend', 'main', …)`.
+  - `src/ipc/mock/handlers/amendActivity.test.tsx` covers the amend row.
+  - Since FU-1 (`1d8c6f9`) amend resolves a target like every other category, which is why §3.4's
+    table (l.160) lists `amend → main → "Amend main"` with no exception.
+
+  The architect refuted this as **F-4** in `docs/contracts/P87b-FU1-run-target.md` §10 ("ui-designer's
+  F-E is stale"), but the refutation was never carried back here, so both statements stood and
+  readers picked up whichever they saw first — it was restated as a real gap twice, including by
+  F-F(b) above. **There is no FU-2 backend wrapping gap.** Nothing to implement from this flag.
 
 ---
 

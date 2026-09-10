@@ -1,6 +1,14 @@
 # P87b FU-1 (backend half) — where a git-activity run's `target` comes from
 
-**Owner:** architect · **Written:** 2026-09-03 · **Status:** spec complete, awaiting implementation
+**Owner:** architect · **Written:** 2026-09-03 · **Status:** **shipped** in `1d8c6f9` (full 8-step gate green)
+**Corrected 2026-09-10, post-implementation** — implementing FU-1 proved three statements here wrong;
+each is fixed in place rather than silently: §4's unborn-HEAD rationale (the `null` is enforced by a
+**load-bearing guard**, not "free" — `read_head_info` *does* name the branch-to-be), §3 + §9.2's test
+name (`push_target_matches_push_result` → `push_target_agrees_with_push_result_remote`, with the
+reason for the rename), and §8's `?gitLongTarget` literal (the illustration measured 83 chars, not
+≥90; the shipped fixture is 95). §6's enforcement table never named the renamed test, so nothing
+there changed. A contract that silently changes after the fact is worse than one that records the
+correction.
 **Renders to:** `docs/contracts/P87b-FU1-FU4-git-dock-ui.md` §3.3/§3.6/§3.10 (ui-designer, authoritative
 for everything user-visible). This file supplies only what §3.6 commissioned.
 **Parent:** `docs/contracts/archive/P87-ui.md`, `crates/bonsai-core/src/git/activity.rs`
@@ -142,7 +150,7 @@ resolve_activity_target(workdir, category):
     if category == Fetch: return None            # §4, row "fetch"
     repo = open_repo_at(workdir).ok()?
     head = read_head_info(&repo).ok()?           # git/repo.rs:73
-    if head.unborn or head.detached: return None
+    if head.unborn or head.detached: return None # LOAD-BEARING — see §4
     branch = head.branch_name?                   # short name
 
     match category:
@@ -173,9 +181,24 @@ configured_upstream(repo, branch):
 same upstream, but their versions are error-carrying: each `Err` branch is load-bearing for the op's
 error taxonomy (`NoUpstream` vs `NoRemote` vs `PushRejected`). Folding an infallible observability
 read into them would either weaken that taxonomy or wrap it in `Option` at the wrong layer. The
-resolver is therefore an independent read-only mirror, and the drift is pinned by a test rather than
-by sharing code — `push_target_matches_push_result` (§6). This is the one deliberate duplication in
-this contract.
+resolver is therefore an independent read-only mirror, and the drift is pinned by **two assertions
+across two fixtures** rather than by sharing code. This is the one deliberate duplication in this
+contract.
+
+The two assertions are not interchangeable, and the split is why the anti-drift test was renamed
+during implementation (`push_target_matches_push_result` → the shipped name):
+
+1. **`push_target_agrees_with_push_result_remote`** (§9.2) pins the **remote name** only.
+   `PushResult::UpToDate { remote, branch }` carries `branch` = the **local** branch
+   (`remote_push_activity.rs:105-107`, where `branch` is filled from `head.branch_name`) — never the
+   upstream branch. So it can compare the whole `remote/branch` string just in the special case where
+   the local and upstream branch names happen to be equal, which is what its fixture arranges. Under
+   the old name — and the old, stronger claim — the test would have **failed falsely** on a divergent
+   upstream (local `main` tracking `upstream/trunk`) while the resolver was perfectly correct.
+2. **`resolves_table`'s `renamed` fixture** (`main` → `upstream/trunk`, asserted for **Pull and
+   Push**) pins Push's use of `branch.<x>.merge`. This is the gap the old single test left: without
+   the Push assertion the Push arm could read `branch.<x>.remote` and ignore `branch.<x>.merge`
+   (yielding `upstream/main`) with every test still green.
 
 Cost: one extra `Repository::open` + ≤2 config reads per op, **only while the dock is subscribed**
 (§5.1 gates on `is_active`). Sub-millisecond against a network push; for commit it precedes a repo
@@ -201,10 +224,29 @@ open that was happening anyway.
 with no placeholder; there is no ref the commit is "on", and inventing `HEAD` or `(detached)` would
 claim a fact. The commit's own hash is not a target — it does not exist at `started`.
 
-**Unborn HEAD emits `null`** per §3.6-1. `read_head_info` returns `branch_name: None` for unborn, so
-this is free. *(Option, not taken: `repo.find_reference("HEAD")`'s symbolic target does name the
-branch-to-be, so a first commit could read `Commit main`. §3.6-1 explicitly lists unborn under
-`null`; I follow it. Flagged as **F-1** — a one-line change if ui-designer wants it.)*
+**Unborn HEAD emits `null` per §3.6-1, and the guard that enforces it is LOAD-BEARING — do not
+remove it.** `read_head_info` (`crates/bonsai-core/src/git/repo.rs`, the `UnbornBranch` arm) returns
+`HeadInfo { branch_name: Some(<branch-to-be>), unborn: true }`: on an unborn HEAD it falls back to
+reading HEAD's **symbolic target**, which does name the branch that the first commit will create. So
+`branch_name` is `Some`, `head.branch_name?` does **not** short-circuit, and nothing about the `null`
+is free.
+
+The `null` comes solely from the explicit guard in §3's pseudocode, shipped as
+
+```rust
+if head.unborn || head.detached { return None }
+```
+
+in `crates/bonsai-core/src/git/activity_target.rs`, and pinned by `resolves_table`'s unborn fixture
+(which asserts `None` for both `Commit` and `Push` on a repo whose `read_head_info(..).unborn` is
+`true`). Delete the `unborn ||` half and a repo's **first commit silently renders `Commit main`**,
+contradicting §3.6-1 with no compile error and no other test failing.
+
+*(This is the same fact as **F-1**, stated from the other side: because `read_head_info` already
+surfaces the branch-to-be, `Commit main` is available by dropping one token from that guard — it is
+not extra code to write, it is a guard to remove. §3.6-1 explicitly lists unborn under `null`, so the
+guard stays. Corrected 2026-09-10: this passage previously claimed `read_head_info` returns
+`branch_name: None` for unborn "so this is free", which reads as though the guard were redundant.)*
 
 **`Fetch origin` is unreachable in the real backend.** §3.3's "fetch (one remote)" row exists as
 copy, but there is exactly one fetch entry point and it is fetch-all. The row is therefore mock-only
@@ -359,9 +401,18 @@ New seams, in the file's existing `const X = query('x') !== null` idiom at `:58-
 | *(default)* | `'origin/main'` / `'main'` | push, forcePush, pull → `origin/main`; commit, amend, mergeCommit → `main`; fetch → `null` |
 | `?fetchAll` | `null` on fetch | already the default; the seam exists so the case is addressable by name |
 | `?gitNoTarget` | forces `null` for **every** category | the absent-field path (§7) |
-| `?gitLongTarget` | `'origin/feature/very-long-experimental-branch/with-many-segments/retry-budget-tuning'` (≥90 chars) on push | 22ch ellipsis + `title` recovery |
+| `?gitLongTarget` | `'origin/feature/very-long-experimental-branch/with-many-nested-path-segments/retry-budget-tuning'` (**95 chars**) on push | 22ch ellipsis + `title` recovery |
 | `?gitBidiTarget` | `'origin/ma‮in'` (write the escape, not the literal char) fed through `mockActivityTarget` | proves the funnel is modeled; the emitted string must be exactly `origin/main` |
 | `?pushSlow` | unchanged + a target | immutability across a 1500 ms Network phase |
+
+**Corrected 2026-09-10 — the `?gitLongTarget` literal.** This row previously read
+`'…/with-many-segments/retry-budget-tuning'` and described it as `(≥90 chars)`; that literal was an
+elided illustration and measured **83**, so it failed its own stated constraint. The 95-char string
+above is what shipped (`MOCK_LONG_TARGET` in `src/ipc/mock/gitActivity.ts`) and what ui-designer
+records in `P87b-FU1-FU4-git-dock-ui.md` §3.10. §9.10 depends on the length: it compares row heights
+for a ref that must overflow the 22ch box several times over. The leaf must stay
+`retry-budget-tuning` — the leaf is what P111's split protects, and at 19 chars it fits the 22ch box
+while the head needs roughly 4× the space, which is exactly the case §9.10 exercises.
 
 Call sites to update (7): `handlers/remotesSync.ts:58,62,66,73`, `handlers/status.ts:145`,
 `handlers/merge.ts:83`, `handlers/stash.ts:148`. **Note:** `stash.ts:148` *is* activity-wrapped at
@@ -376,10 +427,17 @@ like the rest. Flagged **F-4**.
 **Rust** (`cargo nextest -p bonsai-core -p bonsai`):
 1. `activity_target_tests::resolves_table` — one fixture repo per §4 row: push with upstream, push
    without upstream but with `origin`, push with neither, force-push, pull, fetch, commit on a
-   branch, commit detached, commit unborn, merge. Each asserts the exact `Option<&str>`.
-2. `activity_target_tests::push_target_matches_push_result` — anti-drift: on a fixture where
-   `push_current_with_activity` returns `PushResult::UpToDate { remote, branch }`,
-   `resolve_activity_target(.., Push) == Some(format!("{remote}/{branch}"))`.
+   branch, commit detached, commit unborn, merge. Each asserts the exact `Option<&str>`. Includes the
+   `renamed` fixture (local `main` → `upstream/trunk`), asserted for **Pull and Push** — the Push
+   assertion is the only thing pinning the resolver's use of `branch.<x>.merge` (§3).
+2. `activity_target_tests::push_target_agrees_with_push_result_remote` — anti-drift: on a fixture
+   where `push_current_with_activity` returns `PushResult::UpToDate { remote, branch }`,
+   `resolve_activity_target(.., Push) == Some(format!("{remote}/{branch}"))`. This pins the **remote
+   name**; it can only compare the whole string because that fixture's local and upstream branch
+   names are equal (`UpToDate.branch` is the LOCAL branch). The upstream branch for Push is pinned
+   separately, by `resolves_table`'s `renamed` fixture — see §3. *(Corrected 2026-09-10: this item
+   and §3 previously named the test `push_target_matches_push_result`, which overstated what
+   `PushResult` can witness and would have failed falsely on a divergent upstream.)*
 3. `activity_target_tests::resolver_never_panics_on_broken_repo` — non-repo path, repo with a
    corrupt HEAD, and a path that does not exist all return `None`.
 4. `activity_tests::{target_strips_bidi_and_zero_width, target_capped_at_255_chars,
@@ -419,8 +477,9 @@ screenshot required:
 ## 10. Flags for the orchestrator
 
 - **F-1 (unborn HEAD).** Spec'd as `null` per §3.6-1, so a repo's first commit renders a bare
-  `Commit`. `HEAD`'s symbolic target *does* name the branch-to-be, so `Commit main` is available for
-  ~3 lines. Recommend shipping `null` as specced; raise with ui-designer only if the empty-repo
+  `Commit`. `HEAD`'s symbolic target *does* name the branch-to-be — and `read_head_info` already
+  returns it — so `Commit main` is available by dropping `head.unborn ||` from the §4 guard.
+  Recommend shipping `null` as specced; raise with ui-designer only if the empty-repo
   onboarding flow wants it.
 - **F-2 (the rule is implemented twice — Rust and mock).** Unavoidable: §3.10's `?gitBidiTarget` seam
   can only be green if the mock strips, and the mock never runs Rust. Mitigated by the existing
