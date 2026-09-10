@@ -141,6 +141,64 @@ describe('useGitActivity — batching, de-dup, ring', () => {
   });
 });
 
+describe('the run target is written ONCE, on started (FU-1 §7)', () => {
+  it('target_survives_later_events — phase/line/finished never rewrite it', () => {
+    const { result } = renderHook(() => useGitActivity());
+    const id = newId();
+
+    act(() =>
+      emitGitActivity(
+        ev(id, 0, 'started', {
+          category: 'push',
+          phase: { kind: 'preparing' },
+          target: 'origin/main',
+        }),
+      ),
+    );
+    expect(result.current.runs[0]?.target).toBe('origin/main');
+
+    // Every later event kind the reducer handles, none of which may touch it.
+    act(() => emitGitActivity(ev(id, 1, 'phase', { phase: { kind: 'network' } })));
+    act(() => {
+      emitGitActivity(ev(id, 2, 'stdoutLine', { line: 'remote: counting objects' }));
+      emitGitActivity(ev(id, 3, 'stderrLine', { line: 'remote: warning' }));
+      vi.advanceTimersByTime(60);
+    });
+    act(() =>
+      emitGitActivity(
+        ev(id, 4, 'progress', {
+          progress: {
+            receivedObjects: 10,
+            totalObjects: 100,
+            indexedObjects: 10,
+            receivedBytes: 800,
+          },
+        }),
+      ),
+    );
+    act(() => emitGitActivity(ev(id, 5, 'hookDone', { hook: 'pre-push', code: 0, success: true })));
+    // A `started` carrying a DIFFERENT target must be ignored outright (redelivery).
+    act(() =>
+      emitGitActivity(ev(id, 6, 'started', { category: 'push', target: 'origin/other' })),
+    );
+    act(() => emitGitActivity(ev(id, 7, 'finished', { code: 0, success: true })));
+
+    expect(result.current.runs[0]?.target).toBe('origin/main');
+    expect(result.current.runs[0]?.status).toBe('success');
+  });
+
+  it('a started WITHOUT a target yields run.target === null (old backend / no knob)', () => {
+    const { result } = renderHook(() => useGitActivity());
+    const id = newId();
+
+    act(() =>
+      emitGitActivity(ev(id, 0, 'started', { category: 'commit', phase: { kind: 'preparing' } })),
+    );
+
+    expect(result.current.runs[0]?.target).toBeNull();
+  });
+});
+
 describe('pruneGitRuns — 200-run eviction never drops a running run', () => {
   function makeMap(specs: Array<{ id: string; running: boolean }>): {
     order: string[];
@@ -149,7 +207,7 @@ describe('pruneGitRuns — 200-run eviction never drops a running run', () => {
     const runs = new Map<string, GitActivityRun>();
     const order: string[] = [];
     for (const s of specs) {
-      const r = newGitRun(s.id, 'push', { kind: 'network' }, 0, 0);
+      const r = newGitRun(s.id, 'push', { kind: 'network' }, 0, 0, null);
       runs.set(s.id, s.running ? r : { ...r, status: 'success', endedAt: 1 });
       order.push(s.id);
     }

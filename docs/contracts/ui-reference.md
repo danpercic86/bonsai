@@ -1600,6 +1600,21 @@ row badges (`.submodule-badge-*`, shared by submodule and worktree rows — `Sid
   span; use an explicit **`aria-label`** when punctuation matters, because name computation joins
   sibling nodes with a space and would produce `Git config , repository` (the shipped rail does
   exactly this). A purely visual pill leaves AT users without the qualifier.
+- **A hand-written `aria-label` linearizes what visual chunking separates (added 2026-09-10, P87b
+  FU-1).** Once you replace name computation with an explicit label, read the label back as one
+  spoken sentence. Two words that are visually two type steps and a chip border apart can collide in
+  a linear name: the git dock's status pill (`Running`) beside its phase text (`Running pre-push
+  hook…`) is fine on screen and reads `— running, running pre-push hook,` in the name, so the phase
+  clause drops the duplicated leading word. Three corollaries:
+  - **The explicit label hides the row's own decoration.** Under `role="button"` the descendants are
+    presentational, so chips and their `title`s leave the a11y tree. Any fact carried *only* by a
+    chip must be folded into the label or be recoverable elsewhere — the dock's `⋯ trimmed` chip is
+    recoverable as the log's `↑ N earlier lines trimmed` first line, so it is deliberately absent
+    from the name.
+  - **A label rebuilt from a live value must tick no faster than ~1 s.** Elapsed on a 1 s interval is
+    fine; a transfer counter that moves on every progress event is not, so a running row names its
+    *phase*, never its object counts.
+  - **Spell measurements out.** `2:05` in a name reads as a clock time; write `2 minutes 5 seconds`.
 - **When the visible text IS the thing being renamed, use `role="img"` + `aria-label` on that span
   (added 2026-09-03, P109).** A letter, glyph or digit that stands *for* a word — the A/M/D/U/R status
   badge (§7), `✓`/`⚠`/`⊘`, a count glyph — is an image made of type. Put `role="img"` on the span and

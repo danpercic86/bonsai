@@ -1,6 +1,10 @@
 # P87b FU-1 + FU-4 — the git-activity dock: run targets, and one toggle rule for both docks
 
-**Owner:** ui-designer · **Written:** 2026-09-03 · **Status:** spec complete, awaiting implementation
+**Owner:** ui-designer · **Written:** 2026-09-03 · **Status:** implemented + design-reviewed 2026-09-10
+**Review corrections applied 2026-09-10** (this file is the spec of record; the review is in the
+orchestrator transcript): §3.4 noun weight, §3.7 preposition-map wording + the running-hook
+de-duplication rule + the three rulings the implementer had to invent, §3.10 long-target literal,
+§4 file table (the §3.5 block now lives in `git-dock-log.css`), §5 two new flags.
 **Parent:** `docs/contracts/archive/P87-ui.md` (§3.3, §3.4, §5, §6, §8) ·
 `docs/contracts/ui-reference.md` §9, §12.10
 **Follow-ups closed:** FU-1 (`docs/history/todo-archive-2026-09.md:613`), FU-4 (`:618`)
@@ -203,6 +207,24 @@ and one line added to the existing `.git-run-subphase` and `.git-dock-detail` ru
   flex-shrink: 3;   /* NEW — the phase yields width before the target does */
 ```
 
+and — **added 2026-09-10 by review** — one line on the run row's noun, so the two surfaces treat it
+identically:
+
+```css
+.git-run-noun {
+  font-weight: 600;   /* NEW — .git-dock-noun already has it; §3.2 assumes both do */
+}
+```
+
+This is a deliberate revision of `archive/P87-ui.md` §3.4, which specced only "**noun** in
+`--text-1`" and left the weight unstated, so the row shipped at regular. Three reasons: §3.2's
+noun-vs-target contrast (UI 600 `--text-1` against mono `--text-2`) is the whole mechanism that keeps
+the target reading as metadata, and it was specced for both surfaces; §3.3 requires the bar and the
+row to be identical, and a 600 bar noun beside a regular row noun is the one place they differ; and
+without it the row's hierarchy is **inverted** — `.git-run-pill` is `font-weight: 600` at 11px while
+the noun is regular, so the status chip is the boldest text in a row whose subject is the noun. In
+**compact** both noun and target are 11px, which leaves weight as the only remaining carrier.
+
 `.ref-label`'s own `overflow: hidden; white-space: nowrap` (P111 §3.3) does the truncating;
 `withTitle` puts the whole ref on the span's `title`.
 
@@ -283,11 +305,41 @@ the frontend to reassemble a string the backend already had.
   | push, running | `Push to origin/main — running, sending objects, 2.4 seconds` |
   | commit, detached HEAD | `Commit — success, 0.2 seconds, 14:30` |
   | failed push with a blocking hook | `Push to origin/main — failed, 0.9 seconds, 14:29` |
+  | push, running a hook | `Push to origin/main — running, pre-push hook, 0.4 seconds` |
+  | push, running, `preparing` | `Push to origin/main — running, preparing, 0.1 seconds` |
+  | push, running, unknown phase | `Push to origin/main — running, working, 0.1 seconds` |
+  | push, success, over a minute | `Push to origin/main — success, 2 minutes 5 seconds, 14:32` |
 
-  Prepositions come from one 3-entry map keyed by category, used by this function **and** by the
-  announcer, nowhere else: push/forcePush → `to`, fetch/pull → `from`, commit/amend/mergeCommit →
-  `on`. They exist only in the accessible name; the visible row stays arrow-free and
-  preposition-free (§3.2).
+  Prepositions come from **one exhaustive `Record<GitActivityCategory, 'to' | 'from' | 'on'>` — 7
+  keys, 3 values** (the 2026-09-03 wording said "3-entry map", which was wrong: there are seven
+  categories and three prepositions, and the map must be keyed by category so a new category cannot
+  silently miss one). push/forcePush → `to`, fetch/pull → `from`, commit/amend/mergeCommit → `on`.
+  Used by this function **and** by the announcer, nowhere else. They exist only in the accessible
+  name; the visible row stays arrow-free and preposition-free (§3.2).
+
+  Four rules the six-row table above does not state on its own — **all four resolved 2026-09-10**:
+
+  1. **De-duplicate `running`.** The status word for a running row is the pill's (`running`), and
+     three phase labels also begin with it, which produced `— running, running pre-push hook,`.
+     The phase clause therefore **drops a leading `running `** after the `…` is stripped and the
+     label lowercased: `Running pre-push hook…` → `pre-push hook`. Sentence-initial otherwise
+     unchanged (`Sending objects…` → `sending objects`). Only the accessible name is affected: the
+     **visible** bar reads `● Running · Running pre-push hook…` and gets away with it because the
+     pill is a chip and the phase is muted text two type steps apart — a linearized name has no such
+     chunking, so it must not repeat the word.
+  2. **A running row names its phase, never its progress.** The name carries
+     `phaseLabel()`, not `objectsReadout()` — the visible sub-line's `12,340 / 50,000 objects` moves
+     on every `progress` event (many per second), and an `aria-label` that rewrites that fast is
+     unusable. The live elapsed **is** included, and is safe: `tick` is a **1 s** interval that only
+     runs while something is running (`useGitActivity.ts:229`).
+  3. **The `⋯ trimmed` chip is not in the name.** The row is `role="button"` with an explicit
+     `aria-label`, so the chip and its `title` are already outside the a11y tree — repeating the
+     chip in the name would be the only way AT ever heard it, and the fact is recoverable in the
+     right place: expanding the row exposes `↑ N earlier lines trimmed` as the log's first line.
+     §3.1's wireframe keeps the chip visible; the name omits it, by design.
+  4. **Elapsed is spelled out in words** — `1.2 seconds`, `2 minutes 5 seconds`, singular at 1 —
+     because `durationLabel`'s `2:05` reads as a clock time. Under a minute keeps one decimal
+     (`1.0 seconds` is accepted: it is a measurement, not a count).
 - **`⋯ trimmed` and the pills** keep their §11 treatment; the pill word is already in the row name
   via `— success`, so the pill glyph stays `aria-hidden`.
 - **Announcer.** `sentenceFor()` (`gitActivityFormat.ts:211-218`) gains the target for terminal
@@ -323,14 +375,22 @@ shape). New query seams, in the file's existing `?flag` idiom:
 | Seam | Fixture | Proves |
 |---|---|---|
 | default push / commit | `target: 'origin/main'` / `'main'` | the common case in bar + row |
-| `?fetchAll` | fetch with `target: null` | `Fetch all remotes` — the derived string |
+| `?fetchAll` | fetch with `target: null` | `Fetch all remotes` — the derived string. **Named no-op:** fetch-all is the only fetch entry point, so the default already passes `null` and the derived phrase is on screen without the flag. The seam exists so the case has a name; a future per-remote fetch is what makes it load-bearing. |
 | `?gitNoTarget` | commit with `target: null` | the no-placeholder rule; nothing shifts |
-| `?gitLongTarget` | push with `origin/feature/very-long-…/retry-budget-with-a-90-character-name` | 22ch ellipsis, leaf intact, `title` recovers, row height unchanged, and the running row's subphase yields first |
+| `?gitLongTarget` | push with `origin/feature/very-long-experimental-branch/with-many-nested-path-segments/retry-budget-tuning` (**95 chars**, leaf `retry-budget-tuning`) | 22ch ellipsis, leaf intact, `title` recovers, row height unchanged, and the running row's subphase yields first |
 | `?gitBidiTarget` | a ref containing `U+202E` | §3.6-3 — **must render inert**; if it reorders the row, the sanitizer is missing |
 | existing `?pushSlow` | + a target | the target does not change mid-run (§3.6-2) |
 
 All six are visible in the browser harness in **both themes** and **both densities** (toggle
 `panelDensity`). **No USER CHECKPOINT item** in this contract.
+
+> **Corrected 2026-09-10.** The literal written here on 2026-09-03 was an elided illustration
+> (`…/retry-budget-with-a-90-character-name`) that measures **83 characters** — it fails this
+> table's own "≥90 chars" requirement. The 95-char string above is the fixture that shipped
+> (`MOCK_LONG_TARGET`), and it is the correct one: its leaf is 19 chars, so the leaf fits inside the
+> 22ch box while the head still needs ~4× the available width — exactly the P111 R3 case. The
+> architect's `P87b-FU1-run-target.md` §8 still carries the 83-char literal; that is not my file, so
+> it is flagged in §5 (F-G) rather than edited.
 
 ---
 
@@ -345,10 +405,25 @@ well under the limit:
 | `src/components/GitActivityHeader.tsx` | one `<RefLabel>` after the noun | 86 → ~90 |
 | `src/components/GitActivityRow.tsx` | one `<RefLabel>` after the noun; `aria-label={runRowName(...)}` on `.git-run-summary` (with FU-3) | 205 → ~212 |
 | `src/components/repoWorkspace/gitActivityState.ts` | `target` field (architect) | +2 |
-| `src/styles/git-dock.css` | one new rule + two `flex-shrink` lines | +14 |
+| `src/styles/git-dock.css` | one new rule + two `flex-shrink` lines + the noun weight | 493 → **429** (see the split below) |
+| `src/styles/git-dock-log.css` | **new** — the §3.5 expanded-detail block, moved verbatim | ~95 |
 | `src/components/RefLabel.tsx` | **new**, owned by P111 §3.2 | ~45 |
 
 `GitActivityDock.tsx` is untouched. No addition goes into a large file.
+
+**The CSS split (approved 2026-09-10, not in the original spec).** `git-dock.css` was at 493 lines,
+so the `+14` above would have pushed it to 507 and tripped the size ratchet. The implementer moved
+the `/* expanded detail (§3.5) */` block — `.git-run-detail`, `.git-run-hooks`, `.git-run-hook*`,
+`.git-run-output`, `.git-run-copy`, `.git-run-log`, `.git-log-empty`, `.git-log-line`, the `stderr`
+variant and `.git-run-note` — into `src/styles/git-dock-log.css`, imported immediately after
+`git-dock.css` (`styles.css:58-59`). **This is the right seam:** it is the same cut the AI dock
+already makes (`ai-dock.css` + `ai-dock-log.css`, `styles.css:56-57`), it is a *log-surface* seam
+rather than an arbitrary halving, both log files stay adjacent and after their bar file so
+`.git-run-log`'s override of `.ai-log` is unaffected, and the shared status-pill rules (which name
+`.git-run-hook-pill`) correctly stayed with the other pills. **Cascade:** safe by property, not only
+by order — no moved rule declares `outline`, and the one rule now sequenced before them,
+`.git-activity-dock :focus-visible`, wins on specificity (0,2,0 vs 0,1,0) regardless. Keep the two
+imports adjacent and in this order.
 
 ---
 
@@ -362,6 +437,19 @@ well under the limit:
   FU-1 can ship with plain `white-space: nowrap; overflow: hidden; text-overflow: ellipsis` on
   `.git-run-target` and a `title` — correct, just tail-clipping. Say so rather than inlining a second
   copy of the split.
+- **F-F (mock fidelity, follow-up, low).** Two gaps found in review, neither blocking:
+  (a) the mock call sites pass literal targets (`'main'`, `'origin/main'`) regardless of the mock
+  repo's HEAD — §8 of the run-target contract specified literals, so this is per spec, but a
+  `detached`/`unborn` fixture would render `Commit main`, which claims a fact. Fix when a
+  detached/unborn mock fixture exists: derive from the fixture HEAD and pass `null` when there is no
+  branch. (b) `src/ipc/mock/handlers/stash.ts` wraps `commitAmend` in `runMockActivity('amend',
+  'main', …)` while F-E records that the **backend** does not wrap it — so the harness shows an
+  amend row the real app cannot produce. Harmless for design verification (it is how `Amend main`
+  got specced at all), but it means the harness is ahead of the app; close it by fixing the backend
+  (FU-2), not by removing the mock wrap.
+- **F-G (not my file).** `docs/contracts/P87b-FU1-run-target.md` §8 still carries the 83-char
+  `?gitLongTarget` literal that §3.10 above corrects to the 95-char shipped fixture. The architect
+  owns that file; the code is right and both contracts should agree.
 - **F-E (FU-2, out of scope, noted while here).** `commitAmend` (`stash.ts`) is still not
   activity-wrapped, so an amend produces no dock row at all — and therefore no target either. Not
   fixed here; it is a backend wrapping gap, not a rendering one.

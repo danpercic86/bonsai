@@ -14,9 +14,12 @@ use std::sync::Arc;
 
 use bonsai_core::error::AppError;
 use bonsai_core::git::activity::{
-    new_activity_id, ActivityEmitter, GitActivityCategory, GitActivityEvent, GitPhaseKind,
+    new_activity_id, ActivityEmitter, ActivityTarget, GitActivityCategory, GitActivityEvent,
+    GitPhaseKind,
 };
+use bonsai_core::git::activity_target::resolve_activity_target;
 
+use crate::commands::shared::repo_path;
 use crate::state::{AppState, GitActivityHub};
 
 /// Registers a long-lived channel that receives `GitActivityEvent`s for EVERY
@@ -37,11 +40,16 @@ pub fn git_activity_subscribe(
 /// `run` as `Some(..)`. When NObody is listening it is a straight passthrough
 /// (`run(None)`) — the buffered path, no emitter, no events (contract §10).
 ///
+/// `target` (FU-1 §5.2) is the run's ref, resolved by [`activity_target`] BEFORE
+/// the bracket; it rides on the `started` event only. A target computed under a
+/// race with the last unsubscribe is simply dropped by the passthrough below.
+///
 /// `run` threads the emitter into the core call inside its own `spawn_blocking`
 /// (deriving a `&dyn GitActivityRecorder` from the `Arc`).
 pub(crate) async fn with_activity<T, F, Fut>(
     hub: GitActivityHub,
     category: GitActivityCategory,
+    target: Option<ActivityTarget>,
     run: F,
 ) -> Result<T, AppError>
 where
@@ -54,6 +62,7 @@ where
     let hub2 = hub.clone();
     let emitter = Arc::new(ActivityEmitter::new(
         new_activity_id(),
+        target,
         Box::new(move |ev| hub2.emit(ev)),
     ));
     emitter.started(category, GitPhaseKind::Preparing);
@@ -63,6 +72,31 @@ where
         Err(e) => emitter.finished(activity_exit_code(e), false),
     }
     res
+}
+
+/// Resolve a run's target ref before the run starts (FU-1 §5.1).
+///
+/// `None` when nobody is subscribed (so **no repo open is paid** on the hot
+/// path — the `is_active` gate short-circuits before any path work), when the
+/// repo id is unknown, or when the resolver declined. NEVER returns an error: a
+/// failure here must not fail the op, and swallowing the `repo_path` error is
+/// deliberate — the op's own `repo_path?` inside `run` still produces the real
+/// error and the failed run row, exactly as before.
+pub(crate) async fn activity_target(
+    state: &AppState,
+    repo_id: &str,
+    category: GitActivityCategory,
+) -> Option<ActivityTarget> {
+    if !state.git_activity.is_active() {
+        return None;
+    }
+    let path = repo_path(state, repo_id).ok()?;
+    // git2 is blocking, so the read goes to the blocking pool like every other
+    // git call; a join error is just another `None`.
+    tauri::async_runtime::spawn_blocking(move || resolve_activity_target(&path, category))
+        .await
+        .ok()
+        .flatten()
 }
 
 /// Best-effort `AppError` → terminal exit code. A `HookRejected` has no single
@@ -97,7 +131,7 @@ mod tests {
         let saw: Arc<Mutex<Option<bool>>> = Arc::new(Mutex::new(None));
         let saw2 = Arc::clone(&saw);
         let out: Result<u32, AppError> =
-            tauri::async_runtime::block_on(with_activity(hub, GitActivityCategory::Push, move |em| {
+            tauri::async_runtime::block_on(with_activity(hub, GitActivityCategory::Push, None, move |em| {
                 let saw2 = saw2.clone();
                 async move {
                     *saw2.lock().expect("lock") = Some(em.is_none());
@@ -106,6 +140,51 @@ mod tests {
             }));
         assert_eq!(out.ok(), Some(7));
         assert_eq!(*saw.lock().expect("lock"), Some(true), "no subscriber ⇒ None recorder");
+    }
+
+    /// FU-1 §9.5 — with nobody subscribed, `activity_target` must short-circuit
+    /// on `is_active()` BEFORE any path work, so a repo whose workdir does not
+    /// exist still yields a plain `None` (no error, no panic, no repo open). The
+    /// missing path is the observable proxy: had the resolver run, git2 would
+    /// have been asked to open it.
+    #[test]
+    fn inactive_hub_target_is_none_without_touching_the_repo() {
+        let state = AppState::default();
+        {
+            let mut repos = state
+                .repos
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            repos.insert(
+                "bogus-repo".to_string(),
+                crate::state::RepoEntry {
+                    path: std::path::PathBuf::from("bonsai-p87b-fu1-nonexistent-workdir"),
+                    watcher: None,
+                    graph_cache: Arc::new(Mutex::new(None)),
+                },
+            );
+        }
+        assert!(!state.git_activity.is_active(), "no subscriber ⇒ inactive");
+        for category in [
+            GitActivityCategory::Push,
+            GitActivityCategory::Commit,
+            GitActivityCategory::Fetch,
+        ] {
+            let out = tauri::async_runtime::block_on(activity_target(
+                &state,
+                "bogus-repo",
+                category,
+            ));
+            assert_eq!(out, None, "inactive hub ⇒ no target ({category:?})");
+        }
+        // An unknown repo id is equally silent (the op's own `repo_path?` is what
+        // surfaces the real error).
+        let out = tauri::async_runtime::block_on(activity_target(
+            &state,
+            "not-open",
+            GitActivityCategory::Push,
+        ));
+        assert_eq!(out, None, "unknown repo id ⇒ no target");
     }
 
     #[test]

@@ -68,6 +68,12 @@ pub struct GitActivityEvent {
     /// `Progress` only (fetch/pull transfer counts) — §14.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub progress: Option<GitTransferProgress>,
+    /// `Started` ONLY — the run's target ref (e.g. `origin/main`, `main`).
+    /// A RAW git identifier, already sanitized + capped to
+    /// [`MAX_ACTIVITY_TARGET_CHARS`] by [`ActivityTarget`]; absent when the run
+    /// has no target (the UI then renders the bare category noun — FU-1 §3.3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
     /// Since the `Started` event.
     pub elapsed_ms: u64,
 }
@@ -163,6 +169,11 @@ pub trait GitActivityRecorder: Send + Sync {
 /// `&dyn GitActivityRecorder`.
 pub struct ActivityEmitter {
     id: String,
+    /// The run's target ref, set ONCE at construction and read only by
+    /// [`Self::started`]. No setter and no `&mut self` anywhere, so a mid-run
+    /// change is not representable (FU-1 §3.6-2); [`GitActivityRecorder`] gains
+    /// no method, so core cannot touch it either.
+    target: Option<String>,
     start: Instant,
     seq: AtomicU64,
     /// Count of `line` calls this activity — the per-activity line-event cap
@@ -172,9 +183,17 @@ pub struct ActivityEmitter {
 }
 
 impl ActivityEmitter {
-    pub fn new(id: String, emit: Box<dyn Fn(GitActivityEvent) + Send + Sync>) -> Self {
+    /// `target` is the run's ref, resolved BEFORE the run starts (see
+    /// [`crate::git::activity_target::resolve_activity_target`]); `None` when the
+    /// run has no target or the resolver declined.
+    pub fn new(
+        id: String,
+        target: Option<ActivityTarget>,
+        emit: Box<dyn Fn(GitActivityEvent) + Send + Sync>,
+    ) -> Self {
         ActivityEmitter {
             id,
+            target: target.map(ActivityTarget::into_string),
             start: Instant::now(),
             seq: AtomicU64::new(0),
             line_events: AtomicUsize::new(0),
@@ -204,6 +223,8 @@ impl ActivityEmitter {
             code: None,
             success: None,
             progress: None,
+            // Hard-coded: ONLY `started` ever carries a target (FU-1 §3.6-2).
+            target: None,
             elapsed_ms: self.elapsed_ms(),
         }
     }
@@ -217,6 +238,8 @@ impl ActivityEmitter {
             kind: phase,
             hook: None,
         });
+        // The ONLY read of `self.target`, and the only event that carries one.
+        ev.target = self.target.clone();
         (self.emit)(ev);
     }
 
@@ -345,6 +368,68 @@ fn truncate_chars(text: &str, cap: usize) -> String {
     let mut out: String = text.chars().take(cap.saturating_sub(1)).collect();
     out.push('…');
     out
+}
+
+/// Cap on a run target, in CHARS. Git's practical ref bound is far under this,
+/// so 255 never truncates a real name; it exists so a hostile ref cannot park a
+/// megabyte string in the frontend's 200-run store (FU-1 §3.6-4).
+pub const MAX_ACTIVITY_TARGET_CHARS: usize = 255;
+
+/// A run's target ref: a RAW git identifier, sanitized and capped. NEVER a human
+/// phrase — the frontend derives all copy (`all remotes`, prepositions) from the
+/// category (FU-1 §3.3).
+///
+/// The inner `String` is private and there is NO public constructor: outside this
+/// crate the only way to obtain one is
+/// [`crate::git::activity_target::resolve_activity_target`], so the command layer
+/// cannot invent a target at all (FU-1 §6, guarantee 1 — structural at the crate
+/// boundary).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActivityTarget(String);
+
+impl ActivityTarget {
+    /// THE funnel: the same [`strip_control_chars`] + [`truncate_chars`] rule
+    /// [`activity_line`] applies, one implementation (FU-1 §6.1). `None` when
+    /// nothing survives sanitation.
+    fn new(raw: &str) -> Option<Self> {
+        let clean = strip_control_chars(raw).trim().to_string();
+        if clean.is_empty() {
+            return None;
+        }
+        Some(ActivityTarget(truncate_chars(
+            &clean,
+            MAX_ACTIVITY_TARGET_CHARS,
+        )))
+    }
+
+    /// A remote name (`origin`). Spec'd for a future per-remote fetch (FU-1 F-3);
+    /// today reached through [`Self::remote_branch`].
+    pub(crate) fn remote(remote: &str) -> Option<Self> {
+        Self::new(remote)
+    }
+
+    /// `remote/branch` (`origin/main`). `branch` may be a short name or
+    /// `refs/heads/<x>`; the prefix is stripped. Each part is validated
+    /// SEPARATELY, so a blank part yields `None` rather than `"/main"`.
+    pub(crate) fn remote_branch(remote: &str, branch: &str) -> Option<Self> {
+        let rp = Self::remote(remote)?;
+        let bp = Self::branch(branch)?;
+        Self::new(&format!("{}/{}", rp.as_str(), bp.as_str()))
+    }
+
+    /// A branch SHORT name; a `refs/heads/` prefix is stripped here so no call
+    /// site can leak a full refname.
+    pub(crate) fn branch(branch: &str) -> Option<Self> {
+        Self::new(branch.strip_prefix("refs/heads/").unwrap_or(branch))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_string(self) -> String {
+        self.0
+    }
 }
 
 #[cfg(test)]

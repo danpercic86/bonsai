@@ -347,6 +347,7 @@ mod tests {
         let sink = std::sync::Arc::clone(&log);
         let emitter = ActivityEmitter::new(
             "git-test-flood".to_string(),
+            None,
             Box::new(move |ev| sink.lock().expect("lock").push(ev)),
         );
         let err = run_hook_streaming(

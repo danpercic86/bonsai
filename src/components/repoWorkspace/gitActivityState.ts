@@ -43,6 +43,10 @@ export interface GitActivityRun {
   linesDropped: number;
   /** Last-seen event `seq` for its id — drop any event whose `seq <= this`. */
   seq: number;
+  /** Set once from `started`; never changes for the run's life. A raw git
+   *  identifier (`origin/main`, `main`) or null; all copy is derived from the
+   *  category by `runTarget()` (P87b FU-1 §3.3). */
+  target: string | null;
 }
 
 /** Session-scoped run cap; newest-first, oldest TERMINAL evicted on overflow. */
@@ -59,6 +63,7 @@ export function newGitRun(
   phase: GitPhase,
   seq: number,
   now: number,
+  target: string | null,
 ): GitActivityRun {
   return {
     id,
@@ -73,6 +78,7 @@ export function newGitRun(
     lines: [],
     linesDropped: 0,
     seq,
+    target,
   };
 }
 

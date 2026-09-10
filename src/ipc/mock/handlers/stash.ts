@@ -145,7 +145,7 @@ export const stashHandlers = {
     _sign?: boolean | null,
     skipHooks?: boolean,
   ): Promise<CommitResult> {
-    return runMockActivity('amend', () => commitAmendInner(repoId, message, skipHooks));
+    return runMockActivity('amend', 'main', () => commitAmendInner(repoId, message, skipHooks));
   },
 } satisfies Partial<IpcApi>;
 

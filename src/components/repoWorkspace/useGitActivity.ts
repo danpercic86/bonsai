@@ -115,7 +115,12 @@ export function useGitActivity(): GitActivityApi {
         if (existing !== undefined) return;
         const phase = ev.phase ?? { kind: 'preparing' };
         const category = ev.category ?? 'commit';
-        runsRef.current.set(ev.id, newGitRun(ev.id, category, phase, ev.seq, now));
+        // FU-1 guarantee 2: the target is read HERE and nowhere else in the
+        // reducer — no later branch may write it.
+        runsRef.current.set(
+          ev.id,
+          newGitRun(ev.id, category, phase, ev.seq, now, ev.target ?? null),
+        );
         // Enforce the 200-run cap; running runs are never evicted (§8).
         const pruned = pruneGitRuns([...runsRef.current.keys()], runsRef.current);
         if (pruned !== null) {

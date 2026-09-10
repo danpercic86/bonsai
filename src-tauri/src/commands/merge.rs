@@ -79,7 +79,8 @@ pub(crate) async fn commit_merge_inner(
     sign: Option<bool>,
     skip_hooks: Option<bool>,
 ) -> Result<CommitResult, AppError> {
-    with_activity(state.git_activity_hub(), GitActivityCategory::MergeCommit, move |emitter| async move {
+    let target = activity_target(state, repo_id, GitActivityCategory::MergeCommit).await;
+    with_activity(state.git_activity_hub(), GitActivityCategory::MergeCommit, target, move |emitter| async move {
         let path = repo_path(state, repo_id)?;
         let skip = skip_hooks.unwrap_or(false);
         tauri::async_runtime::spawn_blocking(move || {

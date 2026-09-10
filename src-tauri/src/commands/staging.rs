@@ -72,7 +72,8 @@ pub(crate) async fn commit_inner(
     sign: Option<bool>,
     skip_hooks: Option<bool>,
 ) -> Result<CommitResult, AppError> {
-    with_activity(state.git_activity_hub(), GitActivityCategory::Commit, move |emitter| async move {
+    let target = activity_target(state, repo_id, GitActivityCategory::Commit).await;
+    with_activity(state.git_activity_hub(), GitActivityCategory::Commit, target, move |emitter| async move {
         let path = repo_path(state, repo_id)?;
         let skip = skip_hooks.unwrap_or(false);
         tauri::async_runtime::spawn_blocking(move || {
@@ -174,7 +175,8 @@ pub(crate) async fn commit_amend_inner(
     sign: Option<bool>,
     skip_hooks: Option<bool>,
 ) -> Result<CommitResult, AppError> {
-    with_activity(state.git_activity_hub(), GitActivityCategory::Amend, move |emitter| async move {
+    let target = activity_target(state, repo_id, GitActivityCategory::Amend).await;
+    with_activity(state.git_activity_hub(), GitActivityCategory::Amend, target, move |emitter| async move {
         let path = repo_path(state, repo_id)?;
         let skip = skip_hooks.unwrap_or(false);
         tauri::async_runtime::spawn_blocking(move || {

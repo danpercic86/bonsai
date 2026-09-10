@@ -18,10 +18,13 @@ import {
   hookPill,
   objectsReadout,
   phaseLabel,
+  runRowName,
+  runTarget,
   statusPill,
   timeLabel,
   timeTitle,
 } from './gitActivityFormat';
+import { RefLabel } from './RefLabel';
 import type { GitActivityCategory } from '../ipc';
 import type { GitActivityRun } from './repoWorkspace/useGitActivity';
 
@@ -52,6 +55,8 @@ export function GitActivityRow({ run, tick }: GitActivityRowProps) {
   const pill = statusPill(run.status);
   const Glyph = meta.glyph;
   const running = run.status === 'running';
+  // FU-1 §3.3: null = this run has no target; nothing is rendered in its place.
+  const target = runTarget(run);
   // §3.4 sub-line (running only): the live phase / transfer readout.
   const subLabel = running ? (objectsReadout(run) ?? phaseLabel(run.category, run.phase)) : null;
 
@@ -75,14 +80,20 @@ export function GitActivityRow({ run, tick }: GitActivityRowProps) {
     <li className="git-run" data-status={run.status}>
       {/* P87b FU-3: the roving focus target IS the disclosure control, so the
           role + expanded state live here — not on a wrapper and not on the
-          chevron. Its accessible name comes from the summary content (noun,
-          status pill, duration). Enter/Space are wired below because a
-          `role="button"` div gets neither for free. */}
+          chevron. Enter/Space are wired below because a `role="button"` div gets
+          neither for free.
+
+          FU-1 §3.7: the name is built EXPLICITLY by `runRowName()`, not left to
+          name computation over the children. Once the target lands the row is
+          two-plus text spans, and sibling name computation can splice a
+          separating space into the ref (the `Git config , repository` failure
+          recorded in `ui-reference.md` §11). */}
       <div
         className="git-run-summary"
         data-run-row
         role="button"
         aria-expanded={expanded}
+        aria-label={runRowName(run, tick)}
         tabIndex={-1}
         onClick={toggle}
         onKeyDown={(e) => {
@@ -92,26 +103,19 @@ export function GitActivityRow({ run, tick }: GitActivityRowProps) {
           }
         }}
       >
-        {/* Decorative twisty: the row above announces the state, so this is
-            hidden from AT. `tabIndex={-1}` keeps it out of the tab order —
-            an aria-hidden element must never be focusable — while the click
-            still works for pointer users (it bubbles to the row). */}
-        <button
-          type="button"
-          className="file-chevron git-run-chevron"
-          aria-hidden="true"
-          tabIndex={-1}
-          onClick={(e) => {
-            e.stopPropagation();
-            toggle();
-          }}
-        >
+        {/* Decorative twisty: a plain span, NOT a button. The row above is the
+            `role="button"`, and children-presentational forbids an interactive
+            descendant inside it; a nested `<button>` also took DOM focus on
+            click. A span is never focusable and needs no `tabindex`, and the
+            click keeps working because it bubbles to the row's own toggle. */}
+        <span className="file-chevron git-run-chevron" aria-hidden="true">
           <span>{expanded ? '▾' : '▸'}</span>
-        </button>
+        </span>
         <span className="git-run-glyph" aria-hidden="true">
           <Glyph />
         </span>
         <span className="git-run-noun">{meta.noun}</span>
+        {target !== null && <RefLabel value={target} className="git-run-target" withTitle />}
         {subLabel !== null && (
           <span className="git-run-subphase" title={phaseLabel(run.category, run.phase)}>
             {subLabel}

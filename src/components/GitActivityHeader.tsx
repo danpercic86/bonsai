@@ -9,8 +9,10 @@ import {
   durationLabel,
   objectsReadout,
   phaseLabel,
+  runTarget,
   statusPill,
 } from './gitActivityFormat';
+import { RefLabel } from './RefLabel';
 import type { GitActivityRun } from './repoWorkspace/useGitActivity';
 
 export interface GitActivityHeaderProps {
@@ -30,6 +32,8 @@ export function GitActivityHeader(props: GitActivityHeaderProps) {
   const pill = lead !== null ? statusPill(lead.status) : null;
   const Glyph = meta?.glyph ?? null;
   const running = lead?.status === 'running';
+  // FU-1 §3.3: null = this run has no target; nothing is rendered in its place.
+  const target = lead !== null ? runTarget(lead) : null;
   const detail =
     running && lead !== null
       ? (objectsReadout(lead) ?? phaseLabel(lead.category, lead.phase))
@@ -55,6 +59,9 @@ export function GitActivityHeader(props: GitActivityHeaderProps) {
             {Glyph !== null && <Glyph />}
           </span>
           <span className="git-dock-noun">{meta.noun}</span>
+          {target !== null && (
+            <RefLabel value={target} className="git-dock-target" withTitle />
+          )}
           <span className="git-dock-status" data-status={pill.dataStatus}>
             <span className="git-run-pill-glyph" aria-hidden="true">
               {pill.glyph}

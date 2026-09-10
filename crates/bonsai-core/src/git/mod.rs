@@ -21,6 +21,8 @@ mod ai_resolve_stream_events;
 pub mod ai_summary;
 /// P87 git-activity observability: the event model + recorder/emitter.
 pub mod activity;
+/// P87b FU-1: the read-only, infallible resolver for a run's `target` ref.
+pub mod activity_target;
 pub mod autostash;
 pub mod bisect;
 pub mod blame;

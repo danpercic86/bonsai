@@ -15,7 +15,10 @@ pub(crate) use bonsai_core::error::AppError;
 // P87 git-activity observability. `with_activity` (the command bracket) + the
 // activity types the op inners name; the emitter is derived to
 // `&dyn GitActivityRecorder` inside each `spawn_blocking`.
-pub(crate) use super::activity::with_activity;
+// P87b FU-1: `activity_target` resolves a run's target ref before the bracket;
+// `ActivityTarget` is only NAMED by `with_activity`'s signature (the command
+// layer cannot construct one — FU-1 §6 guarantee 1).
+pub(crate) use super::activity::{activity_target, with_activity};
 pub(crate) use bonsai_core::git::activity::{GitActivityCategory, GitActivityRecorder};
 // P62b/P63 forge command layer. Only the DTOs the command signatures NAME are
 // re-exported (mirrors the `compose_apply` / `ai_operation` convention below —

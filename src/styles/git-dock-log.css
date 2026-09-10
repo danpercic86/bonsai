@@ -1,0 +1,101 @@
+/* Bonsai — Git activity dock, EXPANDED RUN DETAIL (P87b §3.5): the per-hook
+   sub-rows, the output-log surface and its stdout/stderr treatment, the Copy
+   affordance and the blocking-hook note.
+
+   Split out of `git-dock.css` on 2026-09-10 when the FU-1 target rule pushed
+   that file past the 500-line limit — same seam the AI dock already uses
+   (`ai-dock.css` + `ai-dock-log.css`). Pure move: no rule changed. It is
+   imported immediately after `git-dock.css` in src/styles.css.
+
+   Cascade-safe by PROPERTY, not merely by order. Exactly ONE rule changed sides:
+   `.git-activity-dock :focus-visible` was the last rule in `git-dock.css` and so
+   followed this block; it now precedes it. Nothing below declares `outline` or
+   `outline-offset`, the only properties it sets, so the reorder cannot change a
+   computed value — and for the plain-class selectors below it also still wins on
+   specificity (0,2,0 vs 0,1,0). Keep the two imports adjacent and in this order
+   regardless.
+
+   §11 tokens: every colour aliases an existing themed §2 token (or is a
+   color-mix over one), so ONE rule set serves both themes. */
+
+/* ---- expanded detail (§3.5) */
+
+.git-run-detail {
+  padding: 4px var(--git-dock-pad-x, 12px) 8px;
+  background: var(--git-dock-bg, var(--bg-1));
+}
+
+.git-run-hooks {
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.git-run-hook {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 24px;
+}
+
+.git-run-hook-dot {
+  flex: none;
+  color: var(--git-dock-meta, var(--text-2));
+}
+
+.git-run-hook-name {
+  flex: none;
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+.git-run-output {
+  position: relative;
+}
+
+.git-run-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+/* Reuse `.ai-log` for the mono/pre-wrap surface; a bounded output block. */
+.git-run-log {
+  max-height: 220px;
+  border: 1px solid var(--git-dock-border, var(--border));
+  border-radius: 6px;
+  font-size: var(--git-dock-log-font, 12px);
+  line-height: var(--git-dock-log-line-h, 18px);
+}
+
+.git-log-empty {
+  color: var(--git-dock-meta, var(--text-2));
+  font-size: 11px;
+}
+
+/* §3.5-2: stdout is muted; stderr carries a shape cue (left border) + brightness
+   (--text-1), never colour alone. */
+.git-log-line {
+  color: var(--git-dock-meta, var(--text-2));
+}
+
+.git-log-line[data-stream='stderr'] {
+  color: var(--text-1);
+  border-left: 2px solid var(--warning);
+  padding-left: 6px;
+  margin-left: -8px;
+}
+
+/* §3.5-4: the tie to HookOutputDialog. */
+.git-run-note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--git-dock-meta, var(--text-2));
+}

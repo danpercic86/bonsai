@@ -183,6 +183,106 @@ export function timeTitle(ms: number): string {
   return new Date(ms).toLocaleString();
 }
 
+// ---------------------------------------------------------------- run target (FU-1)
+
+/**
+ * FU-1 §3.3 — the row/bar target text, or null for "this run has no target worth
+ * showing".
+ *
+ * PURE FORMATTER. It never sanitizes, truncates or rewrites `run.target`: the
+ * backend (and the mock, which mirrors it) owns that funnel, so a regression
+ * there must surface here rather than being masked (run-target §7).
+ *
+ * The only derived string is `all remotes` — the backend sends `null` for a
+ * fetch-all because it must never send a human phrase (§3.3, §3.6-1).
+ */
+export function runTarget(run: GitActivityRun): string | null {
+  if (run.target !== null) return run.target;
+  return run.category === 'fetch' ? 'all remotes' : null;
+}
+
+/** §3.7 — the preposition that joins the noun to the target in the ACCESSIBLE
+ *  name only. Three values (`to` / `from` / `on`); keyed exhaustively by category
+ *  so a new category cannot silently miss one. Used by `runRowName` and
+ *  `sentenceFor` — nowhere else. The visible row stays preposition-free (§3.2). */
+const TARGET_PREPOSITION: Record<GitActivityCategory, 'to' | 'from' | 'on'> = {
+  push: 'to',
+  forcePush: 'to',
+  fetch: 'from',
+  pull: 'from',
+  commit: 'on',
+  amend: 'on',
+  mergeCommit: 'on',
+};
+
+/** `Push` / `Push to origin/main` — the noun with its target, in words. */
+function nounWithTarget(run: GitActivityRun): string {
+  const meta = categoryMeta(run.category);
+  const target = runTarget(run);
+  return target === null
+    ? meta.noun
+    : `${meta.noun} ${TARGET_PREPOSITION[run.category]} ${target}`;
+}
+
+/** `Push` / `Push to origin/main` using the VERB (the announcer's phrasing). */
+function verbWithTarget(run: GitActivityRun): string {
+  const meta = categoryMeta(run.category);
+  const target = runTarget(run);
+  return target === null
+    ? meta.verb
+    : `${meta.verb} ${TARGET_PREPOSITION[run.category]} ${target}`;
+}
+
+/** Elapsed spelled out for a screen reader — `1.2 seconds`, `2 minutes 5 seconds`.
+ *  (`durationLabel`'s `2:05` reads as a time of day.) */
+function durationWords(run: GitActivityRun, now: number): string {
+  const ms = Math.max(0, (run.endedAt ?? now) - run.startedAt);
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} seconds`;
+  const total = Math.floor(ms / 1000);
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  const minPart = `${mins} ${mins === 1 ? 'minute' : 'minutes'}`;
+  if (secs === 0) return minPart;
+  return `${minPart} ${secs} ${secs === 1 ? 'second' : 'seconds'}`;
+}
+
+/**
+ * §3.7 — the run row's accessible name: the visible row, in words, in reading
+ * order. Built EXPLICITLY because the target makes the row two-plus text spans
+ * and name computation over siblings can insert a separating space (the
+ * `Git config , repository` failure in `ui-reference.md` §11).
+ *
+ * `Push to origin/main — success, 1.2 seconds, 14:32`
+ * `Push to origin/main — running, sending objects, 2.4 seconds`
+ * `Push to origin/main — running, pre-push hook, 0.4 seconds`
+ *
+ * A running row carries the PHASE word, not the live `objectsReadout` counts: a
+ * name that changes on every progress tick is announcer churn. The `⋯ trimmed`
+ * chip is deliberately absent — §3.1's push row has the chip and §3.7's name for
+ * that same row does not.
+ */
+export function runRowName(run: GitActivityRun, now: number): string {
+  const parts = [statusPill(run.status).label.toLowerCase()];
+  if (run.status === 'running') {
+    // §3.7-1: the status word for a running row IS `running`, and the hook phase
+    // labels also start with it (`Running pre-push hook…`), which linearized to
+    // `— running, running pre-push hook,`. Drop one leading `running ` from the
+    // phase clause. Anchored, so `working`/`preparing`/`sending objects` are
+    // untouched. Only the accessible name de-duplicates: the VISIBLE bar keeps
+    // the repeat, because there the pill is a chip and the phase is muted text
+    // two type steps apart — a linear name has no such chunking.
+    parts.push(
+      phaseLabel(run.category, run.phase)
+        .replace(/…$/, '')
+        .toLowerCase()
+        .replace(/^running /, ''),
+    );
+  }
+  parts.push(durationWords(run, now));
+  if (run.status !== 'running' && run.endedAt !== null) parts.push(timeLabel(run.endedAt));
+  return `${nounWithTarget(run)} — ${parts.join(', ')}`;
+}
+
 // ---------------------------------------------------------------- announcer
 
 const PHASE_TOKEN = (phase: GitPhase): string => `${phase.kind}:${phase.hook ?? ''}`;
@@ -209,9 +309,11 @@ export function gitAnnounceFor(runs: GitActivityRun[], seen: Map<string, string>
 }
 
 function sentenceFor(run: GitActivityRun): string | null {
-  const meta = categoryMeta(run.category);
-  if (run.status === 'success') return `${meta.verb} finished — success`;
-  if (run.status === 'failed') return `${meta.verb} failed`;
+  // §3.7: TERMINAL results carry the target (`Push to origin/main failed`);
+  // phase transitions stay bare, because repeating the target on every phase
+  // change is the hostile verbosity §6 forbids.
+  if (run.status === 'success') return `${verbWithTarget(run)} finished — success`;
+  if (run.status === 'failed') return `${verbWithTarget(run)} failed`;
   // running: announce the meaningful phase transitions, not the initial preparing.
   if (run.phase.kind === 'preparing') return null;
   return phaseLabel(run.category, run.phase).replace(/…$/, '');

@@ -18,7 +18,10 @@ export interface RefLabelProps {
   value: string;
   /** Class on the wrapper, so each surface keeps its own font/colour. */
   className?: string;
-  /** Omit `title` where an ancestor already owns the tooltip (the dock row does). */
+  /** Put the whole `value` on the span's `title`, so an elided ref stays
+   *  recoverable. Pass it wherever this label is the only carrier of the full
+   *  string — both git-dock target surfaces do (FU-1 §3.4/§3.9). Omit it where an
+   *  ancestor already owns a tooltip for the same text, so the two do not fight. */
   withTitle?: boolean;
 }
 

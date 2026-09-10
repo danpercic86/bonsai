@@ -142,7 +142,7 @@ export const statusHandlers = {
     _sign?: boolean | null,
     skipHooks?: boolean,
   ): Promise<CommitResult> {
-    return runMockActivity('commit', () => commitInner(repoId, message, skipHooks));
+    return runMockActivity('commit', 'main', () => commitInner(repoId, message, skipHooks));
   },
 } satisfies Partial<IpcApi>;
 

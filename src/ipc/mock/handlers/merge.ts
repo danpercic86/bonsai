@@ -80,7 +80,9 @@ export const mergeHandlers = {
   // P59a: `skipHooks` ≡ --no-verify; the commit hooks fire around the merge
   // commit (after the unresolved-conflicts guard, matching the backend order).
   async commitMerge(repoId: string, message: string, skipHooks?: boolean): Promise<CommitResult> {
-    return runMockActivity('mergeCommit', () => commitMergeInner(repoId, message, skipHooks));
+    return runMockActivity('mergeCommit', 'main', () =>
+      commitMergeInner(repoId, message, skipHooks),
+    );
   },
 
   async abortMerge(repoId: string): Promise<void> {

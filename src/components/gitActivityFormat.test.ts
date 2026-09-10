@@ -11,6 +11,8 @@ import {
   objectsReadout,
   phaseLabel,
   progressFraction,
+  runRowName,
+  runTarget,
   statusPill,
 } from './gitActivityFormat';
 import type { GitActivityCategory, GitPhase, GitTransferProgress } from '../ipc';
@@ -30,6 +32,7 @@ function run(over: Partial<GitActivityRun> = {}): GitActivityRun {
     lines: over.lines ?? [],
     linesDropped: over.linesDropped ?? 0,
     seq: over.seq ?? 0,
+    target: over.target ?? null,
   };
 }
 
@@ -155,5 +158,236 @@ describe('gitAnnounceFor — phase transitions + terminal only (§6)', () => {
     expect(gitAnnounceFor([run({ id: 'r2', status: 'failed', endedAt: 2000 })], seen2)).toBe(
       'Push failed',
     );
+  });
+});
+
+// FU-1 §3.3/§3.7 — the run target: the visible string table, the accessible
+// name, and the announcer's terminal sentences.
+//
+// Timestamps are built with `new Date(y, m, d, h, m)` (LOCAL), never epoch
+// literals, because `timeLabel` renders local time and an epoch literal would
+// make these assertions timezone-dependent.
+function atLocal(hour: number, minute: number): number {
+  return new Date(2026, 0, 1, hour, minute, 0).getTime();
+}
+
+describe('runTarget — the §3.3 string table', () => {
+  const cases: Array<[GitActivityCategory, string | null, string | null]> = [
+    ['push', 'origin/main', 'origin/main'],
+    ['push', 'origin/feature/x', 'origin/feature/x'],
+    // push where the remote is known but the branch is not.
+    ['push', 'origin', 'origin'],
+    ['forcePush', 'origin/main', 'origin/main'],
+    ['pull', 'origin/main', 'origin/main'],
+    // fetch of ONE remote (mock-only today — there is no per-remote backend op).
+    ['fetch', 'origin', 'origin'],
+    // fetch-all: the ONLY derived string in the table.
+    ['fetch', null, 'all remotes'],
+    ['commit', 'main', 'main'],
+    // commit on a detached / unborn HEAD: no target, and NO placeholder.
+    ['commit', null, null],
+    ['amend', 'main', 'main'],
+    ['mergeCommit', 'main', 'main'],
+    // an old event / a mock without the knob, for every non-fetch category.
+    ['push', null, null],
+    ['forcePush', null, null],
+    ['pull', null, null],
+    ['amend', null, null],
+    ['mergeCommit', null, null],
+  ];
+  it.each(cases)('%s + %o → %o', (category, target, expected) => {
+    expect(runTarget(run({ category, target }))).toBe(expected);
+  });
+
+  it('never invents a placeholder and never adds an arrow, quote or preposition', () => {
+    for (const [category, target] of cases) {
+      const out = runTarget(run({ category, target }));
+      if (out === null) continue;
+      if (category === 'fetch' && target === null) continue; // the one derived phrase
+      expect(out).not.toMatch(/['"→]/);
+      expect(out).not.toContain(' ');
+    }
+  });
+
+  it('does NOT re-sanitize — a backend regression must surface, not be masked', () => {
+    // A bidi override that reached the store means the BACKEND funnel broke; the
+    // formatter is pure and passes it straight through so the harness sees it.
+    // Written as the ESCAPE, never the literal char: a literal U+202E reorders
+    // this source line in every editor and review diff (run-target §8).
+    const dirty = 'origin/ma\u{202e}in';
+    expect(runTarget(run({ category: 'push', target: dirty }))).toBe(dirty);
+  });
+});
+
+describe('runRowName — the §3.7 accessible-name table', () => {
+  it.each([
+    [
+      'push, success',
+      run({
+        category: 'push',
+        target: 'origin/main',
+        status: 'success',
+        startedAt: atLocal(14, 32) - 1_200,
+        endedAt: atLocal(14, 32),
+      }),
+      'Push to origin/main — success, 1.2 seconds, 14:32',
+    ],
+    [
+      'fetch-all, success',
+      run({
+        category: 'fetch',
+        target: null,
+        status: 'success',
+        startedAt: atLocal(14, 31) - 800,
+        endedAt: atLocal(14, 31),
+      }),
+      'Fetch from all remotes — success, 0.8 seconds, 14:31',
+    ],
+    [
+      'commit on a branch',
+      run({
+        category: 'commit',
+        target: 'feature/api/retry-budget',
+        status: 'success',
+        startedAt: atLocal(14, 30) - 200,
+        endedAt: atLocal(14, 30),
+      }),
+      'Commit on feature/api/retry-budget — success, 0.2 seconds, 14:30',
+    ],
+    [
+      'push, running',
+      run({
+        category: 'push',
+        target: 'origin/main',
+        status: 'running',
+        phase: { kind: 'network' },
+        startedAt: 0,
+        endedAt: null,
+      }),
+      'Push to origin/main — running, sending objects, 2.4 seconds',
+    ],
+    [
+      'push, running a hook',
+      run({
+        category: 'push',
+        target: 'origin/main',
+        status: 'running',
+        phase: { kind: 'runningHook', hook: 'pre-push' },
+        startedAt: 2_000,
+        endedAt: null,
+      }),
+      // §3.7-1: the pill already said `running`, so the phase clause drops its
+      // own leading `running ` — never `running, running pre-push hook`.
+      'Push to origin/main — running, pre-push hook, 0.4 seconds',
+    ],
+    [
+      'push, running, preparing',
+      run({
+        category: 'push',
+        target: 'origin/main',
+        status: 'running',
+        phase: { kind: 'preparing' },
+        startedAt: 2_300,
+        endedAt: null,
+      }),
+      'Push to origin/main — running, preparing, 0.1 seconds',
+    ],
+    [
+      'push, running, unknown phase',
+      run({
+        category: 'push',
+        target: 'origin/main',
+        status: 'running',
+        // No hook name ⇒ the generic `Working…` fallback; it proves the
+        // `running ` strip is anchored and does not touch other labels.
+        phase: { kind: 'runningHook' },
+        startedAt: 2_300,
+        endedAt: null,
+      }),
+      'Push to origin/main — running, working, 0.1 seconds',
+    ],
+    [
+      'commit, detached HEAD',
+      run({
+        category: 'commit',
+        target: null,
+        status: 'success',
+        startedAt: atLocal(14, 30) - 200,
+        endedAt: atLocal(14, 30),
+      }),
+      'Commit — success, 0.2 seconds, 14:30',
+    ],
+    [
+      'failed push with a blocking hook',
+      run({
+        category: 'push',
+        target: 'origin/main',
+        status: 'failed',
+        startedAt: atLocal(14, 29) - 900,
+        endedAt: atLocal(14, 29),
+      }),
+      'Push to origin/main — failed, 0.9 seconds, 14:29',
+    ],
+  ])('%s', (_label, r, expected) => {
+    expect(runRowName(r, 2_400)).toBe(expected);
+  });
+
+  it('omits the `⋯ trimmed` chip (§3.1 shows the chip; §3.7 names that row without it)', () => {
+    const r = run({
+      category: 'push',
+      target: 'origin/main',
+      status: 'success',
+      linesDropped: 120,
+      startedAt: atLocal(14, 32) - 1_200,
+      endedAt: atLocal(14, 32),
+    });
+    expect(runRowName(r, 0)).toBe('Push to origin/main — success, 1.2 seconds, 14:32');
+  });
+
+  it('spells a minute-plus elapsed out in words (`2:05` would read as a clock time)', () => {
+    const r = run({
+      category: 'push',
+      target: 'origin/main',
+      status: 'success',
+      startedAt: atLocal(14, 32) - 125_000,
+      endedAt: atLocal(14, 32),
+    });
+    expect(runRowName(r, 0)).toBe(
+      'Push to origin/main — success, 2 minutes 5 seconds, 14:32',
+    );
+  });
+});
+
+describe('the announcer carries the target on TERMINAL results only (§3.7)', () => {
+  it('names the target when finishing and when failing', () => {
+    const seen = new Map<string, string>();
+    expect(
+      gitAnnounceFor(
+        [run({ id: 'a', target: 'origin/main', status: 'success', endedAt: 2000 })],
+        seen,
+      ),
+    ).toBe('Push to origin/main finished — success');
+    expect(
+      gitAnnounceFor(
+        [run({ id: 'b', target: 'origin/main', status: 'failed', endedAt: 2000 })],
+        seen,
+      ),
+    ).toBe('Push to origin/main failed');
+    expect(
+      gitAnnounceFor(
+        [run({ id: 'c', category: 'fetch', target: null, status: 'success', endedAt: 2000 })],
+        seen,
+      ),
+    ).toBe('Fetch from all remotes finished — success');
+  });
+
+  it('leaves phase transitions BARE — repeating the target on every phase is hostile', () => {
+    const seen = new Map<string, string>();
+    expect(
+      gitAnnounceFor(
+        [run({ id: 'd', target: 'origin/main', phase: { kind: 'network' } })],
+        seen,
+      ),
+    ).toBe('Sending objects');
   });
 });

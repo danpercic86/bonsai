@@ -87,7 +87,8 @@ pub async fn fetch(
 /// in `with_activity` (category `Fetch`) — emits a `Network`-phase run + throttled
 /// transfer `Progress`; a no-op when nobody is subscribed.
 pub(crate) async fn fetch_inner(state: &AppState, repo_id: &str) -> Result<FetchResult, AppError> {
-    with_activity(state.git_activity_hub(), GitActivityCategory::Fetch, move |emitter| async move {
+    let target = activity_target(state, repo_id, GitActivityCategory::Fetch).await;
+    with_activity(state.git_activity_hub(), GitActivityCategory::Fetch, target, move |emitter| async move {
         let path = repo_path(state, repo_id)?;
         tauri::async_runtime::spawn_blocking(move || {
             let rec: Option<&dyn GitActivityRecorder> =
@@ -125,7 +126,8 @@ pub async fn pull(
 /// in `with_activity` (category `Pull`) — a `Network`-phase run + transfer
 /// `Progress`; a no-op when nobody is subscribed.
 pub(crate) async fn pull_inner(state: &AppState, repo_id: &str) -> Result<PullResult, AppError> {
-    with_activity(state.git_activity_hub(), GitActivityCategory::Pull, move |emitter| async move {
+    let target = activity_target(state, repo_id, GitActivityCategory::Pull).await;
+    with_activity(state.git_activity_hub(), GitActivityCategory::Pull, target, move |emitter| async move {
         let path = repo_path(state, repo_id)?;
         tauri::async_runtime::spawn_blocking(move || {
             let rec: Option<&dyn GitActivityRecorder> =
@@ -161,7 +163,8 @@ pub(crate) async fn push_inner(
     repo_id: &str,
     skip_hooks: Option<bool>,
 ) -> Result<PushResult, AppError> {
-    with_activity(state.git_activity_hub(), GitActivityCategory::Push, move |emitter| async move {
+    let target = activity_target(state, repo_id, GitActivityCategory::Push).await;
+    with_activity(state.git_activity_hub(), GitActivityCategory::Push, target, move |emitter| async move {
         let path = repo_path(state, repo_id)?;
         let skip = skip_hooks.unwrap_or(false);
         tauri::async_runtime::spawn_blocking(move || {
@@ -200,7 +203,8 @@ pub(crate) async fn force_push_inner(
     repo_id: &str,
     skip_hooks: Option<bool>,
 ) -> Result<PushResult, AppError> {
-    with_activity(state.git_activity_hub(), GitActivityCategory::ForcePush, move |emitter| async move {
+    let target = activity_target(state, repo_id, GitActivityCategory::ForcePush).await;
+    with_activity(state.git_activity_hub(), GitActivityCategory::ForcePush, target, move |emitter| async move {
         let path = repo_path(state, repo_id)?;
         let skip = skip_hooks.unwrap_or(false);
         // P59b: the push runs through the git binary for git's atomic

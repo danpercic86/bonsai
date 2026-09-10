@@ -65,4 +65,8 @@ export interface GitActivityEvent {
   success?: boolean;
   /** `progress` only. */
   progress?: GitTransferProgress;
+  /** `started` only — the run's target ref. A raw git identifier (`origin/main`,
+   *  `main`), sanitized and <=255 chars. Absent = this run has no target; the
+   *  frontend derives all copy from the category (never a human phrase here). */
+  target?: string;
 }

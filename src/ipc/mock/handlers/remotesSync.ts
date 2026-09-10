@@ -1,6 +1,7 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
-// P87b: each op delegates to `runMockActivity(category, inner)` so the git-activity
-// stream (View C phase readout + View D log) is exercised in the browser harness.
+// P87b: each op delegates to `runMockActivity(category, target, inner)` so the
+// git-activity stream (View C phase readout + View D log) is exercised in the
+// browser harness.
 import type { IpcApi } from '../../types';
 import { randomOid } from '../../fixtures/oids';
 import { delay, requireRepo, throwAuthFailed, throwNetworkError } from '../repoState';
@@ -54,23 +55,25 @@ function scheduleMockTagAutoSync(repoId: string): void {
 }
 
 export const remotesSyncHandlers = {
+  // FU-1 §4: fetch is ALWAYS fetch-all here (there is no per-remote entry
+  // point), so the target is null and the frontend derives `all remotes`.
   async fetch(repoId: string): Promise<FetchResult> {
-    return runMockActivity('fetch', () => fetchInner(repoId));
+    return runMockActivity('fetch', null, () => fetchInner(repoId));
   },
 
   async pull(repoId: string): Promise<PullResult> {
-    return runMockActivity('pull', () => pullInner(repoId));
+    return runMockActivity('pull', 'origin/main', () => pullInner(repoId));
   },
 
   async push(repoId: string, skipHooks?: boolean): Promise<PushResult> {
-    return runMockActivity('push', () => pushInner(repoId, skipHooks));
+    return runMockActivity('push', 'origin/main', () => pushInner(repoId, skipHooks));
   },
 
   // P37: force-push the current branch WITH A LEASE. `?remote=leasefail` drives
   // the refusal path (the remote moved since the last fetch); otherwise the
   // lease holds and the remote-tracking tip advances to the local tip.
   async forcePush(repoId: string, skipHooks?: boolean): Promise<PushResult> {
-    return runMockActivity('forcePush', () => forcePushInner(repoId, skipHooks));
+    return runMockActivity('forcePush', 'origin/main', () => forcePushInner(repoId, skipHooks));
   },
 } satisfies Partial<IpcApi>;
 

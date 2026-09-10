@@ -6,11 +6,20 @@ use super::*;
 use std::sync::{Arc, Mutex};
 
 /// Collects every emitted event so an assertion can inspect the full sequence.
+/// No run target (the pre-FU-1 shape).
 fn recording() -> (Arc<ActivityEmitter>, Arc<Mutex<Vec<GitActivityEvent>>>) {
+    recording_with_target(None)
+}
+
+/// [`recording`] plus an FU-1 run target set at construction.
+fn recording_with_target(
+    target: Option<ActivityTarget>,
+) -> (Arc<ActivityEmitter>, Arc<Mutex<Vec<GitActivityEvent>>>) {
     let log = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&log);
     let emitter = Arc::new(ActivityEmitter::new(
         "git-test-0".to_string(),
+        target,
         Box::new(move |ev| sink.lock().expect("lock").push(ev)),
     ));
     (emitter, log)
@@ -181,4 +190,96 @@ fn new_activity_id_is_unique_and_prefixed() {
     let b = new_activity_id();
     assert_ne!(a, b);
     assert!(a.starts_with("git-"), "unexpected id: {a}");
+}
+
+// ------------------------------------ P87b FU-1: the run target (§6)
+
+/// Guarantee 3 — the target goes through the SAME funnel as `activity_line`:
+/// bidi overrides/isolates, zero-width chars, and C0/C1 controls are all gone.
+#[test]
+fn target_strips_bidi_and_zero_width() {
+    let t = ActivityTarget::remote_branch("origin", "ma\u{202e}in").expect("target");
+    assert_eq!(t.as_str(), "origin/main");
+
+    let zero_width = ActivityTarget::branch("fe\u{200b}at\u{200d}ure\u{feff}").expect("target");
+    assert_eq!(zero_width.as_str(), "feature");
+
+    // C0 (`\n`, `\t`) cannot forge a second row; C1 (`\u{0085}` NEL) neither.
+    let c0 = ActivityTarget::branch("ma\nin\tx\u{0085}y").expect("target");
+    assert_eq!(c0.as_str(), "mainxy");
+
+    // Nothing survives ⇒ no target at all, rather than an empty pill.
+    assert_eq!(ActivityTarget::branch("\u{202e}\u{200b}\n"), None);
+    assert_eq!(ActivityTarget::branch("   "), None);
+    // Each part is validated separately, so a blank part never yields "/main".
+    assert_eq!(ActivityTarget::remote_branch("", "main"), None);
+    assert_eq!(ActivityTarget::remote_branch("origin", "\u{200b}"), None);
+}
+
+/// Guarantee 4 — a hostile ref cannot park a megabyte string in the frontend's
+/// run store: exactly [`MAX_ACTIVITY_TARGET_CHARS`] chars, ending in `…`.
+#[test]
+fn target_capped_at_255_chars() {
+    let long = "b".repeat(400);
+    let t = ActivityTarget::branch(&long).expect("target");
+    assert_eq!(t.as_str().chars().count(), MAX_ACTIVITY_TARGET_CHARS);
+    assert!(t.as_str().ends_with('…'), "capped marker missing");
+
+    // A real ref name is far under the cap and is never touched.
+    let real = ActivityTarget::remote_branch("origin", "refs/heads/feature/x").expect("target");
+    assert_eq!(real.as_str(), "origin/feature/x");
+}
+
+/// Guarantee 2 — the target rides on `started` and NOTHING else, even though
+/// every other kind flows through the same `base()`.
+#[test]
+fn target_appears_only_on_started() {
+    let (em, log) = recording_with_target(ActivityTarget::remote_branch("origin", "main"));
+    em.started(GitActivityCategory::Push, GitPhaseKind::Preparing);
+    em.phase(GitPhaseKind::RunningHook, Some("pre-push"));
+    em.line(GitStream::Stdout, "hello");
+    em.hook_done("pre-push", Some(0), true);
+    em.progress(GitTransferProgress {
+        received_objects: 1,
+        total_objects: 2,
+        indexed_objects: 1,
+        received_bytes: 3,
+        total_deltas: None,
+        indexed_deltas: None,
+    });
+    em.finished(Some(0), true);
+
+    let events = log.lock().expect("lock");
+    let carriers: Vec<GitActivityKind> = events
+        .iter()
+        .filter(|e| e.target.is_some())
+        .map(|e| e.kind)
+        .collect();
+    assert_eq!(
+        carriers,
+        vec![GitActivityKind::Started],
+        "exactly one event may carry a target"
+    );
+    assert_eq!(events[0].target.as_deref(), Some("origin/main"));
+}
+
+/// §9.4 — `None` is ABSENT on the wire (matching the TS `target?: string`), not
+/// `"target": null`.
+#[test]
+fn target_none_omits_the_field() {
+    let (em, log) = recording();
+    em.started(GitActivityCategory::Commit, GitPhaseKind::Preparing);
+    let events = log.lock().expect("lock");
+    let json = serde_json::to_value(&events[0]).expect("json");
+    assert!(
+        json.get("target").is_none(),
+        "a None target must be omitted, got {json}"
+    );
+
+    // …and present, camelCase, when there IS one.
+    let (em, log) = recording_with_target(ActivityTarget::branch("main"));
+    em.started(GitActivityCategory::Commit, GitPhaseKind::Preparing);
+    let events = log.lock().expect("lock");
+    let json = serde_json::to_value(&events[0]).expect("json");
+    assert_eq!(json.get("target").and_then(|v| v.as_str()), Some("main"));
 }

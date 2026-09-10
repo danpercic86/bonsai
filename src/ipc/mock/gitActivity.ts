@@ -2,7 +2,7 @@
  * P87b — the git-activity stream in the mock IPC layer.
  *
  * `subscribeGitActivity` / `emitGitActivity` are the subscribe + fan-out seam
- * (mirroring the events bus / `GitActivityHub`). `runMockActivity(category, fn)`
+ * (mirroring the events bus / `GitActivityHub`). `runMockActivity(category, target, fn)`
  * wraps a push/commit/fetch handler body: it emits `started` → the category's
  * phase/line/hookDone/progress script → runs `fn` → `finished` (success from
  * resolve, failure from throw). A shared per-run sequencer gives a monotonic `seq`
@@ -21,6 +21,18 @@
  *   ?fetchNoCount — a Network phase with NO progress → indeterminate fallback.
  *   ?gitFlood     — ~700 output lines (one exactly 2000 chars) → the 500-line cap,
  *                   `linesDropped`, the `⋯ trimmed` + `truncated` chips.
+ *
+ * FU-1 run-target seams (§3.10) — the `target` carried on `started`:
+ *   ?fetchAll      — fetch with NO target → the frontend-derived `Fetch all
+ *                    remotes`. Already the default; named so the case is
+ *                    addressable.
+ *   ?gitNoTarget   — forces `target: null` for EVERY category → the
+ *                    no-placeholder rule (the row is the bare noun).
+ *   ?gitLongTarget — a >=90-char ref on push/force-push → the 22ch ellipsis with
+ *                    the leaf intact, recoverable from `title`.
+ *   ?gitBidiTarget — a ref carrying U+202E on push/force-push, fed through
+ *                    `mockActivityTarget` → the emitted string must be exactly
+ *                    `origin/main`.
  */
 import { MOCK_PRE_PUSH_OUTPUT } from './hooksGate';
 import { delay, query } from './repoState';
@@ -61,9 +73,77 @@ const PUSH_SLOW = query('pushSlow') !== null;
 const FETCH_SLOW = query('fetchSlow') !== null;
 const FETCH_NO_COUNT = query('fetchNoCount') !== null;
 const GIT_FLOOD = query('gitFlood') !== null;
+const FETCH_ALL = query('fetchAll') !== null;
+const GIT_NO_TARGET = query('gitNoTarget') !== null;
+const GIT_LONG_TARGET = query('gitLongTarget') !== null;
+const GIT_BIDI_TARGET = query('gitBidiTarget') !== null;
 
 /** MIRRORS `bonsai_core::git::activity::MAX_ACTIVITY_LINE_CHARS`. */
 const MAX_ACTIVITY_LINE_CHARS = 2000;
+
+/** MIRRORS `bonsai_core::git::activity::MAX_ACTIVITY_TARGET_CHARS`. */
+const MAX_ACTIVITY_TARGET_CHARS = 255;
+
+/** `?gitLongTarget` — a ref long enough to overflow the 22ch box several times
+ *  over, whose LEAF is the part that names the thing (P111 R3). */
+export const MOCK_LONG_TARGET =
+  'origin/feature/very-long-experimental-branch/with-many-nested-path-segments/retry-budget-tuning';
+
+/** `?gitBidiTarget` — an RTL override spliced into a ref (written as the escape,
+ *  never the literal char). `mockActivityTarget` must reduce it to exactly
+ *  `origin/main`. */
+export const MOCK_BIDI_TARGET = 'origin/ma\u{202e}in';
+
+/**
+ * MIRRORS `ActivityTarget::new` (P87b-FU1-run-target §2). The mock is a second
+ * backend: its fixtures cross the same boundary, so they get the same funnel.
+ * Strips C0/C1 controls + the bidi overrides/isolates (U+200E/200F,
+ * U+202A-202E, U+2066-2069) + the zero-width chars (U+200B-200D, U+FEFF),
+ * trims, then caps at 255 CHARS with a trailing `…`.
+ *
+ * Written as a code-point filter rather than a regex both because that is the
+ * exact shape of Rust's `strip_control_chars` and because a control-char class
+ * in a regex literal is a lint error. `[...s]` iterates code points, matching
+ * Rust's `chars()`.
+ */
+export function mockActivityTarget(raw: string | null): string | null {
+  if (raw === null) return null;
+  const clean = [...raw]
+    .filter((ch) => {
+      const cp = ch.codePointAt(0) ?? 0;
+      if (cp <= 0x1f || (cp >= 0x7f && cp <= 0x9f)) return false; // C0 / C1
+      if (cp >= 0x200b && cp <= 0x200f) return false; // ZWSP/ZWNJ/ZWJ + LRM/RLM
+      if (cp >= 0x202a && cp <= 0x202e) return false; // bidi embeddings/overrides
+      if (cp >= 0x2066 && cp <= 0x2069) return false; // bidi isolates
+      return cp !== 0xfeff; // BOM
+    })
+    .join('')
+    .trim();
+  if (clean === '') return null;
+  const chars = [...clean];
+  if (chars.length <= MAX_ACTIVITY_TARGET_CHARS) return clean;
+  return `${chars.slice(0, MAX_ACTIVITY_TARGET_CHARS - 1).join('')}…`;
+}
+
+/** §3.10 — the query-seam override for a run's target. The call site's fixture
+ *  is the default; a seam replaces it. */
+function seamTarget(category: GitActivityCategory, target: string | null): string | null {
+  if (GIT_NO_TARGET) return null;
+  // Scoped like ?gitLongTarget: a fetch run's target is always null in the real
+  // backend (fetch-all has no single ref, run-target F-3), so overriding EVERY
+  // category here would put a fetch-with-target state on screen that the app
+  // cannot produce.
+  if (GIT_BIDI_TARGET && (category === 'push' || category === 'forcePush')) {
+    return MOCK_BIDI_TARGET;
+  }
+  if (GIT_LONG_TARGET && (category === 'push' || category === 'forcePush')) {
+    return MOCK_LONG_TARGET;
+  }
+  // Redundant by construction (fetch-all is the only fetch entry point, so the
+  // call site already passes null) — the seam exists so the case has a name.
+  if (category === 'fetch' && FETCH_ALL) return null;
+  return target;
+}
 
 /** Passing pre-push output (a "refusal" body is MOCK_PRE_PUSH_OUTPUT, used only on
  *  the fail path so the dialog body stays verbatim). */
@@ -91,8 +171,16 @@ class GitSequencer {
     });
   }
 
-  start(category: GitActivityCategory): void {
-    this.emit('started', { category, phase: { kind: 'preparing' } });
+  /** `target` rides on `started` ONLY, through the sanitizer mirror, and the key
+   *  is DROPPED when null so the wire shape matches serde's
+   *  `skip_serializing_if = "Option::is_none"`. */
+  start(category: GitActivityCategory, target: string | null): void {
+    const clean = mockActivityTarget(target);
+    this.emit('started', {
+      category,
+      phase: { kind: 'preparing' },
+      ...(clean !== null ? { target: clean } : {}),
+    });
   }
   phase(kind: GitPhaseKind, hook?: string): void {
     this.emit('phase', { phase: hook !== undefined ? { kind, hook } : { kind } });
@@ -129,9 +217,10 @@ function activityExitCode(): number {
 async function runPush<T>(
   s: GitSequencer,
   category: 'push' | 'forcePush',
+  target: string | null,
   fn: () => Promise<T>,
 ): Promise<T> {
-  s.start(category);
+  s.start(category, target);
 
   // ?prePushFail — the failing hook: verbatim output + failed row + the same
   // rejection HookOutputDialog consumes (both surfaces, from one seam).
@@ -167,9 +256,10 @@ async function runPush<T>(
 async function runFetch<T>(
   s: GitSequencer,
   category: 'fetch' | 'pull',
+  target: string | null,
   fn: () => Promise<T>,
 ): Promise<T> {
-  s.start(category);
+  s.start(category, target);
   try {
     s.phase('network');
     if (FETCH_NO_COUNT) {
@@ -191,9 +281,10 @@ async function runFetch<T>(
 async function runCommit<T>(
   s: GitSequencer,
   category: 'commit' | 'amend' | 'mergeCommit',
+  target: string | null,
   fn: () => Promise<T>,
 ): Promise<T> {
-  s.start(category);
+  s.start(category, target);
   s.phase('runningHook', 'pre-commit');
   await delay(120);
   try {
@@ -248,11 +339,13 @@ function isAppError(e: unknown): e is AppError {
  */
 export function runMockActivity<T>(
   category: GitActivityCategory,
+  target: string | null,
   fn: () => Promise<T>,
 ): Promise<T> {
   if (!gitActivityActive()) return fn();
   const s = new GitSequencer(nextId());
-  if (category === 'push' || category === 'forcePush') return runPush(s, category, fn);
-  if (category === 'fetch' || category === 'pull') return runFetch(s, category, fn);
-  return runCommit(s, category, fn);
+  const seamed = seamTarget(category, target);
+  if (category === 'push' || category === 'forcePush') return runPush(s, category, seamed, fn);
+  if (category === 'fetch' || category === 'pull') return runFetch(s, category, seamed, fn);
+  return runCommit(s, category, seamed, fn);
 }
