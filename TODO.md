@@ -76,16 +76,53 @@ id far longer than the fixture would widen the chip rather than ellipsize.
 
 ### Next, in order
 
-1. **FU-1 — both halves specced and committed, NOT started.**
-   `docs/contracts/P87b-FU1-git-dock-ui.md` (rendering, exact strings, accessible names) and
-   `docs/contracts/P87b-FU1-run-target.md` (data model, per-operation target table, four content
-   guarantees). It needs `RefLabel`, which now exists. The architect flagged that FU-1 must build the
-   row's accessible name **explicitly**, since FU-3 has already moved `role="button"` onto the row.
+1. **✅ FU-1 is DONE — `1d8c6f9`.** Both halves shipped, both reviews approved with **no
+   MUST-FIX**, all 5 SHOULD-FIX + 7 NITs applied, **full 8-step gate green (452.5s, 2344 Rust
+   tests, 185 e2e)**. Contracts: `docs/contracts/P87b-FU1-run-target.md` and
+   `docs/contracts/P87b-FU1-FU4-git-dock-ui.md` (the board previously mis-cited the latter as
+   `P87b-FU1-git-dock-ui.md`, which never existed — fixed 2026-09-10).
+   Built as two concurrent senior-dev passes on disjoint file sets (run-target F-5 said the halves
+   are independent; that held). Harness ACs §9.9-13 all verified — the bidi proof is a code-point
+   dump (`6f 72 69 67 69 6e 2f 6d 61 69 6e`, no U+202E), and immutability was proven with a
+   **positive control** (7 observer callbacks, elapsed ticking 0.0→2.0→3.0s, target unchanged).
+   **AC §9.11 substituted push for commit** — `?gitNoTarget` forces `null` for every category, so
+   push exercises the identical path without driving the commit form. Same assertion, not the
+   literal AC text.
+   **Deliberately folded in and now closed:** the `GitActivityRow.tsx` chevron follow-up
+   (`<button aria-hidden>` inside `role="button"` → `<span>`), verified live: 0 buttons inside
+   `.git-run-summary`.
+   **Two things worth keeping:**
+   - `push_target_matches_push_result` was renamed `push_target_agrees_with_push_result_remote`
+     because `PushResult.branch` carries the **local** branch name — the old name overclaimed and
+     the test would have failed *falsely* on a divergent upstream. The real gap (Push's use of
+     `branch.<x>.merge` for divergent names) is now pinned on the `renamed` fixture, and the fix
+     was **mutation-proved**: mutating the resolver makes the new assertion fail while the old test
+     still passes.
+   - The mock's `mockActivityTarget` was verified **code-point-equivalent** to Rust's
+     `strip_control_chars`, including that Rust's `bidi ∪ zero_width` sets happen to form the
+     contiguous `200B–200F` range the mock uses.
+
+1b. **Doc corrections owed from the FU-1 pass (three one-liners, none blocking).** Filed rather than
+   fixed, to respect contract ownership:
+   - **`docs/contracts/P87b-FU1-run-target.md` §4** — its unborn-HEAD rationale is **factually
+     wrong**: it says `read_head_info` returns `branch_name: None` for unborn HEAD "so this is
+     free", but it returns `Some` (it reads HEAD's symbolic target). The `null` is enforced by an
+     explicit `if head.unborn || head.detached` guard, which is **load-bearing** — a future reader
+     must not delete it as redundant. (architect's file)
+   - **`docs/contracts/P87b-FU1-run-target.md` §8** — still carries the **83-char**
+     `MOCK_LONG_TARGET` literal, which fails the same section's own "≥90 chars" requirement.
+     Shipped as 95. §9.2 and §177 also still name the old test name. (architect's file)
+   - **`docs/contracts/P87b-FU1-FU4-git-dock-ui.md` F-E** — claims `commitAmend` is not
+     activity-wrapped. **It is** (`src-tauri/src/commands/staging.rs:179`, `with_activity(…,
+     Amend, target, …)`). This stale line has now caused **two separate agents** to report a
+     nonexistent FU-2 gap (architect's F-4 refuted it; the refutation never made it into the UI
+     contract, so the next reader picked the wrong one up again). Highest-value of the three.
+
 2. **Reviewer follow-ups still open** from the `a82740ff` pass (its MUST-FIX and two SHOULD-FIX are
    already fixed in `151232d`):
-   - `GitActivityRow.tsx` chevron is still a `<button>` inside `role="button"` — invalid ARIA
-     (children-presentational) and still takes DOM focus on click. Should be
-     `<span aria-hidden="true">` with the handler dropped; the existing a11y tests would still hold.
+   - ~~`GitActivityRow.tsx` chevron is still a `<button>` inside `role="button"`~~ — **FIXED in
+     `1d8c6f9`** as deliberate FU-1 scope (it was the same `<div role="button">` that gained an
+     explicit `aria-label`). Verified live: `.git-run-summary` contains 0 buttons.
    - `useStickySelection.ts:76-78` introduces a render-phase ref write in the same batch where
      `GitActivityDock.tsx` removed one. Defensible (idempotent) but the two model the same hazard
      two ways with no cross-reference.
