@@ -581,6 +581,96 @@ archive Part 44; the milestone entry is archive Part 54.6.
 
 ---
 
+## 🆕 SECOND ROUND OF USER RULINGS — 2026-09-11 (four more, from the review findings)
+
+These came out of the reviews of the first increment, not from the original 17. Same authority.
+
+| # | Item | Ruling |
+|---|---|---|
+| 18 | MCP audit scope (`stage_paths` HIGH + MEDIUM + 4 LOWs) | **DO EVERYTHING IN THE AUDIT.** Not just the symlink guard. **QUEUED, not started.** |
+| 19 | MCP review gate | **Snapshot test + review trigger.** A test snapshotting `list_all()` tool descriptions, **and** a rule that any diff touching `crates/bonsai-mcp/src/server/tools_*.rs` requires a `security-auditor` pass regardless of the commit subject. **QUEUED, not started.** |
+| 20 | macOS `open -a` / `.app` regression from the `{path}` removal | **Teach the ladder app bundles** — Bonsai supplies the arguments itself, so no injection surface. **SUPERSEDED IN PLACE by #21:** this moves into the *detection* logic of the removal milestone rather than into the configured-program path, which is being deleted. Recorded so the intent is not lost. |
+| 21 | Security MEDIUM-2, after the auditor showed validation insufficient | **DO THE REMOVAL NOW**, as its own milestone — not the interim native-confirmation dialog. Free-text program entry is eliminated and replaced by a detected-list picker. Contract in flight. |
+| 22 | Fail-open home masking + the LOW-1 doc claim | **TAKE BOTH.** |
+
+### Why #21 — shape validation does NOT achieve its claimed property
+
+The first increment's own comment claims "renderer compromise ≠ arbitrary local execution". The
+security auditor refuted it with **three routes that survive validation**, all needing only script
+execution in the renderer plus a repo that was cloned once:
+
+1. **The absolute branch accepts any existing file** — `external_cmd.rs:145-155` gates on `is_file()`
+   alone: not executability, not location, not trust. A hostile repo ships `payload.exe`; the
+   renderer points `editorCommand` at that absolute path; it validates; and `external.rs:319` sets
+   `hide_console = true`, so it runs under `CREATE_NO_WINDOW` — **with no visible window.** The
+   increment's own test (`external_cmd_tests.rs:60-67`) documents the shape: it writes a stub named
+   `my-editor.exe` containing `b"stub"` and asserts acceptance.
+2. **Bare interpreter + repo as argument** — `node <repo>` executes the repo's own `package.json`
+   `main` or `index.js` (`external.rs:244`). More likely than the `python` the doc cited, on a
+   developer machine and in a JS project.
+3. **Bare build tool as the TERMINAL command** — `make` / `nmake` / `just` / `msbuild` with
+   cwd = repo and **zero arguments** (`external.rs:245`). This route **breaks the residual's own
+   "at most one argument, which must be an existing directory" wording.**
+
+Root cause: it is a **free-text program string the renderer can write** via `set_ui_settings`.
+Validating its shape cannot fix that. The audit status is being downgraded from "Closed 2026-09-11"
+to **partially closed** for both MEDIUM-2 and LOW-1.
+Also: `src-tauri/src/commands/external.rs:89` `launch_inner` accepts **any existing directory the
+renderer names**, not the selected repo — pre-existing P49 design, so the argument was never bounded
+to the open repo either.
+
+**Mitigating context (why this was MEDIUM, not HIGH):** the CSP at `src-tauri/tauri.conf.json:23`
+is `script-src 'self'`, `object-src 'none'`, `base-uri 'none'`, which blocks inline script and
+inline event handlers. Noted by the auditor as premise context: two `dangerouslySetInnerHTML` sites
+render syntax-highlighted diff content (`DiffView.tsx:294`, `DiffViewSplit.tsx:162`) whose
+highlighter escaping was **not** audited — pre-existing and CSP-mitigated, **not** opened as a
+finding, but it is the premise the whole MEDIUM rests on.
+
+### LOW-1's surviving rung is the Windows 10 DEFAULT, not an edge case
+
+`wt` is **not present on stock Windows 10** (this machine is Win10 Enterprise), so the live rung is
+`powershell` (`external.rs:278`), which keeps `cwd = <repo>`. A hostile repo shipping a hijackable
+DLL at its root therefore has its DLL-planting primitive against the **default** Win10 "Open in
+terminal". Keeping cwd is still correct — the alternative,
+`powershell -Command "Set-Location '<path>'"`, turns a repo-authored path containing a quote into
+PowerShell injection, a strictly worse trade. **`x-terminal-emulator` is being dropped from the
+residual list:** neither the Linux dynamic linker nor macOS dyld searches the current directory by
+default, so only the Windows rungs carry the risk.
+
+### Home masking was FAIL-OPEN — fixed under #22
+
+`obs/mod.rs:177-182`: if `app.path().home_dir()` returns `Err`, `set_home_dir` is never called,
+`HOME` stays unset, `mask_home` returns the input untouched, and raw mode writes
+`C:\Users\<account>\…` into every part that goes into the mailed export zip. The only signal was an
+`eprintln!`, **which goes nowhere in a release GUI build.** This contradicted `scrub_home.rs:30`'s
+own stated failure direction. Compounding it: **nothing tested the wiring** — deleting the
+`set_home_dir` call would have failed no test. Fix: move the home string into `writer::WriterConfig`
+(testable, no process-global `OnceLock`) and stamp `homeMasking: <bool>` into the session header so
+an export reader knows whether to trust it.
+
+### Verified CLEAN by the security auditor — do not re-audit
+
+Every reader of the two settings (exactly two consumption sites, both behind validating entry
+points; the MCP server and AI CLI driver read neither key) · validate-then-launch trim equivalence
+(both sides `str::trim` on the same `&str`) · argument smuggling through the permissive absolute
+branch is **structurally impossible** (the string becomes `LaunchSpec::program` only, never an arg;
+`Command::args` with an argv vector; nothing reaches a shell) · UNC, drive-relative, rooted-no-drive,
+control/bidi chars all refused and tested · ADS / 8.3 aliases / trailing dots / `..` / symlinks /
+the `is_file()`→spawn TOCTOU are all **subsumed** by route 1 rather than separate findings · the cwd
+carve-out is exactly the four rungs claimed, with an iff test · `procutil::resolve_program` searches
+PATH only, never cwd · the export zip contains only `bonsai-*.jsonl` parts (no manifest, no metrics
+file, no environment dump) and every part goes through `append_record`, so no emit site bypasses the
+scrub order · `metrics/usage.json` and its `.bak` **cannot carry a path** (no path fields;
+`metrics_keys.rs` rejects separators) and are not in the zip regardless · `set_home_dir` runs before
+`Sink::start`, and `apply_dev_settings` is the sole production sink constructor.
+
+**Could NOT verify (so the CLEAN register does not over-claim):** Rust std's Windows `resolve_exe`
+`.exe`-suffix appending and its `.bat`/`.cmd` → `cmd.exe` wrapping — `rust-src` is not installed in
+this sysroot. Medium-high confidence from the post-CVE-2024-24576 implementation; neither changes
+route 1, which stands on `.exe` alone. No launch was executed; all findings are from code reading.
+
+---
+
 ## 🔄 IN FLIGHT — the implementation queue the 2026-09-11 rulings created
 
 **Current step: architect amending `P91-observability.md` for F6; senior-dev on the security
