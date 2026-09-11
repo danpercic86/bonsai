@@ -360,6 +360,31 @@ pub fn resolve_conflict_text(workdir: &Path, path: &str, content: &str) -> Resul
     Ok(())
 }
 
+/// True when `text` still contains a conflict-marker line: a run of seven `<`,
+/// `=` or `>` at column 0.
+///
+/// Lives HERE — with the conflict primitives it guards — rather than in
+/// `ai_resolve_bulk`, where it was first needed (review 2026-09-11).
+///
+/// Two callers inside this crate: the AI bulk-reply attribution
+/// (`ai_resolve_bulk::parse_bulk_response`, which fails a markerful body instead
+/// of proposing it) and, since audit 2026-09-11 LOW, `bonsai-mcp`'s write
+/// guards — hence `pub` — which apply it where the frontend's Save-button gate
+/// does not exist because the caller is a model.
+///
+/// The frontend has its own, INDEPENDENT implementation of the same rule
+/// (`src/utils/conflictRegions.ts`: `MARKER_RE = /^(<{7}|={7}|>{7})/`, used by
+/// `hasUnresolvedMarkers`). TypeScript cannot call this function, so the
+/// agreement between the two is a semantic invariant kept by review and by
+/// symmetric tests (`markers_rule_matches_the_frontend_rule` here,
+/// `conflictRegions` specs there) — NOT something the type system enforces.
+/// They must agree: nothing markerful may ever be presented as clean, in either
+/// direction.
+pub fn has_conflict_markers(text: &str) -> bool {
+    text.lines().any(|line| {
+        line.starts_with("<<<<<<<") || line.starts_with("=======") || line.starts_with(">>>>>>>")
+    })
+}
 
 #[cfg(test)]
 mod tests;

@@ -181,12 +181,19 @@ impl McpClient {
     /// Spawn `bonsai-mcp --repo <repo> [--allow-write]` WITHOUT performing the
     /// handshake (for raw / EOF probes that must control the very first bytes).
     pub fn spawn(repo: &Path, allow_write: bool) -> Self {
+        Self::spawn_with(repo, allow_write, &[])
+    }
+
+    /// [`spawn`](Self::spawn) plus `extra` CLI flags (e.g. `--allow-hooks`, the
+    /// commit-hook consent added by audit 2026-09-11).
+    pub fn spawn_with(repo: &Path, allow_write: bool, extra: &[&str]) -> Self {
         let exe = env!("CARGO_BIN_EXE_bonsai-mcp");
         let mut cmd = Command::new(exe);
         cmd.arg("--repo").arg(repo);
         if allow_write {
             cmd.arg("--allow-write");
         }
+        cmd.args(extra);
         #[cfg(windows)]
         cmd.env("TMP", "D:\\Data\\Temp").env("TEMP", "D:\\Data\\Temp");
         cmd.stdin(Stdio::piped())
@@ -226,6 +233,13 @@ impl McpClient {
     /// `notifications/initialized`); the returned client is ready for tool calls.
     pub fn connect(repo: &Path, allow_write: bool) -> Self {
         let mut c = Self::spawn(repo, allow_write);
+        c.initialize();
+        c
+    }
+
+    /// [`connect`](Self::connect) with extra CLI flags.
+    pub fn connect_with(repo: &Path, allow_write: bool, extra: &[&str]) -> Self {
+        let mut c = Self::spawn_with(repo, allow_write, extra);
         c.initialize();
         c
     }

@@ -134,6 +134,12 @@ export interface AppError {
     | 'updateFailed'
     | 'externalToolFailed'
     | 'hookRejected'
+    /** Audit 2026-09-11: an operation was REFUSED because it would have run
+     *  repository git hooks the caller cannot disclose to the user. Raised only
+     *  by `bonsai-mcp`'s standalone stdio server (no frontend to disclose
+     *  through), so the app never sees it — it is in this union for Rust↔TS
+     *  parity. Distinct from `hookRejected`: NO hook ran and nothing changed. */
+    | 'hooksNotPermitted'
     | 'forgeUnsupported'
     | 'forgeAuthRequired'
     | 'forgeRateLimited'

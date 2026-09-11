@@ -11,6 +11,11 @@
 //! server uses the current working directory (so a `.mcp.json` entry at the repo
 //! root needs no path). Mutation tools (P14c) are gated behind `--allow-write`;
 //! P14b registers only the read set.
+//!
+//! `--allow-hooks` is a second, independent consent (audit 2026-09-11 LOW):
+//! without it, a commit in a repository that has runnable commit hooks is
+//! REFUSED rather than executing repository-authored code the user was never
+//! shown — this server has no frontend to show Bonsai's hook disclosure in.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -20,13 +25,21 @@ use rmcp::ServiceExt;
 use bonsai_mcp::server::BonsaiServer;
 
 /// The single usage string, reused by the help path and every arg error.
-const USAGE: &str = "usage: bonsai-mcp [--repo <path>] [--allow-write]";
+const USAGE: &str =
+    "usage: bonsai-mcp [--repo <path>] [--allow-write] [--allow-hooks]";
 
 /// Parsed startup configuration.
 #[derive(Debug)]
 struct ServerConfig {
     repo: PathBuf,
     allow_write: bool,
+    /// Explicit consent to run the repository's git HOOKS on a commit made
+    /// through this server (audit 2026-09-11 LOW). Default `false`: a commit in
+    /// a repo that has runnable commit hooks is refused, because a standalone
+    /// stdio server has no frontend through which Bonsai's one-time hook
+    /// disclosure could ever be shown. Independent of `--allow-write` (which
+    /// decides whether the commit tools exist at all).
+    allow_hooks: bool,
 }
 
 /// Outcome of parsing argv: a ready-to-run config, or an explicit help request
@@ -37,7 +50,8 @@ enum ParseOutcome {
     Help,
 }
 
-/// Parse `--repo <path>` (optional) and `--allow-write` (flag) from argv.
+/// Parse `--repo <path>` (optional) plus the `--allow-write` / `--allow-hooks`
+/// flags from argv.
 ///
 /// Hand-rolled to avoid a heavy CLI dependency. When `--repo` is omitted the
 /// current working directory is used (convenient for a `.mcp.json` entry living
@@ -48,6 +62,7 @@ enum ParseOutcome {
 fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<ParseOutcome, String> {
     let mut repo: Option<PathBuf> = None;
     let mut allow_write = false;
+    let mut allow_hooks = false;
 
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
@@ -59,6 +74,7 @@ fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<ParseOutcome, S
                 repo = Some(PathBuf::from(value));
             }
             "--allow-write" => allow_write = true,
+            "--allow-hooks" => allow_hooks = true,
             "-h" | "--help" => return Ok(ParseOutcome::Help),
             other => {
                 return Err(format!("unexpected argument: {other}\n{USAGE}"));
@@ -73,7 +89,11 @@ fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<ParseOutcome, S
         })?,
     };
 
-    Ok(ParseOutcome::Config(ServerConfig { repo, allow_write }))
+    Ok(ParseOutcome::Config(ServerConfig {
+        repo,
+        allow_write,
+        allow_hooks,
+    }))
 }
 
 /// Validate the `--repo` path as a non-bare git repository and return its
@@ -113,7 +133,7 @@ async fn main() -> ExitCode {
         }
     };
 
-    let server = BonsaiServer::new(workdir, cfg.allow_write);
+    let server = BonsaiServer::new(workdir, cfg.allow_write, cfg.allow_hooks);
 
     let service = match server.serve(rmcp::transport::stdio()).await {
         Ok(service) => service,
@@ -177,6 +197,31 @@ mod tests {
     fn allow_write_flag_is_recognized_order_independent() {
         assert!(config(&["--allow-write", "--repo", "r"]).allow_write);
         assert!(config(&["--repo", "r", "--allow-write"]).allow_write);
+    }
+
+    /// `--allow-hooks` (audit 2026-09-11) defaults OFF, is order-independent,
+    /// and is INDEPENDENT of `--allow-write` in both directions.
+    #[test]
+    fn allow_hooks_flag_defaults_off_and_is_independent_of_allow_write() {
+        assert!(!config(&[]).allow_hooks, "hooks consent must default OFF");
+        assert!(!config(&["--allow-write"]).allow_hooks, "write != hooks");
+
+        assert!(config(&["--allow-hooks", "--repo", "r"]).allow_hooks);
+        assert!(config(&["--repo", "r", "--allow-hooks"]).allow_hooks);
+
+        let both = config(&["--allow-write", "--allow-hooks", "--repo", "r"]);
+        assert!(both.allow_write && both.allow_hooks);
+
+        // Hooks consent alone leaves the server read-only (no mutation tools at
+        // all), which is harmless but must not silently imply write access.
+        let hooks_only = config(&["--allow-hooks"]);
+        assert!(!hooks_only.allow_write && hooks_only.allow_hooks);
+    }
+
+    #[test]
+    fn usage_mentions_both_consent_flags() {
+        assert!(USAGE.contains("--allow-write"), "{USAGE}");
+        assert!(USAGE.contains("--allow-hooks"), "{USAGE}");
     }
 
     #[test]

@@ -3,10 +3,13 @@
 //! `conflict` files are not bloated further (file-size discipline).
 //!
 //! Each test exercises [`ensure_within_workdir`] — directly, or through the
-//! public `discard_paths_force` / `stage_partial` / `resolve_conflict_text` —
-//! proving a path that escapes the workdir via a symlinked ANCESTOR is rejected
-//! and the external file is left untouched, while legitimate paths pass
-//! unchanged. Symlink creation needs privilege on Windows;
+//! public `discard_paths_force` / `stage_partial` / `resolve_conflict_text` /
+//! `stage_paths` — proving a path that escapes the workdir via a symlinked
+//! ANCESTOR is rejected and the external file is left untouched, while
+//! legitimate paths (including a LEAF symlink, staged as a link) pass
+//! unchanged. `unstage_paths` is covered too, as the one write primitive that
+//! deliberately needs NO filesystem guard (index-only).
+//! Symlink creation needs privilege on Windows;
 //! [`crate::testutil::make_dir_symlink_or_skip`] falls back to an NTFS junction
 //! (no privilege) and otherwise signals a skip, so the guard is always exercised
 //! on unix (CI) and usually on Windows too.
@@ -15,7 +18,7 @@ use crate::error::AppError;
 use crate::git::conflict::{list_conflicts, resolve_conflict_text};
 use crate::git::diff::LineKind;
 use crate::git::discard::discard_paths_force;
-use crate::git::stage::ensure_within_workdir;
+use crate::git::stage::{ensure_within_workdir, stage_paths, unstage_paths};
 use crate::git::stage_partial::{stage_partial, LineSelection};
 use crate::testutil::{make_dir_symlink_or_skip, scratch_dir};
 
@@ -202,5 +205,129 @@ fn resolve_conflict_text_rejects_symlinked_ancestor_escape() {
         std::fs::read(outside.path().join("secret.txt")).expect("read"),
         b"SECRET",
         "external file must NOT be overwritten"
+    );
+}
+
+/// stage: a path escaping via a symlinked ANCESTOR is refused BEFORE any index
+/// mutation, and — the actual consequence the audit named — the out-of-repo
+/// file's bytes never reach the object database (no blob for "SECRET"), so no
+/// later `bonsai_get_workdir_file_diff{staged:true}` can read them back.
+#[test]
+fn stage_paths_rejects_symlinked_ancestor_escape() {
+    let Some((work, outside)) = escape_fixture() else {
+        return;
+    };
+    let repo = git2::Repository::init(work.path()).expect("init");
+
+    let err = stage_paths(work.path(), &["link/secret.txt".to_string()])
+        .expect_err("escaping path must be rejected");
+    assert!(
+        matches!(err, AppError::Other(ref m) if m.contains("resolves outside")),
+        "got: {err:?}"
+    );
+
+    // Nothing staged…
+    let index = repo.index().expect("index");
+    assert_eq!(index.len(), 0, "no index entry may be created");
+    assert!(index.get_path(std::path::Path::new("link/secret.txt"), 0).is_none());
+    // …and the external file's content was never written into the ODB.
+    let secret_oid =
+        git2::Oid::hash_object(git2::ObjectType::Blob, b"SECRET").expect("hash blob");
+    assert!(
+        !repo.odb().expect("odb").exists(secret_oid),
+        "out-of-repo file content must NOT enter the object database"
+    );
+    assert_eq!(
+        std::fs::read(outside.path().join("secret.txt")).expect("read"),
+        b"SECRET",
+        "external file must be untouched"
+    );
+}
+
+/// stage: the refusal is ATOMIC — one escaping path in the batch prevents the
+/// legitimate sibling from being staged too (the guard runs for the whole batch
+/// before the first `add_path`).
+#[test]
+fn stage_paths_escape_aborts_the_whole_batch() {
+    let Some((work, _outside)) = escape_fixture() else {
+        return;
+    };
+    let repo = git2::Repository::init(work.path()).expect("init");
+    std::fs::write(work.path().join("ok.txt"), b"fine").expect("write");
+
+    let paths = vec!["ok.txt".to_string(), "link/secret.txt".to_string()];
+    assert!(stage_paths(work.path(), &paths).is_err(), "batch must fail");
+    assert_eq!(
+        repo.index().expect("index").len(),
+        0,
+        "the legitimate path must not be staged either"
+    );
+}
+
+/// stage: a LEAF symlink pointing outside the repo is still stageable — it is
+/// staged AS a link (mode 0o120000, blob = the link text), exactly as `git add`
+/// does, so the guard did not over-restrict. The target's CONTENT is never read.
+#[test]
+fn stage_paths_stages_leaf_symlink_as_a_link() {
+    let work = scratch_dir();
+    let outside = scratch_dir();
+    std::fs::write(outside.path().join("secret.txt"), b"SECRET").expect("write secret");
+    if !make_dir_symlink_or_skip(outside.path(), &work.path().join("leaf")) {
+        eprintln!("skipping: dir symlink creation not permitted");
+        return;
+    }
+    let repo = git2::Repository::init(work.path()).expect("init");
+
+    stage_paths(work.path(), &["leaf".to_string()]).expect("leaf symlink is stageable");
+
+    let index = repo.index().expect("index");
+    let entry = index
+        .get_path(std::path::Path::new("leaf"), 0)
+        .expect("leaf entry staged");
+    // Windows junction fallback reports a directory, not a symlink — assert the
+    // link semantics only where a real symlink was created.
+    if entry.mode == 0o120000 {
+        let blob = repo.find_blob(entry.id).expect("link blob");
+        // libgit2 stores the link text with '/' separators on every platform.
+        let link_text = String::from_utf8_lossy(blob.content()).replace('\\', "/");
+        assert_eq!(
+            link_text,
+            outside.path().to_string_lossy().replace('\\', "/"),
+            "the staged blob is the LINK TEXT, never the target's content"
+        );
+    }
+    let secret_oid =
+        git2::Oid::hash_object(git2::ObjectType::Blob, b"SECRET").expect("hash blob");
+    assert!(
+        !repo.odb().expect("odb").exists(secret_oid),
+        "the symlink target's content must NOT enter the object database"
+    );
+}
+
+/// unstage needs NO filesystem guard: it is index-only. An escaping path is
+/// accepted (unborn HEAD -> `index.remove_path`), matches no index entry, and
+/// leaves both the index and the external file untouched — there is no
+/// `workdir.join(rel)` for a symlinked ancestor to redirect.
+#[test]
+fn unstage_paths_needs_no_fs_guard() {
+    let Some((work, outside)) = escape_fixture() else {
+        return;
+    };
+    let repo = git2::Repository::init(work.path()).expect("init");
+    std::fs::write(work.path().join("ok.txt"), b"fine").expect("write");
+    stage_paths(work.path(), &["ok.txt".to_string()]).expect("stage the legit path");
+
+    unstage_paths(work.path(), &["link/secret.txt".to_string()])
+        .expect("index-only: an escaping path is simply unmatched, not an error");
+
+    let index = repo.index().expect("index");
+    assert!(
+        index.get_path(std::path::Path::new("ok.txt"), 0).is_some(),
+        "an unmatched pathspec must not disturb other entries"
+    );
+    assert_eq!(index.len(), 1, "no entry added or removed");
+    assert!(
+        outside.path().join("secret.txt").exists(),
+        "the worktree/external file is never touched by unstage"
     );
 }

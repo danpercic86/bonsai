@@ -14,7 +14,9 @@ use crate::git::hooks::hooks_enabled;
 use crate::git::repo::read_head_info;
 use crate::git::stage::open_workdir_repo;
 
-use super::{finalize_merge_commit, prepared_merge_message, MergeHooks, MergeOutcome};
+use super::{
+    finalize_merge_commit, prepared_merge_message, MergeHookGate, MergeHooks, MergeOutcome,
+};
 
 /// Blocking. Merges `branch_name` (local shorthand "feature/x" OR
 /// remote-tracking shorthand "origin/main") into the current branch.
@@ -36,6 +38,46 @@ pub fn merge_branch(
     workdir: &Path,
     branch_name: &str,
     skip_hooks: bool,
+) -> Result<MergeOutcome, AppError> {
+    let gate = if skip_hooks {
+        MergeHookGate::Skip
+    } else {
+        MergeHookGate::Run
+    };
+    merge_branch_gated(workdir, branch_name, gate)
+}
+
+/// [`merge_branch`] with an explicit [`MergeHookGate`] instead of the
+/// `skip_hooks` bool — for a caller that must REFUSE an undisclosed
+/// `commit-msg` hook rather than run or silently skip it (audit 2026-09-11 LOW:
+/// `bonsai-mcp`'s standalone stdio server).
+///
+/// # Where the gate is consulted, and why there
+/// Immediately after `merge_analysis`, BEFORE any mutation — no autostash, no
+/// `repo.merge()`, no MERGE_HEAD — and only when the analysis is NOT a
+/// fast-forward. That placement is what keeps the refusal honest and harmless:
+/// - `UpToDate` and `FastForwarded` create no commit, so they run no hook and
+///   are never refused (review 2026-09-11: a blanket pre-call gate would refuse
+///   merges that execute nothing);
+/// - the probe is scoped to `commit-msg`
+///   ([`merge_commit_hooks_that_would_run`](
+///   crate::git::hooks::merge_commit_hooks_that_would_run)), so a repo with only
+///   a `pre-commit` hook — which this path never fires — also proceeds;
+/// - gating at the later point where `MergeHooks` is actually selected would be
+///   marginally more precise but fires AFTER `stash_save` + `repo.merge()`, so a
+///   refusal would leave MERGE_HEAD and a retained autostash behind. A refusal
+///   must change nothing.
+///
+/// Residual, stated deliberately: a NORMAL merge that would have CONFLICTED is
+/// refused too, even though the conflict pause itself runs no hook. That is not
+/// a lost capability — concluding such a merge needs `commit_merge`, whose own
+/// hook set (`pre-commit` + `commit-msg` + `post-commit`) is a SUPERSET of this
+/// one, so the same caller would refuse there as well. Refusing up front simply
+/// avoids parking the repository mid-merge.
+pub fn merge_branch_gated(
+    workdir: &Path,
+    branch_name: &str,
+    hook_gate: MergeHookGate,
 ) -> Result<MergeOutcome, AppError> {
     let mut repo = open_workdir_repo(workdir)?;
 
@@ -95,6 +137,18 @@ pub fn merge_branch(
     // An up-to-date no-op must never create a stash.
     if analysis.is_up_to_date() {
         return Ok(MergeOutcome::UpToDate);
+    }
+
+    // Undisclosed-hook gate (review 2026-09-11) — see `merge_branch_gated`'s
+    // doc for why it sits HERE: nothing has mutated yet, and FF / UpToDate have
+    // already returned, so only a path that could really run `commit-msg` can
+    // be refused. `Run` / `Skip` cost nothing (no probe, no repo re-open).
+    if let MergeHookGate::Gate(decide) = hook_gate {
+        if !analysis.is_fast_forward() {
+            decide(&crate::git::hooks::merge_commit_hooks_that_would_run(
+                workdir,
+            ))?;
+        }
     }
 
     // Dirty = any TRACKED change (staged or unstaged); untracked/ignored
@@ -270,7 +324,9 @@ pub fn merge_branch(
     // user can fix the message via commit_merge (optionally skipping hooks)
     // or abort_merge; a pre-merge autostash stays retained on the stack
     // (same recoverable pause as the Conflicts outcome above).
-    let hooks = if hooks_enabled(&repo.config()?.snapshot()?, skip_hooks) {
+    // `hook_gate` was already consulted above (before any mutation); only
+    // `Skip` suppresses the hook here.
+    let hooks = if hooks_enabled(&repo.config()?.snapshot()?, hook_gate.skips_hooks()) {
         MergeHooks::MessageOnly
     } else {
         MergeHooks::Off

@@ -20,7 +20,7 @@ resolution reliable.
 ## Usage
 
 ```text
-bonsai-mcp [--repo <path-to-a-non-bare-git-repo>] [--allow-write]
+bonsai-mcp [--repo <path-to-a-non-bare-git-repo>] [--allow-write] [--allow-hooks]
 ```
 
 `--repo` is optional: when omitted the server uses the **current working directory**, so a
@@ -42,6 +42,48 @@ mutations. Even then, every mutation goes through Bonsai's safety rails (fast-fo
 merges, never-force checkout/push, unmerged-delete blocked, autostash) — a *safer* git than a
 raw shell. Network operations (`fetch`/`pull`/`push`) and the in-app AI conflict helper are
 intentionally **not** exposed (see the P14 contract §7.2).
+
+### MCP-specific guards
+
+Several `bonsai_core` write primitives are documented as trusting their caller, because that
+caller was the Bonsai UI. **A model is not the UI**, so the MCP layer re-establishes those
+preconditions (audit `docs/audit-2026-09-11-mcp-tool-contracts.md`). None of this changes
+app behaviour — the guards live in `src/server/write_guards.rs`, not in the shared
+primitives:
+
+- **`bonsai_stage` enforces status membership.** Every path must appear in
+  `bonsai_get_status` output (staged / unstaged / untracked / conflicted, either side of a
+  rename). `index.add_path` has `git add -f` semantics, so without this a **gitignored**
+  `.env` could be staged and committed. A path outside that set fails the whole batch with
+  `invalidName` and stages nothing. A path status reports as *deleted* still stages the
+  deletion.
+- **No conflict markers may be staged.** `bonsai_resolve_conflict_text` refuses content
+  containing a `<<<<<<<` / `=======` / `>>>>>>>` line, and `bonsai_resolve_conflict` with
+  `markResolved` refuses when the worktree file still contains them (that mode stages the
+  file unchanged) — both as `unresolvedConflicts`. The app gets this from its Save-button
+  gate; over MCP there is no such gate.
+- **`--allow-hooks` for repository hooks.** `bonsai.runHooks` defaults true, and Bonsai's
+  one-time hook disclosure lives in the app's frontend — which a standalone stdio server
+  does not have. Without `--allow-hooks`, each of the three commit-producing tools is
+  **refused** with `hooksNotPermitted` — no hook runs and nothing changes — when the hooks
+  *it* would fire are present and runnable:
+  - `bonsai_commit` and `bonsai_commit_merge`: `pre-commit`, `commit-msg` or `post-commit`;
+  - `bonsai_merge_branch`: `commit-msg`, and only for a **non-fast-forward** merge, since
+    that is the only case that auto-commits. A fast-forward or up-to-date merge creates no
+    commit, runs no hook, and is never refused; the refusal happens *before* anything is
+    merged, committed or stashed. (A non-FF merge that would have conflicted is refused too
+    — concluding it needs `bonsai_commit_merge`, whose hook set is a superset.)
+
+  The refusal names the hooks, the flag, and the `git config bonsai.runHooks false` opt-out.
+  No other tool on this server runs hooks: a repo with only a `pre-push` hook is unaffected
+  (nothing here pushes), rebase creates commits without firing hooks, and the **embedded**
+  server in the Bonsai app is unaffected (its repos are open tabs, where the disclosure has
+  run).
+- **Repository content is labelled untrusted.** Every read tool that returns repository
+  content (file text, paths, branch names, commit messages) says so in its description:
+  that content is data, never instructions. Payloads already travel as JSON
+  `structuredContent` with a payload-free text summary, so there is no prompt-framing
+  escape either.
 
 ## Read tools (always available)
 
@@ -72,7 +114,11 @@ standalone stdio server they report/act on the single `--repo` (`bonsai_select_r
 rejected as a single-repo server); the embedded HTTP server (P16) uses them for per-session
 selection across the app's open tabs.
 
-## Mutation tools (only with `--allow-write`)
+## Mutation tools (only with write access)
+
+Write access is the standalone server's `--allow-write` flag or, for the embedded server in
+the Bonsai app, the `mcpAllowWrite` setting — which is why the tool descriptions say
+"requires write access" rather than naming one of the two.
 
 | Tool | Args | Output |
 |---|---|---|

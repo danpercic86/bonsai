@@ -242,15 +242,3 @@ fn parse_accepts_a_bare_body_when_exactly_one_path_was_requested() {
     let parsed = parse_bulk_response("MERGED BODY\n", &requested).expect("bare body");
     assert_eq!(parsed.proposals, vec![("only.txt".to_string(), "MERGED BODY\n".to_string())]);
 }
-
-#[test]
-fn markers_rule_matches_the_frontend_rule() {
-    // Present at column 0 in any of the three runs of seven.
-    assert!(has_conflict_markers("a\n<<<<<<< HEAD\nb\n"));
-    assert!(has_conflict_markers("=======\n"));
-    assert!(has_conflict_markers(">>>>>>> topic\n"));
-    // Not at column 0, or shorter than seven ⇒ not a marker (mirrors MARKER_RE).
-    assert!(!has_conflict_markers(" <<<<<<< indented\n"));
-    assert!(!has_conflict_markers("====== six\n"));
-    assert!(!has_conflict_markers("a normal file\nwith === separators\n"));
-}

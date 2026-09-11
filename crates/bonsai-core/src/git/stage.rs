@@ -114,8 +114,22 @@ pub(crate) fn ensure_within_workdir(workdir: &Path, rel: &str) -> Result<PathBuf
 ///   rename OLD side).
 ///
 /// Then `index.write()` once. Note: `add_path` has `git add -f` semantics
-/// (adds even ignored files); acceptable — the UI only offers paths already
-/// present in `StatusSnapshot`. An empty `paths` vec is a no-op `Ok(())`.
+/// (adds even ignored files); acceptable for the UI, which only offers paths
+/// already present in `StatusSnapshot`. A caller that is NOT the UI (the MCP
+/// server, whose caller is a model) must enforce that precondition itself —
+/// `bonsai-mcp`'s `bonsai_stage` requires every path to appear in
+/// `read_status()` output before calling this (audit 2026-09-11 MEDIUM).
+/// An empty `paths` vec is a no-op `Ok(())`.
+///
+/// Path safety (audit 2026-09-11 HIGH): every path passes the lexical
+/// [`validate_rel_path`] AND the symlink-escape guard [`ensure_within_workdir`],
+/// both for the whole batch BEFORE any index mutation (preserving the
+/// all-or-nothing contract). Without the second guard `workdir.join(rel)`
+/// transparently follows a symlinked ANCESTOR directory, so `symlink_metadata`
+/// would succeed on an out-of-repo file and `index.add_path` would read its
+/// bytes into the object database — libgit2 has no "beyond a symbolic link"
+/// refusal of its own. The guard's joined path (leaf NOT resolved, so a leaf
+/// symlink is still staged as a link) is what the existence check then uses.
 pub fn stage_paths(workdir: &Path, paths: &[String]) -> Result<(), AppError> {
     if paths.is_empty() {
         return Ok(());
@@ -130,10 +144,17 @@ pub fn stage_paths(workdir: &Path, paths: &[String]) -> Result<(), AppError> {
         .ok_or_else(|| AppError::Git("repository has no workdir".to_string()))?
         .to_path_buf();
 
-    let mut index = repo.index()?;
+    // Symlink-escape guard for EVERY path first (same order as the lexical
+    // guard above): no index entry may be touched if any path escapes.
+    let mut targets: Vec<PathBuf> = Vec::with_capacity(paths.len());
     for p in paths {
+        targets.push(ensure_within_workdir(&wd, p)?);
+    }
+
+    let mut index = repo.index()?;
+    for (p, target) in paths.iter().zip(targets.iter()) {
         let rel = Path::new(p);
-        if wd.join(rel).symlink_metadata().is_ok() {
+        if target.symlink_metadata().is_ok() {
             index.add_path(rel)?;
         } else {
             index.remove_path(rel)?;
@@ -153,6 +174,16 @@ pub fn stage_paths(workdir: &Path, paths: &[String]) -> Result<(), AppError> {
 ///
 /// Unborn detection: `repo.head()` error with code `UnbornBranch` or
 /// `NotFound`. An empty `paths` vec is a no-op `Ok(())`.
+///
+/// Deliberately NO [`ensure_within_workdir`] call, unlike [`stage_paths`]
+/// (audit 2026-09-11): every operation here is index-only — `reset_default` and
+/// `index.remove_path` address index ENTRIES by their repo-relative key and
+/// never touch the filesystem, so there is no `workdir.join(rel)` for a
+/// symlinked ancestor to redirect. A path that escapes lexically is already
+/// rejected by [`validate_rel_path`]; a path that would escape only through a
+/// symlink simply matches no index entry (`reset_default` on an unmatched
+/// pathspec is a no-op, and `git_index_remove_bypath` swallows `GIT_ENOTFOUND`).
+/// Covered by `path_traversal_tests::unstage_paths_needs_no_fs_guard`.
 pub fn unstage_paths(workdir: &Path, paths: &[String]) -> Result<(), AppError> {
     if paths.is_empty() {
         return Ok(());

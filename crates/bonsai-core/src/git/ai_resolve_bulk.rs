@@ -170,19 +170,6 @@ fn result_block_path(line: &str) -> Option<&str> {
     (!path.is_empty()).then_some(path)
 }
 
-/// True when `text` still contains a conflict-marker line.
-///
-/// EQUIVALENT to the frontend's `hasUnresolvedMarkers`
-/// (`src/utils/conflictRegions.ts:127`, `/^(<{7}|={7}|>{7})/`) on purpose: the two
-/// gates must agree, or Rust could hand the UI something the UI would refuse to
-/// stage (or worse, the other way round). Nothing markerful may ever be presented
-/// as clean.
-pub(crate) fn has_conflict_markers(text: &str) -> bool {
-    text.lines().any(|line| {
-        line.starts_with("<<<<<<<") || line.starts_with("=======") || line.starts_with(">>>>>>>")
-    })
-}
-
 /// Split a bulk reply into per-path bodies and attribute each (P68 §6.2, PURE).
 ///
 /// - a path matched EXACTLY against `requested` ⇒ proposal (after one leading and
@@ -256,7 +243,7 @@ pub(crate) fn parse_bulk_response(
                 path,
                 reason: "Claude returned an empty result for this file".to_string(),
             });
-        } else if has_conflict_markers(&body) {
+        } else if crate::git::conflict::has_conflict_markers(&body) {
             out.failed.push(AiResolveFailure {
                 path,
                 reason: "AI left unresolved conflict markers".to_string(),

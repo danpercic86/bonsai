@@ -251,6 +251,70 @@ pub fn repo_has_runnable_hooks(workdir: &Path) -> bool {
         .any(|&hook| hook_file_path(workdir, hook).is_some_and(|p| is_runnable_hook_file(&p)))
 }
 
+/// The hooks a COMMIT-producing Bonsai operation (commit / amend / merge-commit)
+/// would actually run — a strict subset of [`DISCLOSABLE_HOOKS`] without
+/// `pre-push`, which no commit path fires.
+const COMMIT_HOOKS: [HookName; 3] = [
+    HookName::PreCommit,
+    HookName::CommitMsg,
+    HookName::PostCommit,
+];
+
+/// The hooks a CLEAN AUTO-MERGE commit would run: `commit-msg` ONLY. `git
+/// merge`'s auto-commit fires pre-merge-commit + prepare-commit-msg +
+/// commit-msg, neither of the first two being supported by Bonsai (F-A4-3), and
+/// `pre-commit` / `post-commit` are never fired by it — see
+/// [`MergeHooks::MessageOnly`](crate::git::merge). A probe scoped to this set is
+/// what lets the merge path refuse ONLY for a hook it would really run.
+const MERGE_COMMIT_HOOKS: [HookName; 1] = [HookName::CommitMsg];
+
+/// Canonical names of the commit-time hooks this repo would ACTUALLY run on the
+/// next commit — i.e. present + (on unix) executable, AND not disabled by
+/// `bonsai.runHooks=false`. Empty ⇒ committing here executes no repository code.
+///
+/// Distinct from [`repo_has_runnable_hooks`] on two axes, both of which matter
+/// for the caller that needs it (audit 2026-09-11 LOW: the MCP server refusing a
+/// commit whose hooks the user was never shown): it excludes `pre-push` (a
+/// commit never fires it, so refusing a commit for it would be wrong), and it
+/// honours the effective `bonsai.runHooks` toggle (a repo that opted out runs
+/// nothing, so there is nothing to disclose). Names — not a bool — so the
+/// refusal can say WHICH hooks.
+///
+/// Introspection failure ⇒ empty (nothing we can prove would run). Blocking
+/// (git2 + fs) → callers wrap in `spawn_blocking`. NEVER panics.
+pub fn commit_hooks_that_would_run(workdir: &Path) -> Vec<&'static str> {
+    hooks_that_would_run(workdir, &COMMIT_HOOKS)
+}
+
+/// [`commit_hooks_that_would_run`] scoped to the hooks a clean AUTO-MERGE
+/// commit fires — `commit-msg` alone ([`MERGE_COMMIT_HOOKS`]).
+///
+/// Separate from the commit probe because using that one here would name
+/// `pre-commit` / `post-commit` in a refusal for an operation that never runs
+/// them (review 2026-09-11). Same failure-⇒-empty and blocking contract.
+pub fn merge_commit_hooks_that_would_run(workdir: &Path) -> Vec<&'static str> {
+    hooks_that_would_run(workdir, &MERGE_COMMIT_HOOKS)
+}
+
+/// Shared engine for the two probes above: of `candidates`, the hooks this repo
+/// would really run (present + runnable) unless `bonsai.runHooks` is off.
+fn hooks_that_would_run(workdir: &Path, candidates: &[HookName]) -> Vec<&'static str> {
+    let Ok(repo) = open_repo(workdir) else {
+        return Vec::new();
+    };
+    let Ok(cfg) = repo.config().and_then(|mut c| c.snapshot()) else {
+        return Vec::new();
+    };
+    if !hooks_enabled(&cfg, false) {
+        return Vec::new();
+    }
+    candidates
+        .iter()
+        .filter(|&&hook| hook_file_path(workdir, hook).is_some_and(|p| is_runnable_hook_file(&p)))
+        .map(|hook| hook.as_str())
+        .collect()
+}
+
 /// unix: a hook counts only if it is a file with any execute bit set — exactly
 /// what git checks before running a `.git/hooks` script.
 #[cfg(unix)]
@@ -355,5 +419,7 @@ pub(crate) fn write_stdin_tempfile(hook: HookName, bytes: &[u8]) -> Result<TempS
     Ok(TempStdin { path })
 }
 
+#[cfg(test)]
+mod commit_hooks_tests;
 #[cfg(test)]
 mod tests;

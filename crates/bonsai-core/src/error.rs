@@ -80,6 +80,17 @@ pub enum AppError {
     /// blocking hook is NEVER a silent success — the operation aborts with this.
     #[error("{0}")]
     HookRejected(String),
+    /// An operation was REFUSED because it would have run repository git hooks
+    /// that this caller has no way to disclose to the user (audit 2026-09-11
+    /// LOW; raised only by `bonsai-mcp`'s standalone stdio server, which has no
+    /// frontend to disclose through). NOTHING ran and nothing changed — in
+    /// particular NO hook executed, which is what distinguishes it from
+    /// [`AppError::HookRejected`] (a hook ran and vetoed the operation). A
+    /// distinct kind so the caller — a model branching on `kind` — can tell
+    /// "ask the user for consent / disable hooks" apart from a generic failure
+    /// it might blindly retry.
+    #[error("{0}")]
+    HooksNotPermitted(String),
     /// P70: no runnable `git` executable could be resolved (PATH inherited from
     /// an installer, Git not installed, override pointing nowhere). Distinct
     /// from `Git` so the frontend can show ONE persistent banner instead of N
@@ -140,6 +151,7 @@ impl AppError {
             AppError::AiCancelled(_) => "aiCancelled",
             AppError::ExternalToolFailed(_) => "externalToolFailed",
             AppError::HookRejected(_) => "hookRejected",
+            AppError::HooksNotPermitted(_) => "hooksNotPermitted",
             AppError::GitNotFound(_) => "gitNotFound",
             AppError::ForgeUnsupported(_) => "forgeUnsupported",
             AppError::ForgeAuthRequired(_) => "forgeAuthRequired",
@@ -174,6 +186,7 @@ impl AppError {
             | AppError::AiCancelled(m)
             | AppError::ExternalToolFailed(m)
             | AppError::HookRejected(m)
+            | AppError::HooksNotPermitted(m)
             | AppError::GitNotFound(m)
             | AppError::ForgeUnsupported(m)
             | AppError::ForgeAuthRequired(m)

@@ -1,0 +1,492 @@
+# 34 tools, parameter schemas
+
+--- read bonsai_compare_with_head
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "oid": {
+      "description": "Full 40-char hex object id of the target commit.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "oid"
+  ],
+  "type": "object"
+}
+
+--- read bonsai_compare_with_head_file_diff
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "oid": {
+      "description": "Full 40-char hex object id of the commit to compare HEAD against.",
+      "type": "string"
+    },
+    "origPath": {
+      "description": "Optional pre-rename path when the file was renamed.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "path": {
+      "description": "Repo-relative path (forward slashes) of the file within the comparison.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "oid",
+    "path"
+  ],
+  "type": "object"
+}
+
+--- read bonsai_get_commit_diff
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "oid": {
+      "description": "Full 40-char hex object id of the target commit.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "oid"
+  ],
+  "type": "object"
+}
+
+--- read bonsai_get_commit_file_diff
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "oid": {
+      "description": "Full 40-char hex object id of the commit.",
+      "type": "string"
+    },
+    "origPath": {
+      "description": "Optional pre-rename path when the file was renamed in this commit.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "path": {
+      "description": "Repo-relative path (forward slashes) of the file within the commit.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "oid",
+    "path"
+  ],
+  "type": "object"
+}
+
+--- read bonsai_get_conflict
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "path": {
+      "description": "Repo-relative path (forward slashes) of a currently-conflicted file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "type": "object"
+}
+
+--- read bonsai_get_graph
+{
+  "properties": {},
+  "type": "object"
+}
+
+--- read bonsai_get_op_state
+{
+  "properties": {},
+  "type": "object"
+}
+
+--- read bonsai_get_status
+{
+  "properties": {},
+  "type": "object"
+}
+
+--- read bonsai_get_workdir_file_diff
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "origPath": {
+      "description": "Optional pre-rename path when the file was renamed.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "path": {
+      "description": "Repo-relative path (forward slashes) of the file to diff.",
+      "type": "string"
+    },
+    "staged": {
+      "description": "`false`: index vs working-dir (unstaged). `true`: HEAD vs index (staged).",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "path",
+    "staged"
+  ],
+  "type": "object"
+}
+
+--- read bonsai_list_branches
+{
+  "properties": {},
+  "type": "object"
+}
+
+--- read bonsai_list_conflicts
+{
+  "properties": {},
+  "type": "object"
+}
+
+--- read bonsai_list_repos
+{
+  "properties": {},
+  "type": "object"
+}
+
+--- read bonsai_list_stashes
+{
+  "properties": {},
+  "type": "object"
+}
+
+--- read bonsai_select_repo
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "repoId": {
+      "description": "The repoId (canonical workdir path) of an open Bonsai tab, from\n`bonsai_list_repos`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "repoId"
+  ],
+  "type": "object"
+}
+
+--- write bonsai_abort_merge
+{
+  "properties": {},
+  "type": "object"
+}
+
+--- write bonsai_apply_stash
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "index": {
+      "description": "Zero-based index into the stash stack (0 = most recent).",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "skipReserved": {
+      "default": false,
+      "description": "When true, apply everything except Windows-reserved paths (e.g. `NUL`)\nthat cannot be written to the working tree. Defaults to false; the first\nattempt (false) returns a `reservedPaths` outcome listing the offending\npaths so the caller can retry with `skipReserved: true`.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "index"
+  ],
+  "type": "object"
+}
+
+--- write bonsai_checkout_branch
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "name": {
+      "description": "The branch name (short form, e.g. `feature/x`).",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+}
+
+--- write bonsai_commit
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "message": {
+      "description": "The commit message. Must be non-empty (else an `emptyMessage` error).",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "type": "object"
+}
+
+--- write bonsai_commit_merge
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "message": {
+      "description": "The commit message. Must be non-empty (else an `emptyMessage` error).",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "type": "object"
+}
+
+--- write bonsai_create_branch
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "name": {
+      "description": "The branch name (short form, e.g. `feature/x`).",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+}
+
+--- write bonsai_create_branch_here
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "name": {
+      "description": "The new branch name.",
+      "type": "string"
+    },
+    "oid": {
+      "description": "Full 40-char hex object id of the commit the branch should point at.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "oid"
+  ],
+  "type": "object"
+}
+
+--- write bonsai_create_stash
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "includeUntracked": {
+      "description": "Whether to include untracked files in the stash.",
+      "type": "boolean"
+    },
+    "message": {
+      "description": "Optional stash message.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "includeUntracked"
+  ],
+  "type": "object"
+}
+
+--- write bonsai_delete_branch
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "name": {
+      "description": "The branch name (short form, e.g. `feature/x`).",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+}
+
+--- write bonsai_drop_stash
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "index": {
+      "description": "Zero-based index into the stash stack (0 = most recent).",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "index"
+  ],
+  "type": "object"
+}
+
+--- write bonsai_merge_branch
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "name": {
+      "description": "The branch name (short form, e.g. `feature/x`).",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+}
+
+--- write bonsai_pop_stash
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "index": {
+      "description": "Zero-based index into the stash stack (0 = most recent).",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "skipReserved": {
+      "default": false,
+      "description": "When true, apply everything except Windows-reserved paths (e.g. `NUL`)\nthat cannot be written to the working tree. Defaults to false; the first\nattempt (false) returns a `reservedPaths` outcome listing the offending\npaths so the caller can retry with `skipReserved: true`.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "index"
+  ],
+  "type": "object"
+}
+
+--- write bonsai_rebase_abort
+{
+  "properties": {},
+  "type": "object"
+}
+
+--- write bonsai_rebase_branch
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "onto": {
+      "description": "The branch/ref name to rebase the current branch onto.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "onto"
+  ],
+  "type": "object"
+}
+
+--- write bonsai_rebase_continue
+{
+  "properties": {},
+  "type": "object"
+}
+
+--- write bonsai_rebase_skip
+{
+  "properties": {},
+  "type": "object"
+}
+
+--- write bonsai_resolve_conflict
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "path": {
+      "description": "Repo-relative path of the conflicted file to resolve.",
+      "type": "string"
+    },
+    "resolution": {
+      "description": "One of: `\"ours\"` | `\"theirs\"` | `\"markResolved\"`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "resolution"
+  ],
+  "type": "object"
+}
+
+--- write bonsai_resolve_conflict_text
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "content": {
+      "description": "Full final file content (no conflict markers). Written to the worktree and staged.",
+      "type": "string"
+    },
+    "path": {
+      "description": "Repo-relative path of the conflicted file to resolve.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "content"
+  ],
+  "type": "object"
+}
+
+--- write bonsai_stage
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "paths": {
+      "description": "Repo-relative paths (forward slashes) to operate on, staged atomically.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "paths"
+  ],
+  "type": "object"
+}
+
+--- write bonsai_unstage
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "paths": {
+      "description": "Repo-relative paths (forward slashes) to operate on, staged atomically.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "paths"
+  ],
+  "type": "object"
+}

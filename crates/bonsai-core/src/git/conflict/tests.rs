@@ -332,3 +332,21 @@ fn resolve_conflict_text_accepts_leftover_markers() {
     let bytes = std::fs::read(dir.path().join("a.txt")).expect("read a");
     assert_eq!(bytes, content.as_bytes());
 }
+
+// ---------------------------------------------- the conflict-marker predicate
+
+/// Pins the Rust half of a rule the frontend implements INDEPENDENTLY
+/// (`src/utils/conflictRegions.ts`: `/^(<{7}|={7}|>{7})/`). Nothing shares code
+/// across that boundary, so these known answers — chosen to be exactly the ones
+/// the regex decides — are what keeps the two from drifting apart.
+#[test]
+fn markers_rule_matches_the_frontend_rule() {
+    // Present at column 0 in any of the three runs of seven.
+    assert!(has_conflict_markers("a\n<<<<<<< HEAD\nb\n"));
+    assert!(has_conflict_markers("=======\n"));
+    assert!(has_conflict_markers(">>>>>>> topic\n"));
+    // Not at column 0, or shorter than seven ⇒ not a marker (mirrors MARKER_RE).
+    assert!(!has_conflict_markers(" <<<<<<< indented\n"));
+    assert!(!has_conflict_markers("====== six\n"));
+    assert!(!has_conflict_markers("a normal file\nwith === separators\n"));
+}

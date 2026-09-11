@@ -15,10 +15,12 @@
 // resolving for the command layer.
 pub use crate::git::merge_activity::commit_merge_with_activity;
 
+use crate::error::AppError;
+
 mod branch;
 mod finalize;
 
-pub use branch::merge_branch;
+pub use branch::{merge_branch, merge_branch_gated};
 pub use finalize::{abort_merge, commit_merge};
 pub(crate) use finalize::finalize_merge_commit;
 
@@ -60,6 +62,38 @@ fn prepared_merge_message(name: &str, incoming_is_remote: bool) -> String {
     }
 }
 
+/// How [`merge_branch_gated`] treats the `commit-msg` hook of a clean
+/// auto-merge commit — the ONE hook that path can fire
+/// ([`MergeHooks::MessageOnly`]).
+///
+/// `Run` / `Skip` are exactly the old `skip_hooks: bool`. `Gate` exists for a
+/// caller that may not run undisclosed repository code and must REFUSE rather
+/// than silently bypass (audit 2026-09-11 LOW: `bonsai-mcp`'s standalone stdio
+/// server, which has no frontend to disclose hook execution through). The
+/// refusal TEXT belongs to that caller, not here, so the variant carries the
+/// caller's decision function instead of core inventing `--allow-hooks`
+/// vocabulary; it is handed the names of the hooks that would really run
+/// (`merge_commit_hooks_that_would_run`) and its `Err` aborts the merge.
+#[derive(Clone, Copy)]
+pub enum MergeHookGate {
+    /// Run `commit-msg` when enabled (`bonsai.runHooks`) — the app's default.
+    Run,
+    /// `--no-verify`: never run it.
+    Skip,
+    /// Consult this decision function BEFORE anything mutates, on the paths
+    /// that would run the hook; `Ok` ⇒ behave like [`MergeHookGate::Run`].
+    Gate(fn(&[&str]) -> Result<(), AppError>),
+}
+
+impl MergeHookGate {
+    /// The `skip_hooks` value this gate implies for [`hooks_enabled`](
+    /// crate::git::hooks::hooks_enabled): only `Skip` bypasses — a `Gate` that
+    /// returned `Ok` runs the hook exactly like `Run`.
+    pub(crate) fn skips_hooks(self) -> bool {
+        matches!(self, MergeHookGate::Skip)
+    }
+}
+
 /// Which commit hooks [`finalize_merge_commit`] fires (F-A4-2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MergeHooks {
@@ -82,3 +116,5 @@ mod p8_helpers;
 mod tests;
 #[cfg(test)]
 mod autostash_tests;
+#[cfg(test)]
+mod hook_gate_tests;
