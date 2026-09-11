@@ -78,6 +78,8 @@ unstaged on purpose. Don't spend time reconciling them; find out whose they are 
 follow-up (`e9d025d` / `7f9f16b` / `c03d11d`) are done and committed; all eight USER CHECKPOINTs
 were confirmed 2026-09-10 (`548cc0a`). Narratives: archive Parts 54-60.
 
+**SUPERSEDED 2026-09-11 — all 17 FOR-USER items are now RULED; see `## USER DECISION LEDGER`.**
+The implementation queue those rulings created is the current work. Previously this read:
 **There is no unblocked implementation work in this block.** What remains here is FOR-USER
 decisions (the seven in the next section, plus item 3's two security calls) and **two owed AI-gate
 items** — `### P108 — AC11 is still OWED` and `### P91 — open items`, both under
@@ -187,9 +189,63 @@ items** — `### P108 — AC11 is still OWED` and `### P91 — open items`, both
 
 ---
 
-## FOR USER — open decisions (nobody else may resolve these)
+## ✅ USER DECISION LEDGER — 2026-09-11 (all 17 open items ruled)
 
-### 0. Adopt happy-dom for the vitest DOM project? — MEASURED, HELD FOR THE USER (2026-09-03)
+**Every FOR-USER decision below this section is now RULED.** The evidence that justified each
+ruling is kept in place in the sections that follow; this ledger is the authoritative record of
+*what was decided*. Do not re-open any of these without the user.
+
+| # | Item | Ruling (user, 2026-09-11) |
+|---|---|---|
+| 1 | Branch `feat/p91-observability` | **MERGE to `dev`.** See the correction note below — the merge is a **fast-forward of 164 commits**, not 30. |
+| 2 | Uncommitted `CLAUDE.md` + `context-explorer.md` | **COMMIT them** (jbcontext CLI→MCP migration), fixing the tool-list line that contradicts the agent's own frontmatter. |
+| 3 | F6 `usage.json` | **Stay always-on, but 90-day window + deletable.** Statistics page stays viable. Disclosure copy still required (naming the `metrics` folder, not the file). |
+| 4 | Security MEDIUM-2 `terminalCommand`/`editorCommand` | **Validate the shape now** (absolute path to an existing executable, no shell metachars, no arg injection) **and put removal of user-supplied commands on the roadmap.** |
+| 5 | Username / home masking in raw log paths | **Mask the home prefix — and it MUST be cross-platform** (user's explicit addition): resolve the actual home dir per-OS so Windows `C:\Users\x`, macOS `/Users/x` and Linux `/home/x` all collapse. Do NOT pattern-match `C:\Users`. |
+| 6 | Security LOW-1 cwd DLL search order | **Fix it in the same increment as #4's validation** (one call site, near-free while there). |
+| 7 | D3 `.op-worktree-warning` | **Repaint as the warning hue.** Danger stays reserved for destructive/irreversible actions. |
+| 8 | happy-dom | **ADOPT** (`docs/proposals/happy-dom.patch`) **and also do the lazy `window.location` fix** in `src/ipc/mock/repoState.ts:160`. jsdom stays installed so the shim self-guard stays meaningful. |
+| 9 | e2e bundle default | **MEASURE and REPORT, do NOT flip.** One cold `E2E_BUNDLE=1` run vs the 162s dev figure *including build*. The number goes on the record; the default does not change without the user seeing it. |
+| 10 | P69 A3 AI gate-note copy | **ui-designer finalises it** with the surrounding copy in view; its signed string ships. |
+| 11 | P77 tag-sync check | **Fold into the existing auto-fetch cycle** (on, 5-min). No new trigger, no repo-open network call. |
+| 12 | Process changes | **ALL THREE ADOPTED** — see the new rules block below. |
+| 13 | P108 `AC11` | **ACCEPT the source-derived figures** for the two unreachable states; record the limitation and **close AC11**. |
+| 14 | Back up `.tauri/updater-prod.key` | **Not now** — stays on the board as a user action. Still single-copy; still breaks auto-update for every installed client if lost. |
+| 15 | Dependabot moderate alert | **Not now**, and **no `gh` install authorised** — so the orchestrator cannot read the page. Stays open as a user action. |
+| 16 | P91 owed AI-gate item (real `logs/*.jsonl`) | **User will boot `pnpm tauri dev` with Dev mode ON.** Orchestrator parses the files once they exist. Verified 2026-09-11: no Dev-mode key in persisted `settings.json`, so it cannot be pre-set from disk. |
+| 17 | macOS ad-hoc signing | **PARK as blocked-on-release.** Re-raise when a tag is next cut. Not open work. |
+
+### Correction to the board's own commit count (verified 2026-09-11)
+
+The RESUME block said "30 commits ahead of `5c2dcd2`". Measured:
+
+- `dev` is at `cb70f4a` and is a **strict ancestor** of this branch → the merge is a **pure
+  fast-forward**, no merge commit, nothing to resolve.
+- `cb70f4a..5c2dcd2` = **126 commits**; `5c2dcd2..HEAD` = **38** (the board's "30" is stale by 8).
+- Total landing on `dev`: **164 commits**, of which 126 predate the board's own reference point.
+  The "30 commits" framing described only the recent P91 window, not what `dev` has never seen.
+- Also on the remote: `origin/Dev` (capital D) at `691f48b`, a separate ref from `origin/dev`
+  (`cb70f4a`). A case-collision artefact — not touched, but do not confuse the two.
+
+### The three process rules adopted 2026-09-11 (user)
+
+1. **Batch small P-tasks through ONE senior-dev spawn.** Every fresh subagent re-pays this
+   CLAUDE.md + its agent def (~6-8k tokens) before doing anything.
+2. **Skip the architect contract for single-component fixes.** Accepted cost: nothing survives on
+   disk if the session dies mid-increment, so keep such increments short.
+3. **Fold the board update into the feat commit.** Accepted cost: a docs-only commit can no longer
+   be identified as such from the log.
+
+---
+
+## FOR USER — decisions (ALL RULED 2026-09-11 — evidence kept, rulings in the ledger above)
+
+### 0. happy-dom — ✅ RULED 2026-09-11: **ADOPT, plus the lazy `window.location` fix**
+
+> Evidence below is the measurement that justified it. Apply `docs/proposals/happy-dom.patch`, then
+> `pnpm install`. Also make `src/ipc/mock/repoState.ts:160` lazy (the board already called this worth
+> doing regardless). The shim's quiet a11y-naming failure mode is an ACCEPTED risk — if a future
+> test uses an inline tag outside the shim's set it silently gets `display: block`.
 
 **Patch is saved at `docs/proposals/happy-dom.patch`** — apply with
 `git apply docs/proposals/happy-dom.patch` then `pnpm install`. The working tree was **restored to
@@ -242,7 +298,7 @@ hiding mechanisms — **no silent-pass hazard**.
 
 ---
 
-### 1. Flip the e2e bundle default? — READY, HELD FOR THE USER (2026-09-02)
+### 1. e2e bundle default — ✅ RULED 2026-09-11: **MEASURE and REPORT, do NOT flip**
 
 - P104 is cleared, so nothing blocks the flip; the orchestrator deliberately did **not** make it.
 - The blocker is a measurement gap: the figures are **162 s dev server vs 122 s bundle**, and it is
@@ -256,7 +312,11 @@ hiding mechanisms — **no silent-pass hazard**.
 - **To decide it: time one `E2E_BUNDLE=1` run from a cold build** and compare with the 162 s dev
   figure including build. Full context: archive Part 48.
 
-### 2. Security F6 — `usage.json` disclosure — HELD FOR USER, with a recommendation
+### 2. F6 `usage.json` — ✅ RULED 2026-09-11: **always-on stays; 90-day window + deletable**
+
+> Not option A/B/C as specced: the user kept collection always-on (so a future Statistics page stays
+> viable) but cut 400 days → **90** and required it be **deletable**. The disclosure copy is still
+> owed and must name the **`metrics` folder**, not the file.
 
 - `usage.json` is **always-on durable local telemetry**, independent of Dev mode, from first launch:
   `firstSeen`, launch count, and a **400-day** per-day profile of which operations ran and how long.
@@ -273,7 +333,7 @@ hiding mechanisms — **no silent-pass hazard**.
 - P91 has never shipped, so now is the moment to decide whether a local Git client should keep an
   undeletable 400-day usage profile with no disclosure. Full text: archive Part 43.
 
-### 3. Mask home directories / usernames in raw log paths? — OPEN QUESTION
+### 3. Home/username masking — ✅ RULED 2026-09-11: **mask the home prefix, CROSS-PLATFORM**
 
 - `scrub.rs` has **no username rule** (verified independently by grep), so a **raw absolute repo path
   carries the OS account name** into a mailed export zip.
@@ -281,13 +341,13 @@ hiding mechanisms — **no silent-pass hazard**.
 - Now **disclosed** in the consent copy (`0a785b3`); **whether to also mask it is unresolved** —
   masking would undercut raw mode's stated purpose of showing real paths.
 
-### 4. D3 — should `.op-worktree-warning` be painted danger at all? — DELIBERATELY UNRESOLVED
+### 4. D3 `.op-worktree-warning` — ✅ RULED 2026-09-11: **repaint as the warning hue**
 
 - It is a **warning painted danger**: a *tone/semantics* question, not a contrast one.
 - Deliberately **not** folded into P108 — changing it alters what the UI means, not whether it can be
   read. P108's fix kept the danger hue and changed only legibility, so the tone question is untouched.
 
-### 5. Two open items from the 1.0.0 release (carried forward)
+### 5. Two 1.0.0 items — ⏳ 2026-09-11: both DEFERRED by the user, still user actions
 
 1. **Back up `.tauri/updater-prod.key`.** Correctly gitignored and untracked, so it exists in exactly
    ONE place: this working copy. Losing it permanently breaks auto-update for every installed client.
@@ -297,7 +357,7 @@ hiding mechanisms — **no silent-pass hazard**.
    `pnpm-workspace.yaml`. **The moderate is unidentified** — `gh` is not installed here; both project
    gates are green. Check the Dependabot page.
 
-### 6. Record contradictions surfaced by the 2026-09-03 curation sweep
+### 6. Record contradictions — 🔧 2026-09-11: **orchestrator to verify and close these** (user assented)
 
 The curator refuses to resolve these; resolving any would upgrade a status.
 
@@ -525,7 +585,11 @@ archive Part 44; the milestone entry is archive Part 54.6.
 
 Condensed to one line per item on 2026-09-03; the pre-condensation text is archive Part 50.
 
-### P108 — `AC11` is still OWED — an AI-gate measurement, not a native checkpoint
+### P108 — `AC11` — ✅ CLOSED 2026-09-11 by user ruling: source-derived figures ACCEPTED
+
+> The user accepted the two source-derived 3.05 figures for the unreachable states, with the
+> limitation recorded. Kept verbatim below because the qualifier is the record of *why* it could not
+> be measured — do not re-open it as owed.
 
 P108 shipped in `42206fd` and its AC12/AC13/AC14 native halves were confirmed by the user
 2026-09-10, but **`AC11` is an AI-gate contrast measurement and is not closed by that
@@ -714,9 +778,10 @@ Baseline numbers: `docs/history/velocity-2026-09-01.md`. Done in that pass: prop
 - **`pnpm gate --quick` is 305s and only drops e2e**, so it is not a fast tier; `cargo nextest
   --workspace` alone is 181s of it. Either add a genuinely narrow tier or lean on `--rust` /
   `--frontend`.
-- **Candidate process changes, NOT adopted — needs a USER decision:** batch small P-tasks through one
-  senior-dev spawn; skip the architect contract for single-component fixes; fold the board update
-  into the feat commit.
+- **Candidate process changes — ✅ ALL THREE ADOPTED 2026-09-11 (user).** Now rules, recorded in
+  `## USER DECISION LEDGER` → "The three process rules adopted 2026-09-11": batch small P-tasks
+  through one senior-dev spawn; skip the architect contract for single-component fixes; fold the
+  board update into the feat commit.
 
 ### Hoisted off milestones archived 2026-09-01
 
@@ -831,7 +896,11 @@ Baseline numbers: `docs/history/velocity-2026-09-01.md`. Done in that pass: prop
   path-count cap + per-batch reads + batch count in the dialog, process-group kill off Windows (the
   pid-zeroing half landed in `67539fd`), and a symlink-safe `resolve_conflict_text` write.
 
-### P69 Settings follow-ups awaiting a user decision (nothing is blocked on them)
+### P69 Settings follow-ups — A3 ✅ RULED 2026-09-11 (ui-designer finalises); A8/A9 still backlog
+
+> **A3:** the user handed the gate-note copy to `ui-designer` to finalise with the surrounding copy
+> in view; whatever it signs ships. **A8/A9 were deliberately NOT put to the user** — they are
+> backlog, not blocked on a decision.
 
 - **A8 — bundle the two specced-but-unimplemented items into one increment** (both `ui-designer` and
   the orchestrator recommend bundling): (a) the help-text highlight fallback
@@ -848,9 +917,10 @@ Baseline numbers: `docs/history/velocity-2026-09-01.md`. Done in that pass: prop
 
 ### P77 tag-sync deferred follow-ups (full detail: `docs/history/todo-archive-2026-08.md` Part 18)
 
-- **Collapsed-rollup needs first expand (FOR-USER decision):** the ls-remote check only fires on the
-  first Tags expand per session, so the rollup warning cannot appear until the user expands Tags
-  once. Decide whether a cheap unprompted check on repo-open is worth the network cost.
+- **Collapsed-rollup needs first expand — ✅ RULED 2026-09-11: fold the check into the existing
+  auto-fetch cycle** (enabled, 5-min interval). No repo-open network call and no new trigger; the
+  rollup warning appears within one cycle. The old text: the ls-remote check only fires on the first
+  Tags expand per session, so the rollup warning cannot appear until the user expands Tags once.
 - NITs: rollup aria-label lacks singular/plural ("1 tags") · `useTagSync` re-hits network on rapid
   collapse-then-expand while `unavailable` · confirm dialogs close optimistically so `busy` never
   paints · the tag-filter box gate counts local tags only · item-7 "Delete tag on origin" also shows
@@ -858,7 +928,7 @@ Baseline numbers: `docs/history/velocity-2026-09-01.md`. Done in that pass: prop
 - Backend NITs: `delete_remote_tag` doesn't `evict_fresh_on_auth_fail` · `validate_tag_name` is
   duplicated from `tags.rs` — promote to shared if a 3rd caller appears.
 
-### macOS ad-hoc code signing — config DONE 2026-08-30, RELEASE STILL PENDING
+### macOS ad-hoc code signing — ⏸ PARKED 2026-09-11 (user): blocked-on-release, NOT open work
 
 - `bundle.macOS.signingIdentity: "-"` is in `src-tauri/tauri.conf.json` but **has not shipped**: the
   last tag is `v1.5.0` (2026-08-26), which predates the fix. Verify the sealed ad-hoc signature on
