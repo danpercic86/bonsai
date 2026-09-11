@@ -498,6 +498,20 @@ bucket, record a verdict per site, predict the post-fix residue, then verify the
   lost the failure detail and cost a re-run of the Rust leg.
 - **Read the `gate summary` block, never the exit status alone** — a background wrapper reported
   exit 0 while the gate had failed (that was the pipeline's exit code, not the gate's).
+- **That rule applies to a bare `cargo test` too, not only to `pnpm gate` — 2026-09-11 cost proves
+  it.** The orchestrator piped three `cargo test` runs through `head`/`tail`, read exit 0, saw a
+  truncated log with six `FAILED` lines and no `test result:` summary, and reported six phantom
+  `h_ai` failures as a possible regression. Serialized and unpiped, `h_ai` was **45/57 passed, 0
+  failed** — the truncating pipe manufactured the failure *and* hid the evidence that would have
+  disproved it. **A cargo run whose log has no `test result:` line has not finished; it has been
+  cut off.**
+- **SERIALIZE cargo. Concurrent `cargo` invocations queue on the build-directory lock, and a queued
+  cargo is INDISTINGUISHABLE FROM A HANG** — several `cargo.exe`, **zero `rustc`**, negligible CPU,
+  no output for 20+ minutes. That is what *waiting for a lock* looks like, not a deadlock. On
+  2026-09-11 the orchestrator read that signature as wedged and killed the processes **twice**;
+  they would have drained on their own, and each kill discarded build progress and forced a cold
+  vendored-libgit2 rebuild. **Do not kill them. Run one cargo at a time and wait** — CLAUDE.md's
+  "never conclude failure from a timeout" covers this exact case.
 
 ---
 
