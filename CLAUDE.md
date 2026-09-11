@@ -256,6 +256,14 @@ graph-layout algorithm.
   that feed repo content to a model, the MCP server's write tools, external-process launching,
   credential/token storage, signing + the updater trust chain, hook execution, Tauri
   capabilities/CSP, dependency advisories. Read-only on code; reports ranked findings.
+  **Mandatory path trigger (added 2026-09-11, user ruling):** any diff touching
+  `crates/bonsai-mcp/src/server/tools_*.rs` requires a `security-auditor` pass **regardless of the
+  commit subject**. Those doc comments are not documentation — `rmcp-macros` concatenates every
+  `///` line into the JSON-Schema `description`, so they are the **tool contracts a model reads
+  before invoking worktree-destructive operations**. This rule exists because `2a0b8f1` landed 222
+  lines of exactly that on a `docs(mcp):` subject, literally accurate and materially understating,
+  and the audit it escaped later found a false guarantee in one write tool. A description-snapshot
+  test guards text drift; this rule guards the review.
 - **`refactorer`** — strictly behavior-preserving restructuring, chiefly splitting oversized files
   back under the ~500-line limit. Proves equivalence by identical before/after test counts. Never
   fixes bugs or changes behavior in the same pass — it reports what it finds instead.
