@@ -1799,7 +1799,7 @@ row 2: [ help 12px --text-2, 56ch   ]  control spans both rows
 | A bounded number tuned by feel | `NumberSlider` (slider + number + unit) — §12.3.4 |
 | Free text, a path, an unbounded value | Text field, stacked row |
 | A one-shot action | Button |
-| More than 3 exclusive values | `Combobox` |
+| More than 3 exclusive values | `Combobox` — §12.13 when the value set is discovered at runtime |
 
 **A button labelled with its own current value is not a control** — `[ Dark ]` reads as "make it
 dark". Never use one for state.
@@ -2327,6 +2327,74 @@ are on.` — is **WITHDRAWN**, and the reason is worth keeping because it is a g
    would dim the sentence explaining the dim. The `.55` lives on `.settings-row.is-disabled`.
 7. Hue never carries the gated state, and a switch knob's **position** must still read on-vs-off
    while disabled.
+
+### 12.13 Pickers over a detected set (P112)
+
+Full contract: `docs/contracts/P112-ui.md`. The pattern for a setting whose legal values are
+**discovered at runtime** rather than enumerated in the catalog — the external terminal/editor
+pickers, and any future "pick one of the things we found on this machine" row. Values are opaque
+ids; the label and subtitle come from the backend and are display-only.
+
+- **The control is `Combobox`** (§12.3, >3 exclusive values), strict mode. `allowFreeInput: false`
+  is a **security** property here, not a convenience: the whole point of P112 was deleting free-text
+  program entry, and strict mode means `onChange` can only ever fire with an option's `value`.
+- **Two corrections apply to every settings combobox**, and they are one rule for the surface, not a
+  per-row skin: `.settings-row .combobox > .dialog-input` is **28px** tall with `padding: 0 8px`
+  (`.dialog-input`'s 32px is *dialog* geometry; 28px is `.settings-text`, i.e. what the row's
+  neighbours are), and it gets a real focus **ring** — `.dialog-input:focus` declares
+  `outline: none` and leaves only a border tint, which is colour-only. Scope the ring to
+  `:focus-visible` with higher specificity so source order cannot decide it.
+- **Two-line option rows** where the subtitle is a **path**: label 13px `--text-1` over an 11px
+  `--text-2` mono detail line, `gap: 1px`. `.combobox-option`'s default single line
+  (`justify-content: space-between`, `.combobox-option-hint { flex: none }`) is correct for a
+  one-word state like `checked out` and **wrong** for a 46-char absolute path — `flex: none`
+  collapses the label and overflows the popover. Apply it from an ancestor class on the picker
+  wrapper, not with a new `Combobox` prop, so every other consumer keeps the inline hint.
+  Option-row height goes 27px → ~38px; the 220px `max-height` is unchanged and the list scrolls.
+- **Platform paths are §3.0-R3 members.** `RefLabel` delegates to `splitPath`, which splits on `/`
+  only, so a Windows path comes back as one unsplittable leaf. Use `ToolPathLabel`
+  (`src/components/settings/ToolPathLabel.tsx`) — same `.ref-label-head` / `.ref-label-leaf` CSS,
+  splits on the last `/` **or** `\`. **Do not widen `splitPath`**: it serves git paths, which are
+  always `/`, and loosening a shared parser to fix another subsystem's display plants a regression
+  in the status tree.
+- **"Chosen but no longer present" is a kept selection, marked — never a silent correction and
+  never an error.** The selection stays stored, the option's detail line reads the **word**
+  `Not installed`, the option stays **enabled** (greying the row the user is standing on reads as a
+  broken control, and it blocks recovery after a reinstall), and the row's stateful note says what
+  happens instead and that nothing was lost. The word is the WCAG 1.4.1 carrier; no hue, no badge.
+- **A strict picker over a runtime set renders BLANK until the set arrives.** `Combobox` derives its
+  input text from `options.find(o => o.value === value)?.label`, so a stored id whose label has not
+  loaded yet shows an empty field — which reads as "unset", the opposite of the truth. Pass a
+  `placeholder` for the loading window (`Looking for installed tools…`). Never synthesise a
+  "loading…" *option*: it would be selectable and would patch a junk value.
+- **A Settings-surface error is inline, never a toast.** `.toast-stack` is `z-index: 90` and
+  `.dialog-overlay` is 100 (§10.2), so a toast raised from inside Settings renders *behind* the
+  card. Put it in the row's help slot as `.settings-row-note--warn` using the signed P107 recipe
+  (12% `--warning` tint, `inset 3px 0 0 var(--warning)`, **`--text-1` ink** — the `--text-1` is
+  what passes AA in light). It sits **beside** the row's state note, not instead of it (§12.2's
+  "note plus conditional caveat"), the control's `aria-describedby` composes both ids, and the
+  element is permanently present with empty text when idle — the §12.3.4 shape, because a live
+  region mounted in the same tick as its text is not announced. `:empty` collapses its padding and
+  chrome; it must **not** be `display: none`, which costs the announcement.
+- **Count the live regions per section, not per element.** When one IPC result changes several
+  notes in the same tick, only **one** of them may be live, or AT queues one sentence per note for
+  a single event. Make the refresh/status row's note the live one and leave the per-row notes
+  description-only — they are announced on focus via `describedBy`, which is when a user asking
+  about that row wants them.
+- **A backend-opened native dialog uses the `Export session…` idiom** (§12.11,
+  `SettingsDevLogsSection.tsx:88-99`): `aria-disabled` + `aria-busy`, **never `disabled`**, and the
+  visible label does **not** change. `aria-disabled` is what keeps the button focusable, so focus is
+  still on it when the OS modal closes and cancel needs no restore logic. A cancel writes nothing
+  and says nothing. No spinner for a gap that ends in an OS window.
+- **`Combobox` needs `describedBy` on rows like these.** A row whose explanation is stateful carries
+  a `.settings-row-note` and no catalog `help` (§12.2) — and `Combobox` had no
+  `aria-describedby` passthrough, so that note was silent to AT. Any picker whose state lives in the
+  note must wire it; `appearance.graph-season` had the same gap.
+- **One refresh control per scan, not per picker.** When one round trip populates several pickers,
+  the rescan is a single catalogued **button row** (`rowLabel` = the row title, catalog `label` =
+  the button text), which buys search coverage and an announced name that a bare button under the
+  group would not have. Report **what was found** in its note, not a wall-clock time — the app has
+  no time formatter and the user who just pressed the button already knows when.
 
 ## 13. Icon system (SVG chrome)
 
