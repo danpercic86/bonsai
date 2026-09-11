@@ -997,6 +997,132 @@ error found, not necessarily the only one present.**
 
 ---
 
+### SEC-2026-09-11b — review of the MCP audit IMPLEMENTATION (uncommitted at time of writing)
+
+**The two findings that mattered are genuinely CLOSED**, correctly and without over-restriction. No
+CRITICAL, no HIGH; nothing the increment introduced is exploitable. But one of its six claims is
+incomplete, and the increment's own new prose asserts the stronger invariant it did not achieve.
+
+#### 🟡 LOW — claim #4 (hooks) gates 2 of the 3 commit-producing MCP paths
+
+`bonsai_merge_branch`'s clean auto-merge runs the repository's **`commit-msg`** hook with **no gate**,
+while the server now *tells the model it is refused*.
+
+- `crates/bonsai-mcp/src/server/tools_write.rs:191` — `merge_branch(wd, &args.name, false)`:
+  `skip_hooks = false`, and **no** `hooks_need_disclosure()` / `ensure_commit_hooks_disclosed` call,
+  unlike `bonsai_commit` (`:88-94`) and `bonsai_commit_merge` (`:213-219`).
+- `crates/bonsai-core/src/git/merge/branch.rs:273-277` — the clean auto-merge selects
+  `MergeHooks::MessageOnly` whenever `hooks_enabled(cfg, false)`.
+- `crates/bonsai-core/src/git/merge/finalize.rs:68` → `commit.rs:152` runs `commit-msg`, **blocking**,
+  before the commit.
+- **The false prose:** `server.rs:387-403` appends "A commit in a repository that has runnable git
+  hooks is refused here", and `crates/bonsai-mcp/README.md` says a commit "is refused unless started
+  with `--allow-hooks`". **Both are false for this tool.**
+
+**Do NOT fix it by adding the existing gate before the call — that over-refuses twice:**
+(a) `commit_hooks_that_would_run` returns `pre-commit`/`post-commit`, which a merge never fires, so
+the refusal would name hooks that would not run; (b) fast-forward (`branch.rs:173`), `UpToDate`
+(`:97`) and `Conflicts` (`:253`) all return **before** the hook selection, so a pre-call gate refuses
+merges that execute nothing. Either parameterise the probe (a `commit-msg`-scoped sibling of
+`COMMIT_HOOKS`) and gate **inside** `merge_branch` where the FF-vs-auto-commit branch is known, or
+pass `skip_hooks = self.hooks_need_disclosure()` and accept `--no-verify` semantics. **Refusal is
+preferred, for consistency with `bonsai_commit`.** Either way the `hooks_note` and README must narrow
+to what is actually gated.
+
+#### ℹ️ Three doc claims the increment INTRODUCED that are not true
+
+Same species as the audit's own LOW 1 — which is the point worth noticing.
+
+1. `crates/bonsai-mcp/src/server/write_guards.rs:125` — "Same predicate as the frontend's, shared
+   from core so the two can never drift." **The frontend's gate is an independent TypeScript
+   implementation** (`src/utils/conflictRegions.ts:8`, `const MARKER_RE = /^(<{7}|={7}|>{7})/`, used
+   at `:127`). Rust cannot share it. They are semantically equivalent **today**, so there is no
+   behavioural gap — but the stated anti-drift guarantee **does not exist**.
+2. `crates/bonsai-core/src/git/ai_resolve_bulk.rs:183` — "One definition, three gates." There are
+   **two** Rust callers (`:264`, `write_guards.rs:132`); the third is the separate TS definition.
+3. The `merge_branch` overstatement above.
+
+The `pub` widening itself is **fine** — the predicate means "this text contains a marker-prefixed
+line", which is what all three gates need. But its **placement is odd**: a conflict predicate living
+in `ai_resolve_bulk`, when `git::conflict` is its natural home.
+
+#### ℹ️ The description snapshot is real, but narrower than "the model-facing contract"
+
+It genuinely fails on write-router text drift (pins the tool-name set **with its gate**, the
+read/write counts, and every description byte; CRLF-normalised). The regen test is `#[ignore]`d and
+**no gate tier runs ignored tests** (zero hits for `--run-ignored` / `--include-ignored` across all
+configs and scripts), so it cannot fire accidentally, and it writes a **tracked** file so a
+regeneration always shows as a reviewable diff. Two property tests are independent of the snapshot,
+so regen cannot bless those regressions.
+
+**What it does NOT cover:** **parameter schemas** — `render()` reads `tool.description` only, while
+`schemars` derives JSON-Schema property descriptions from the arg-struct doc comments (`PathsArgs`,
+`ResolveConflictArgs`, …), equally model-facing and entirely unpinned; **`get_info().instructions`**,
+which is the string carrying the false `merge_branch` claim above; and the safety-relevant *content*
+of the write descriptions — a regenerated fixture could weaken "paths are ENFORCED to come from
+`bonsai_get_status`" into advice and still pass both property tests. **Cheap hardening:**
+property-assert the two load-bearing claims the way write-access and untrusted-labelling already are.
+
+#### ℹ️ The hook refusal arrives as the untyped `other` kind
+
+`write_guards.rs:178-192` returns `AppError::Other` → kind `"other"` (pinned at
+`mcp_stdio_4.rs:378`). The whole premise is that the caller is a **model branching on typed kinds**;
+a refusal indistinguishable from a generic failure invites a blind retry loop. The stage and marker
+guards got proper kinds (`invalidName`, `unresolvedConflicts`); this one deserves one too.
+
+#### ⚠️ UNVERIFIED REGRESSION RISK — needs one manual check on a network path
+
+`stage_paths` now inherits `ensure_within_workdir`'s **`fs::canonicalize(workdir)`** dependence.
+That was pre-existing for `discard` / `stage_partial` / `conflict`, but it is **newly extended to the
+highest-traffic write primitive**. On a UNC, `\\wsl$`, or cloud-placeholder (OneDrive) workdir a
+`canonicalize` failure becomes `AppError::Io` and **refuses EVERY stage, including from the UI.**
+Not reproducible on this host's `D:\Data\Repos` layout. **Check before this ships.**
+
+#### Small edges, all fail-CLOSED (recorded so they are not rediscovered)
+
+- `ensure_worktree_has_no_markers` refuses `too_large`, so a conflicted file above
+  `MAX_CONFLICT_BYTES` can no longer be staged or `markResolved` over MCP at all. **Capability loss,
+  documented.**
+- `binary` passes with `text: ""`. The doc says markers are "impossible"; more precisely, a file with
+  a NUL in the first 8000 bytes skips the check. Impact nil (git would not produce markers in a
+  binary conflict) — but the claim is stronger than the code.
+- `read_status` decodes non-UTF-8 paths lossily; a lossy path passes membership, then matches no
+  worktree file and no index entry → `remove_path` swallows `ENOTFOUND` → no-op.
+- The guard reads status then mutates through a second repo open; a concurrent worktree change could
+  desync, but `ensure_within_workdir` still runs inside `stage_paths`, so **the escape stays shut**.
+
+#### Verified CLEAN — do not re-audit
+
+**The `stage_paths` fix is complete and atomic:** `stage.rs:149-151` collects the guard's result for
+**every** path before `repo.index()` at `:154`, so the first escape propagates with **zero** index
+entries touched; the existence check at `:157` uses the guard's **returned** path, not a re-join, so
+the ancestor-symlink hole is closed rather than relocated. **Not over-restricted** — a leaf symlink
+still stages as a link (mode `0o120000`). Tests prove the out-of-repo bytes never enter the ODB
+(`odb().exists(hash("SECRET"))` is false) and that a mixed batch stages nothing.
+**The conflicted-path bypass the implementer found beyond the audit is real** and its reasoning is
+right: `stageable_paths` admits `snap.conflicted`, so guarding only the resolve tools would have left
+a one-call bypass — finding 6 would have been decorative. The new gate is not blanket.
+**Status-membership cannot be desynchronised into fail-open:** matching is exact `&str` set
+membership, so every divergence (case, `./`, trailing slash, directory prefix, unicode form,
+truncation) **refuses** rather than admits. `recurse_untracked_dirs(true)` makes untracked rows files
+not `dir/` summaries; `include_ignored(false)` is what excludes `.env`.
+**The rejection of `repo_has_runnable_hooks` is justified on both axes** — `DISCLOSABLE_HOOKS`
+includes `PrePush`, which no commit fires and MCP cannot reach at all (no push tool), and it never
+consults config. `hooks_enabled(&cfg, false)` is **not** fail-open: the second parameter is `skip`.
+**`--allow-hooks` cannot be reached or implied on the embedded server** — `with_session` hardcodes
+`allow_hooks: true`, so embedded behaviour is byte-identical and the flag exists only in `main.rs`.
+**The router split preserved the gate exactly:** `write_mutation_router()` is the single thing merged
+under `allow_write` **and** the source of `write_tool_names()` / `write_tool_count()`, so
+registration, name list and count cannot disagree; three independent guards would catch a regression.
+**`repos.rs` is a pure move** (byte-identical bodies).
+
+**Still pre-existing and deliberately out of scope:** the audit's MEDIUM on the **webview** path —
+`src-tauri/src/commands/staging.rs:19-23` still passes frontend paths straight to `stage_paths`,
+which keeps `git add -f` semantics with no status-membership check. The **escape** half is now closed
+for that caller too. Also pre-existing: `ensure_within_workdir` treats `.git` as inside the boundary.
+
+---
+
 ### SEC-2026-09-03 — external-launch residue (remediated `0806596`; three things left)
 
 Full narrative: archive Part 56. Report: `docs/audit-2026-09-03-external-launch.md` (`7e426c3`).
