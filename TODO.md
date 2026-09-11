@@ -1295,6 +1295,20 @@ Baseline numbers: `docs/history/velocity-2026-09-01.md`. Done in that pass: prop
 
 ### Known load-flakes (timing-sensitive, not correctness bugs)
 
+- **`h_ai` is genuinely flaky in PARALLEL — characterised 2026-09-11, and this one is a real defect,
+  not a timing artifact.** **11 of 57 fail under default threading; 0 of 57 fail with
+  `--test-threads=1`.** Cause is **shared AI-stub cross-talk** — e.g. `ai_explain` receiving another
+  test's `createBranch` stub body. Pre-existing; not caused by the 2026-09-11 security work.
+  **Follow-up: isolate the AI stub per test.** Until then, run `h_ai` with `--test-threads=1`.
+  Note how this was nearly misdiagnosed: the orchestrator saw six of these failures through a
+  truncating pipe, with the `test result:` summary cut off, and reported them as a possible
+  regression from the increment under review. Both halves were wrong — they are neither the
+  increment's nor mere pipe artifacts. **A flake you cannot see the summary for is indistinguishable
+  from a regression.**
+- **`rust-lld: failed to write output … permission denied` on a stale `.exe`** hit an `h_ai` link
+  twice on 2026-09-11; deleting the file fixed it. A lock/AV artifact rather than code — and the
+  likely cause was the orchestrator force-killing cargo mid-link (see the serialize-cargo rule).
+
 - `ai::session_tests::watchdog_tests::watchdog_does_not_fire_while_awaiting_input` (path updated
   2026-09-02 by the size-ratchet split) — failed once under load, passed on immediate re-run. See the
   clock-seam candidate fix `734b310` under FOR USER item 6.
