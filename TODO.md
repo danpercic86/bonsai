@@ -1295,10 +1295,38 @@ Baseline numbers: `docs/history/velocity-2026-09-01.md`. Done in that pass: prop
 
 ### Known load-flakes (timing-sensitive, not correctness bugs)
 
+- **happy-dom makes the FULL GATE fail non-deterministically — measured 2026-09-11, and my
+  `1953c0a` commit message OVERCLAIMED.** That message called identical test counts "the equivalence
+  evidence". They are evidence that nothing was **skipped**; they say nothing about behaviour under
+  scheduling pressure, and only the gate exercises that. I had not run it.
+
+  | Condition | happy-dom | jsdom |
+  |---|---|---|
+  | `dom` project alone (1828) | 3/3 green | green |
+  | full `vitest run` (2830) | 4/4 green | green |
+  | `pnpm gate --frontend` (no Rust first) | green | green |
+  | **full `pnpm gate`** (Rust compiles first) | **0/2 green** | **1/1 green, all 8 steps** |
+
+  It reproduces **only** when heavy Rust compilation immediately precedes the vitest step; the gate
+  runs plain `vitest run` with no special flags or env, so the difference is purely machine state.
+  Gate vitest: **64.4s happy-dom vs 86.4s jsdom** — the 22s is the real prize, not the 32% standalone
+  figure. **The five affected tests** (`SettingsPanel.test.tsx:335`, `Sidebar.test.tsx:184`,
+  `settingsCatalog.coverage.test.tsx:148`, `SettingsSearch.test.tsx:338`,
+  `SettingsGitConfigSection.test.tsx:337`) are all **async-window exhaustion**, not rendering or
+  correctness failures — `findByRole` and `toBeChecked` succeed first in every case.
+  **RULED 2026-09-11 (user): KEEP happy-dom and FIX THE TESTS** — not revert, not a blanket
+  `testTimeout` raise. `docs/proposals/happy-dom.patch` stays on disk so reverting is one command.
+  **Diagnostic trap worth keeping:** failure #5 reported as an assertion (`"setConfig" … Number of
+  calls: 0`) but the expectation sits inside a `waitFor`, so that text is the **last failed retry
+  before the window expired**, not a synchronous assertion. I mis-read it as the latter and told the
+  user a timeout raise would not help it.
+
 - **`h_ai` is genuinely flaky in PARALLEL — characterised 2026-09-11, and this one is a real defect,
-  not a timing artifact.** **11 of 57 fail under default threading; 0 of 57 fail with
-  `--test-threads=1`.** Cause is **shared AI-stub cross-talk** — e.g. `ai_explain` receiving another
-  test's `createBranch` stub body. Pre-existing; not caused by the 2026-09-11 security work.
+  not a timing artifact.** **0 of 57 fail with `--test-threads=1`** (57 passed, 130s); under default
+  threading it fails or stalls. Cause is **57 tests concurrently spawning the `claude_stub.cmd`
+  harness on Windows**, which presents *two* ways depending on which test loses the race: **stalls**
+  (the 5 `ai_stream_bulk_cli` tests, which finish in 18.6s serially) **and cross-talk** (e.g.
+  `ai_explain` receiving another test's `createBranch` stub body). Pre-existing; not caused by the 2026-09-11 security work.
   **Follow-up: isolate the AI stub per test.** Until then, run `h_ai` with `--test-threads=1`.
   Note how this was nearly misdiagnosed: the orchestrator saw six of these failures through a
   truncating pipe, with the `test result:` summary cut off, and reported them as a possible

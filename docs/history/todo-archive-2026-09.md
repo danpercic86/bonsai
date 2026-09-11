@@ -384,7 +384,7 @@ awaiting merge decision** (checkpoints done, merge is a separate call). **[CORRE
   on timeout). Modest win (open overhead is a constant factor; the O(worktree)/O(commits) work is unaffected) — decide
   if worth the risk to the safety path. Recommend a dedicated increment, not inline.
 - **Known flake (pre-existing, untouched):** `watcher::tests::git_internals_filtered` (`watcher.rs`) is a timing flake
-  (`unwrap_err` on an `Instant`); passes on isolated re-run. Not caused by this batch.
+  (`unwrap_err` on an `Instant` — **WRONG, corrected 2026-09-11: it is an `unwrap_err()` on a channel-recv `Result` at `src-tauri/src/watcher/tests.rs:144`. This archived wording has now caused three separate agents to repeat the error; kept with the correction rather than rewritten, because the archive is a lossless record**); passes on isolated re-run. Not caused by this batch.
 - **P88a tester gaps (carry to batch tester):** stash-pop `refreshAll('stash')` assertion + `stageResolvedText`
   `refreshAll('worktree')` assertion (incl. `deferRefresh:true`→not-called).
 --- earlier ---
@@ -3195,7 +3195,7 @@ not code:
   `Refresh checks` / `Show checks`; mock fixtures for noForge/error reachable by click.
   (P90, archive Part 25.)
 - **Known flake (pre-existing, untouched):** `watcher::tests::git_internals_filtered`
-  (`watcher.rs`) is a timing flake (`unwrap_err` on an `Instant`); passes on isolated re-run.
+  (`watcher.rs`) is a timing flake (`unwrap_err` on an `Instant` — **WRONG; see the 2026-09-11 correction above: it is an `unwrap_err()` on a channel-recv `Result`, `watcher/tests.rs:144`**); passes on isolated re-run.
   (P88, archive Part 26.)
 - **⚠ FLAG FOR USER (peer session, now ended):**
   `src/components/repoWorkspace/useWorkspaceKeyboard.test.tsx` failed in ISOLATION on the committed
