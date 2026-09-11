@@ -707,6 +707,20 @@ write tools" as a `security-auditor` surface. **A `security-auditor` pass on `2a
 
 ## OPEN follow-ups (genuine unresolved items, not checkpoints)
 
+### Roadmap: REMOVE user-supplied `terminalCommand` / `editorCommand` (user ruling 2026-09-11)
+
+The user chose "validate the shape now **and** drop the feature" for security MEDIUM-2. The
+validation is the stopgap; **removal is the end state and is NOT yet scheduled.** Filed here because
+the ledger records the decision but a decision without a queue entry is how this board loses things.
+
+- The capability exists for convenience, not necessity: both values are **empty strings** in the
+  user's real `settings.json`, so nothing in the current install depends on them.
+- Removal must also retire the shape-validation code added in the same increment, and the LOW-1 cwd
+  hardening, since both exist only to make this surface safe.
+- Until then the validation comment in the launch path must keep saying the capability is slated for
+  removal, so a later reader does not mistake the stopgap for the design.
+
+
 Condensed to one line per item on 2026-09-03; the pre-condensation text is archive Part 50.
 
 ### P108 — `AC11` — ✅ CLOSED 2026-09-11 by user ruling: source-derived figures ACCEPTED
