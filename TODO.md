@@ -1295,8 +1295,8 @@ Baseline numbers: `docs/history/velocity-2026-09-01.md`. Done in that pass: prop
 
 ### Known load-flakes (timing-sensitive, not correctness bugs)
 
-- **happy-dom makes the FULL GATE fail non-deterministically — measured 2026-09-11, and my
-  `1953c0a` commit message OVERCLAIMED.** That message called identical test counts "the equivalence
+- **The full gate failed twice on vitest under happy-dom — cause NOT established; see the correction
+  at the end of this entry. My `1953c0a` commit message also OVERCLAIMED.** That message called identical test counts "the equivalence
   evidence". They are evidence that nothing was **skipped**; they say nothing about behaviour under
   scheduling pressure, and only the gate exercises that. I had not run it.
 
@@ -1316,10 +1316,43 @@ Baseline numbers: `docs/history/velocity-2026-09-01.md`. Done in that pass: prop
   correctness failures — `findByRole` and `toBeChecked` succeed first in every case.
   **RULED 2026-09-11 (user): KEEP happy-dom and FIX THE TESTS** — not revert, not a blanket
   `testTimeout` raise. `docs/proposals/happy-dom.patch` stays on disk so reverting is one command.
-  **Diagnostic trap worth keeping:** failure #5 reported as an assertion (`"setConfig" … Number of
-  calls: 0`) but the expectation sits inside a `waitFor`, so that text is the **last failed retry
-  before the window expired**, not a synchronous assertion. I mis-read it as the latter and told the
-  user a timeout raise would not help it.
+  **CORRECTED 2026-09-11, LATER THE SAME DAY — the heading above OVERSTATES happy-dom's role, and
+  my async-window diagnosis was right for ONE of the five, not all five.**
+
+  **The reporting mechanism, which reframes every one of those failures:** vitest 4's `withTimeout`
+  checks wall clock **on completion** (`@vitest/runner` `chunk-artifact.js:2288-2294`). A test that
+  passed every assertion is still rejected with "Test timed out in 5000ms" if
+  `performance.now() - startTime` crosses the budget. **Proved with a probe:** a purely *synchronous*
+  6000 ms busy-wait reports `Test timed out in 5000ms`. So **"timed out" does NOT imply a pending
+  async chain** — it can mean the machine stalled while anything at all ran.
+
+  **What happy-dom's causal role actually rests on: 2 failing runs vs 1 passing jsdom run.** A direct
+  comparison found **no meaningful difference** — all 112 tests in the five affected files pass under
+  **both** environments, with no meaningful perf gap across two single-run pairs. The mechanism above
+  does not require happy-dom at all. So happy-dom is **not exonerated, but not convicted either**;
+  treat the table above as a correlation over three gate runs, not a demonstrated cause.
+
+  **The real fragility is the 5 s default budget.** Measured in the gate's own condition (rust tier →
+  vitest): **tail inflation 1.3-2.8×**, and **three tests already cross 5000 ms**, green only because
+  they carry explicit `20_000`/`30_000` budgets. The most exposed default-budget tests are
+  `App.test.tsx` "Arrow-key pane nudge" (2394 ms, 2.1× headroom) and `Sidebar.churn` (2110 ms).
+
+  **Two REAL test defects were found and fixed (`9422e8b`), neither caused by happy-dom:**
+  (a) `SettingsGitConfigSection.test.tsx:337` — `SettingsHooksToggle` renders the checkbox
+  `disabled={loading || busy}`, so it is present, **already checked**, and inert until the config read
+  lands. `findByRole` resolves on that first inert paint, `toBeChecked()` passes, and
+  `fireEvent.click` is **silently swallowed** — which is why the failure blamed `setConfig` for a
+  click that never happened. Reproduced 1/1 with `getConfig` delayed 50 ms. **This is the only
+  component in the repo with that inert-but-visible design**, so the audit found no sibling cases.
+  (b) `Sidebar.test.tsx:184` polled a full second on a **microtask-only** boundary.
+  **Three of the five were deliberately NOT changed** — two are fully synchronous (no boundary to
+  await, and no test edit makes a test immune to a wall-clock check) and one is already
+  macrotask-flushed via `act`. Their timeouts were **not** raised: that would be cargo-culting two
+  runs' victims.
+
+  **Diagnostic trap worth keeping anyway:** failure #5 reported as an assertion (`"setConfig" … Number
+  of calls: 0`). I read that as a `waitFor` window expiring. It was neither — it was a click that
+  never dispatched. **Both of my readings were wrong, and the error text supported all three.**
 
 - **`h_ai` is genuinely flaky in PARALLEL — characterised 2026-09-11, and this one is a real defect,
   not a timing artifact.** **0 of 57 fail with `--test-threads=1`** (57 passed, 130s); under default
