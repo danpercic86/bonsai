@@ -342,6 +342,17 @@ describe('SettingsGitConfigSection — one read serves the whole pane (P69h)', (
     const box = await screen.findByRole('checkbox', {
       name: 'Run git hooks for this repository',
     });
+    // The row is present from the first paint but `disabled={loading || busy}`
+    // until the local ConfigView has been read (SettingsHooksToggle), and
+    // `findByRole` resolves on that first, still-inert paint. `fireEvent.click`
+    // on a disabled input dispatches nothing, so without this gate the click is
+    // silently swallowed whenever RTL's post-`findBy*` `setTimeout(0)` drain
+    // fires before the read's re-render lands -- nothing orders those two. The
+    // failure then surfaces as "setConfig: 0 calls", blaming the write for a
+    // click that never happened. Same gate the "Hooks row tells the truth"
+    // suite below uses. Proven: delay the getConfig mock by 50ms and the
+    // un-gated version fails 1/1 with exactly that error.
+    await waitFor(() => expect(box).toBeEnabled());
     expect(box).toBeChecked(); // unset ⇒ on (git's default)
     fireEvent.click(box);
 

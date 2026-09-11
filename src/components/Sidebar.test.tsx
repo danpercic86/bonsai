@@ -3,7 +3,7 @@
  *  create-branch flow, and empty/loading states. Presentational only — every
  *  assertion is against props-in / callbacks-out. */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, within } from '@testing-library/react';
 import { Sidebar } from './Sidebar';
 import type { SidebarProps } from './Sidebar';
 import type { BranchInfo, BranchesSnapshot } from '../ipc';
@@ -189,9 +189,14 @@ describe('Sidebar sections', () => {
     fireEvent.change(input, { target: { value: '  feat/x  ' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onCreateBranch).toHaveBeenCalledWith('feat/x');
-    await vi.waitFor(() =>
-      expect(screen.queryByPlaceholderText('new-branch-name')).not.toBeInTheDocument(),
-    );
+    // `submitCreate` is `await onCreateBranch(name); closeCreate()` -- a
+    // microtask-only chain, so there is a single boundary to cross and no reason
+    // to poll for it. One async `act` drains the continuation AND flushes the
+    // resulting render, which makes the close assertion synchronous: it can no
+    // longer fail because a 1s `vi.waitFor` window expired on a slow machine.
+    // (`vi.waitFor` also does not enter React's act environment, unlike this.)
+    await act(async () => {});
+    expect(screen.queryByPlaceholderText('new-branch-name')).not.toBeInTheDocument();
   });
 
   it('create-branch rejection shows the inline error and keeps the input open', async () => {
@@ -203,7 +208,11 @@ describe('Sidebar sections', () => {
     const input = screen.getByPlaceholderText('new-branch-name');
     fireEvent.change(input, { target: { value: 'x y' } });
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(await screen.findByText('bad ref name')).toBeInTheDocument();
+    // Same single microtask boundary as the success path above (the rejected
+    // `onCreateBranch` lands in `submitCreate`'s catch), so flush it rather than
+    // racing `findByText`'s 1s window.
+    await act(async () => {});
+    expect(screen.getByText('bad ref name')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('new-branch-name')).toBeInTheDocument();
   });
 
