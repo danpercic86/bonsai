@@ -9,13 +9,28 @@ reason for the rename), and §8's `?gitLongTarget` literal (the illustration mea
 ≥90; the shipped fixture is 95). §6's enforcement table never named the renamed test, so nothing
 there changed. A contract that silently changes after the fact is worse than one that records the
 correction.
+**Hygiene pass 2026-09-11** — every line reference re-measured against the shipped tree; see the
+box below for what changed and what was confirmed already-correct.
 **Renders to:** `docs/contracts/P87b-FU1-FU4-git-dock-ui.md` §3.3/§3.6/§3.10 (ui-designer, authoritative
 for everything user-visible). This file supplies only what §3.6 commissioned.
 **Parent:** `docs/contracts/archive/P87-ui.md`, `crates/bonsai-core/src/git/activity.rs`
 
-> Line numbers below are as of HEAD (`1be3a85`). A senior-dev is mid-change in
-> `src/components/GitActivity*`, `src/ipc/mock/handlers/stash.ts`, `src/styles/` — treat §7/§8 as
-> shape, re-locate before editing.
+> **HOSTILE-CHARACTER RULE, binding on this file.** Bidi overrides and zero-width characters are
+> named here **only** as `U+XXXX` prose or as a source-level escape (`\u{202e}`). **Never paste the
+> character itself into this contract** — a contract that embeds what it forbids cannot be grepped
+> for violations, and the grep is the enforcement. (`f00fad3` fixed one such embedding in this file;
+> the 2026-09-11 pass re-introduced and then removed a second in §9.9. The rule exists because it
+> has been broken twice.)
+
+> **Line numbers — measured 2026-09-11 against the shipped tree (post-`1d8c6f9`).** Re-verified and
+> **correct as written**: §3's `remote_push_activity.rs:67-94` (push upstream resolution) and
+> `:226-256` (force-push upstream resolution), `:105-107` (`PushResult::UpToDate`); §8's
+> `status.ts:145`, `merge.ts:83`, `stash.ts:148`. **Corrected in this pass**: §1's shipped
+> line counts, §8's `query()` idiom line, §8's `remotesSync.ts` call sites, §9's `activity.rs`
+> size. **Not re-measured** (treat as shape, re-locate before editing): the §4 "Call site" column,
+> `activity.rs:100`/`:324`, `gitActivity.ts:66`, `repo.rs:73`, `useGitActivity.ts:14`/`:118`/`:152`.
+> The earlier "a senior-dev is mid-change in `GitActivity*` / `stash.ts` / `styles/`" note was a
+> pre-implementation snapshot and is **withdrawn** — FU-1 shipped in `1d8c6f9`.
 
 ---
 
@@ -25,20 +40,20 @@ for everything user-visible). This file supplies only what §3.6 commissioned.
 or change an op's success/error, and it must cost nothing when nobody is subscribed. One optional
 string, on `started` only.
 
-| File | Change |
-|---|---|
-| `crates/bonsai-core/src/git/activity.rs` (353) | `+ ActivityTarget` newtype + cap const beside `activity_line`; `GitActivityEvent.target`; `ActivityEmitter::new` takes the target. **~+75 → ~430** |
-| `crates/bonsai-core/src/git/activity_target.rs` | **NEW** — `resolve_activity_target()` + `configured_upstream()`. The only git2 in this feature. ~110 |
-| `crates/bonsai-core/src/git/activity_target_tests.rs` | **NEW** — fixture-repo table tests. ~150 |
-| `crates/bonsai-core/src/git/activity_tests.rs` | `+` newtype tests (§6) |
-| `crates/bonsai-core/src/git/mod.rs` | `+ pub mod activity_target;` |
-| `src-tauri/src/commands/activity.rs` | `with_activity` gains a `target` param; `+ activity_target()` helper. ~+30 |
-| `src-tauri/src/commands/{remotes,staging,merge}.rs` | one line each, at the 7 call sites in §5.2 |
-| `src-tauri/src/commands/shared.rs` | re-export `ActivityTarget`, `activity_target` |
-| `src/ipc/types/activity.ts` | `+ target?: string` |
-| `src/components/repoWorkspace/gitActivityState.ts` | `+ target: string \| null` + `newGitRun` param |
-| `src/components/repoWorkspace/useGitActivity.ts:118` | pass `ev.target ?? null` |
-| `src/ipc/mock/gitActivity.ts` | §8 |
+| File | Change | Shipped size |
+|---|---|---|
+| `crates/bonsai-core/src/git/activity.rs` | `+ ActivityTarget` newtype + cap const beside `activity_line`; `GitActivityEvent.target`; `ActivityEmitter::new` takes the target | **437** (was 353; estimate said ~430) |
+| `crates/bonsai-core/src/git/activity_target.rs` | **NEW** — `resolve_activity_target()` + `configured_upstream()`. The only git2 in this feature | **108** (estimate ~110) |
+| `crates/bonsai-core/src/git/activity_target_tests.rs` | **NEW** — fixture-repo table tests | **267** (estimate ~150 — the §4 table needs one fixture repo per row, and the estimate did not price the fixture builders) |
+| `crates/bonsai-core/src/git/activity_tests.rs` | `+` newtype tests (§6) | 285 |
+| `crates/bonsai-core/src/git/mod.rs` | `+ pub mod activity_target;` | — |
+| `src-tauri/src/commands/activity.rs` | `with_activity` gains a `target` param; `+ activity_target()` helper | ~+30 |
+| `src-tauri/src/commands/{remotes,staging,merge}.rs` | one line each, at the 7 call sites in §5.2 | — |
+| `src-tauri/src/commands/shared.rs` | re-export `ActivityTarget`, `activity_target` | — |
+| `src/ipc/types/activity.ts` | `+ target?: string` | — |
+| `src/components/repoWorkspace/gitActivityState.ts` | `+ target: string \| null` + `newGitRun` param | — |
+| `src/components/repoWorkspace/useGitActivity.ts` | pass `ev.target ?? null` | — |
+| `src/ipc/mock/gitActivity.ts` | §8 | — |
 
 No new IPC command, no new event kind, no new channel. The activity channel
 (`git_activity_subscribe`) is unchanged apart from one extra optional field on one kind.
@@ -185,6 +200,13 @@ resolver is therefore an independent read-only mirror, and the drift is pinned b
 across two fixtures** rather than by sharing code. This is the one deliberate duplication in this
 contract.
 
+> Both ranges **re-measured 2026-09-11 and confirmed exact**: `:67-94` is the
+> `(remote_name, remote_ref, set_upstream_after)` if/else that reads
+> `branch_upstream_remote` + `branch.<name>.merge` and falls back to `origin`; `:226-256` is the
+> force-push `no_upstream` closure + `branch_upstream_remote` + `.merge` read. The preceding
+> `head.branch_name` extraction (`:56-58`, `:215-217`) is **not** part of the upstream resolution and
+> is deliberately outside the cited ranges.
+
 The two assertions are not interchangeable, and the split is why the anti-drift test was renamed
 during implementation (`push_target_matches_push_result` → the shipped name):
 
@@ -210,7 +232,7 @@ open that was happening anyway.
 
 `b` = `read_head_info(&repo).branch_name` (short); `(r, rb)` = `configured_upstream(&repo, b)`.
 
-| Category | Call site (HEAD) | Expression | Yields `None` when | Row then reads |
+| Category | Call site (shape — not re-measured) | Expression | Yields `None` when | Row then reads |
 |---|---|---|---|---|
 | `Push` | `remotes.rs:164` | `remote_branch(r, rb)`, else `remote_branch("origin", b)` if `origin` exists | unborn / detached / no upstream **and** no `origin` | `Push` |
 | `ForcePush` | `remotes.rs:203` | `remote_branch(r, rb)` | unborn / detached / no upstream (op returns `NoUpstream`) | `Force-push` |
@@ -246,7 +268,9 @@ contradicting §3.6-1 with no compile error and no other test failing.
 surfaces the branch-to-be, `Commit main` is available by dropping one token from that guard — it is
 not extra code to write, it is a guard to remove. §3.6-1 explicitly lists unborn under `null`, so the
 guard stays. Corrected 2026-09-10: this passage previously claimed `read_head_info` returns
-`branch_name: None` for unborn "so this is free", which reads as though the guard were redundant.)*
+`branch_name: None` for unborn "so this is free", which reads as though the guard were redundant.
+Re-checked 2026-09-11 against `repo.rs`'s `UnbornBranch` arm — the passage above is the accurate one;
+no further change.)*
 
 **`Fetch origin` is unreachable in the real backend.** §3.3's "fetch (one remote)" row exists as
 copy, but there is exactly one fetch entry point and it is fetch-all. The row is therefore mock-only
@@ -302,7 +326,7 @@ with_activity(state.git_activity_hub(), GitActivityCategory::Push, target, move 
 })
 ```
 
-The existing unit test at `activity.rs:100` gains `None` in the new position.
+The existing unit test in `commands/activity.rs` gains `None` in the new position.
 
 ---
 
@@ -312,7 +336,7 @@ The existing unit test at `activity.rs:100` gains `None` in the new position.
 |---|---|---|
 | **1. Raw identifier, never a phrase** | **Structural at the crate boundary.** `ActivityTarget.0` is private, `new` is private, and the three named constructors are `pub(crate)` — so `src-tauri` **cannot construct one at all**; the sole cross-crate producer is `resolve_activity_target`. The guarantee reduces to "the resolver's table is right", which is §4. `refs/heads/` stripping is inside the constructors, so no call site can leak a full refname. Residual, stated honestly: *within* `bonsai-core` someone could write `ActivityTarget::branch("all remotes")`. Nothing structural prevents that; the table test does. | `activity_target_tests::resolves_table` (one fixture repo per row of §4) + `no_target_contains_prose` — asserts every §4 output contains no `' '`, `'\u{2192}'` (→), `'\''`, `'"'` |
 | **2. Set on `started`, immutable** | **Structural.** The target lives on `ActivityEmitter` as a private `Option<String>` set at construction; every method is `&self`; there is no setter and `GitActivityRecorder` gains no method, so a mid-run change is **not representable**. `base()` hard-codes `target: None`; only `started()` reads the field. | `activity_tests::target_appears_only_on_started` (drive an emitter through phase/line/hookDone/progress/finished, assert exactly one event carries `target`) |
-| **3. Sanitized like `activity_line`** | **Structural, one funnel.** `ActivityTarget::new` calls the *same* `strip_control_chars` (`activity.rs:324`) that `activity_line` calls. The rule has one implementation; the two boundaries are thin wrappers around it — the shape that already exists for lines. See §6.1 for why not two funnels. | `activity_tests::target_strips_bidi_and_zero_width` — input `origin/ma\u{202E}in`, plus `\u{200B}`, C0 `\n`, C1 `\u{0085}` |
+| **3. Sanitized like `activity_line`** | **Structural, one funnel.** `ActivityTarget::new` calls the *same* `strip_control_chars` that `activity_line` calls. The rule has one implementation; the two boundaries are thin wrappers around it — the shape that already exists for lines. See §6.1 for why not two funnels. | `activity_tests::target_strips_bidi_and_zero_width` — input `origin/ma\u{202e}in` (the escape, never the literal char), plus `\u{200b}`, C0 `\n`, C1 `\u{0085}` |
 | **4. ≤255 chars** | **Structural.** Same funnel, `truncate_chars(.., MAX_ACTIVITY_TARGET_CHARS)`. Unreachable by any other path. | `activity_tests::target_capped_at_255_chars` (400-char ref → exactly 255 chars ending `…`) |
 
 ### 6.1 Where sanitation lives, and why exactly there
@@ -328,7 +352,7 @@ would have to remember; the type is the memory.
 **The one place the rule genuinely is implemented twice: the mock.** `src/ipc/mock/gitActivity.ts`
 is a second backend and never runs Rust, so §3.10's `?gitBidiTarget` seam can only prove the contract
 is *modeled* if the mock strips too. That is the same compromise already made for
-`MAX_ACTIVITY_LINE_CHARS` (mirrored at `gitActivity.ts:66` with a `MIRRORS` comment). See §8 —
+`MAX_ACTIVITY_LINE_CHARS` (mirrored in `gitActivity.ts` with a `MIRRORS` comment). See §8 —
 flagged **F-2**.
 
 ---
@@ -358,16 +382,16 @@ export function newGitRun(
 ): GitActivityRun;
 ```
 
-`useGitActivity.ts:118` passes `ev.target ?? null`. **The store must never write `target` again** —
-no other branch of the reducer touches it (guarantee 2, frontend side).
+`useGitActivity.ts` passes `ev.target ?? null` at its `started` arm. **The store must never write
+`target` again** — no other branch of the reducer touches it (guarantee 2, frontend side).
 Test: `useGitActivity.test.tsx::target_survives_later_events` — a `started` with a target followed by
-`phase`/`line`/`finished` leaves `run.target` unchanged; call site at `:152` gains the new arg.
+`phase`/`line`/`finished` leaves `run.target` unchanged.
 
-**No migration.** The run store is session-scoped — `useGitActivity.ts:14` "nothing persists across
-app restart" — and nothing serializes `GitActivityRun`. The only "old record" case is a frontend
-running against an older backend (dev/HMR), where `target` is absent → `undefined ?? null` → `null` →
-§3.3's last row, the bare noun. That path is exercised by the `?gitNoTarget` seam, so it is covered
-without a migration step.
+**No migration.** The run store is session-scoped — `useGitActivity.ts`'s header states "nothing
+persists across app restart" — and nothing serializes `GitActivityRun`. The only "old record" case is
+a frontend running against an older backend (dev/HMR), where `target` is absent → `undefined ?? null`
+→ `null` → §3.3's last row, the bare noun. That path is exercised by the `?gitNoTarget` seam, so it is
+covered without a migration step.
 
 The frontend does **not** re-sanitize or re-truncate. `runTarget()` stays a pure formatter; a
 defensive strip there would mask a backend regression instead of surfacing it.
@@ -379,8 +403,8 @@ defensive strip there would mask a backend regression instead of surfacing it.
 ```ts
 /** MIRRORS `ActivityTarget::new` (P87b-FU1-run-target §2). The mock is a second
  *  backend: fixtures cross the same boundary, so they get the same funnel.
- *  Strips C0/C1 + bidi (U+200E/200F, U+202A–202E, U+2066–2069) + zero-width
- *  (U+200B–200D, U+FEFF), trims, then caps at 255 chars. */
+ *  Strips C0/C1 + bidi (U+200E, U+200F, U+202A–U+202E, U+2066–U+2069) +
+ *  zero-width (U+200B–U+200D, U+FEFF), trims, then caps at 255 chars. */
 function mockActivityTarget(raw: string | null): string | null;
 
 export function runMockActivity<T>(
@@ -394,31 +418,46 @@ export function runMockActivity<T>(
 `mockActivityTarget` first, and drops the key when it is `null` (so the wire shape matches serde's
 `skip_serializing_if`).
 
-New seams, in the file's existing `const X = query('x') !== null` idiom at `:58-63`:
+**Two exported fixture constants carry the hostile strings** — named here because the acceptance
+items below and ui-designer's §3.10 both reference them by name:
+
+```ts
+export const MOCK_LONG_TARGET = /* the 95-char ref in the table below */;
+export const MOCK_BIDI_TARGET = 'origin/ma\u{202e}in';   // the ESCAPE, never the literal char
+```
+
+New seams, in the file's existing `const X = query('x') !== null` idiom at **`:70-79`**:
 
 | Seam | Fixture target | Applies to |
 |---|---|---|
 | *(default)* | `'origin/main'` / `'main'` | push, forcePush, pull → `origin/main`; commit, amend, mergeCommit → `main`; fetch → `null` |
 | `?fetchAll` | `null` on fetch | already the default; the seam exists so the case is addressable by name |
 | `?gitNoTarget` | forces `null` for **every** category | the absent-field path (§7) |
-| `?gitLongTarget` | `'origin/feature/very-long-experimental-branch/with-many-nested-path-segments/retry-budget-tuning'` (**95 chars**) on push | 22ch ellipsis + `title` recovery |
-| `?gitBidiTarget` | `'origin/ma\u{202e}in'` (written as the escape — this row previously embedded the raw char) fed through `mockActivityTarget` | proves the funnel is modeled; the emitted string must be exactly `origin/main` |
+| `?gitLongTarget` | `MOCK_LONG_TARGET` = `'origin/feature/very-long-experimental-branch/with-many-nested-path-segments/retry-budget-tuning'` (**95 chars**) | **`push` AND `forcePush`** (`category === 'push' \|\| category === 'forcePush'`) → 22ch ellipsis + `title` recovery |
+| `?gitBidiTarget` | `MOCK_BIDI_TARGET` = `'origin/ma\u{202e}in'` (the escape — this row previously embedded the raw char) fed through `mockActivityTarget` | **`push` AND `forcePush`** → proves the funnel is modeled; the emitted string must be exactly `origin/main` |
 | `?pushSlow` | unchanged + a target | immutability across a 1500 ms Network phase |
+
+**Scope note (corrected 2026-09-11).** The two hostile-target seams were described here as "on
+push"; they shipped scoped to `push || forcePush`, which is the correct scope — force-push renders
+the same row with the same 22ch box, so a seam that skipped it would leave half the surface
+unexercised. `?gitNoTarget` is unscoped (every category) and `fetch` is always `null` regardless of
+seam, mirroring the real backend's §4 row.
 
 **Corrected 2026-09-10 — the `?gitLongTarget` literal.** This row previously read
 `'…/with-many-segments/retry-budget-tuning'` and described it as `(≥90 chars)`; that literal was an
 elided illustration and measured **83**, so it failed its own stated constraint. The 95-char string
-above is what shipped (`MOCK_LONG_TARGET` in `src/ipc/mock/gitActivity.ts`) and what ui-designer
-records in `P87b-FU1-FU4-git-dock-ui.md` §3.10. §9.10 depends on the length: it compares row heights
-for a ref that must overflow the 22ch box several times over. The leaf must stay
-`retry-budget-tuning` — the leaf is what P111's split protects, and at 19 chars it fits the 22ch box
-while the head needs roughly 4× the space, which is exactly the case §9.10 exercises.
+above is what shipped (`MOCK_LONG_TARGET`) and what ui-designer records in
+`P87b-FU1-FU4-git-dock-ui.md` §3.10. §9.10 depends on the length: it compares row heights for a ref
+that must overflow the 22ch box several times over. The leaf must stay `retry-budget-tuning` — the
+leaf is what P111's split protects, and at 19 chars it fits the 22ch box while the head needs roughly
+4× the space, which is exactly the case §9.10 exercises.
 
-Call sites to update (7): `handlers/remotesSync.ts:58,62,66,73`, `handlers/status.ts:145`,
-`handlers/merge.ts:83`, `handlers/stash.ts:148`. **Note:** `stash.ts:148` *is* activity-wrapped at
-HEAD (with `handlers/amendActivity.test.tsx` covering it), so ui-designer's flag **F-E**
-("`commitAmend` is still not activity-wrapped") does not hold as of `1be3a85`; amend needs a target
-like the rest. Flagged **F-4**.
+Call sites (7), **re-measured 2026-09-11**: `handlers/remotesSync.ts:61,65,69,76`,
+`handlers/status.ts:145`, `handlers/merge.ts:83`, `handlers/stash.ts:148`. (The earlier
+`remotesSync.ts:58,62,66,73` had drifted by three lines.) **Note:** `stash.ts:148` *is*
+activity-wrapped (with `handlers/amendActivity.test.tsx` covering it), so ui-designer's flag **F-E**
+("`commitAmend` is still not activity-wrapped") does not hold; amend needs a target like the rest.
+Flagged **F-4**.
 
 ---
 
@@ -452,19 +491,23 @@ like the rest. Flagged **F-4**.
 7. `gitActivityFormat.test.ts` — §3.3's table, incl. `fetch` + `null` → `all remotes`, and
    `runRowName` for §3.7's six rows (ui-designer's half; listed so the gate is complete).
 8. Fixture guard: no mock target string contains a space, `→`, `'`, or `"` (guarantee 1, mock
-   side); `mockActivityTarget('origin/ma\u{202e}in') === 'origin/main'`.
+   side); `mockActivityTarget(MOCK_BIDI_TARGET) === 'origin/main'`.
 
 **Browser harness** (`pnpm dev`, `VITE_MOCK_IPC=1`) — all assertions read via `javascript_tool`, no
 screenshot required:
 9. `?gitBidiTarget` + push → `document.querySelector('.git-run-target').textContent` is exactly
-   `'origin/main'`, and
-   `!/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/.test(el.textContent)` is `true`.
-    (**4-digit `\uXXXX`, not `\u{XXXX}`** — this regex carries no `u` flag, so a braced escape
-    would match the literal characters `u{200b}` instead, and the assertion would silently pass
-    on text that still contained an override.)
+   `'origin/main'`, **and** it matches none of the hostile class. Build the assertion regex from
+   these code points — **four-digit `\uXXXX` escapes, one per range bound, in this order**:
+   U+200B–U+200F, U+202A–U+202E, U+2066–U+2069, U+FEFF. Two rules on writing it:
+   - **`\uXXXX`, never `\u{XXXX}`.** The regex carries no `u` flag, so a braced escape matches the
+     literal characters `u{200b}` instead and the assertion silently passes on text that still
+     contains an override.
+   - **Type the escapes; never paste the characters** (the file-level hostile-character rule). A
+     pasted override inside the character class is invisible in review and makes the class wrong.
+
    **This is the §3.10 bidi proof.**
-10. `?gitLongTarget` + push → `.git-run-target`'s `title` equals the full ≥90-char ref, and its row's
-    `offsetHeight` equals the `offsetHeight` of a `?gitNoTarget` row (no reflow, no wrap).
+10. `?gitLongTarget` + push → `.git-run-target`'s `title` equals `MOCK_LONG_TARGET` (95 chars), and
+    its row's `offsetHeight` equals the `offsetHeight` of a `?gitNoTarget` row (no reflow, no wrap).
 11. `?gitNoTarget` + commit → no `.git-run-target` node exists in the row, and the row's text contains
     none of `(none)`, `—`, `unknown`.
 12. `?fetchAll` → the row reads `Fetch all remotes` (DOM text) — the derived string, proving the
@@ -473,7 +516,7 @@ screenshot required:
     phase: byte-identical (guarantee 2, observable).
 
 **Static:** `cargo clippy -D warnings`, `tsc`, `eslint` clean; no file crosses 500 lines
-(`activity.rs` lands ~430).
+(`activity.rs` shipped at **437**; the pre-implementation estimate was ~430).
 
 ---
 
@@ -486,17 +529,16 @@ screenshot required:
   onboarding flow wants it.
 - **F-2 (the rule is implemented twice — Rust and mock).** Unavoidable: §3.10's `?gitBidiTarget` seam
   can only be green if the mock strips, and the mock never runs Rust. Mitigated by the existing
-  `MAX_ACTIVITY_LINE_CHARS` mirroring precedent (`gitActivity.ts:66`) plus acceptance items 8 and 9,
-  which fail loudly if the mirror is dropped. Recommend accepting it; the alternative
-  (frontend-side stripping) would mask a real backend regression.
+  `MAX_ACTIVITY_LINE_CHARS` mirroring precedent plus acceptance items 8 and 9, which fail loudly if
+  the mirror is dropped. Recommend accepting it; the alternative (frontend-side stripping) would mask
+  a real backend regression.
 - **F-3 (one §3.3 row is unreachable).** `Fetch origin` cannot occur — the only fetch entry point is
   fetch-all. The copy is correct and `ActivityTarget::remote()` is spec'd for it, but until a
   per-remote fetch command exists that row is mock-only. Not a defect in either contract; noted so
   nobody hunts for the missing code path.
-- **F-4 (ui-designer's F-E is stale).** `commitAmend` **is** activity-wrapped at HEAD
+- **F-4 (ui-designer's F-E is stale).** `commitAmend` **is** activity-wrapped
   (`src/ipc/mock/handlers/stash.ts:148`, `src-tauri/src/commands/staging.rs:177`), with
-  `handlers/amendActivity.test.tsx` covering it. Amend is in §4's table like any other category. A
-  senior-dev is mid-change in `stash.ts` — confirm before editing.
+  `handlers/amendActivity.test.tsx` covering it. Amend is in §4's table like any other category.
 - **F-5 (sequencing).** This contract is independent of FU-3; ui-designer's F-C recommendation to land
   FU-1 + FU-3 in one senior-dev pass still stands, and this backend half can land first or together.
   Nothing here blocks on `RefLabel` / P111.
