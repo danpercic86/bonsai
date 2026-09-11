@@ -74,7 +74,7 @@ commit messages must not be read as an authoritative status.
 carry uncommitted edits that predate the 2026-09-10 session and are **not** FU-1's — they were left
 unstaged on purpose. Don't spend time reconciling them; find out whose they are first.
 
-**Current step: nothing is in progress.** FU-1 (`1d8c6f9`), P111 (`1192f2a`) and every reviewer
+**Current step: see `## 🔄 IN FLIGHT` — the 2026-09-11 ruling queue. Previously:** FU-1 (`1d8c6f9`), P111 (`1192f2a`) and every reviewer
 follow-up (`e9d025d` / `7f9f16b` / `c03d11d`) are done and committed; all eight USER CHECKPOINTs
 were confirmed 2026-09-10 (`548cc0a`). Narratives: archive Parts 54-60.
 
@@ -578,6 +578,130 @@ archive Part 44; the milestone entry is archive Part 54.6.
 - **The raw-args ruling (`834f2d1`):** raw mode widens **IDENTIFIER** fidelity (repo path, file
   paths, ref names, remote URLs, full SHAs) and **never CONTENT** fidelity. Free text and credentials
   are outside both modes, permanently.
+
+---
+
+## 🔄 IN FLIGHT — the implementation queue the 2026-09-11 rulings created
+
+**Current step: architect amending `P91-observability.md` for F6; senior-dev on the security
+increment; security-auditor on `2a0b8f1`. ui-designer DONE.**
+
+### ✅ ui-designer pass DONE 2026-09-11 — contracts written, two code changes OWED to senior-dev
+
+- **A3 — SIGNED: the SHIPPED string stays.** `Turn on "Enable AI features" above to change these.`
+  ui-designer **withdrew its own preferred reword** after finding `SettingsAiSection.tsx:110`
+  byte-identical modulo `this`/`these` and `SettingsDevCaptureSection.tsx:52` a third instance — it
+  is a pattern, not a string. Signed into `ui-reference.md` §12.12 + `P68g-ui.md`. **No string in
+  `src/` changes, so no test moves.**
+  → **OWED to senior-dev:** clear two now-stale comments, `SettingsAiRunSection.tsx:25` and `:46`,
+  both reading "pending A3 sign-off".
+- **D3 — SPECCED, NOT APPLIED** (`src/styles/**` is outside ui-designer's remit).
+  → **OWED to senior-dev:** `src/styles/dialogs.css:238`, `.op-worktree-warning`:
+  `var(--danger-strong)` → **`var(--warning-strong)`**.
+  Measured on `.dialog-card`'s `--bg-1`: **8.38:1 dark / 6.65:1 light** vs P108's ≥4.5:1 bar. P108
+  shipped `--danger-strong` there at 7.62/6.01, so **the tone repaint RAISES contrast in both
+  themes** — it does not trade legibility for semantics. No new token; no grep invariant moves.
+- **D1 and D2 were BOTH already fixed — my brief to it was stale on both.** F-E was corrected
+  2026-09-10 (`P87b-FU1-FU4-git-dock-ui.md:461-478`) and re-verified 2026-09-11.
+  `.forge-connect-link:hover` was fixed by P107 at `forge-pr-create.css:209-225` (thickness pinned
+  1px at rest, 2px on hover, with a comment naming this exact defect).
+  **The actual stale line was `docs/contracts/INDEX.md:54`** — the propagation vector for the third
+  false `commitAmend` report. **FIXED by the orchestrator 2026-09-11**; the P91 row's "unmerged by
+  user instruction" claim was corrected in the same pass.
+
+### F6 — two backend facts the copy now depends on, ONE OF WHICH FAILS SILENTLY
+
+Recorded here because a later session must not implement half of it:
+
+1. The delete must remove the **`metrics` directory recursively** — `usage.json.bak` restores the
+   file if only the file goes.
+2. It must **also reset the in-memory `MetricsState`**. Otherwise the next flush writes the
+   just-deleted data straight back, **and a test that only asserts the file is gone PASSES while the
+   button does nothing.** ui-designer's AC 8 asserts the snapshot, not the file, for this reason.
+
+**Also corrected 2026-09-11 — the board (and my own brief) OVERCLAIMED what is always-on.** The
+always-on data is **counts**; the **durations half is Dev-mode-only** (`metrics.rs:148-152`). A
+privacy surface claiming always-on durations would be an overclaim. `P91-privacy-copy-ui.md` §6.1.1
+now tables the verified field-by-field picture and is the source of truth over the board.
+
+**`lifetime` figures — RULED 2026-09-11 (user): KEEP them.** `first_seen` and `sessions` survive the
+90-day fold; the window applies to the **per-day profile only**. Rationale: both are inherently
+lifetime values and the Statistics page — the user's stated reason for keeping collection always-on
+instead of Dev-mode-gating it — needs the total. Deletion still removes everything, lifetime figures
+included: "retained 90 days" and "cleared by the delete action" are **separate promises and both
+must hold**. Do not let a later session tidy the lifetime fields into the prune.
+
+**Scope the F6 amendment correctly — §10 is NOT the only place asserting metrics survive deletion.**
+Also `P91-observability.md` §6.1 `:713-726`, §8 `:1425`, §13 row 6 `:1936`, §8 prose at `:1404`
+`:1494` `:1575` `:1597`, and the rationale in `src-tauri/src/obs/metrics_keys.rs:44`.
+`RETAIN_DAYS` is `src-tauri/src/obs/metrics.rs:40`, currently **400**.
+
+**Design hole the ruling opened, fixed in `P91-privacy-copy-ui.md` §6.4:** the delete row was gated
+on `hasLogs`, so a user who never enabled Dev mode would face up to 90 days of usage counts behind a
+permanently disabled button. Gate dropped. No new IPC field needed — `metrics.rs:210`/`:235` bump
+`sessions` at init every launch, so there is no reachable "nothing to delete" state.
+
+---
+
+## ✅ CLOSED 2026-09-11 by orchestrator verification (user assented to my closing these)
+
+Each was verified by reading the commit or the file, not by trusting the board.
+
+- **The four 2026-09-02 file-size refactor follow-ups — CLOSED.** All five commits exist and do what
+  the board guessed: `52c815e` "clear the reflog overlay on the repo-went-unusable teardown",
+  `6092eb3` "close every overlay on the repo-went-unusable teardown", `338d71f` "add the
+  diff/composer/palette overlays to the unusable-repo teardown", `1d9d9bf` "disarm every armed dialog
+  on the repo-went-unusable teardown", `734b310` "drive the session watchdog from an injectable clock,
+  not wall time".
+- **The two 2026-09-01 velocity follow-ups — CLOSED as superseded.** `737cc4b` is literally "band the
+  two slowest proptests -- 3.25x and 3.2x"; `5731d37` cut the workspace test wall 14%.
+- **`P91-raw-args-privacy.md` — CLOSED, already done.** The file is absent from `docs/contracts/`;
+  `INDEX.md` records it folded into `P91-observability.md` §7.4 by `12b0ab6`. The board's
+  "consolidation recommended" item and its stale "Contracts:" line were both describing finished work.
+- **`P91-observability-ui.md:496`/`:951` vs `INDEX.md` — RESOLVED: `INDEX.md` is right, the BOARD was
+  stale.** Verified directly: `:496` correctly states `log_export_session()` takes **no** destination,
+  and `:514-516` explicitly refute the `dest` form as webview-supplied. `fc9c36e` did fix it. The
+  architect's own `P91-observability.md` §6/§10 are the copies still stale — routed to `architect`.
+- **P87b `FU-1..4` — the four-way-stale line is now resolved, three of four were NOT open.**
+  FU-1 shipped `1d8c6f9`. **FU-2's premise is false** (`commitAmend` *is* activity-wrapped at
+  `src-tauri/src/commands/staging.rs:179`). FU-3 closed by `833f2f9` "dock row gets a role".
+  FU-4 answered by *rejecting* the change, `763866a`. Only the `AiActivityPanel` aria-label NIT is
+  arguably live — and `src/components/AiActivityPanel.tsx:192-193` **does** carry
+  `role="region"` + `aria-label="AI activity"`, so the NIT needs restating against the current file
+  or closing. Do not re-open the other three; the board has been wrong about this entry three times.
+- **P94 has no contract file — CONFIRMED, accepted as debt.** P94 is shipped; a retroactive contract
+  buys nothing. Recorded here so the gap stops being rediscovered as a live defect.
+
+### P77 tag-sync — the ruling's design is settled by measurement, not guesswork
+
+The user chose "fold into the auto-fetch cycle". Verified what that can mean:
+
+- Auto-fetch **already downloads tags**: `src-tauri/src/scheduler/exec.rs:151` → `fetch_all()` →
+  `crates/bonsai-core/src/git/remote_activity.rs:52`, `opts.download_tags(AutotagOption::Auto)`.
+- **But a purely local compare is NOT sufficient.** Fetched tags land in `refs/tags/*` alongside local
+  ones, so after a fetch you cannot distinguish a local-only tag from a fetched one. Classification
+  (local-only / remote-only / diverged) genuinely needs the `ls-remote`:
+  `crates/bonsai-core/src/git/tag_sync.rs:275-288` → `ls_remote_tags()` → `remote.list()` at `:132-173`.
+- **Therefore the increment is: trigger the existing `list_tag_sync` on auto-fetch completion**, not
+  a new local-only comparison. That still honours the ruling — it rides a network cycle the user
+  already opted into (5-min interval, enabled) and adds no repo-open call and no new network policy.
+- Current trigger to replace/augment: `src/components/sidebar/TagsSection.tsx:165-172` → `onExpand` →
+  `src/components/RepoWorkspace.tsx:1878` `onTagsExpand={() => void refetchTagSync()}`, with a 10 s
+  cache guard at `src/components/repoWorkspace/useTagSync.ts:57-60`.
+
+### ⚠️ NEW — unreviewed MCP write-tool code rode the merge onto `dev`
+
+`2a0b8f1` was described on the board as "a PEER session's MCP work". It is **not docs-only**:
+
+```
+ .claude/agents/context-explorer.md          |   2 +-
+ crates/bonsai-mcp/src/server/tools_read.rs  |  85 +++++++++++++-
+ crates/bonsai-mcp/src/server/tools_write.rs | 147 ++++++++++++++++++++--
+```
+
+**222 insertions into the MCP server's read AND write tools**, from a session that ended, reviewed by
+nobody in this line of work — and it is now on `dev` and pushed. CLAUDE.md names "the MCP server's
+write tools" as a `security-auditor` surface. **A `security-auditor` pass on `2a0b8f1` is owed.**
 
 ---
 

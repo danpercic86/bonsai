@@ -336,10 +336,50 @@ transcription rule above — and this one is **the orchestrator's own unverified
 agent's**, which is exactly why it is written down here rather than quietly rounded to green.
 **AC12, AC13 and AC14 remain USER CHECKPOINTs and stay pending; no agent may self-declare them.**
 
-**One OPEN TONE question, deliberately unresolved and filed for the user:** `.op-worktree-warning`
-received the **contrast** fix and **kept its danger hue**. Whether a *warning* should be painted in
-the danger hue at all is a **tone** decision, not a contrast one, and P108 did not make it (contract
-§11, D3). Do not "fix" it as a contrast defect — it is compliant.
+**The OPEN TONE question is CLOSED — D3 RULED by the user 2026-09-11: repaint it as the warning hue.**
+`.op-worktree-warning` was a *warning painted in the danger hue*. P108 fixed its **contrast** and
+deliberately left the **tone** alone (P108 §11, D3, whose "leave as danger now" recommendation is now
+superseded). The ruling: **danger stays reserved for destructive/irreversible actions**, so the
+palette means one consistent thing.
+
+**The change — one declaration, for `senior-dev` (I do not edit `src/styles/**`):**
+
+| File:line | Selector | From | To |
+|---|---|---|---|
+| `src/styles/dialogs.css:238` | `.op-worktree-warning` | `color: var(--danger-strong)` | `color: var(--warning-strong)` |
+
+**P108's contrast bar is held, not regressed.** The surface is `.dialog-card` = `--bg-1`; P108 raised
+this site off `--danger` (**4.41** dark / **4.60** light) onto `--danger-strong` because the bar for
+12px/400 read text is **≥4.5:1**. Measured for the replacement, `--warning-strong` on `--bg-1`
+(`#e3b341` on `#1d2026`; `#7a4f01` on `#f6f7f9`):
+
+| | dark | light | bar |
+|---|---|---|---|
+| `--danger-strong` on `--bg-1` (what P108 shipped) | 7.62:1 | 6.01:1 | 4.5 ✓✓ |
+| **`--warning-strong` on `--bg-1` (the repaint)** | **8.38:1** | **6.65:1** | 4.5 ✓✓ |
+| (defensive, if it ever composites on `--bg-2`) | 7.40:1 | 6.14:1 | 4.5 ✓✓ |
+
+Both hues clear the bar by a wide margin, and the repaint **raises** the ratio in both themes
+(+0.76 dark, +0.64 light) — so P108's legibility fix is strictly improved, not regressed. All four
+`--bg-1` figures are computed from the token hex values and cross-checked against the figures already
+recorded in `tokens-and-base.css`: `--warning-strong` reproduces its documented **9.13** dark /
+**7.13** light on `--bg-0` exactly, and `--danger-strong`'s 7.62/6.01 sit inside its documented
+8.29…5.27 dark / 6.44…5.18 light ranges. **Ink only**:
+`--warning-strong` is never a fill, border or focus ring, and this site is text, so the family rule
+holds.
+
+**No second carrier is added, and none is needed.** The `ProposedOpDialog` already carries the danger
+level as a **worded** badge (`.danger-badge` with `DANGER_LABEL[preview.danger]`,
+`ProposedOpDialog.tsx:49`) and the warning line is a full sentence that states the hazard in words
+(`…rewrites history that may be shared with <upstream>`). Colour is redundant here in both roles, so
+the never-colour-alone rule is satisfied before and after. **Do not** add the §10.2/§12.11 leading
+`--warning` bar or a `⚠` glyph: that recipe marks a *control* the user can set, and this dialog
+already has one filled danger button — after the repaint, `danger` appears in this dialog exactly
+twice (the worded badge and the confirm button), which is the point of the ruling.
+
+**No grep invariant moves.** The only "exactly N" declaration counts in this file are for
+`--accent` / `--accent-strong` (below); there is none for `--danger-strong` or `--warning-strong`, so
+the swap does not falsify a recorded count.
 
 **The hue alphabet for any future search is
 `danger|success|warning|merged|accent|badge-good|badge-warn|badge-unknown|h`** — three tokens longer
@@ -685,13 +725,30 @@ accessible name at all 8 sites and `untracked` renders `U` everywhere, from one 
   the link text and the surrounding prose** whenever the link has no other resting distinction.
   Because `--accent-strong` is tuned to sit near `--text-2`'s luminance, moving an inline link from
   `--accent` to `--accent-strong` *reduces* that separation: `.forge-connect-link`
-  (`forge-pr.css:592`, "Create a token", inline in a `--text-2` `<p>`) went from **1.43 dark /
-  **1.72** light to **1.02 / 1.28** — the link and the sentence around it are now the same
-  luminance in dark. The fix is `text-decoration: underline` at rest, not a colour change.
+  (**`src/styles/forge-pr-create.css:203`** — the `forge-pr.css:592` path recorded here until
+  2026-09-11 is dead, the rule moved in the stylesheet split; "Create a token", inline in a
+  `--text-2` `<p>`) went from **1.43** dark / **1.72** light to **1.02 / 1.28** — the link and the
+  sentence around it are now the same luminance in dark. The fix is `text-decoration: underline` at
+  rest, not a colour change.
   **Rule: `--accent-strong` on a *standalone* control or a block of its own is fine; on an inline
   link inside a sentence it must carry a resting underline.** The standalone cases in the app
   (`.settings-update-link`, `.commit-parent-link`, `.blame-why`) are unaffected —
   `.settings-update-link` already underlines at rest.
+  - **And then hover must be re-earned — the second half of this rule, missing from it until
+    2026-09-11.** Moving the underline to rest makes a `:hover { text-decoration: underline }` rule a
+    **no-op**: it redeclares the identical decoration, so the link has no hover feedback at all.
+    **Shipped answer (P107, `forge-pr-create.css:209-225`) and the pattern for every future inline
+    hue link: pin `text-decoration-thickness: 1px` at rest and bump it to `2px` on hover.** Pinning
+    the resting value is load-bearing — left at the UA's `auto` the bump is not a deterministic
+    1px→2px and can be invisible at some zooms. Why a thickness bump and not the obvious
+    alternatives: a **colour** change on hover would have to clear its own ≥3:1-vs-prose ratio
+    against the same `--text-2` sentence that made colour unusable at rest; a **background** tint
+    would need a third ratio and boxes an inline run mid-sentence; `text-underline-offset` or a
+    font-weight change **reflows the surrounding text**. Thickness changes no ratio, keeps the G183
+    carrier, and does not reflow. It is a paint-only change, so `prefers-reduced-motion` is not
+    engaged (do **not** add a transition to it — a hover transition on a text decoration is exactly
+    the motion the graph render budget does not need). **The board's standing note that
+    `.forge-connect-link:hover` "is now a no-op" describes the pre-P107 tree and is stale.**
 - **The specificity trap (added 2026-09-02, found implementing P105 C5 — sibling to the child-rule
   trap above).** When a state rule changes from setting only `color` to setting `background`, it
   starts competing with the base component's hover rule, which is usually **more specific**.
@@ -2215,6 +2272,61 @@ focus to `<body>` and strands the tab ring inside a modal).
 
 **CSS location.** `src/styles/settings-dev.css`, imported after `settings-primitives.css`; the pill
 rule lives in the existing header-toolbar stylesheet. Do not reorder the settings import list.
+
+### 12.12 Gate notes — the one shape for "this group is off" (SIGNED 2026-09-11)
+
+The sentence that explains why a settings group is inert. **One shape, app-wide.** Signed to close
+P69 A3, which the user handed to `ui-designer` to finalise with the surrounding copy in view
+(`TODO.md` → `USER DECISION LEDGER — 2026-09-11` row 10).
+
+> ### `Turn on <control name> to change <what these rows are>.`
+
+**The three live instances — this is what settled it:**
+
+| Site | String |
+|---|---|
+| `SettingsAiRunSection.tsx:47` (`GATE_NOTE`) | `Turn on “Enable AI features” above to change these.` |
+| `SettingsAiSection.tsx:110` | `Turn on “Enable AI features” above to change this.` |
+| `SettingsDevCaptureSection.tsx:52` | `Turn on Dev mode to change what is recorded.` |
+
+`SettingsDevLogsSection.tsx:64`'s empty state (`No logs yet. Turn on Dev mode, reproduce the problem,
+then export the session.`) uses the same imperative opener in a different role.
+
+**The signed string is the shipped one:** `Turn on “Enable AI features” above to change these.`
+The rewording `ui-designer` had recommended pending sign-off — `These take effect once AI features
+are on.` — is **WITHDRAWN**, and the reason is worth keeping because it is a general one:
+
+- The AI-runs note's **immediate sibling on the same page** (`SettingsAiSection.tsx:110`) is
+  byte-identical modulo `this`/`these`. Rewording one of a matched pair leaves two gate notes in the
+  same visual role, two paragraphs apart, in two different grammatical shapes. **Consistency beats
+  local optimality** — and this is not a marginal case, it is a pair.
+- The original objection (an imperative the note cannot itself carry out, since there is no inline
+  button) is real but weak: the note says `above`, the switch is visible above it, and the user's next
+  action is a scroll of a few rows. The replacement's cost is worse — `These take effect once AI
+  features are on.` describes a **future state** and drops the *location* of the control, which is
+  the only actionable fact the note carries.
+- Three instances make it a **pattern**, not a string. Changing one costs the pattern; changing all
+  three costs the pattern *and* a re-review of Dev-mode copy that is not in question.
+
+**Rules for any future gate note:**
+
+1. Name the control **exactly as it is labelled**, in curly quotes when it is a proper row label
+   (`“Enable AI features”`), bare when it is a well-known mode (`Dev mode`).
+2. Say `above` / `below` only when it is true on the page as laid out. Drop it rather than let a
+   later reorder make it false.
+3. Sentence case, one sentence, ends in a period. No "please", no "simply", no exclamation.
+4. **Never an inline "turn it on" button** in the note. For AI that would start the consent flow from
+   a surface the security pass did not review; generally it puts a control that changes a group's
+   *existence* inside the group.
+5. Geometry, placement and a11y are §12's and P69 §5.4's: 12px `--text-2`, at the **top** of the
+   group under its title, carrying the `id` the inert `<fieldset>` points at with
+   `aria-describedby` — so the reason is announced on entry, not discovered after ten dimmed rows.
+   **Exactly one copy may render** and it must be the one carrying the `id`; a dangling idref is
+   worse than no note.
+6. The note is **never inside the dim**. `opacity` is a group property, so dimming the `<fieldset>`
+   would dim the sentence explaining the dim. The `.55` lives on `.settings-row.is-disabled`.
+7. Hue never carries the gated state, and a switch knob's **position** must still read on-vs-off
+   while disabled.
 
 ## 13. Icon system (SVG chrome)
 

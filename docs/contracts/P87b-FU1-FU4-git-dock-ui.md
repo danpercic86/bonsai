@@ -458,7 +458,19 @@ two agents).
   corrects to the 95-char shipped fixture. The architect has since corrected §8 to the shipped
   95-char string, with a dated note quoting the prior literal. **Both contracts now agree with the
   code.** Nothing to do; kept as a record of the disagreement and its resolution.
-- **F-E (CORRECTED 2026-09-10 — the original claim was false; kept as a record, not as a task).**
+- **F-E (CORRECTED 2026-09-10; RE-VERIFIED INDEPENDENTLY 2026-09-11 — the original claim was false;
+  kept as a record, not as a task).**
+
+  > **STOP. Do not report an amend-wrapping gap from this contract.** The correction below was
+  > re-checked against the tree on 2026-09-11 by opening `staging.rs` directly, not by trusting this
+  > text: `commit_amend_inner` calls `activity_target(state, repo_id, GitActivityCategory::Amend)`
+  > at **l.178** and wraps the whole operation in `with_activity(state.git_activity_hub(),
+  > GitActivityCategory::Amend, target, …)` at **l.179**. That is the third independent confirmation.
+  > **`docs/contracts/INDEX.md:54` still summarises this item as "F-E is stale… it claims `commitAmend`
+  > is not activity-wrapped"** — that summary described this file *before* 2026-09-10 and is now
+  > itself the only stale statement left in the chain. It is `docs-curator`'s line, flagged to the
+  > orchestrator rather than edited here. If you arrived via INDEX.md, that is why.
+
   The original text asserted that `commitAmend` was not activity-wrapped, so an amend produced no
   dock row and therefore no target, and filed that as an out-of-scope backend gap "FU-2".
   **That was wrong at the time it was written and is wrong now.** Verified at HEAD:

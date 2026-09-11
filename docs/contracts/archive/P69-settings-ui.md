@@ -768,6 +768,14 @@ hint, not consent copy, but "AI features" is one word away from the P68g consent
 `These take effect once AI features are on.` No inline "turn it on" button — that would start the
 consent flow from a place the security pass did not review.
 
+> **CLOSED 2026-09-11 — `ui-designer` signed the SHIPPED string; the recommended replacement is
+> WITHDRAWN.** `Turn on “Enable AI features” above to change these.` ships as written. Reason: two
+> sibling gate notes use the identical shape (`SettingsAiSection.tsx:110`,
+> `SettingsDevCaptureSection.tsx:52`), so it is a pattern rather than a string. Canonical record and
+> the rules for future gate notes: **`ui-reference.md` §12.12**; the signature also sits on the live
+> `docs/contracts/P68g-ui.md` copy table. Everything else in this section (position, the
+> `aria-describedby` id, the dimming rules, no inline button) stands as written and shipped.
+
 ### 5.5 Switch — visual spec
 
 ```
@@ -1076,7 +1084,7 @@ not a string change (§7.1) — the visible words are untouched.
 | About | `First-run tour` / `Show welcome tour` | label `Welcome tour`, help `A short guided tour of Bonsai's main panes.`, button `Show tour` | "first-run" is an implementation word |
 | About | `Automatically check for updates on launch` | **unchanged label** + new help `Bonsai contacts the update server on startup. Turn this off to check only when you press Check for updates.` | discloses network egress; label left alone — see §12 (A4) |
 | About | `Current version` | help `The version of Bonsai you are running.` | |
-| AI runs | bottom hint `Turn on “Enable AI features” above to change these.` | top note `These take effect once AI features are on.` — **pending §12 (A3)** | position fix is unconditional; the rewording is not |
+| AI runs | bottom hint `Turn on “Enable AI features” above to change these.` | ~~top note `These take effect once AI features are on.`~~ — **A3 CLOSED 2026-09-11: the string is UNCHANGED; only the position moved** | position fix shipped; the rewording was withdrawn (§5.4, `ui-reference.md` §12.12) |
 | Search `[P69l]` | — | status line `{n} settings match` / `1 setting matches` / `No settings match`; results header `Go to {Category}`; zero-match block per §3.3 | one sentence shape across all three counts |
 
 ---
@@ -1251,6 +1259,11 @@ positional fix (bottom → top, `aria-describedby`) unconditionally, and hold th
 (`These take effect once AI features are on.`) for the user's sign-off.** I have *not* specced an
 inline "turn on AI features" button there — it would start the consent flow from a surface the
 security pass did not review.
+
+> **A3 CLOSED 2026-09-11.** The user handed the call to `ui-designer`, which **signed the shipped
+> string** and withdrew its own recommended reword. The positional fix had already shipped
+> unconditionally; nothing further is owed. Record: `ui-reference.md` §12.12 (pattern + rules) and
+> `docs/contracts/P68g-ui.md` (the copy table). **A3 is not open work and must not be re-raised.**
 
 **A4 — The updates auto-check help line.** Adding
 `Bonsai contacts the update server on startup…` discloses network egress the current UI does not

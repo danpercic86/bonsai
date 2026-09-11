@@ -947,6 +947,25 @@ Both are resolved-out by the user.
   are deletable in v1 because the page that owns them *is* shipping and the privacy statement
   promises it; metrics are not, because their page is not.
 
+  > **AMENDED 2026-09-11 (user ruling, `TODO.md` → `USER DECISION LEDGER — 2026-09-11` row 3). Metrics
+  > ARE cleared in v1 — and the bullet above survives, narrowed.** The ruling kept collection
+  > always-on, cut retention 400 → 90 days, and made the data deletable. Deletion routes through the
+  > **existing** `Delete logs and usage counts` action, so:
+  >
+  > - **Still true:** `metrics_reset` gets **no row and no affordance of its own** on the Developer
+  >   page, and a reset control still belongs on the Statistics page when it ships. The principle —
+  >   no *dedicated* destroy control on a surface that cannot display what it destroys — is intact.
+  > - **No longer true:** the asymmetry with §8.5, and "metrics are not deletable in v1". The privacy
+  >   statement now promises metrics deletion too, and the same clause of the same sentence that made
+  >   log deletion mandatory therefore makes this mandatory: **the app must not promise in prose what
+  >   no control delivers.** That is what changed, not the affordance count.
+  > - The action's scope, labels, confirmation copy and enabled state are specced in
+  >   **`docs/contracts/P91-privacy-copy-ui.md` §6.4**; the disclosure paragraph is §6.2. The backend
+  >   consequences (recursive `metrics/` removal including `usage.json.bak`, in-memory
+  >   `MetricsState` reset, `RETAIN_DAYS` 400 → 90) are flagged to `architect` in that file's §6.6 —
+  >   `P91-observability.md` §6.1, §8, §10 and the `metrics_keys.rs` rationale all still assert the
+  >   pre-ruling behaviour and are the architect's to amend.
+
 ---
 
 ## 11. Decision records & open questions
@@ -1022,6 +1041,14 @@ and that new file grows as you keep using the app.** Everything else above is AI
 All rows carry `category: 'dev'` and searchable `keywords`. Groups exactly as rendered:
 `Dev mode` / `What is captured` / `What a log file contains` / `Log files`.
 
+> **AMENDED 2026-09-11 — two strings in the table below change; see `P91-privacy-copy-ui.md`
+> §6.4 / §6.5.** Group 3 is renamed `What a log file contains` → **`What Bonsai records`** (it now
+> also covers the always-on usage count, which is not a log file), and `dev.delete-logs`'s label
+> becomes **`Delete logs and usage counts`** (its scope widened). The `group` string and the
+> component's `title`, and the row `label` and the rendered row title, must each change **atomically**
+> — settings search matches on these strings, so a half-applied rename renders the block but makes it
+> unsearchable.
+
 | id | group | label | control | reset |
 |---|---|---|---|---|
 | `dev.enabled` | Dev mode | `Dev mode` | `switch` | `resetField('dev','enabled','Off')` |
@@ -1031,9 +1058,9 @@ All rows carry `category: 'dev'` and searchable `keywords`. Groups exactly as re
 | `dev.capture-react` | What is captured | `Screen updates` | `switch` | `resetField('dev','captureReact','On')` |
 | `dev.capture-frames` | What is captured | `Frame timing` | `switch` | `resetField('dev','captureFrames','Off')` |
 | `dev.include-raw-names` | What is captured | `Include raw repository names` | `switch` | `resetField('dev','includeRawNames','Off')` |
-| `dev.privacy-note` | What a log file contains | `What a log file contains` | `group` | — |
+| `dev.privacy-note` | What a log file contains → **`What Bonsai records`** (2026-09-11) | `What a log file contains` → **`What Bonsai records`** | `group` | — |
 | `dev.logs` | Log files | `Log files` | `button` | — |
-| `dev.delete-logs` | Log files | `Delete all log files` | `button` | — |
+| `dev.delete-logs` | Log files | `Delete all log files` → **`Delete logs and usage counts`** (2026-09-11) | `button` | — |
 
 Keyword set (minimum): `debug logging diagnostics troubleshoot verbose trace log jsonl privacy
 redact anonymous export zip folder reveal flicker performance report bug`.

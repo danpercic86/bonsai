@@ -204,6 +204,17 @@ Section header and frame:
 | `.settings-subsection-title` #1 | `Limits` |
 | `.settings-subsection-title` #2 | `Bulk resolve` |
 
+> **The gate-note string is SIGNED 2026-09-11 — `Turn on “Enable AI features” above to change these.`
+> ships as written.** This closes P69 A3 (`docs/contracts/archive/P69-settings-ui.md` §5.4 / §12 A3),
+> which the user handed to `ui-designer` to finalise. The alternative that had been recommended
+> pending sign-off (`These take effect once AI features are on.`) is **WITHDRAWN**: this note's
+> immediate sibling `SettingsAiSection.tsx:110` is byte-identical modulo `this`/`these`, and there is
+> a third instance in Dev settings — it is a pattern, not a string. Reasoning and the rules for future
+> gate notes: `ui-reference.md` §12.12. **Two stale code comments to clear** (`senior-dev`, copy-free):
+> `SettingsAiRunSection.tsx:25` ("the §5.4 rewording is still pending the A3 sign-off") and `:46`
+> ("§5.4 copy, FROZEN — the recommended rewording is still pending A3 sign-off") — both should now
+> read that the string is signed, citing this line. **No string in `src/` changes**, so no test moves.
+
 Control 1 — repository access:
 
 | Element | String |
