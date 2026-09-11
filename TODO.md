@@ -798,6 +798,107 @@ Part 44. SHOULD-FIX full text: Part 45. User decisions + architectural rulings: 
 - **`.forge-connect-link:hover` is now a no-op** — the resting-underline MUST-FIX means hover
   declares the same underline, so the link has **no hover feedback at all**. → `ui-designer`.
 
+### SEC-2026-09-11 — MCP tool-contract audit of `2a0b8f1` (full report: `docs/audit-2026-09-11-mcp-tool-contracts.md`)
+
+**The merge itself was safe.** `2a0b8f1` changed **zero non-doc-comment lines** — proven by
+`git show 2a0b8f1 --unified=0 -- tools_read.rs tools_write.rs | grep -vE '^[+-]\s*///'` returning
+empty. No new tool, no signature change, no router change. The write gate is structural and
+untouched (`crates/bonsai-mcp/src/server.rs:156` merges `write_router()` only inside
+`if allow_write`, so unauthorised tools are **unregistered**, not merely refused). Capability and
+authorisation: **CLEAN.**
+But it is **not inert**: `rmcp-macros` concatenates every doc line into the JSON-Schema
+`description`, so all 222 lines ship as **model-facing instruction text** on 33 of 34 tools.
+Auditing whether those claims are true is what surfaced the finding below.
+
+#### HIGH — `stage_paths` is missing the symlink-escape guard (PRE-EXISTING, not from `2a0b8f1`)
+
+**Independently verified by the orchestrator 2026-09-11, not taken from the report.**
+`crates/bonsai-core/src/git/stage.rs:119-143` calls only the **lexical** `validate_rel_path` and
+never `ensure_within_workdir` — which is defined **40 lines above it** at `stage.rs:76`.
+
+Every sibling write primitive DOES call it: `conflict.rs:151`, `:271`, `:348`, `discard.rs:109`,
+`stage_partial.rs:104`. There is even a dedicated test module for the guard
+(`crates/bonsai-core/src/git/path_traversal_tests.rs`). **Partial staging is guarded; full-file
+staging is not.** That asymmetry is an oversight, not a decision.
+
+Consequence: a symlinked **ancestor** is followed (`stage.rs:136` uses
+`wd.join(rel).symlink_metadata()`), so `index.add_path` reads a real out-of-repo file into the object
+database. libgit2 has **no** "beyond a symbolic link" refusal (the string is absent from all of
+`libgit2/src`; the git CLI has it). The file/directory collision does not stop it either —
+`git_index_add_bypath` passes `replace=1`.
+
+- **Also reachable from the webview, so this is NOT MCP-only:**
+  `src-tauri/src/commands/staging.rs` passes frontend-supplied paths straight into `stage_paths`
+  with no extra guard — verified. It is a renderer-compromise primitive too.
+- **Not exploitable on this host as configured:** Windows defaults `core.symlinks=false`, so the
+  hostile symlink materialises as a text file. That is why HIGH, not CRITICAL. Needs one
+  macOS/Linux scratch-repo run to demonstrate empirically.
+- **Fix:** call `ensure_within_workdir` in `stage_paths`. The guard already rejects this case —
+  canonicalising the parent yields the escape target, which fails its `starts_with(base)` test.
+  `unstage_paths` needs no fs guard (index-only).
+
+#### MEDIUM — `add_path` has `git add -f` semantics, and MCP breaks its stated precondition
+
+`stage.rs:117` documents it and justifies it: "acceptable — the UI only offers paths already present
+in `StatusSnapshot`". **A model is not the UI.** Gitignored files (`.env`, `secrets.json`) are
+stageable and committable. `tools_write.rs:22` restates that precondition as *advice to the model*
+with nothing enforcing it. Fix: enforce membership in `read_status()` output on the MCP path — which
+is what the description already promises.
+
+#### LOW x 4
+
+1. **A false guarantee introduced BY `2a0b8f1`.** `tools_write.rs:22-23` tells the model "a path that
+   does not exist fails the batch". It does not — `stage.rs:134-141` routes a missing path to
+   `index.remove_path`, which **stages a deletion** for a tracked path, or silently succeeds for an
+   untracked one. A model told nonexistent paths are rejected may pass paths liberally and stage
+   deletions it never intended. Notable because that commit message asserts "Every claim was checked
+   against the actual signature and outcome enum" — false for at least one write tool.
+2. **MCP commit tools run repository hooks with the disclosure structurally unreachable.**
+   `tools_write.rs:66` passes `skip_hooks=false`; `src-tauri/src/commands/hooks.rs:1-10` states the
+   gate "lives in the frontend (`useHookDisclosure`)". Standalone `bonsai-mcp --repo X --allow-write`
+   has no frontend, so a repo whose hooks the user was never shown executes code on the agent's
+   commit. CLAUDE.md requires hook execution be user-consented and clearly disclosed; this path is
+   neither. Narrow — hooks are not transferred by clone.
+3. **Read-tool descriptions carry no untrusted-data labelling** — zero hits for
+   `untrusted|instruction|do not follow` in `tools_read.rs`, on tools returning attacker-controlled
+   text (conflict blobs, all three diff families, branch names, paths). Credit where due: content
+   travels as JSON `structured_content` with a payload-free text summary (`helpers.rs:21-33`), so
+   there is **no framing escape** — the residual risk is plain instruction-following.
+4. **"Trust the caller" now has a model as the caller.** `conflict.rs:309-311` / `:332` rely on the
+   frontend Save-button marker gate. Over MCP a model can write and stage a file still containing
+   conflict markers. Fix in the MCP tool, not the shared primitive, to preserve UI behaviour.
+
+#### PROCESS — why this escaped review, and the fix at the right layer
+
+`docs(mcp)` is *literally* accurate and *materially* understating: doc comments here ARE the tool
+contracts a model reads before invoking worktree-destructive operations. 222 lines of that landed on
+subject-line trust. **Fix at the path layer, not by commit-message discipline:** a review trigger
+keyed on `crates/bonsai-mcp/src/server/tools_*.rs`, plus a test snapshotting `list_all()`
+descriptions so text drift on the write router produces a reviewable diff. The commit cites
+"No test asserts on description text" as reassurance; that IS the gap.
+Minor: every write description says "Requires `--allow-write`" — the standalone CLI flag — but the
+embedded server's gate is the `mcpAllowWrite` **setting**, so the name is wrong for half the
+deployments.
+
+#### Verified CLEAN (do not re-audit) + the boundary of that claim
+
+CLEAN: `resolve_conflict*` path handling (three layers, no escape found); destructive-abort claims
+(`abort_merge`, `rebase_abort` both refuse when nothing is in flight, with an untracked-collision
+guard); `create_branch_here`; `checkout_branch` no-autostash; `delete_branch` (no force parameter);
+`resolution` parsing; `bonsai_stage` **atomicity** (validate-all-then-single-`index.write()`); oid
+parsing; no prompt-framing break (MCP descriptions are JSON-encoded; the `prompts_are_single_line`
+guard covers a different surface); **the write router exposes no push/force/reset/clean/discard tool,
+so there is no direct network exfiltration from MCP.** No commit touched these two files between
+`2a0b8f1` and HEAD, so every line number matches the current tree.
+
+**NOT checked, so the CLEAN register does not over-claim:** `merge_branch`/`rebase_branch`
+`operationInProgress`; merge autostash-and-restore and `stashPopConflicts`; `create_stash` claims;
+stash apply/pop outcome tags; `unstage` atomicity; `commit` `hookRejected` vs `configMissing`
+mapping; `rebase_skip`; `list_repos`/`select_repo` session semantics. **LOW 1 is the one factual
+error found, not necessarily the only one present.**
+
+---
+
 ### SEC-2026-09-03 — external-launch residue (remediated `0806596`; three things left)
 
 Full narrative: archive Part 56. Report: `docs/audit-2026-09-03-external-launch.md` (`7e426c3`).
