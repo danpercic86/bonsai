@@ -33,13 +33,16 @@ export default defineConfig({
         },
       },
       {
-        // Component/hook tests: *.test.tsx run in jsdom with the RTL setup.
+        // Component/hook tests: *.test.tsx run in happy-dom with the RTL setup.
+        // happy-dom over jsdom: ~2x cheaper environment construction, which is
+        // the dominant cost of this leg (see setup.ts for the one fidelity gap
+        // it needs shimming for).
         // VITE_MOCK_IPC=1 makes `src/ipc/index.ts` resolve to the mock layer,
         // exactly like the browser harness — no per-test IPC mocking needed.
         extends: true,
         test: {
           name: 'dom',
-          environment: 'jsdom',
+          environment: 'happy-dom',
           include: ['src/**/*.test.tsx'],
           setupFiles: ['src/test/setup.ts'],
           env: { VITE_MOCK_IPC: '1' },
