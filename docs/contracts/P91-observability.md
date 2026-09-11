@@ -44,6 +44,9 @@ list. Nothing in this contract is pending an answer.
 | `obs/metrics_keys.rs` | **The metrics key privacy guard.** Sole home of the `<domain>.<action>` / `cmd.<name>` / error-code shape predicates that decide whether a string may become a key in `usage.json`. Separate from `metrics.rs` **by contract, not by size**: `usage.json` is durable, is not covered by `logs_delete_all` and has no redaction pass, so a user-derived key there is permanent, un-deletable repo content. |
 | `obs/strict.rs` | **Strict-mode enforcement, applied by the writer, not trusted to the producer** (§7.1): drops `args`, replaces paths/refs/URLs with ordinals in every string field of every record |
 | `obs/scrub.rs` | Credential scrubber (§7.2.1) — `is_sensitive_key` (`pub(super)`, reused by `raw_args.rs`), `looks_like_opaque_secret`, `scrub_value`, `scrub_salt`. Runs in **both** modes |
+| `obs/scrub_home.rs` | **(§7.5)** Pure home-directory masking: `normalize_home` (separator- and case-folded; refuses a root, or a shared account parent such as `/home`, `/Users`, `C:\Users`), plus `mask_home_with`. **No process-global state** — the home string is passed in, which is what makes the wiring testable |
+| `obs/home_resolve.rs` | **(§7.5)** `resolve_home_mask(app)`: `home_dir()`, else walk up from `app_config_dir()` past the bundle id, recognising containers by **name, not depth** (over-stripping would leave the account name sitting behind a `<home>` token that claims otherwise). Returns `Option` — `None` is a **disclosed** state, not an error |
+| `obs/writer_config.rs` | `WriterConfig` (including `home_mask: Option<String>`, resolved once per session) + `Limits` + the §6 caps. Split out of `writer.rs` when it crossed the 500-line limit; re-exported from `writer` |
 | `obs/raw_args.rs` | **(§7.4.2)** Writer-side raw-mode `args` invariant (W1–W6). Shape + vocabulary only; deliberately does **not** read `rawArgPolicy.json` |
 | `obs/writer_files.rs` | Pure/stateless half of §6: file naming, chronological listing, start-of-session pruning, epoch/UTC helpers. Re-exported from `writer` |
 | `obs/fs_perm.rs` | Owner-only permissions (§6/§8): every obs file created `0600`, every obs directory `0700` |
@@ -285,6 +288,10 @@ interface SessionPayload  { schema: number; app: string; os: string; sessionId: 
                             redactionNote: string;
                             /** True when this header opens a file created by a purge roll (§6.1). */
                             afterPurge?: boolean;
+                            /** §7.5: was home-directory masking ACTIVE for this session?
+                             *  Always present, never optional — a missing field would be
+                             *  indistinguishable from `false`, and `false` is the disclosure. */
+                            homeMasking: boolean;
                             /** §6.3 — ADDITIVE. True when one or more EARLIER parts of this
                              *  session have already been deleted, i.e. this file is NOT the
                              *  beginning of the session. */
@@ -1370,6 +1377,56 @@ of, a round-trip test.
     before the P91 USER CHECKPOINT.
 
 ---
+
+### 7.5 Home-directory masking — **SHIPPED `dc295c5`; user ruling 2026-09-11**
+
+`scrub.rs` had **no username rule**, so a raw absolute repo path carried the OS account name into an
+export zip that the user mails to a third party. Disclosed in the consent copy by `0a785b3`;
+the user ruled on **2026-09-11** to also **mask** it, with the explicit requirement that it work on
+**every OS** — resolve the real home directory, never pattern-match `C:\Users`.
+
+**What is masked.** The resolved home-directory prefix is replaced by a `<home>` token; everything
+below it is left intact, so a repo path stays recognisable and debuggable. Only the account name
+goes. Matching is anchored at the prefix's **end**, not at offset 0, so a home path embedded
+mid-string is still masked — `\\?\C:\Users\jane\x` and `file:///C:/Users/jane/…` both mask.
+
+**Cross-platform rules.** Comparison is **case- and separator-insensitive on every platform**,
+including Linux where that is technically wrong. That is deliberate: it keeps the three-layout tests
+portable on one machine, and the worst case is masking a lookalike path belonging to another
+account — i.e. **more** redaction. `normalize_home` refuses a filesystem root and refuses a shared
+account parent (`/home`, `/Users`, `C:\Users`), so a degenerate value cannot mask every path.
+
+**Resolution, and its honest failure mode.** `home_resolve::resolve_home_mask(app)` tries
+`home_dir()`, then walks up from `app_config_dir()` past the bundle id, recognising containers by
+**name, not depth** — over-stripping would leave the account name sitting behind a `<home>` token
+that claims otherwise, which is worse than not masking. The two resolvers read largely the same
+inputs, so the fallback's real window is narrow (roughly `XDG_CONFIG_HOME` set with `$HOME` unset).
+
+**This is fail-CLOSED only in the sense that the failure is disclosed, not prevented.** When both
+resolvers return `None`, raw mode writes real paths. Every part header therefore stamps
+**`homeMasking: boolean`** (§3) — always present, never optional, because a missing field would be
+indistinguishable from `false` and `false` *is* the disclosure. **The fully-closed alternative —
+automatically downgrading Raw to Strict when no home resolves — was considered and REJECTED
+2026-09-11: silently overriding a redaction mode the user explicitly chose is the worse failure.**
+
+**Why the home string is not a global.** It lives on `WriterConfig` (`writer_config.rs`), resolved
+once per session, and the writer passes it to `scrub_value`. An earlier implementation used a
+process-global `OnceLock` with a `set_home_dir` initialiser; the security audit noted that **deleting
+that call would have failed no test**, because a process-global cannot be reinstalled and so nothing
+could exercise the wiring. The current shape is proven wired: passing `None` from the writer makes
+`obs::tests_writer::a_configured_home_is_masked_out_of_every_written_field` **fail**.
+
+**Strict mode.** The rule runs in both modes but is a **no-op in strict**, because `strict::enforce`
+runs first (`writer.rs`) and has already collapsed every path to `path#N.ext`. So masking is
+effectively the raw-mode rule, with no strict-mode divergence to maintain — but note that if strict
+ever stops running first, this masking silently becomes load-bearing.
+
+**Known residuals (narrow, recorded so they are not rediscovered as defects).** Windows 8.3 short
+names (`C:\Users\DPERCI~1\…`) do not match the folded long-name home; a non-ASCII account name in a
+different Unicode normalisation than `home_dir()` returned (realistically NFD vs NFC on macOS) would
+not match; and `{:?}`-formatted paths double their separators, which the fold does not reconcile —
+every `{:?}` site is currently test-only, so that one is latent rather than reachable.
+
 
 ## 8. Metrics — **DECIDED: rolled-up JSON file, not SQLite**
 
