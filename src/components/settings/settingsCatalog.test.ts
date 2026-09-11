@@ -59,8 +59,8 @@ const MUTATED: UiSettings = {
   graphFoldLinear: true,
   // Spec-005: the overview-rail always-show row's reset leaf.
   graphMinimapAlwaysShow: true,
-  terminalCommand: 'wt.exe {path}',
-  editorCommand: 'code {path}',
+  terminalCommand: 'wt.exe',
+  editorCommand: 'code',
   aiEnabled: false,
   aiConflictAutonomy: 'autoResolve',
   aiConflictTools: 'none',

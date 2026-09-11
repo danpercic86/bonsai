@@ -64,6 +64,7 @@ fn cfg(dir: &Path, redaction: RedactionMode) -> WriterConfig {
         os: "windows".into(),
         level: LogLevel::Debug,
         redaction,
+        home_mask: None,
         limits: Limits::default(),
     }
 }

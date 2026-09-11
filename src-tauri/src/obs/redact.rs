@@ -35,6 +35,16 @@ use std::sync::Mutex;
 /// The placeholder every credential match collapses to.
 pub const REDACTED_TOKEN: &str = "<redacted:token>";
 
+/// The placeholder the user's home-directory PREFIX collapses to (§7.2,
+/// 2026-09-11). Everything below the home dir is kept verbatim, so
+/// `C:\Users\jane\Repos\bonsai` becomes `<home>\Repos\bonsai` — the repo stays
+/// recognisable and debuggable, only the OS account name goes. See
+/// [`super::scrub_home`].
+///
+/// `<` and `>` are not word characters to the scrubber's walker, so the token
+/// survives the credential pass untouched.
+pub const HOME_TOKEN: &str = "<home>";
+
 /// Which ordinal namespace a value belongs to. Each kind counts from 1
 /// independently, so `ref#3` and `path#3` are unrelated values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -1,9 +1,18 @@
 // P49b: Settings "External tools" section (own file, mirrors SettingsUpdatesSection).
-// Two free-form command templates — terminal + editor — used when launching the
-// OS terminal / editor at a repo/worktree/submodule/tab path. Empty ⇒ the backend
-// auto-detects a per-OS default (VS Code family for the editor). Controlled by the
-// App's UiSettings state: every edit fires `onChange` (App updates state live +
+// Two launch PROGRAMS — terminal + editor — used when launching the OS terminal /
+// editor at a repo/worktree/submodule/tab path. Empty ⇒ the backend auto-detects
+// a per-OS default (VS Code family for the editor). Controlled by the App's
+// UiSettings state: every edit fires `onChange` (App updates state live +
 // debounces the persist, exactly like the other sections).
+//
+// 2026-09-11 (audit MEDIUM-2): the value is a program, NOT a command line — the
+// backend refuses arguments, shell syntax and the old `{path}` placeholder at the
+// launch site (`external_cmd::validate_command_setting`), because this field is
+// renderer-settable. Validation deliberately does NOT run on save: the settings
+// writer merges every pending key into one patch and retries it on failure, so
+// rejecting one key here would wedge every later settings write (and toast on
+// each keystroke). An invalid program surfaces as an error toast naming this
+// setting when "Open in terminal/editor" is used.
 //
 // P69g: re-skinned onto the canonical stacked row (UI §5.1). The dedicated
 // "Reset to auto-detect" button is gone — one reset idiom app-wide is the row `↺`,
@@ -18,15 +27,15 @@ import { settingsRowHelpId } from './settings/settingsCatalog';
 import type { UiSettingsPatch } from '../ipc';
 
 export interface SettingsExternalToolsSectionProps {
-  /** Current terminal template ('' ⇒ auto-detect). */
+  /** Current terminal program ('' ⇒ auto-detect). */
   terminalCommand: string;
-  /** Current editor template ('' ⇒ auto-detect VS Code family). */
+  /** Current editor program ('' ⇒ auto-detect VS Code family). */
   editorCommand: string;
   /** Same debounced patch channel the other sections use (App owns the persist). */
   onChange(patch: UiSettingsPatch): void;
 }
 
-/** One labeled command-template row. Controlled by the parent value; edits and the
+/** One labeled launch-program row. Controlled by the parent value; edits and the
  *  row `↺` both fire `onChange`. */
 function CommandRow({
   rowId,
@@ -87,8 +96,8 @@ export function SettingsExternalToolsSection({
         onValue={(v) => onChange({ editorCommand: v })}
       />
       <p className="settings-group-note">
-        Use <code>{'{path}'}</code> for the folder — it is passed as a separate argument, never
-        through a shell.
+        Enter a command name (<code>code</code>) or a full path to the program — no arguments.
+        Bonsai passes the folder itself, never through a shell.
       </p>
     </SettingsGroup>
   );

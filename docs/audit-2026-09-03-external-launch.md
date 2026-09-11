@@ -219,8 +219,81 @@ producer-side gate: HIGH-1, HIGH-2, MEDIUM-1, LOW-3, plus LOW-2's path echo and 
 directory assumption at the command layer. `..` and drive-letter paths are rejected there too as
 defence in depth, even though libgit2 clears them today.
 
-**Still open, each its own increment:** MEDIUM-2 (`terminalCommand`/`editorCommand` unvalidated),
-LOW-1 (cwd DLL search order), INFO (CSP `form-action`/`base-uri`/`object-src`).
+**PARTIALLY closed 2026-09-11** (one increment, per the user's ruling to land them together).
+
+> **Status corrected the same day.** This section first said "Closed", and the security audit of
+> that very increment showed it was not: shape validation narrows MEDIUM-2, it does not close it,
+> and the LOW-1 residual was both mis-scoped and understated. Both findings are therefore
+> **partially closed**. Full closure is the **removal** of user-supplied `terminalCommand` /
+> `editorCommand`, which the user scheduled on **2026-09-11** as its own milestone (free-text entry
+> replaced by a picker over detected tools).
+
+- **MEDIUM-2 — partially closed.** `crates/bonsai-core/src/external_cmd.rs::validate_command_setting`,
+  called by `external::open_in_terminal` / `open_in_editor` BEFORE a ladder is built. The setting is
+  now a program, not a command line: an empty value (auto-detect), a bare name matching
+  `[A-Za-z0-9._+-]`, or an absolute path to an existing file. Arguments, shell syntax, quotes,
+  control/bidi characters, relative paths with separators and UNC are refused with a
+  category-only message naming the setting. The `{path}` placeholder is gone with the tokenizer;
+  the launcher delivers the directory (`external::PathDelivery`). Validation is deliberately NOT
+  at save: the settings writer merges pending keys into one patch and re-queues it on failure, so
+  refusing one key would wedge every later settings write.
+
+  **Residual — three surviving routes** (the first wording of this paragraph claimed "not arbitrary
+  execution" and "at most ONE argument, which must be an existing directory"; all three clauses were
+  false):
+
+  1. **Any existing FILE, by absolute path.** `external_cmd.rs`'s absolute branch gates on
+     `is_file()` and nothing else — not executability, not location, not trust. A hostile repo ships
+     `payload.exe` inside the working tree, the renderer points `editorCommand` at that absolute
+     path, and it validates. Stated precisely, because the first version of this paragraph
+     overclaimed it:
+     - the file must be something `CreateProcess` will run (a PE image, or a `.cmd`/`.bat`) and its
+       path must contain no `is_shell_syntax` character, or validation refuses it;
+     - when it runs, it runs **with Bonsai's privileges** — an executable planted by a repo, not
+       installed by the user;
+     - the editor path passes `hide_console = true` ⇒ `CREATE_NO_WINDOW`, which suppresses the
+       console of a **console-subsystem** image. It is *not* invisible execution in general: a GUI
+       payload still shows its own windows.
+
+     On Windows the file checked and the file spawned can also differ: std's `resolve_exe` appends
+     `.exe` to a separator-carrying path with no extension, so `D:\x\foo` is `is_file()`-checked
+     while `D:\x\foo.exe` runs.
+  2. **`node` + the directory as an ARGUMENT** (`PathDelivery::Argument`, the editor path):
+     `node <dir>` executes that directory's `package.json` `main`, or its `index.js`. A bare name, so
+     the allow-list admits it — and on a developer machine with a JS project open, likelier than the
+     `python <dir>` → `__main__.py` case this report cited first.
+  3. **A build tool + the directory as CWD** (`PathDelivery::WorkingDir`, the terminal path):
+     `make` / `nmake` / `just` / `msbuild` with cwd = the target directory and **zero arguments**
+     runs that directory's build file. This route alone refutes the "at most one argument" wording.
+
+  And the directory is not bounded to the opened repo: `commands/external.rs::launch_inner` accepts
+  **any existing directory the renderer names** — `is_dir()` is its only check, never a comparison
+  against the selected repo (pre-existing P49 design, unchanged here).
+
+  The honest sentence is therefore: *a renderer compromise can start a program the user already has
+  — or any existing file, by absolute path — against any directory the renderer names.* Not
+  arbitrary argv; not "not arbitrary execution" either.
+- **LOW-1 — partially closed.** Every rung that already passes the target as an argv token launches
+  from `external_cmd::safe_cwd()` (the app directory): all three `reveal_spec` rungs, every editor
+  rung (auto and configured), `wt -d`, `open -a Terminal`, `gnome-terminal`, `konsole`, and the P72
+  URL ladder (which had `cwd = "."`, i.e. the repo when Bonsai is launched from one). Pinned by
+  `external::tests::only_the_directory_less_terminal_rungs_keep_the_repo_as_cwd`.
+
+  **Residual, by necessity — and it is the Windows 10 DEFAULT, not an edge case.** `powershell`,
+  `cmd /K` and a configured terminal program get no directory argument (their cwd IS where the shell
+  opens), so they keep the repo path. `wt` is **not** present on stock Windows 10, so on a Win10
+  machine rung 1 is missing and **`powershell` — `external.rs`'s rung 2 — is what launches**, with
+  `cwd = <repo>`. Keeping the cwd is still the right call: the alternative,
+  `powershell -Command "Set-Location '<path>'"`, would make a repo-authored path containing a quote
+  into PowerShell injection, which is worse than a DLL-search primitive.
+
+  `x-terminal-emulator` is **dropped from this residual** (it was listed at first): neither the Linux
+  dynamic linker nor macOS dyld searches the current directory by default, so only the Windows rungs
+  carry the risk, and listing the others inflated the finding.
+
+**Still open:** the MEDIUM-2 and LOW-1 **residuals** above (both findings are *partially*
+closed; the remainder belongs to the removal milestone scheduled 2026-09-11) and INFO
+(CSP `form-action`/`base-uri`/`object-src`).
 
 **One residual documented rather than closed:** a symlink introduced *inside* an already-checked-out
 superproject at a not-yet-created leaf path bypasses the canonicalize recheck, since `canonicalize`

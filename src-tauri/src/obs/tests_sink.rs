@@ -21,6 +21,7 @@ fn cfg(dir: &Path) -> WriterConfig {
         os: "windows".into(),
         level: LogLevel::Debug,
         redaction: RedactionMode::Strict,
+        home_mask: None,
         limits: Limits::default(),
     }
 }

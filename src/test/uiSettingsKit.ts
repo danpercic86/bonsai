@@ -60,8 +60,10 @@ export const HYDRATED: UiSettings = {
   profiles: [
     { id: 'p1', label: 'Work', userName: 'A Dev', userEmail: 'dev@example.com', signingKey: null },
   ],
-  terminalCommand: 'wt.exe -d {path}',
-  editorCommand: 'code {path}',
+  // Program-only since the 2026-09-11 security increment (the backend refuses
+  // arguments and shell syntax).
+  terminalCommand: 'wt.exe',
+  editorCommand: 'code',
   // P68g: every one of these is now UI-reachable, so hydration must seed them all.
   aiIdleTimeoutSecs: 120,
   aiHardCapSecs: 900,

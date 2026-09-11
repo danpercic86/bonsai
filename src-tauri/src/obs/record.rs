@@ -177,6 +177,12 @@ pub enum LogPayload {
         redaction: RedactionMode,
         /// Human-readable one-liner restating §7 for the reviewer.
         redaction_note: String,
+        /// §7.2 (2026-09-11) — was home-directory masking ACTIVE for this file?
+        /// ALWAYS stamped, never omitted: a reader of an exported zip must be
+        /// able to tell `false` (the home dir could not be resolved, so a raw
+        /// absolute path in this file may still carry the OS account name) from
+        /// a file written before the stamp existed.
+        home_masking: bool,
         /// True when this header opens a file created by a purge roll (§6.1).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         after_purge: Option<bool>,

@@ -198,6 +198,7 @@ fn watcher_record_shape() {
             os: "windows".into(),
             level: crate::obs::record::LogLevel::Debug,
             redaction: crate::obs::record::RedactionMode::Strict,
+            home_mask: None,
             limits: crate::obs::writer::Limits::default(),
         })
         .unwrap(),

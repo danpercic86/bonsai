@@ -4,42 +4,81 @@
 //! Everything here is a *self-contained* `std::process::Command` spawn — no
 //! plugin, no `open` crate (P49 D1). Two halves keep it testable on one machine:
 //!
-//! * **Pure builders** ([`parse_template`], [`terminal_ladder`], [`reveal_spec`],
-//!   [`editor_ladder`]) produce [`LaunchSpec`]s from an explicit [`TargetOs`]
+//! * **Pure builders** (`program_spec`, `terminal_ladder`, [`reveal_spec`],
+//!   `editor_ladder` — the first and last two are `pub(crate)`, see below)
+//!   produce [`LaunchSpec`]s from an explicit [`TargetOs`]
 //!   param — never `cfg!` — so every OS branch runs in unit tests regardless of
-//!   the host. They touch no filesystem and never spawn.
+//!   the host. They never spawn and read no repo state; their only filesystem
+//!   contact is [`crate::external_cmd::safe_cwd`]'s `current_exe()` lookup for the
+//!   neutral cwd.
 //! * A [`CommandRunner`] ([`SpawnRunner`] in production) turns a `LaunchSpec`
 //!   into a real child — detached by default, or waited-on for the macOS
 //!   `open` launchers (see [`LaunchSpec::wait_for_exit`]). Tests inject a fake
 //!   runner to assert the fallback ladder without launching anything.
 //!
-//! Safety (P49 D2): a launch is always `program + [args…] + explicit cwd`. The
-//! user template is tokenized and `{path}` is substituted **inside a single argv
-//! token**, so a path with spaces or a shell metacharacter (`;`, `&&`, `|`) can
-//! never break out into a second command — nothing is ever handed to a shell.
+//! Safety (P49 D2): a launch is always `program + [args…] + explicit cwd` —
+//! nothing is ever handed to a shell.
 //!
-//! WHERE `{path}` COMES FROM (corrected 2026-09-03 — the old note here falsely
-//! called `{path}` "never attacker-controlled", which was load-bearing):
-//! `{path}` is also `sub.absPath`, a repo-authored `.gitmodules` path.
-//! Containment is upheld one layer UP, at the producer —
+//! ## The user-configured program (audit 2026-09-03 MEDIUM-2, NARROWED 2026-09-11)
+//!
+//! A configured `terminalCommand` / `editorCommand` is now a **program, not a
+//! command line**: [`crate::external_cmd::validate_command_setting`] admits only a bare
+//! program name or an absolute path to an existing file, so it can carry neither
+//! arguments nor shell syntax — `set_ui_settings` is an unprivileged webview
+//! command, so a parked `powershell -c …` used to be one click from execution.
+//!
+//! It does **not** make *renderer compromise ≠ arbitrary local execution* true,
+//! and this module doc said so wrongly for one day: an absolute path to any
+//! existing runnable file still launches — with this app's privileges, and with
+//! its console suppressed if it is a console-subsystem image — and `node <dir>`
+//! or `make` with the directory as cwd still execute repo-authored code. The
+//! three surviving routes are enumerated in the `external_cmd` module docs; the
+//! capability itself is slated for REMOVAL as its own milestone (ruled
+//! 2026-09-11). The `{path}` placeholder is GONE with the tokenizer (it needed a
+//! second argv token); the launcher delivers the directory itself, see
+//! [`PathDelivery`].
+//!
+//! WHERE THE PATH COMES FROM (corrected 2026-09-03 — the old note here falsely
+//! called it "never attacker-controlled", which was load-bearing): the target is
+//! also `sub.absPath`, a repo-authored `.gitmodules` path. Containment is upheld
+//! one layer UP, at the producer —
 //! `git::submodule_abs_path::contained_abs_path` rejects any rooted/UNC/
 //! traversing path (→ `absPath: null`), so a path reaching a `LaunchSpec` here
-//! is always workdir-contained. The residual risks below are about the
-//! USER-configured TEMPLATE, not `{path}`:
+//! is always workdir-contained. Residual, accepted:
 //!  * **Windows `.cmd`/`.bat` shims** (e.g. VS Code's `code.cmd`): when the
 //!    resolved program is a batch shim, Windows runs it via `cmd.exe`, which
 //!    performs `%VAR%` environment-variable expansion on the argv it receives.
-//!    A `{path}` (or template token) literally containing `%FOO%` would be
-//!    expanded by that shim. We do NOT quote/escape `%` because there is no
-//!    robust cross-shim escaping and the value is user-owned; the post-CVE
-//!    (2024-24576) Rust argv-quoting still applies to the raw argument.
+//!    A path literally containing `%FOO%` would be expanded by that shim. We do
+//!    NOT quote/escape `%` because there is no robust cross-shim escaping; the
+//!    post-CVE (2024-24576) Rust argv-quoting still applies to the raw argument.
 //!  * **Windows Terminal (`wt`) `;`**: `wt` treats `;` in ITS OWN argument
-//!    parsing as a sub-command delimiter (independent of any shell). A template
-//!    that puts a `;` in a `wt` argument can therefore start a second `wt`
-//!    pane/tab. This is a `wt`-specific arg convention, not shell injection, and
-//!    only reachable through the user's own terminal template — accepted.
+//!    parsing as a sub-command delimiter (independent of any shell), so a `;` in
+//!    a contained path could start a second `wt` pane. A `wt`-specific arg
+//!    convention, not shell injection — and no longer reachable through the
+//!    configured program, which can no longer contain `;` at all.
+//!
+//! ## The child's working directory (audit LOW-1, NARROWED 2026-09-11)
+//!
+//! Every rung that already passes the target as an argv token launches from
+//! [`crate::external_cmd::safe_cwd`] (the app directory) instead of the repo, removing
+//! the Windows DLL-search-order primitive a hostile repo root gave us. The four
+//! rungs whose *semantics* are the cwd — `powershell`, `cmd /K`,
+//! `x-terminal-emulator` and a configured terminal program — necessarily keep
+//! the repo path: "open a terminal here" has no other mechanism.
+//!
+//! Two corrections to how that residual was first written (2026-09-11):
+//! * only the **Windows** rungs carry the DLL-search risk. Neither the Linux
+//!   dynamic linker nor macOS dyld searches the current directory by default, so
+//!   listing `x-terminal-emulator` as part of the residual inflated it.
+//! * `powershell` is **the Windows 10 default**, not an edge case: `wt` ships
+//!   with Windows 11 but is absent from stock Windows 10, so rung 1 is missing
+//!   there and rung 2 is what launches. Keeping its cwd is still the right
+//!   trade — the alternative, `powershell -Command "Set-Location '<path>'"`,
+//!   would turn a repo-authored path containing a quote into PowerShell
+//!   injection, which is strictly worse than a DLL-search primitive.
 
 use crate::error::AppError;
+use crate::external_cmd::{safe_cwd, validate_command_setting};
 use std::path::{Path, PathBuf};
 
 /// Which OS to build argv for. [`host`](TargetOs::host) picks the running target
@@ -159,20 +198,24 @@ use crate::procutil::resolve_program;
 
 // ---- pure builders (no fs, no spawn) ------------------------------------------
 
-/// Small constructor keeping the ladder tables terse. `wait_for_exit` is the
-/// macOS-`open` flag documented on [`LaunchSpec::wait_for_exit`]; every other
-/// entry passes `false`.
-fn spec(
+/// Small constructor keeping the ladder tables terse. `cwd` is the child's
+/// working directory — [`crate::external_cmd::safe_cwd`] for every rung that passes the
+/// target as an argument, the target itself only where the directory IS the
+/// feature (audit LOW-1). `wait_for_exit` is the macOS-`open` flag documented on
+/// [`LaunchSpec::wait_for_exit`]; every other entry passes `false`.
+///
+/// `pub(crate)` so the sibling `external_url` ladder shares one constructor.
+pub(crate) fn spec(
     program: &str,
     args: &[&str],
-    path: &Path,
+    cwd: &Path,
     hide_console: bool,
     wait_for_exit: bool,
 ) -> LaunchSpec {
     LaunchSpec {
         program: program.to_string(),
         args: args.iter().map(|a| a.to_string()).collect(),
-        cwd: path.to_path_buf(),
+        cwd: cwd.to_path_buf(),
         hide_console,
         wait_for_exit,
     }
@@ -181,75 +224,90 @@ fn spec(
 /// A macOS `/usr/bin/open` ladder entry: same as [`spec`] but always
 /// `wait_for_exit = true`, so `open`'s "Unable to find application" exit code
 /// makes the ladder fall through instead of silently "succeeding".
-fn open_spec(args: &[&str], path: &Path, hide_console: bool) -> LaunchSpec {
-    spec("open", args, path, hide_console, true)
+pub(crate) fn open_spec(args: &[&str], cwd: &Path, hide_console: bool) -> LaunchSpec {
+    spec("open", args, cwd, hide_console, true)
 }
 
-/// Split a template into argv tokens: whitespace-separated, honoring double
-/// quotes (a quoted run keeps its spaces; the surrounding quotes are dropped).
-/// The template is NEVER handed to a shell, so any `;`/`&&`/`|` becomes literal
-/// token text.
-fn tokenize(template: &str) -> Vec<String> {
-    let mut tokens = Vec::new();
-    let mut cur = String::new();
-    let mut in_quote = false;
-    let mut started = false;
-    for c in template.chars() {
-        if c == '"' {
-            in_quote = !in_quote;
-            started = true;
-        } else if c.is_ascii_whitespace() && !in_quote {
-            if started {
-                tokens.push(std::mem::take(&mut cur));
-                started = false;
-            }
-        } else {
-            cur.push(c);
-            started = true;
-        }
-    }
-    if started {
-        tokens.push(cur);
-    }
-    tokens
+/// How the target directory reaches a user-configured program, now that the
+/// setting is a program name and can carry no `{path}` placeholder
+/// (audit MEDIUM-2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathDelivery {
+    /// Appended as ONE argv token, launched from [`crate::external_cmd::safe_cwd`].
+    /// The editor case: `code`, `subl` and `notepad++.exe` all open the folder
+    /// they are HANDED — they ignore their cwd.
+    Argument,
+    /// Passed as the child's `cwd`, with NO arguments. The terminal case: a
+    /// shell opens where it is started, and `powershell <dir>` would try to RUN
+    /// the directory as a script.
+    WorkingDir,
 }
 
-/// Tokenize `template`, substitute every literal `{path}` occurrence inside each
-/// token with `path.display()` (so both a standalone `{path}` and an embedded
-/// `--flag={path}` work), then take `token[0]` as `program` and the rest as
-/// `args`, with `cwd = path`. `None` for an empty/whitespace-only template.
-pub fn parse_template(template: &str, path: &Path, hide_console: bool) -> Option<LaunchSpec> {
-    let tokens = tokenize(template);
-    if tokens.is_empty() {
+/// Build the single [`LaunchSpec`] for a configured program. `None` for an
+/// empty/whitespace-only setting (⇒ the caller's auto-detect ladder).
+///
+/// The caller MUST have validated `program` first
+/// ([`crate::external_cmd::validate_command_setting`]) — [`open_in_terminal`] and
+/// [`open_in_editor`] do, before any ladder is built. No spawn and no tokenizing
+/// (a validated setting is exactly one token); the only filesystem contact is
+/// [`crate::external_cmd::safe_cwd`]'s `current_exe()` lookup.
+///
+/// **Deliberately `pub(crate)`**, for the reason [`crate::external_url`]'s `url_ladder`
+/// is private: handed an UNVALIDATED string this builds a spec that launches it,
+/// so the only thing between it and an arbitrary program is that the caller
+/// validated first. A doc comment is not a sufficient guard for a primitive of
+/// that shape — [`open_in_terminal`] / [`open_in_editor`], which validate
+/// unconditionally, are the way in.
+pub(crate) fn program_spec(
+    program: &str,
+    path: &Path,
+    hide_console: bool,
+    delivery: PathDelivery,
+) -> Option<LaunchSpec> {
+    let program = program.trim();
+    if program.is_empty() {
         return None;
     }
-    let p = path.display().to_string();
-    let mut it = tokens.into_iter().map(|t| t.replace("{path}", &p));
-    let program = it.next()?;
-    let args: Vec<String> = it.collect();
+    let (args, cwd) = match delivery {
+        PathDelivery::Argument => (vec![path.display().to_string()], safe_cwd()),
+        PathDelivery::WorkingDir => (Vec::new(), path.to_path_buf()),
+    };
     Some(LaunchSpec {
-        program,
+        program: program.to_string(),
         args,
-        cwd: path.to_path_buf(),
+        cwd,
         hide_console,
-        // A user template is an arbitrary program (`subl`, `nvim`, a wrapper
-        // script) that may run for the whole editing session — NEVER wait on
-        // it, even if the user typed `open -a …`.
+        // A user-configured program is arbitrary (`subl`, `nvim`, a wrapper
+        // script) and may run for the whole editing session — NEVER wait on it,
+        // even when it is literally `open`.
         wait_for_exit: false,
     })
 }
 
-/// Ordered terminal candidates. A non-empty template ⇒ exactly that one spec;
-/// an empty template ⇒ the per-OS auto ladder. All `hide_console = false` — a
+/// Ordered terminal candidates. A configured program ⇒ exactly that one spec;
+/// an empty setting ⇒ the per-OS auto ladder. All `hide_console = false` — a
 /// terminal window MUST be visible.
-pub fn terminal_ladder(os: TargetOs, template: &str, path: &Path) -> Vec<LaunchSpec> {
-    if let Some(parsed) = parse_template(template, path, false) {
+///
+/// LOW-1: the rungs that pass the directory as an ARGUMENT (`wt -d`,
+/// `open -a Terminal`, `gnome-terminal --working-directory=`, `konsole
+/// --workdir`) launch from [`safe_cwd`]. `powershell`, `cmd /K` and
+/// `x-terminal-emulator` take no directory argument at all — their cwd IS where
+/// the shell opens — so they keep `path` by necessity, as does a configured
+/// program ([`PathDelivery::WorkingDir`]). Of those, only the Windows two carry
+/// a DLL-search risk, and `powershell` is the live Windows 10 default because
+/// `wt` is not installed there — see the module docs.
+///
+/// `pub(crate)` for the same reason as [`program_spec`]: `program` must already
+/// be validated.
+pub(crate) fn terminal_ladder(os: TargetOs, program: &str, path: &Path) -> Vec<LaunchSpec> {
+    if let Some(parsed) = program_spec(program, path, false, PathDelivery::WorkingDir) {
         return vec![parsed];
     }
     let p = path.display().to_string();
+    let safe = safe_cwd();
     match os {
         TargetOs::Windows => vec![
-            spec("wt", &["-d", &p], path, false, false),
+            spec("wt", &["-d", &p], &safe, false, false),
             spec("powershell", &[], path, false, false),
             spec("cmd", &["/K"], path, false, false),
         ],
@@ -257,10 +315,10 @@ pub fn terminal_ladder(os: TargetOs, template: &str, path: &Path) -> Vec<LaunchS
         // but `open` still gets the wait flag: it is the uniform rule for every
         // `open` launcher, and it upgrades a hypothetical failure from a silent
         // no-op to a real error instead of leaving it invisible.
-        TargetOs::MacOs => vec![open_spec(&["-a", "Terminal", &p], path, false)],
+        TargetOs::MacOs => vec![open_spec(&["-a", "Terminal", &p], &safe, false)],
         TargetOs::Linux => vec![
-            spec("gnome-terminal", &[&format!("--working-directory={p}")], path, false, false),
-            spec("konsole", &["--workdir", &p], path, false, false),
+            spec("gnome-terminal", &[&format!("--working-directory={p}")], &safe, false, false),
+            spec("konsole", &["--workdir", &p], &safe, false, false),
             spec("x-terminal-emulator", &[], path, false, false),
         ],
     }
@@ -268,168 +326,51 @@ pub fn terminal_ladder(os: TargetOs, template: &str, path: &Path) -> Vec<LaunchS
 
 /// The single reveal-in-file-manager spec (not configurable). Opens the
 /// directory itself in the OS file manager (`hide_console = true`).
+///
+/// LOW-1: every rung takes the directory as an argument, so all three launch
+/// from [`safe_cwd`].
 pub fn reveal_spec(os: TargetOs, path: &Path) -> LaunchSpec {
     let p = path.display().to_string();
+    let safe = safe_cwd();
     match os {
         // Windows `explorer` MUST stay detached: it habitually exits non-zero
         // after a successful hand-off, so waiting on it would report a bogus
         // failure.
-        TargetOs::Windows => spec("explorer", &[&p], path, true, false),
-        TargetOs::MacOs => open_spec(&[&p], path, true),
-        TargetOs::Linux => spec("xdg-open", &[&p], path, true, false),
+        TargetOs::Windows => spec("explorer", &[&p], &safe, true, false),
+        TargetOs::MacOs => open_spec(&[&p], &safe, true),
+        TargetOs::Linux => spec("xdg-open", &[&p], &safe, true, false),
     }
 }
 
-/// Ordered editor candidates. A non-empty template ⇒ exactly that one spec; an
-/// empty template ⇒ the per-OS VS Code auto ladder. All `hide_console = true`.
-pub fn editor_ladder(os: TargetOs, template: &str, path: &Path) -> Vec<LaunchSpec> {
-    if let Some(parsed) = parse_template(template, path, true) {
+/// Ordered editor candidates. A configured program ⇒ exactly that one spec; an
+/// empty setting ⇒ the per-OS VS Code auto ladder. All `hide_console = true`.
+///
+/// LOW-1: an editor is always HANDED the folder ([`PathDelivery::Argument`] for
+/// a configured program), never started inside it, so EVERY rung — auto and
+/// configured — launches from [`safe_cwd`].
+///
+/// `pub(crate)` for the same reason as [`program_spec`]: `program` must already
+/// be validated.
+pub(crate) fn editor_ladder(os: TargetOs, program: &str, path: &Path) -> Vec<LaunchSpec> {
+    if let Some(parsed) = program_spec(program, path, true, PathDelivery::Argument) {
         return vec![parsed];
     }
     let p = path.display().to_string();
+    let safe = safe_cwd();
     match os {
         TargetOs::Windows | TargetOs::Linux => vec![
-            spec("code", &[&p], path, true, false),
-            spec("code-insiders", &[&p], path, true, false),
+            spec("code", &[&p], &safe, true, false),
+            spec("code-insiders", &[&p], &safe, true, false),
         ],
         // The two `open -a` rungs MUST wait: `open` always spawns fine and
         // signals "Unable to find application" only through its exit code, so
         // without the flag rung #1 would always win and a Mac without VS Code
         // would get a silent no-op instead of falling through to `code`.
         TargetOs::MacOs => vec![
-            open_spec(&["-a", "Visual Studio Code", &p], path, true),
-            open_spec(&["-a", "Visual Studio Code - Insiders", &p], path, true),
-            spec("code", &[&p], path, true, false),
+            open_spec(&["-a", "Visual Studio Code", &p], &safe, true),
+            open_spec(&["-a", "Visual Studio Code - Insiders", &p], &safe, true),
+            spec("code", &[&p], &safe, true, false),
         ],
-    }
-}
-
-/// Accept ONLY a plain web URL (P72), so a launcher can never be handed a
-/// protocol the OS would resolve to something else. Pure: no fs, no spawn.
-///
-/// Accepts: an `http://` or `https://` scheme, matched CASE-INSENSITIVELY, with
-/// a non-empty host drawn only from `[A-Za-z0-9.:_%-]` plus `[`/`]` for IPv6.
-///
-/// Three of the rules below came from the P72 security audit. None was
-/// exploitable as written, but each is one line and each closes a real class:
-///  * **No userinfo** (LOW-3, the sharpest). `@` in the host is rejected, because
-///    `https://github.com@evil.example/` passes every other check while the
-///    browser navigates to `evil.example`. On the `PrDetailView` path the URL
-///    comes from a forge API response, so a hostile or compromised forge could
-///    make "Open in browser" open an attacker page under a trustworthy-looking
-///    label. Phishing, not code execution — but this is exactly the surface where
-///    destination honesty IS the security property.
-///  * **No whitespace or control characters ANYWHERE** (LOW-2), not only in the
-///    host. A raw newline or tab in the path is inert on Windows/macOS, but
-///    `xdg-open` is a shell script whose `$BROWSER`-with-`%s` branch word-splits
-///    unquoted, turning a space into extra argv tokens for the browser.
-///  * **A 2048-byte cap** (LOW-2), so an over-long forge string fails here with a
-///    clean category error instead of an OS "filename or extension is too long"
-///    at spawn time.
-///
-/// The host rule is an ALLOW-list, not a deny-list of the characters someone has
-/// thought of so far: a deny-list on a security boundary needs re-auditing every
-/// time a new byte is considered.
-/// Rejects: every other scheme (`file:`, `javascript:`, `data:`, `ms-msdt:`,
-/// `vscode:`), a UNC `\\server\share` path, a bare host with no scheme, a scheme
-/// with no host (`https://`, `http:///x`), an empty/whitespace-only string, a
-/// host containing a space or a `\`, and any input whose first character is `-`
-/// (so the URL can never be parsed as a FLAG by the launcher program).
-///
-/// Load-bearing, not decorative: `PrDetailView`'s URL comes from a forge API
-/// response, i.e. from outside the app. No URL crate is added — this is a
-/// deliberate allow-list on a string, matching the crate's
-/// hand-rolled-over-dependency house style (base64, percent-encoding).
-///
-/// SECURITY: the error message is CATEGORY-ONLY and never echoes `url`. A
-/// forge-supplied URL can be arbitrarily long and can carry markup or lookalike
-/// text; rendering it in a toast would turn a rejected link into a UI-spoofing
-/// surface. (A launch *failure* from [`launch_first`] keeps its existing wording
-/// and names only the program — never the URL.)
-pub fn validate_web_url(url: &str) -> Result<(), AppError> {
-    // Generous for any real PR/settings URL; see the audit LOW-2 note above.
-    const MAX_LEN: usize = 2048;
-
-    if url.is_empty() || url.starts_with('-') || url.len() > MAX_LEN {
-        return Err(AppError::ExternalToolFailed(
-            "refused to open a malformed link".to_string(),
-        ));
-    }
-    // The whitespace/control screen covers the WHOLE url, not just the host:
-    // `xdg-open` is a shell script whose $BROWSER-with-%s branch word-splits
-    // unquoted, so a space in the PATH becomes extra argv tokens for the
-    // browser (audit LOW-2).
-    if url.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        return Err(AppError::ExternalToolFailed(
-            "refused to open a malformed link".to_string(),
-        ));
-    }
-    // ASCII-only lowering, so byte offsets below stay valid for the original.
-    let lower = url.to_ascii_lowercase();
-    let rest = if lower.starts_with("https://") {
-        &url["https://".len()..]
-    } else if lower.starts_with("http://") {
-        &url["http://".len()..]
-    } else {
-        return Err(AppError::ExternalToolFailed(
-            "refused to open a link that is not http or https".to_string(),
-        ));
-    };
-    let host = match rest.find(['/', '?', '#']) {
-        Some(end) => &rest[..end],
-        None => rest,
-    };
-    // Allow-list, NOT a deny-list (see the doc comment). Excluding `@` is what
-    // rejects `https://github.com@evil.example/` — the userinfo impersonation of
-    // audit LOW-3; a backslash is excluded by the same rule.
-    let host_ok = !host.is_empty()
-        && host.chars().all(|c| {
-            c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ':' | '%' | '[' | ']')
-        });
-    if !host_ok {
-        return Err(AppError::ExternalToolFailed(
-            "refused to open a link with no host".to_string(),
-        ));
-    }
-    Ok(())
-}
-
-/// Ordered browser-launch candidates for `url` (P72). Pure — takes an explicit
-/// [`TargetOs`], never `cfg!`, so every branch runs in unit tests on one host.
-/// The caller MUST have validated `url` first ([`validate_web_url`]).
-///
-/// `cwd` is `"."` for every entry: no repo path is involved, and the app
-/// process's own directory is always a valid one — this keeps [`LaunchSpec`]
-/// non-optional and the P49 ladder equality tests untouched.
-///
-/// `cmd /c start` is explicitly NOT a rung: `start` is a `cmd.exe` builtin, so
-/// using it means handing a string to a shell (the exact thing P49 D2 forbids),
-/// `cmd` would apply its own parsing to `&`, `^` and `%VAR%`, and its `start`
-/// builtin treats the first quoted token as a window *title*. `explorer` and
-/// `rundll32` each take the URL as a single argv token with no shell involved.
-///
-/// **Deliberately NOT `pub`** (audit LOW-1). The `rundll32
-/// url.dll,FileProtocolHandler` rung is a general ShellExecute dispatcher: handed
-/// a `.exe`, a `.hta`, a UNC path or an `ms-msdt:` string it would launch it. The
-/// only thing between that and arbitrary execution is that the caller validated
-/// first — so the ladder is not exported, leaving [`open_url`] (which validates
-/// unconditionally) as the sole way in. A doc comment is not a sufficient guard
-/// for a primitive of that shape.
-fn url_ladder(os: TargetOs, url: &str) -> Vec<LaunchSpec> {
-    let cwd = PathBuf::from(".");
-    match os {
-        // Both Windows rungs stay detached (`wait_for_exit: false`) for the same
-        // reason as `reveal_spec`: `explorer` habitually exits non-zero AFTER a
-        // successful hand-off, so waiting would report a bogus failure and
-        // pointlessly advance the ladder.
-        TargetOs::Windows => vec![
-            spec("explorer", &[url], &cwd, true, false),
-            spec("rundll32", &["url.dll,FileProtocolHandler", url], &cwd, true, false),
-        ],
-        // `open` always spawns fine and reports a failure only through its exit
-        // code, so it gets the documented `wait_for_exit` treatment.
-        TargetOs::MacOs => vec![open_spec(&[url], &cwd, false)],
-        TargetOs::Linux => vec![spec("xdg-open", &[url], &cwd, true, false)],
     }
 }
 
@@ -456,15 +397,20 @@ pub fn launch_first(
     }))
 }
 
-/// Launch a terminal at `path` (empty `template` ⇒ per-OS auto-detect). The
+/// Launch a terminal at `path` (empty `program` ⇒ per-OS auto-detect). The
 /// caller guarantees `path` exists (the command layer does the fs precheck).
+///
+/// MEDIUM-2: the configured program is validated BEFORE the ladder is built, so
+/// a refused setting never reaches a process — the same ordering
+/// [`crate::external_url::open_url`] uses for URLs.
 pub fn open_in_terminal(
     runner: &dyn CommandRunner,
     os: TargetOs,
-    template: &str,
+    program: &str,
     path: &Path,
 ) -> Result<(), AppError> {
-    launch_first(runner, &terminal_ladder(os, template, path), "terminal")
+    validate_command_setting(program, "Terminal command")?;
+    launch_first(runner, &terminal_ladder(os, program, path), "terminal")
 }
 
 /// Reveal `path` (a directory) in the OS file manager.
@@ -476,25 +422,29 @@ pub fn reveal_in_file_manager(
     launch_first(runner, std::slice::from_ref(&reveal_spec(os, path)), "file manager")
 }
 
-/// Open `path` in the configured editor (empty `template` ⇒ VS Code auto-detect).
+/// Open `path` in the configured editor (empty `program` ⇒ VS Code
+/// auto-detect). Validates the configured program first — see
+/// [`open_in_terminal`].
 pub fn open_in_editor(
     runner: &dyn CommandRunner,
     os: TargetOs,
-    template: &str,
+    program: &str,
     path: &Path,
 ) -> Result<(), AppError> {
-    launch_first(runner, &editor_ladder(os, template, path), "editor")
+    validate_command_setting(program, "Editor command")?;
+    launch_first(runner, &editor_ladder(os, program, path), "editor")
 }
 
-/// Validate `url`, then open it in the user's default browser via the first
-/// candidate that launches (P72). Validation runs BEFORE any spawn, so a
-/// rejected URL never reaches a process. `what` is `"browser"`, so a total
-/// failure reads `could not launch browser (rundll32): …`.
-pub fn open_url(runner: &dyn CommandRunner, os: TargetOs, url: &str) -> Result<(), AppError> {
-    validate_web_url(url)?;
-    launch_first(runner, &url_ladder(os, url), "browser")
-}
+#[cfg(test)]
+#[path = "external_fake.rs"]
+pub(crate) mod fake;
 
 #[cfg(test)]
 #[path = "external_tests.rs"]
 mod tests;
+
+// The injection-safety cases moved in-crate when the ladder builders became
+// `pub(crate)` (2026-09-11) — see the file header.
+#[cfg(test)]
+#[path = "external_spawn_tests.rs"]
+mod spawn_tests;

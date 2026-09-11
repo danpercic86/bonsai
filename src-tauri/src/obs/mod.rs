@@ -16,6 +16,8 @@
 pub mod anomaly;
 pub mod fs_perm;
 pub mod histogram;
+/// Resolves the home directory `scrub_home` masks — fail-closed (§7.2).
+pub mod home_resolve;
 pub mod invoke_shim;
 pub mod metrics;
 mod metrics_cmds;
@@ -27,10 +29,14 @@ pub mod raw_args;
 pub mod record;
 pub mod redact;
 pub mod scrub;
+/// Home-directory masking for raw-mode paths (§7.2, 2026-09-11) — resolved
+/// per-OS, never pattern-matched.
+pub mod scrub_home;
 pub mod sink;
 pub mod strict;
 pub mod trace;
 pub mod writer;
+mod writer_config;
 mod writer_files;
 
 pub use trace::{emit_logged, TraceMeta};
@@ -58,6 +64,10 @@ mod tests_strict;
 #[cfg(test)]
 #[path = "tests_raw_args.rs"]
 mod tests_raw_args;
+
+#[cfg(test)]
+#[path = "tests_scrub_home.rs"]
+mod tests_scrub_home;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -183,6 +193,12 @@ pub fn apply_dev_settings(
         s.shutdown();
     }
     let dir = logs_dir(app)?;
+    // §7.2 (2026-09-11): resolve the home directory ONCE per session, here — the
+    // one place with an `AppHandle` — and hand it to the writer in its config.
+    // Deliberately NOT a process global: `home_mask` travels with the file whose
+    // header stamps `homeMasking`, so a resolution failure is visible in the
+    // export instead of being an `eprintln!` nobody sees in a release build.
+    let home_mask = home_resolve::resolve_home_mask(app);
     let cfg = writer::WriterConfig {
         dir,
         session_id: new_session_id(),
@@ -191,6 +207,7 @@ pub fn apply_dev_settings(
         os: std::env::consts::OS.to_string(),
         level: dev.level,
         redaction: wanted_redaction,
+        home_mask,
         limits: writer::Limits::default(),
     };
     let sink = Arc::new(Sink::start(cfg)?);

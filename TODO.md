@@ -602,7 +602,10 @@ execution in the renderer plus a repo that was cloned once:
 1. **The absolute branch accepts any existing file** — `external_cmd.rs:145-155` gates on `is_file()`
    alone: not executability, not location, not trust. A hostile repo ships `payload.exe`; the
    renderer points `editorCommand` at that absolute path; it validates; and `external.rs:319` sets
-   `hide_console = true`, so it runs under `CREATE_NO_WINDOW` — **with no visible window.** The
+   `hide_console = true`, so it runs under `CREATE_NO_WINDOW`. **PRECISION 2026-09-11 (architect
+   refuted my looser wording):** that suppresses the console of a **console-subsystem** image only —
+   a GUI payload still shows its own windows — and the file must be a PE or `.cmd`/`.bat` and contain
+   no `is_shell_syntax` character. The route is real; "silent, invisible execution" was my overstatement. The
    increment's own test (`external_cmd_tests.rs:60-67`) documents the shape: it writes a stub named
    `my-editor.exe` containing `b"stub"` and asserts acceptance.
 2. **Bare interpreter + repo as argument** — `node <repo>` executes the repo's own `package.json`
@@ -805,8 +808,13 @@ the ledger records the decision but a decision without a queue entry is how this
 
 - The capability exists for convenience, not necessity: both values are **empty strings** in the
   user's real `settings.json`, so nothing in the current install depends on them.
-- Removal must also retire the shape-validation code added in the same increment, and the LOW-1 cwd
-  hardening, since both exist only to make this surface safe.
+- Removal retires the shape-validation code added in the same increment.
+- **CORRECTION 2026-09-11 (architect refuted my original line here):** removal must **NOT** retire the
+  LOW-1 cwd hardening. I wrongly wrote that both "exist only to make this surface safe". LOW-1 is
+  about a hostile **repo** as cwd on the **auto** rungs and is unrelated to user-supplied commands.
+  **`safe_cwd()` must STAY** — `external_url.rs:127` depends on it, and `P112` moves it verbatim into
+  `procutil.rs`. Recorded in the P112 contract §0 and §7 so no implementer deletes it on this board's
+  authority.
 - Until then the validation comment in the launch path must keep saying the capability is slated for
   removal, so a later reader does not mistake the stopgap for the design.
 

@@ -176,7 +176,23 @@ fn looks_like_auth_material(word: &str) -> bool {
 
 /// Scrubs every credential shape from one string (§7.2). Runs in BOTH modes —
 /// `raw` relaxes name redaction, never this.
-pub fn scrub_string(s: &str) -> String {
+///
+/// Pass 0 is home-directory masking ([`super::scrub_home`], 2026-09-11): a raw
+/// absolute path carries the OS account name, and the export zip goes to a third
+/// party. It runs FIRST so every later rule sees the shortened string; in strict
+/// mode it is a no-op, because `strict::enforce` has already collapsed every
+/// path to `path#N` before the writer calls this.
+///
+/// `home` is the FOLDED home directory of the session
+/// (`writer::WriterConfig::home_mask`), threaded through explicitly rather than
+/// read from a process global: a writer whose home is `None` stamps
+/// `homeMasking: false` in its header, so the two can never disagree.
+pub fn scrub_string(s: &str, home: Option<&str>) -> String {
+    let home_masked = match home {
+        Some(home) => super::scrub_home::mask_home_with(s, home),
+        None => std::borrow::Cow::Borrowed(s),
+    };
+    let s: &str = &home_masked;
     // 1. PEM private keys: the whole value goes, not just the header line.
     if s.contains("-----BEGIN") && s.contains("PRIVATE KEY") {
         return REDACTED_TOKEN.to_string();
@@ -343,17 +359,18 @@ pub fn scrub_salt(line: String, salt_hex: &str) -> String {
 ///
 /// Applied on the writer thread, after serialization and immediately before the
 /// line is written, so no emit site can forget it and no producer pays for it.
-pub fn scrub_value(v: &mut Value) {
+/// `home` is the session's folded home directory — see [`scrub_string`].
+pub fn scrub_value(v: &mut Value, home: Option<&str>) {
     match v {
         Value::String(s) => {
-            let scrubbed = scrub_string(s);
+            let scrubbed = scrub_string(s, home);
             if &scrubbed != s {
                 *s = scrubbed;
             }
         }
         Value::Array(items) => {
             for item in items {
-                scrub_value(item);
+                scrub_value(item, home);
             }
         }
         Value::Object(map) => {
@@ -364,7 +381,7 @@ pub fn scrub_value(v: &mut Value) {
                     }
                     continue;
                 }
-                scrub_value(val);
+                scrub_value(val, home);
             }
         }
         _ => {}

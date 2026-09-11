@@ -168,11 +168,11 @@ fn set_ui_settings_patch_external_commands_is_partial() {
     apply_patch(
         &mut s,
         UiSettingsPatch {
-            terminal_command: Some("wt -d {path}".to_string()),
+            terminal_command: Some("wt".to_string()),
             ..Default::default()
         },
     );
-    assert_eq!(s.terminal_command, "wt -d {path}");
+    assert_eq!(s.terminal_command, "wt");
     assert_eq!(s.editor_command, "");
     assert_eq!(s.theme, ThemeChoice::default());
 
@@ -180,12 +180,12 @@ fn set_ui_settings_patch_external_commands_is_partial() {
     apply_patch(
         &mut s,
         UiSettingsPatch {
-            editor_command: Some("code {path}".to_string()),
+            editor_command: Some("code".to_string()),
             ..Default::default()
         },
     );
-    assert_eq!(s.terminal_command, "wt -d {path}");
-    assert_eq!(s.editor_command, "code {path}");
+    assert_eq!(s.terminal_command, "wt");
+    assert_eq!(s.editor_command, "code");
 
     // An unrelated patch does NOT clear either command.
     apply_patch(
@@ -195,13 +195,13 @@ fn set_ui_settings_patch_external_commands_is_partial() {
             ..Default::default()
         },
     );
-    assert_eq!(s.terminal_command, "wt -d {path}");
-    assert_eq!(s.editor_command, "code {path}");
+    assert_eq!(s.terminal_command, "wt");
+    assert_eq!(s.editor_command, "code");
 
     // An empty patch is equally non-destructive.
     apply_patch(&mut s, UiSettingsPatch::default());
-    assert_eq!(s.terminal_command, "wt -d {path}");
-    assert_eq!(s.editor_command, "code {path}");
+    assert_eq!(s.terminal_command, "wt");
+    assert_eq!(s.editor_command, "code");
 
     // `Some("")` explicitly resets a command back to auto-detect.
     apply_patch(
@@ -212,7 +212,22 @@ fn set_ui_settings_patch_external_commands_is_partial() {
         },
     );
     assert_eq!(s.terminal_command, "");
-    assert_eq!(s.editor_command, "code {path}");
+    assert_eq!(s.editor_command, "code");
+
+    // 2026-09-11 (audit MEDIUM-2): `apply_patch` deliberately does NOT validate
+    // the shape — a value the LAUNCHER will refuse still persists verbatim. The
+    // settings writer merges every pending key into ONE patch and re-queues it
+    // on failure, so rejecting one key here would wedge every later settings
+    // write; the refusal belongs at the consumption point
+    // (`external_cmd::validate_command_setting`), where it names the setting.
+    apply_patch(
+        &mut s,
+        UiSettingsPatch {
+            editor_command: Some("powershell -c calc".to_string()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(s.editor_command, "powershell -c calc", "stored as typed, refused at launch");
 }
 
 /// Spec-004: `graphFoldLinear` patches independently (camelCase on the wire)

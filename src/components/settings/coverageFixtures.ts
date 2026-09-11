@@ -213,8 +213,10 @@ export const MAXIMAL: FixtureValues = {
   mcpWriteConsented: true,
   repoPath: '/repo/fixture',
   profiles: [...FIXTURE_PROFILES],
-  terminalCommand: 'wt -d {path}',
-  editorCommand: 'code {path}',
+  // Program-only since the 2026-09-11 security increment: the backend refuses
+  // arguments and shell syntax, so a fixture must not advertise a template.
+  terminalCommand: 'wt',
+  editorCommand: 'code',
   autoCheckUpdates: true,
   // P91: Dev mode ON with every resettable dev knob off its default, so each dev
   // row's ↺ is present. `level: 'info'` (not 'trace') keeps Frame timing a live

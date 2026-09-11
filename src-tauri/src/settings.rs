@@ -188,13 +188,17 @@ pub struct Settings {
     /// Additive `#[serde(default)]` (via the container-level `default`) ⇒ a
     /// pre-existing settings.json without this key loads `[]`. NO version bump.
     pub hooks_ack_repos: Vec<String>,
-    /// P49: terminal launch command template (`{path}` placeholder). Empty ⇒
-    /// per-OS auto-detect (see `bonsai_core::external`). Additive
-    /// `#[serde(default)]` ⇒ a pre-P49 file loads `""`.
+    /// P49: terminal launch PROGRAM — a bare name (`wt`) or an absolute path to
+    /// an existing executable, validated at the launch site by
+    /// `bonsai_core::external_cmd::validate_command_setting` (audit MEDIUM-2:
+    /// this value is renderer-settable, so it may carry neither arguments nor
+    /// shell syntax, and the `{path}` placeholder is gone with them). Empty ⇒
+    /// per-OS auto-detect. Additive `#[serde(default)]` ⇒ a pre-P49 file loads
+    /// `""` — as does a pre-2026-09-11 file whose template is now refused at
+    /// launch, with a message naming the setting.
     pub terminal_command: String,
-    /// P49: editor launch command template (`{path}` placeholder). Empty ⇒
-    /// auto-detect the VS Code family. Additive `#[serde(default)]` ⇒ a pre-P49
-    /// file loads `""`.
+    /// P49: editor launch PROGRAM. Same shape rules as [`Self::terminal_command`];
+    /// empty ⇒ auto-detect the VS Code family. Additive `#[serde(default)]`.
     pub editor_command: String,
     // ---- P68 §8.3: streaming AI-run knobs. All additive `#[serde(default)]`
     // (via the container-level `default`), all clamped by `clamp_ai_settings`, NO

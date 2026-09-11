@@ -16,7 +16,7 @@
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -27,54 +27,6 @@ use super::raw_args;
 use super::record::{LogLevel, LogPayload, LogRecord, LogSource, RedactionMode, OBS_SCHEMA_VERSION};
 use super::redact::{self, Redactor};
 use super::strict;
-
-/// Size cap of one rotation part (§6).
-pub const PART_BYTES: u64 = 16 * 1024 * 1024;
-/// Max rotation parts per session (§6).
-pub const MAX_PARTS: u32 = 8;
-/// Session files kept at session start (§6).
-pub const KEEP_SESSIONS: usize = 10;
-/// Total bytes kept across all sessions at session start (§6).
-pub const TOTAL_BYTES: u64 = 256 * 1024 * 1024;
-/// Buffered bytes that force a flush (§6).
-pub const FLUSH_BYTES: u64 = 64 * 1024;
-
-/// The §6 caps, as data so tests can drive rotation/pruning without writing
-/// hundreds of megabytes. Production always uses [`Limits::default`].
-#[derive(Debug, Clone, Copy)]
-pub struct Limits {
-    pub part_bytes: u64,
-    pub max_parts: u32,
-    pub keep_sessions: usize,
-    pub total_bytes: u64,
-    pub flush_bytes: u64,
-}
-
-impl Default for Limits {
-    fn default() -> Self {
-        Limits {
-            part_bytes: PART_BYTES,
-            max_parts: MAX_PARTS,
-            keep_sessions: KEEP_SESSIONS,
-            total_bytes: TOTAL_BYTES,
-            flush_bytes: FLUSH_BYTES,
-        }
-    }
-}
-
-/// Everything the writer needs to open a session's first file.
-#[derive(Debug, Clone)]
-pub struct WriterConfig {
-    pub dir: PathBuf,
-    pub session_id: String,
-    /// Epoch SECONDS of session start — the file-name stamp.
-    pub started_secs: i64,
-    pub app_version: String,
-    pub os: String,
-    pub level: LogLevel,
-    pub redaction: RedactionMode,
-    pub limits: Limits,
-}
 
 /// Appends JSONL to the current session file, rotating and pruning per §6.
 pub struct LogWriter {
@@ -226,6 +178,7 @@ impl LogWriter {
                 level: self.cfg.level,
                 redaction: self.cfg.redaction,
                 redaction_note: self.cfg.redaction.note().to_string(),
+                home_masking: self.cfg.home_mask.is_some(),
                 after_purge: after_purge.then_some(true),
                 truncated: (dropped > 0).then_some(true),
                 dropped_parts: (dropped > 0).then_some(dropped),
@@ -285,7 +238,7 @@ impl LogWriter {
         // already carries `argsPolicyViolation: true` in that case, so the writer
         // has nothing left to decide.
         let _dropped_args = raw_args::enforce(&mut value);
-        redact::scrub_value(&mut value);
+        redact::scrub_value(&mut value, self.cfg.home_mask.as_deref());
         let mut line = serde_json::to_string(&value)
             .map_err(|e| AppError::Other(format!("cannot encode log record: {e}")))?;
         // §7.2 — the session salt must reach NO file. It is the one secret that
@@ -486,6 +439,12 @@ impl Drop for LogWriter {
 // §6 file naming, chronological listing, start-of-session pruning and the
 // epoch/UTC time helpers live in the sibling `writer_files` module (pure, no
 // writer state). Re-exported here so every `writer::…` call site is unchanged.
+// The §6 caps and `WriterConfig` live in the sibling `writer_config` module
+// (plain data, no writer state); re-exported so `writer::WriterConfig` and
+// `writer::Limits` keep working.
+pub use super::writer_config::{
+    Limits, WriterConfig, FLUSH_BYTES, KEEP_SESSIONS, MAX_PARTS, PART_BYTES, TOTAL_BYTES,
+};
 pub use super::writer_files::{
     list_log_files, now_ms, now_secs, part_index, part_name, prune, session_group, utc_date,
     utc_stamp,

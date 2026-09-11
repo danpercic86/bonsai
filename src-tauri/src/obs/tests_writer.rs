@@ -1,5 +1,8 @@
 //! P91 §6 writer tests — rotation at the part cap, start-of-session pruning,
-//! and the `session` header that every file must open with.
+//! the `session` header that every file must open with, and (2026-09-11) the
+//! §7.2 home-masking WIRING: that the writer actually passes its configured home
+//! to the scrubber and stamps `homeMasking` truthfully. The masking rules
+//! themselves are `tests_scrub_home`'s job.
 
 use std::path::Path;
 
@@ -22,6 +25,7 @@ fn cfg(dir: &Path, limits: Limits) -> WriterConfig {
         os: "windows".into(),
         level: LogLevel::Debug,
         redaction: RedactionMode::Strict,
+        home_mask: None,
         limits,
     }
 }
@@ -78,6 +82,10 @@ fn first_line_is_a_valid_session_header() {
     // makes that class of defect impossible to introduce silently.
     assert_eq!(rows[0]["redactionNote"], RedactionMode::Strict.note());
     assert!(rows[0].get("afterPurge").is_none(), "not a purge roll");
+    // §7.2 — ALWAYS stamped, even as `false`: "masking was off" and "this file
+    // predates the stamp" must not look the same to an export reader. `cfg()`
+    // configures no home, and strict enforcement must not strip the key.
+    assert_eq!(rows[0]["homeMasking"], false);
     // seq is assigned by the sink side, in write order, starting at 1.
     assert_eq!(rows[0]["seq"], 1);
     assert_eq!(rows[1]["seq"], 2);
@@ -395,4 +403,73 @@ fn a_persistent_rotation_block_keeps_write_failed_sticky() {
         !failed.load(Ordering::Relaxed),
         "a recovered rotation must clear writeFailed within one flush"
     );
+}
+
+// ---- §7.2 home masking: the WIRING, not the rules (auditor MUST-FIX) ----
+
+/// The writer must hand `cfg.home_mask` to the scrubber. Deleting that argument
+/// fails HERE — which is exactly what the previous process-global lacked: the
+/// resolution could silently never happen and no test noticed.
+#[test]
+fn a_configured_home_is_masked_out_of_every_written_field() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut c = cfg(dir.path(), Limits::default());
+    // Raw mode, because strict mode collapses paths to `path#N` on its own and
+    // would hide whether the home pass ran at all.
+    c.redaction = RedactionMode::Raw;
+    c.home_mask = Some("c:/users/jane".to_string());
+    let mut w = LogWriter::open(c, test_redactor()).expect("open");
+    let name = w.active_file().to_string();
+    w.write_record(rec(r"C:\Users\jane\Repos\bonsai\src\App.tsx")).expect("write");
+    w.flush().expect("flush");
+    drop(w);
+
+    let path = dir.path().join(&name);
+    let raw = std::fs::read_to_string(&path).expect("read log file");
+    assert!(!raw.contains("jane"), "the account name reached disk: {raw}");
+    let rows = lines(&path);
+    assert_eq!(rows[0]["homeMasking"], true, "header must state masking is ON");
+    assert_eq!(rows[1]["component"], r"<home>\Repos\bonsai\src\App.tsx");
+}
+
+/// The `None` arm is the honest-but-unmasked one: nothing is replaced, and the
+/// header says so, so a reader of the export zip knows not to trust the paths.
+#[test]
+fn an_unresolved_home_is_stamped_false_in_the_header() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut c = cfg(dir.path(), Limits::default());
+    c.redaction = RedactionMode::Raw;
+    c.home_mask = None;
+    let mut w = LogWriter::open(c, test_redactor()).expect("open");
+    let name = w.active_file().to_string();
+    w.write_record(rec(r"C:\Users\jane\Repos\bonsai")).expect("write");
+    w.flush().expect("flush");
+    drop(w);
+
+    let rows = lines(&dir.path().join(&name));
+    assert_eq!(rows[0]["homeMasking"], false, "absent or true would both mislead");
+    assert_eq!(rows[1]["component"], r"C:\Users\jane\Repos\bonsai");
+}
+
+/// Every rotation part carries the stamp, not just part 0 — a part handed over
+/// on its own must still describe its own masking (§6 "self-describing").
+#[test]
+fn every_rotation_part_header_carries_the_masking_stamp() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let limits = Limits { part_bytes: 400, flush_bytes: 1, ..Limits::default() };
+    let mut c = cfg(dir.path(), limits);
+    c.home_mask = Some("c:/users/jane".to_string());
+    let mut w = LogWriter::open(c, test_redactor()).expect("open");
+    for i in 0..24 {
+        w.write_record(rec(&format!("Row{i}"))).expect("write");
+    }
+    w.flush().expect("flush");
+    drop(w);
+
+    let files = list_log_files(dir.path());
+    assert!(files.len() > 1, "the tiny part cap must have rotated: {files:?}");
+    for (name, _) in files {
+        let rows = lines(&dir.path().join(&name));
+        assert_eq!(rows[0]["homeMasking"], true, "part {name} lost the stamp");
+    }
 }

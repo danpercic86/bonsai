@@ -1,5 +1,5 @@
 /** T3.5 — the presentational Settings*Section leaves: Graph (whole-struct
- *  patches), External tools (template edits + reset), and Updates (state
+ *  patches), External tools (program edits + reset), and Updates (state
  *  machine rendering). GitConfig/Profiles sections own IPC and are covered via
  *  their own flows elsewhere; range clamping is unit-tested in settings/ranges. */
 import { describe, it, expect, vi } from 'vitest';
@@ -77,27 +77,30 @@ describe('SettingsExternalToolsSection', () => {
     return onChange;
   }
 
-  it('edits patch the matching template key', () => {
+  // The values are PROGRAMS since the 2026-09-11 security increment (the backend
+  // refuses arguments), so the fixtures are program-only — the field is still a
+  // free-text input and the frontend still patches whatever is typed.
+  it('edits patch the matching program key', () => {
     const onChange = renderTools();
     fireEvent.change(screen.getByLabelText('Terminal command'), {
-      target: { value: 'wt -d {path}' },
+      target: { value: 'wt' },
     });
-    expect(onChange).toHaveBeenCalledWith({ terminalCommand: 'wt -d {path}' });
+    expect(onChange).toHaveBeenCalledWith({ terminalCommand: 'wt' });
     fireEvent.change(screen.getByLabelText('Editor command'), {
-      target: { value: 'code {path}' },
+      target: { value: 'code' },
     });
-    expect(onChange).toHaveBeenCalledWith({ editorCommand: 'code {path}' });
+    expect(onChange).toHaveBeenCalledWith({ editorCommand: 'code' });
   });
 
   // P69g / UI §5.7: the dedicated "Reset to auto-detect" button is gone. The one
   // app-wide idiom is the row ↺, which is ABSENT (not disabled) at the default —
   // behaviour genuinely changed, so the assertion changes with it.
-  it('the row ↺ is absent at the default and clears a set template', () => {
+  it('the row ↺ is absent at the default and clears a set program', () => {
     renderTools();
     expect(screen.queryByRole('button', { name: /^Reset .* to default$/ })).toBeNull();
 
     cleanup();
-    const onChange = renderTools('wt -d {path}', '');
+    const onChange = renderTools('wt', '');
     expect(
       screen.queryByRole('button', { name: 'Reset Editor command to default' }),
     ).toBeNull();

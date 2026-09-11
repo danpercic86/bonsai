@@ -1,20 +1,28 @@
-//! T2 Area 9 — external launcher argv assembly is INJECTION-SAFE.
+//! T2 Area 9 (public-surface half) — the external launcher **hands a spec to the
+//! runner unchanged**, and program resolution never consults the current
+//! directory.
 //!
 //! The whole external-tool surface (`open in terminal/file-manager/editor`)
-//! builds a `LaunchSpec { program, args, cwd }` and spawns it WITHOUT a shell.
-//! The safety property under test: a repo path containing shell metacharacters,
-//! quotes, a newline, a leading dash, or unicode is substituted into a SINGLE
-//! argv token — never split, never shell-interpreted. A `FakeRunner` captures
-//! the spec so no real app is launched. `resolve_program` hit/miss is checked
-//! directly (it resolves a path, it does not spawn).
+//! builds a `LaunchSpec { program, args, cwd }` and spawns it WITHOUT a shell. A
+//! `FakeRunner` captures the spec so no real app is launched; `resolve_program`
+//! hit/miss is checked directly (it resolves a path, it does not spawn).
+//!
+//! Updated 2026-09-11 (audit MEDIUM-2/LOW-1): the user setting is a PROGRAM, not
+//! a command line, so there is no template tokenizer left to fuzz — the shape
+//! rules (`external_cmd::validate_command_setting`) are what stands between a
+//! renderer-set string and a launch, and the target directory is delivered by
+//! the launcher instead of a `{path}` placeholder. The argv-assembly cases moved
+//! to `src/external_spawn_tests.rs` in the same change, because `program_spec` /
+//! `terminal_ladder` / `editor_ladder` are now `pub(crate)`: handed an
+//! unvalidated string they would build a spec that launches it, so they are not
+//! part of the crate's API. What remains here is exactly what a caller outside
+//! the crate can reach.
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
-use bonsai_core::external::{
-    editor_ladder, launch_first, parse_template, reveal_spec, terminal_ladder, CommandRunner,
-    LaunchSpec, SpawnRunner, TargetOs,
-};
+use bonsai_core::external::{launch_first, CommandRunner, LaunchSpec, SpawnRunner};
+use bonsai_core::external_cmd::safe_cwd;
 use bonsai_core::procutil::resolve_program;
 
 /// Records every spec it is asked to run and always "succeeds" (never spawns).
@@ -33,77 +41,28 @@ impl CommandRunner for FakeRunner {
     }
 }
 
-/// Every hostile path substitutes into ONE argv token, verbatim — the program
-/// stays `editor`, and the metacharacters never become extra args or shell ops.
-#[test]
-fn hostile_path_becomes_one_argv_token() {
-    let hostile = [
-        r#"C:\proj\a & b"#,
-        r#"C:\proj\"quoted""#,
-        r#"C:\proj\a^b%PATH%!x"#,
-        r#"/home/me/a;rm -rf ~"#,
-        r#"/home/me/$(reboot)"#,
-        "/home/me/line\nbreak",
-        "-rf --no-preserve-root",       // leading dash
-        "/tmp/café/Ünïcode/日本語/Ж",   // unicode
-    ];
-    for raw in hostile {
-        let path = PathBuf::from(raw);
-        let spec = parse_template("editor {path}", &path, false)
-            .unwrap_or_else(|| panic!("template must parse for {raw:?}"));
-        assert_eq!(spec.program, "editor", "program never becomes the path");
-        assert_eq!(spec.args.len(), 1, "path is exactly ONE arg for {raw:?}: {:?}", spec.args);
-        assert_eq!(spec.args[0], path.display().to_string(), "arg is the path verbatim");
-        assert_eq!(spec.cwd, path);
-    }
-}
-
-/// An embedded `--flag={path}` keeps the path in the SAME token even when the
-/// path holds spaces/metacharacters.
-#[test]
-fn embedded_path_flag_stays_one_token() {
-    let path = PathBuf::from(r#"C:\a b & c\repo"#);
-    let spec = parse_template("code --folder-uri={path} --new", &path, true).expect("parse");
-    assert_eq!(spec.program, "code");
-    assert_eq!(
-        spec.args,
-        vec![
-            format!("--folder-uri={}", path.display()),
-            "--new".to_string()
-        ]
-    );
-    assert!(spec.hide_console, "hide_console threaded through");
-}
-
-/// An unbalanced quote in the template must not panic; it just yields a spec (or
-/// None for an empty template) with the remainder as one token.
-#[test]
-fn unbalanced_quote_template_no_panic() {
-    let path = PathBuf::from("/tmp/x");
-    // Trailing open-quote: the unterminated run is still flushed as a token.
-    let spec = parse_template(r#"editor "{path}"#, &path, false).expect("parse");
-    assert_eq!(spec.program, "editor");
-    assert_eq!(spec.args.len(), 1);
-    assert!(spec.args[0].contains("/tmp/x"));
-    // A whitespace-only template collapses to None (no program token).
-    assert!(parse_template("   ", &path, false).is_none());
-    // An empty-quoted template yields a single empty token (program == "") — not
-    // None, but harmless: it fails to resolve at the spawn seam, never panics.
-    let empty_quote = parse_template("\"\"", &path, false).expect("one empty token");
-    assert_eq!(empty_quote.program, "");
-}
-
 /// `launch_first` hands the FIRST spec to the runner UNCHANGED — the hostile
 /// path arrives at the (fake) spawn seam as one arg, proving no reassembly.
+///
+/// The spec is built as a literal rather than through `program_spec` (now
+/// `pub(crate)`): what this case is about is the RUNNER seam, and a literal
+/// states the input without depending on a builder at all.
 #[test]
 fn launch_first_delivers_spec_unchanged() {
     let path = PathBuf::from(r#"/tmp/a b;c & d"#);
-    let ladder = vec![parse_template("term {path}", &path, false).expect("parse")];
+    let ladder = vec![LaunchSpec {
+        program: "term".to_string(),
+        args: vec![path.display().to_string()],
+        cwd: safe_cwd(),
+        hide_console: false,
+        wait_for_exit: false,
+    }];
     let runner = FakeRunner::new();
     launch_first(&runner, &ladder, "terminal").expect("fake run ok");
     let seen = runner.seen.borrow();
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].args, vec![path.display().to_string()]);
+    assert_eq!(seen[0].cwd, safe_cwd(), "LOW-1: the neutral cwd survives the seam");
 }
 
 /// `resolve_program` resolves an existing program to a path (hit) — no spawn
@@ -129,48 +88,6 @@ fn resolve_program_hit_and_miss() {
 
 fn is_nonempty(p: &Path) -> bool {
     !p.as_os_str().is_empty()
-}
-
-// ---------------------------------------------------------------- F-MAC-1
-// The macOS editor ladder used to no-op silently: `/usr/bin/open` ALWAYS
-// spawns successfully and reports "Unable to find application" through its
-// EXIT CODE, so a spawn-only runner made rung #1 win forever and a Mac without
-// VS Code got nothing. `LaunchSpec::wait_for_exit` marks exactly the macOS
-// `open` rungs as "wait and judge the exit status"; everything else keeps the
-// detached-spawn semantics (Windows `explorer` exits non-zero on success).
-
-/// (a) Both macOS `open -a` editor rungs carry `wait_for_exit`; the `code` CLI
-/// fallback does not.
-#[test]
-fn macos_editor_open_rungs_wait_for_exit() {
-    let path = PathBuf::from("/tmp/work");
-    let ladder = editor_ladder(TargetOs::MacOs, "", &path);
-    assert_eq!(ladder.len(), 3, "open -a VS Code, open -a Insiders, code");
-    assert_eq!(ladder[0].program, "open");
-    assert!(ladder[0].wait_for_exit, "rung 1 must judge open's exit code");
-    assert_eq!(ladder[1].program, "open");
-    assert!(ladder[1].wait_for_exit, "rung 2 must judge open's exit code");
-    assert_eq!(ladder[2].program, "code");
-    assert!(!ladder[2].wait_for_exit, "the plain CLI rung stays detached");
-}
-
-/// (b) No Windows or Linux spec ever waits — editor, terminal, or reveal.
-#[test]
-fn windows_linux_specs_never_wait_for_exit() {
-    let path = PathBuf::from("/tmp/work");
-    for os in [TargetOs::Windows, TargetOs::Linux] {
-        for spec in editor_ladder(os, "", &path)
-            .into_iter()
-            .chain(terminal_ladder(os, "", &path))
-            .chain(std::iter::once(reveal_spec(os, &path)))
-        {
-            assert!(
-                !spec.wait_for_exit,
-                "{os:?} `{}` must stay a detached spawn",
-                spec.program
-            );
-        }
-    }
 }
 
 /// A trivial child that exits with `code`, using the host's own shell so the

@@ -226,8 +226,8 @@ describe('hydrateUiSettings', () => {
     expect(result.current.autoFetch).toEqual(HYDRATED.autoFetch);
     expect(result.current.healthRefresh).toEqual(HYDRATED.healthRefresh);
     expect(result.current.profiles).toEqual(HYDRATED.profiles);
-    expect(result.current.terminalCommand).toBe('wt.exe -d {path}');
-    expect(result.current.editorCommand).toBe('code {path}');
+    expect(result.current.terminalCommand).toBe('wt.exe');
+    expect(result.current.editorCommand).toBe('code');
     expect(result.current.aiDockHeight).toBe(320);
     expect(result.current.aiDockCollapsed).toBe(true);
     expect(result.current.aiStreamLog).toBe(false);

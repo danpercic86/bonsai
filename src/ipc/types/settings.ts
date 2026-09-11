@@ -98,10 +98,13 @@ export interface UiSettings {
   autoCheckUpdates: boolean;
   /** P44: named identity profiles (global). */
   profiles: IdentityProfile[];
-  /** P49: terminal launch command template ("{path}" placeholder). Empty ⇒
-   *  per-OS auto-detect. */
+  /** P49: terminal launch PROGRAM — a bare command name or an absolute path to
+   *  an existing executable, no arguments and no shell syntax (audit MEDIUM-2;
+   *  Rust validates at the launch site and rejects `externalToolFailed` naming
+   *  this setting). Empty ⇒ per-OS auto-detect. */
   terminalCommand: string;
-  /** P49: editor launch command template. Empty ⇒ auto-detect VS Code. */
+  /** P49: editor launch PROGRAM, same shape rules as `terminalCommand`. Empty ⇒
+   *  auto-detect VS Code. */
   editorCommand: string;
   // ---- P68 §8.3: streaming AI-run knobs. Each patches independently; the two
   // LOCKED defaults are `aiHardCapSecs = 0` (unbounded — the user cancels instead)
