@@ -943,6 +943,38 @@ sub-inc 4 must carry the recipe itself.
   real risk. But the comments at `DevCategory.tsx:111-114` and `:119-120` that *assert* toast
   behaviour are being corrected in place.
 
+### 🚨 NEW 2026-09-14 — "Remove account" reports success even when the token was NOT deleted
+
+Found by the P113 implementer while tracing which of row 8's error strings are actually reachable;
+**I verified it against source.** This is not a copy issue — it is a credential-storage defect, which
+is explicitly on the `security-auditor`'s standing mandate.
+
+`src-tauri/src/commands/forge_accounts.rs:280-310`, `forge_remove_account_inner`:
+
+```rust
+let _ = bonsai_forge::delete_token(&r.keychain_key);   // swallowed
+...
+let _ = settings::update(&file, |s| { ... });          // swallowed
+Ok(())                                                  // unconditional
+```
+
+**Both substantive failures are discarded and the closure returns `Ok(())` regardless.** The only
+error the command can ever surface is `task join error` (plus a `cannot resolve app config dir` in
+the caller). Consequences:
+
+1. **A user who removes an account is told it succeeded while the credential may still be in the OS
+   keychain.** That is a trust statement the app cannot actually back.
+2. A failed `settings::update` means the account **reappears on next launch**, again after a success
+   report.
+3. Knock-on for P113: the `.dialog-error` path specced for row 8 is **near-unreachable in the real
+   app**, so nobody should over-invest in that copy — the mock exercises it, the product barely can.
+
+**Fix is not just propagating the errors** — the two halves have different semantics. A failed
+`delete_token` leaves a live credential and should be surfaced loudly; a failed `settings::update`
+leaves the account listed. Removing one without the other is a partial state, and the copy has to be
+able to say which half happened. Needs a contract decision before implementation, and a
+`security-auditor` pass on the result.
+
 ### 🆕 SECURITY AUDIT of the `.cmd` launch change — CLEAN, and clean STRUCTURALLY
 
 **Nothing CRITICAL/HIGH/MEDIUM.** Worth recording *why*, because the reasoning is reusable and the
