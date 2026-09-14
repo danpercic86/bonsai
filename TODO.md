@@ -70,37 +70,30 @@ instruction. Curator-verified 2026-09-14: `dev` = `origin/dev` = `8b88efd`, and
 `git rev-list --count cb70f4a..8b88efd` = **165** — the ledger's "164" was measured before `8b88efd`
 (the jbcontext commit of ruling #2) existed. Both were true when measured.
 
-**Current step: NOTHING IN PROGRESS as of 2026-09-14 session end. Tree clean at `6a6f284`; branch
-`feat/post-p91-rulings` is 27 commits ahead of `dev` and UNPUSHED (single disk — the user has not
-authorised this push).**
+**Current step: P112 sub-increment 1 IN PROGRESS — `senior-dev` implementing the catalog +
+probe ladders under a fake `ToolEnv` (new `crates/bonsai-core/src/tools/`), batched with the `h_ai`
+`env_lock` consolidation. `ui-designer` running concurrently on the two F6 copy residues.** Started
+from a clean tree at `a8ddcac`; branch `feat/post-p91-rulings` is 28 commits ahead of `dev` and
+UNPUSHED (single disk — the user has not authorised this push).
 
 **The 2026-09-14 batch is DONE and verified: full 8-step gate GREEN under happy-dom** (461.9s, 2467
-Rust / 2848 vitest / 185 e2e, `GATE_EXIT=0`). F6, P77, `h_ai` serialisation, D3 and A3 all landed;
-the UNC ship-blocker and the e2e measurement are cleared. **D3 and A3 — the two items this line used
-to say were in progress — are DONE** (`d46c98e`).
+Rust / 2848 vitest / 185 e2e, `GATE_EXIT=0`). F6, P77, `h_ai` serialisation, D3 and A3 all landed
+(`d46c98e`, `b53618a`); the UNC ship-blocker and the e2e measurement are cleared (`6a6f284`).
 
-**Next unit of work: P112's first sub-increment** (catalog + probe ladders under a fake `ToolEnv`) —
-pure backend, unit-testable on one machine, no UI. Then settings shape + migration + coercion, then
-`pick_external_tool` + Browse, then the UI. Do NOT expect to finish P112 in one session.
+**P112 is four sub-increments and will NOT finish in one session.** Sub-inc 1 (in progress): catalog
++ probe ladders + `FakeToolEnv`/`HostToolEnv` + label maps — contract §1-§3, AC2/AC3/AC4/AC8/AC12/AC20.
+Sub-inc 2: settings shape + migration + write-time coercion (§5, AC5/AC6/AC15/AC16). Sub-inc 3:
+`pick_external_tool` + native Browse + the §7 deletions (§4/§6/§7, AC18). Sub-inc 4: the UI
+(`P112-ui.md`). **Each sub-increment is scoped to NOT touch the next one's surface** — sub-inc 1
+deliberately does not wire `list_external_tools`, edit `external.rs`, or delete anything, because
+that would pull §6 and the mock IPC into a review meant to cover detection only.
 
-1. **D3** — `src/styles/dialogs.css:238`, `.op-worktree-warning`: `var(--danger-strong)` →
-   **`var(--warning-strong)`** (ruling #7). Measured on `.dialog-card`'s `--bg-1`: **8.38:1 dark /
-   6.65:1 light** against the shipped danger hue's 7.62/6.01 — the tone repaint **raises** contrast
-   in both themes. No new token; no grep invariant moves.
-2. **A3** — clear the two stale "pending A3 sign-off" comments at
-   `src/components/SettingsAiRunSection.tsx:25` and `:46`. The copy was **SIGNED 2026-09-11** and no
-   string in `src/` changes, so no test moves (detail under P69 below).
-
-**Nothing was in flight at the 2026-09-11 session end** — architect, `ui-designer`, `senior-dev` and
-`security-auditor` all finished that day. Narrative: archive Parts 62-68.
-
-> **Observation, not a status (curator, 2026-09-14).** `git status` during this pass showed the
-> working tree dirty **beyond** the two items above: new `src-tauri/src/obs/metrics_clear.rs`,
-> `metrics_purge.rs`, `tests_metrics_clear.rs`, `tests_metrics_purge.rs`, plus edits across
-> `src-tauri/src/obs/*`, `src/components/settings/*`, `src/ipc/*/obs.*` and
-> `src/components/repoWorkspace/useTagSync.ts`. That shape is **F6** and possibly **P77** in
-> progress. The queue below still reads "not started" because **only the orchestrator sets status**
-> — reconcile it at the next commit rather than assuming either way, and do not clobber the tree.
+Three contract facts verified against the tree before briefing (they have drifted before):
+`crates/bonsai-core/src/tools/` is **absent** (sub-inc 1 creates it); `HostGitEnv` is at
+`gitbin.rs:102` and `parse_reg_query` at `gitbin.rs:203`, so §3's "use `gitbin`, not
+`winenv::HostWinEnv`" ruling still lands; `terminal_ladder`/`editor_ladder` are `pub(crate)` at
+`external.rs:302/354` and §7 keeps them **byte-identical**, so nothing asks for a visibility change.
+`REG_BUDGET` (`winenv.rs:155`) is shared and sized for PATH rehydration — the scan gets its own budget.
 
 ### Next, in order — the queue the rulings created (detail one section down)
 
