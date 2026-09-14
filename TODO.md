@@ -70,26 +70,23 @@ instruction. Curator-verified 2026-09-14: `dev` = `origin/dev` = `8b88efd`, and
 `git rev-list --count cb70f4a..8b88efd` = **165** — the ledger's "164" was measured before `8b88efd`
 (the jbcontext commit of ruling #2) existed. Both were true when measured.
 
-# 🛑 DO NOT MERGE OR BUILD THIS BRANCH FOR ANYONE UNTIL THE P112 TS BRIDGE LANDS
+# ⚠ THE P112 BRIDGE IS IMPLEMENTED — the merge block lifts when it COMMITS, not now
 
-**Read this before trusting any green result.** P112 sub-inc 2 removed `terminalCommand` /
-`editorCommand` from the backend DTO; **the TypeScript still reads them in 87 places** and has zero
-references to the replacement keys. **A green gate does NOT mean the tree is healthy** — every
-frontend tier runs against the mock, and the mock supplies the removed keys from its own defaults
-(`src/ipc/mock/persistence.ts:387-391`, `handlers/session.ts:150-151`,
-`src/settings/uiSettingsDefaults.json:38-39`). vitest, tsc, e2e and the harness will all pass while
-the **real Tauri app's External-tools settings rows are broken**.
+**The window is closed in the working tree, not yet in history.** `rg -n "terminalCommand|editorCommand"
+src/ e2e/` → **0 hits** across 21 files, `SettingsExternalToolsSection.tsx` deleted, and the Rust
+`P112_KEYS_IN_TRANSIT` exemption + its forcing test are deleted too — **the cross-boundary oracle is
+TOTAL again and it passed first time**, confirming Rust's `terminalTool`/`editorTool` match the
+TypeScript defaults key-for-key.
 
-`the_p112_key_transition_is_still_in_flight` is **not** protection against this — it guards the
-**parity oracle's coverage** and cannot detect that the app is broken. **The only protection is
-sequencing discipline, which is why this banner exists.**
+**These two halves MUST land in ONE commit.** At HEAD the defaults JSON still carries the legacy keys,
+so committing the Rust deletion alone leaves the parity test failing. That is the same lesson that
+caused the problem: **a DTO change lands both halves together or not at all** — and the fix for the
+decomposition error has to be atomic for exactly the reason the error happened.
 
-**Current step: P112 sub-inc 2 implemented, reviewed, MUST-FIX in flight** (`senior-dev` widening
-`is_unc` for mixed separators + three SHOULD-FIXes). **P113 phase 2 in flight** (`senior-dev`, the
-five missed toast sites + the producer-side guard + the save-failure banner). **NEXT, and blocking
-the merge: the P112 TypeScript bridge** — drop the legacy plumbing, adopt `terminalTool`/`editorTool`,
-update `uiSettingsDefaults.json` and the mock. It **cannot** run concurrently with P113 phase 2:
-both touch `App.tsx` and `useUiSettings.ts`.
+**Current step:** the combined TypeScript increment (P113 A1/A2/A3/A5 + the bridge) is **under
+review**; the Rust exemption deletion is staged alongside it. On approval, both commit together and
+the merge block lifts. **Only then is a full 8-step gate worth running** — before the bridge, every
+frontend tier measured the mock rather than the app.
 
 Branch `feat/post-p91-rulings` is UNPUSHED and **stays that way — ruling #25, do not raise it again.**
 
@@ -1062,10 +1059,10 @@ test that consumes it.
 **The one guard that CAN see this is `src-tauri/src/settings_defaults_parity_tests.rs`**, which
 compares Rust `ui_settings_of(&Settings::default())` against the **TS-owned**
 `src/settings/uiSettingsDefaults.json`. It is the only cross-boundary oracle in the project — and it
-is precisely the test this increment had to **weaken** in order to land. The mitigation is sound
-(`P112_KEYS_IN_TRANSIT` names **four** keys, everything else still compared, plus
-`the_p112_key_transition_is_still_in_flight` which **fails the moment the TS oracle gains the new
-keys**, forcing the exemption's deletion) — but the shape is worth naming: **the increment that broke
+is precisely the test this increment had to **weaken** in order to land. **The mitigation worked exactly as designed and is now GONE**
+(`P112_KEYS_IN_TRANSIT` named **four** keys with everything else still compared, and
+`the_p112_key_transition_is_still_in_flight` **fired the moment the TS defaults gained the new keys** —
+both deleted 2026-09-14, oracle total again, passed first time) — but the shape is worth naming: **the increment that broke
 the boundary is the increment that exempted the boundary check.**
 
 **Durable rule earned:** a green gate says nothing about a Rust/TS DTO change. The frontend tiers
