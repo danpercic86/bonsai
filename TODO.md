@@ -97,8 +97,49 @@ Three contract facts verified against the tree before briefing (they have drifte
 
 ### Next, in order — the queue the rulings created (detail one section down)
 
-1. **P112 — remove user-supplied `terminalCommand` / `editorCommand`** (ruling #21) — `pending`
-   (contracted): `P112-external-tool-detection.md` + `P112-tool-catalog.md` + `P112-ui.md`.
+1. **P112 — remove user-supplied `terminalCommand` / `editorCommand`** (ruling #21) —
+   **sub-inc 1 of 4 IMPLEMENTED 2026-09-14, in review.** Contracts:
+   `P112-external-tool-detection.md` + `P112-tool-catalog.md` + `P112-ui.md`.
+
+   New `crates/bonsai-core/src/tools/` — `mod.rs` (387), `catalog.rs` (163), `catalog_table.rs`
+   (310, data only, 36 rows 1:1 with the catalog contract), `detect.rs` (334), `custom.rs` (229),
+   `fake.rs` (143, cfg-test), plus 1387 lines of tests. **`external.rs` untouched; no IPC, no
+   settings, no TypeScript** — the boundary held. `tools` 59 passed / 1 ignored; full lib **1087
+   passed, 4 ignored**; `clippy -D warnings` clean; file-size ratchet clean.
+
+   **Two findings worth keeping, both verified by me against source:**
+   - **A real product bug the ladder order exposed, on this very host.** `vscode` resolved via
+     `OnPath` to `…\Microsoft VS Code\bin\code` — VS Code's **extension-less POSIX shim**, which
+     Windows cannot execute — because `procutil::resolve_program` tries the bare name before each
+     `PATHEXT` extension, as it must for npm's `claude.cmd`. **The picker would have listed a tool
+     that then fails to launch.** Guarded in `detect::executable_hit`: on `TargetOs::Windows` an
+     extension-less candidate is a miss, so the ladder falls through to App Paths and finds
+     `Code.exe`. Fixing it in `procutil` was rejected — that would change `ai::resolve_bin`.
+   - **`catalog::find` is host-OS-first, so §4's `e.app_name.expect("AC8")` panics off-Mac** and
+     AC9 was unprovable from the only machine this project builds on. Recorded as **AMEND-4 at the
+     point of use** in `P112-external-tool-detection.md` §4, not just here: **sub-inc 3 must call
+     `find_for(kind, id, os)`, never `find`.** General rule — any caller taking `os` as a parameter
+     must resolve the catalog by that `os`, and an `unwrap()` justified by AC8 is only justified
+     when the lookup and the ladder agree on which OS they mean.
+
+   **Deviations accepted:** `tools/custom.rs` is an extra module versus §1 (§5.4 split out because
+   `mod.rs` was already at 387); §1's "widen `parse_reg_query` to `pub(crate)`" proved unnecessary
+   (the `/ve` branch lives inside `HostGitEnv::registry_string`, parser stays private); UNC is
+   **refused** for tool detection unlike the git ladder, so a UNC `PATH` entry on a managed machine
+   is not offered — deliberate, and stat-ing a share inside a budgeted scan would go to the network.
+   **AC16's accept-cases are `cfg`-split** (every *refusal* is asserted on all three OSes, but the
+   `.exe` accept is Windows-host-only and the bundle/exec-bit accepts unix-host-only) because
+   `validate_custom_program`'s unix exec-bit check has no `mode()` on Windows — a real, stated
+   weakening of AC16, not a clean pass.
+
+   **Still to do:** sub-inc 2 settings shape + migration + coercion (`coerce_tool_id` and
+   `legacy_tool_id` are deliberately absent; `LEGACY_ALIASES` ships as data only); sub-inc 3
+   `pick_external_tool` + Browse + the §7 deletions; sub-inc 4 the UI.
+
+   **Two housekeeping items:** `crates/bonsai-core/src/gitbin.rs` is now **exactly 500 lines** — one
+   more trips the ratchet, so it is a `refactorer` candidate. And the size ratchet reports **14
+   reclaimed lines** (the `h_ai` consolidation shrank two files) and suggests `--update-baseline`;
+   not run, orchestrator's call at commit time.
 2. ~~**F6 — `usage.json` 90-day window + deletable** (ruling #3)~~ — **DONE 2026-09-14**,
    `d46c98e` + `b53618a`. Both reviews approved; 2 MUST-FIX from the design review fixed (the confirm
    dialog understating its scope, and the mock inventing counts), then the harness caught the failure
@@ -131,6 +172,27 @@ Three contract facts verified against the tree before briefing (they have drifte
    export-bearing string — including §6.10 8b's confirm-dialog archive line — have never once been
    rendered. New seams specced and in flight: `?obsLogFiles=N`, `?obsExports=N`,
    `?obsMetricsUnreadable=1`, `?obsDeleteFail=logs|exports|all|partial|throw`.
+
+   **ALL FIVE SEAMS VERIFIED IN THE HARNESS by the orchestrator, 2026-09-14.** The implementing
+   agent had **no browser tools in its function set**, so it shipped string-level (jsdom) evidence
+   only and said so — the harness half was mine to do, and it is done:
+
+   | Seam | Rendered |
+   |---|---|
+   | `?obsMetricsUnreadable=1`, Dev OFF | `Usage counts were not cleared. Try again.` — class `toast toast-error`, `sr-only` byte-identical. **R13a fixed.** |
+   | `?obsLogFiles=5&obsExports=2&obsDeleteFail=partial` | `Deleted 4 log files and 1 export. 3.3 MiB freed. 2 files could not be deleted — they may be open in another program. Usage counts cleared.` parity true |
+   | … its confirm dialog | `This includes 2 exported log archives.` — **a string never once rendered before today** |
+   | `?obsMetricsFresh=1` | `Usage counts cleared.` — no `0 B freed`, tone `toast-success`. **R13b fixed.** |
+   | `?obsLogFiles=3&obsDeleteFail=throw` | `Bonsai isn't allowed to delete files in that folder.` — tone error, **no fabricated counts** |
+
+   The throw row is the one to keep: it is the path that previously had **no** coverage, and it
+   invents no numbers — precisely the defect class that got through two code reviews and was only
+   caught in the harness last time. Arithmetic is fixture-derived throughout (5 logs + 2 exports,
+   10% failure min 1 ⇒ 4 logs + 1 export deleted, 2 failed).
+
+   Note the accepted imprecision this makes visible: **`2 files could not be deleted` cannot say
+   *which* category** — that is exactly what R14's `failedLogs`/`failedExports` would buy, and why
+   the copy for it is already written and waiting.
 3. ~~**P77 — trigger `list_tag_sync` on auto-fetch completion** (ruling #11)~~ — **DONE 2026-09-14**, `d46c98e`. Rides the existing 5-min cycle; no repo-open call. No `useJobStatus` test file exists at all (pre-existing gap) — the receiving end is covered.
 4. ~~**The e2e cold-timing MEASUREMENT** (ruling #9)~~ — **DONE 2026-09-14**, `6a6f284`. **102 s cold bundle vs 191.4 s dev**, build included, cold-vs-warm 1 s. Not flipped. The decision now has its number and remains the user's.
 5. ~~**The UNC / `\\wsl$` `canonicalize` check** on `216ca45` — ship-blocker.~~ **CLEARED 2026-09-14** by a real UNC probe; `\\wsl$` and OneDrive placeholders remain untested — see the section below.
@@ -754,6 +816,22 @@ that something is *visible* needs computed style or bounding boxes.
 **The decision the user owes:** fix only the F6 delete outcome, or sweep every toast Settings
 raises. §6.11's copy is channel-independent, so the strings shipping now are correct either way and
 nothing is blocked on the answer.
+
+**MEASURED by the orchestrator in the harness, 2026-09-14 — the claim is confirmed and is worse than
+stated.** `document.elementFromPoint` at the toast's own centre returns **`dialog-overlay <DIV>`**,
+not the toast (`onTopIsToast: false`). So it is **not merely dimmed — the toast is unclickable, and
+its ✕ dismiss button cannot be reached at all.** Numbers at 1280×720: `.toast-stack` computed
+`z-index: 90`, `.dialog-overlay` `z-index: 100` with `background: rgba(0,0,0,0.45)`; toast
+360×37 at (908, 52); settings card 880×656 at (200, 32); **horizontal overlap 172 of 360 px**
+— matching `ui-designer`'s independently-derived 172 px exactly — and the toast's full 37 px height
+falls inside the card's vertical extent. A screenshot confirms it visually: only the string's tail
+and the ✕ escape the card's edge, dimmed.
+
+**This is the method correction that matters more than the finding.** The reason to use
+`elementFromPoint` rather than `innerText` is that the previous verification of this very UI — mine
+included — proved only that a string was in the DOM. Going forward: **a claim that something is
+*visible* or *clickable* needs `elementFromPoint`, computed style, or bounding boxes. Text
+extraction cannot support it.**
 
 ### 🆕 NEW 2026-09-14 — per-category failure counts need a `purge_scope` split, not just a struct field
 

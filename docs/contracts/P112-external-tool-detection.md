@@ -402,6 +402,23 @@ pub fn open_in_editor(runner: &dyn CommandRunner, os: TargetOs,
       }, path))
 ```
 
+> **AMEND-4 (orchestrator, 2026-09-14, after sub-inc 1 landed).** The `catalog::find(kind, rung.id)`
+> on the line above is **wrong for this call site and will panic off-Mac.** `find` resolves
+> host-OS-first, so on a Windows host building `AUTO_LIST[MacOs][Editor]` it returns the **Windows**
+> `vscode` row — whose `app_name` is `None` — and `e.app_name.expect("AC8")` panics. That also makes
+> **AC9 unprovable from Windows**, which is the only machine this project builds on.
+>
+> **Sub-increment 3 must call `catalog::find_for(kind, id, os)`, not `find`.** `find_for` was added in
+> sub-inc 1 for exactly this reason and is pinned by
+> `find_for_is_exact_os_which_is_what_an_os_explicit_caller_needs`:
+> `find_for(Editor, "vscode", MacOs).app_name == Some("Visual Studio Code")` against
+> `find_for(Editor, "vscode", Windows).app_name == None`.
+>
+> The general rule, since this will recur: **any caller that takes `os` as a parameter must resolve
+> the catalog by that `os`, never by the host.** `find` is only correct when the caller genuinely
+> means "the current machine". AC8's totality is per-OS, so an `unwrap()` justified by AC8 is only
+> justified when the lookup and the ladder agree on which OS they are talking about.
+
 One spec builder for every source, so the picked and auto paths cannot drift. The **auto path never
 probes**: `launch_first`'s spawn-fail fall-through is the detector, exactly as today, and the argv is
 byte-identical to the current hardcoded ladders (AC9). `open_in_terminal` / `open_in_editor` no longer
