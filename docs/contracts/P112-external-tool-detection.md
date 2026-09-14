@@ -638,9 +638,25 @@ control/bidi stripped, truncated) and is never renderer-supplied.
 > on. **The user ruled: allow UNC via Browse only.**
 >
 > The asymmetry is deliberate and each half stands on its own reason:
-> * **Detection keeps refusing UNC** (`tools::detect::looks_absolute`). A scan has **one 1500 ms
->   budget for every rung on the machine**; stat-ing a share inside it can hang or go over the wire,
->   and a picker that comes up empty on a slow VPN is worse than one that omits a share install.
+> * **Detection keeps refusing UNC** (in `tools::detect`, at the `executable_hit` call site — the
+>   `looks_absolute` helper this originally named has since been **deleted**; see the correction
+>   below). A scan has **one 1500 ms budget for every rung on the machine**, and a picker that comes
+>   up empty on a slow VPN is worse than one that omits a share install.
+>
+> **CORRECTION to my own reasoning above (orchestrator, 2026-09-14).** I justified detection's
+> refusal as *"stat-ing a share inside a budgeted scan can hang or go over the wire."* **That is true
+> for the `WinFolder` / `AppPaths` / `UnixFile` rungs and FALSE for `OnPath`.** On the `OnPath` rung
+> the stats have already happened: `procutil::resolve_in` calls `is_file()` on every candidate and
+> `HostToolEnv::resolve_on_path` delegates straight to it, so **a single UNC `PATH` entry costs ~12
+> network stats before `executable_hit` ever sees the string.** The refusal there is post-hoc — it
+> stops the tool being *offered*, not the network from being touched.
+>
+> **The ruling is unaffected** (it is the user's, and "allow via Browse only" stands either way), and
+> the hang concern is in fact **stronger** than I stated rather than weaker — it applies whether or
+> not detection refuses the result. But it relocates the fix: preventing the network I/O needs a UNC
+> guard **inside `procutil::resolve_in`**, which changes app-wide program resolution and is therefore
+> its own change, filed separately. Do not justify detection's UNC refusal on I/O-avoidance grounds
+> without this caveat.
 > * **Browse accepts it.** A pick through the native dialog is a deliberate, one-time act in which
 >   the user names one exact file. The network cost is paid once, knowingly.
 >

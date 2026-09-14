@@ -916,6 +916,82 @@ sub-inc 4 must carry the recipe itself.
   real risk. But the comments at `DevCategory.tsx:111-114` and `:119-120` that *assert* toast
   behaviour are being corrected in place.
 
+### 🆕 SECURITY AUDIT of the `.cmd` launch change — CLEAN, and clean STRUCTURALLY
+
+**Nothing CRITICAL/HIGH/MEDIUM.** Worth recording *why*, because the reasoning is reusable and the
+next person to touch the launch path should not have to re-derive it.
+
+The auditor traced the full hostile chain: a hostile `.gitmodules` declaring `path = evil<metachars>`
+→ clone → right-click the submodule row → `open_in_editor` → `editor_ladder` builds
+`spec("code", &[&p])` → `resolve_program` now returns `code.CMD` → `Command::args([dirname])`. So an
+**attacker-named directory does reach a batch file's argv.** Four independent things stop it:
+
+1. **`is_dir()` is itself the character filter.** The only characters that defeat std's bat quoting
+   are `\r`, `\n` (std refuses: "batch file arguments are invalid") and `"` (quote breakout) — and
+   **all three are illegal in Win32 path components**, so anything satisfying `is_dir()` cannot carry
+   them. The dangerous inputs are *unreachable*, not blocklisted.
+2. std quotes any argument outside `alnum + #$*+-./:?\_`, so `&`, `^`, `(`, `)`, `,`, `;`, space and
+   `%` all force quoting, and inside quotes cmd does not treat `&`/`|` as separators.
+3. `%` is neutralised at the outer parse by std's `%%cd:~,%` substitution.
+4. `cmd.exe /e:ON /v:OFF /d /c` — delayed expansion **off**, so `!` is inert.
+
+**The auditor read the actual shim rather than recalling it**: VS Code's `code.cmd` is
+`"%~dp0..\Code.exe" "%~dp0..\...\cli.js" %*` with **no `call`**. Percent expansion is single-pass,
+so the classic `call %*` double-expansion does not apply. A *different* `.cmd` using `call ... %*`
+would get a second pass — worst case even then is a directory named `%PATH%` disclosing environment
+into a same-user process, because quote breakout still needs a `"` that cannot exist in a path.
+**`idea.cmd` is UNVERIFIED** (JetBrains not installed on this host).
+
+**MSRV is sufficient and deliberate:** `rust-toolchain.toml` pins `channel = "1.97"` (mitigation
+landed 1.77.2), and `.github/workflows/release.yml:179-182` documents that CI takes the channel from
+that file — a past `dtolnay@stable` step was removed precisely because it bypassed it.
+
+**The single assumption that would upgrade this if wrong:** whether git-on-Windows can be coerced into
+checking out a directory name containing `"` (via `core.protectNTFS = false` + `\\?\` long-path
+APIs). Assessed as not realistically reachable — Win32 forbids the character in path components
+regardless of API — but `"` is the one character that breaks std's quoting, so that is the one datum
+worth getting if this is ever revisited.
+
+**Also confirmed solid (INFO-3), and worth knowing:** the AI path already does the right thing.
+`ai/mod.rs:178-183` and `ai/session_argv.rs:13-20` state that all repo-derived and user data flows
+through **stdin only, never argv**, asserted by `argv_never_contains_a_newline`. That is the one place
+the bat-argv question *would* have been serious — commit messages and diffs are multi-line and would
+hit std's `\r`/`\n` refusal — and it was handled before this change.
+
+### 🆕 A ROBUSTNESS REGRESSION the `.cmd` fix introduced (LOW-1) — recorded, not fixed
+
+`code.CMD` **spawns successfully whenever `cmd.exe` exists** — even if `Code.exe` has been deleted —
+because the failure then happens *inside* the batch file, **after `spawn()` returned `Ok`**. With
+`hide_console = true` the user sees nothing. Previously the extension-less shim's `os error 193` made
+rung 1 fail and the ladder advanced to `code-insiders`. **Net: a broken primary install now yields a
+silent no-op instead of falling through.** No cheap fix — `wait_for_exit` is wrong here, it would
+block on the editor's lifetime. Deliberately recorded rather than patched.
+
+### 🆕 Further audit items — filed, not routed
+
+- **INFO-2, pre-existing: a bearer token transits a cmd.exe command line.** `ai/mod.rs:399` passes
+  `format!("Authorization: Bearer {token}")` as an **argv element** to `claude`, which on Windows
+  resolves to `claude.cmd`. Bonsai-generated so not attacker-controlled, and std's `%` handling
+  protects the value — but it is a secret **visible in process listings**. Standard practice for that
+  CLI; recorded because secrets-in-argv is in scope.
+- **A UNC `PATH` entry sends `is_file()` to the network, inside `resolve_in`.** Passes
+  `is_absolute()`, and is inconsistent with the house `is_unc` rule applied everywhere else. This is
+  the **real** hang source — see the AMEND-6 correction: detection's UNC refusal is *post-hoc* for the
+  `OnPath` rung, so preventing the I/O needs a guard **inside `procutil::resolve_in`**, which changes
+  app-wide resolution and is its own change.
+- **`procutil.rs:41-43`'s separator shortcut bypasses both guards**, returning `PathBuf::from(program)`
+  verbatim. Unreachable in production — `external_cmd::validate_command_setting` accepts only a bare
+  allow-listed name or an absolute existing file — but it is a **structural dependency on upstream
+  validation**, which is worth knowing before anyone adds a caller.
+- **RECOMMENDED PROCESS CHANGE (needs the user, since the sibling rule is a user ruling):** add
+  `BrowsedProgram::from_settings_field` to the same mandatory-`security-auditor` path trigger
+  `CLAUDE.md` already carries for `crates/bonsai-mcp/src/server/tools_*.rs`. The type's whole value is
+  that wiring a request body into a launch becomes a **deliberate, greppable act** — and a greppable
+  constructor only buys something if someone greps. Not added unilaterally.
+- **Truncation is silent** — no ellipsis, so a 512-char-truncated subtitle can read as a complete
+  path. Routed as a cheap fix. Grapheme clusters can also split (base kept, combining mark dropped);
+  no attacker under the stated trust model.
+
 ### 🆕 2026-09-14 — P112 follow-ups IMPLEMENTED (in review): 7 items + the shipped resolver fix
 
 All seven routed items landed. `cargo test -p bonsai-core --lib` **1100 passed, 0 failed, 4 ignored**
@@ -976,11 +1052,17 @@ delete it rather than keep a control that reads stronger than it is.
 
 ### 🆕 Two failures observed during the follow-up pass, neither caused by it
 
-- **`watcher::tests::git_internals_filtered`** — reported as a timing flake under `-p bonsai --lib`
-  load (530 passed / 1 failed) that **passes alone**. Matters independently: **the gate runs the whole
-  workspace**, so a load-sensitive flake there is a gate flake. Reviewer adjudicating.
-- **`health::tests_sections::perf_ceiling_on_20k_fixture`** — `#[ignore]`d, so it does not gate, but
-  **2067 ms against a 2000 ms budget**. Possible drift worth filing.
+- **`watcher::tests::git_internals_filtered` — DID NOT REPRODUCE. I overstated this.** I recorded it
+  as "a gate flake" because the gate runs the whole workspace; the reviewer then ran the full
+  `-p bonsai --lib` and got **531 passed / 0 failed** with that test `... ok` (the original
+  "530 passed / 1 failed" sums to the same 531). **One unreproduced observation is not a flake** — no
+  gate action. Worth filing only if it recurs.
+- **`health::tests_sections::perf_ceiling_on_20k_fixture` — NOT drift. I overstated this too.** I
+  recorded 2067 ms against the 2000 ms budget as "possible drift". Best-of-3 on the same host is
+  **1542 ms, 23% UNDER budget**. The 2067 ms reading was host load: `branches` alone swung
+  **1155 → 2273 ms across three passes in one run**, which is the entire variance budget. Nothing to
+  file beyond noting the headroom is thin — and noting that a single timing sample on a loaded
+  machine is not evidence of drift, which is the same mistake in both of these bullets.
 
 **Contract deltas owed to the architect** on `P112-external-tool-detection.md`: the §2 signatures now
 take `BrowsedProgram`; the §4 example becomes
