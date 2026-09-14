@@ -1059,7 +1059,10 @@ All seven routed items landed. `cargo test -p bonsai-core --lib` **1100 passed, 
 exactly 500 lines**. Under review by `reviewer` + `security-auditor`.
 
 **`looks_absolute` is DELETED.** `executable_hit` now calls one predicate,
-`custom::is_local_absolute(os, value)` = `!is_unc && is_absolute_for` — which settles the conflict
+one predicate per concern — `custom::is_absolute_for` is the genuinely shared
+half, while the **UNC arm is deliberately NOT shared**: `detect::locally_absolute` for detection,
+inlined in `validate_custom_program` for browse, each citing AMEND-6 (an earlier `is_local_absolute`
+that fused them was reverted as the reviewer's MUST-FIX — see below) — which settles the conflict
 where the old predicate took **no `os`** and accepted a leading `/` while its own doc said it refused
 that shape as drive-relative. **Two reviews disagreed and the auditor was right.** Note AMEND-6 now
 makes the browse path diverge again, deliberately.

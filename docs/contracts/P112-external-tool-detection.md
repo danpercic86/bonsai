@@ -645,7 +645,11 @@ control/bidi stripped, truncated) and is never renderer-supplied.
 >
 > **CORRECTION to my own reasoning above (orchestrator, 2026-09-14).** I justified detection's
 > refusal as *"stat-ing a share inside a budgeted scan can hang or go over the wire."* **That is true
-> for the `WinFolder` / `AppPaths` / `UnixFile` rungs and FALSE for `OnPath`.** On the `OnPath` rung
+> for the `WinFolder` and `AppPaths` rungs only, and FALSE for `OnPath` — and, per a correction the
+> implementer made against me with code evidence, also false for `UnixFile`, where `probe_entry`
+> calls `env.is_executable(&cand)` (`detect.rs:318`) *before* `executable_hit` is reached, making the
+> refusal post-hoc there too. Moot in practice for that rung — its candidates are static catalog
+> literals and can never be UNC — but do not re-widen the claim.** On the `OnPath` rung
 > the stats have already happened: `procutil::resolve_in` calls `is_file()` on every candidate and
 > `HostToolEnv::resolve_on_path` delegates straight to it, so **a single UNC `PATH` entry costs ~12
 > network stats before `executable_hit` ever sees the string.** The refusal there is post-hoc — it
