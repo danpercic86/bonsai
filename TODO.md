@@ -70,11 +70,28 @@ instruction. Curator-verified 2026-09-14: `dev` = `origin/dev` = `8b88efd`, and
 `git rev-list --count cb70f4a..8b88efd` = **165** — the ledger's "164" was measured before `8b88efd`
 (the jbcontext commit of ruling #2) existed. Both were true when measured.
 
-**Current step: P112 sub-increment 1 IN PROGRESS — `senior-dev` implementing the catalog +
-probe ladders under a fake `ToolEnv` (new `crates/bonsai-core/src/tools/`), batched with the `h_ai`
-`env_lock` consolidation. `ui-designer` running concurrently on the two F6 copy residues.** Started
-from a clean tree at `a8ddcac`; branch `feat/post-p91-rulings` is 28 commits ahead of `dev` and
-UNPUSHED (single disk — the user has not authorised this push).
+# 🛑 DO NOT MERGE OR BUILD THIS BRANCH FOR ANYONE UNTIL THE P112 TS BRIDGE LANDS
+
+**Read this before trusting any green result.** P112 sub-inc 2 removed `terminalCommand` /
+`editorCommand` from the backend DTO; **the TypeScript still reads them in 87 places** and has zero
+references to the replacement keys. **A green gate does NOT mean the tree is healthy** — every
+frontend tier runs against the mock, and the mock supplies the removed keys from its own defaults
+(`src/ipc/mock/persistence.ts:387-391`, `handlers/session.ts:150-151`,
+`src/settings/uiSettingsDefaults.json:38-39`). vitest, tsc, e2e and the harness will all pass while
+the **real Tauri app's External-tools settings rows are broken**.
+
+`the_p112_key_transition_is_still_in_flight` is **not** protection against this — it guards the
+**parity oracle's coverage** and cannot detect that the app is broken. **The only protection is
+sequencing discipline, which is why this banner exists.**
+
+**Current step: P112 sub-inc 2 implemented, reviewed, MUST-FIX in flight** (`senior-dev` widening
+`is_unc` for mixed separators + three SHOULD-FIXes). **P113 phase 2 in flight** (`senior-dev`, the
+five missed toast sites + the producer-side guard + the save-failure banner). **NEXT, and blocking
+the merge: the P112 TypeScript bridge** — drop the legacy plumbing, adopt `terminalTool`/`editorTool`,
+update `uiSettingsDefaults.json` and the mock. It **cannot** run concurrently with P113 phase 2:
+both touch `App.tsx` and `useUiSettings.ts`.
+
+Branch `feat/post-p91-rulings` is UNPUSHED and **stays that way — ruling #25, do not raise it again.**
 
 **The 2026-09-14 batch is DONE and verified: full 8-step gate GREEN under happy-dom** (461.9s, 2467
 Rust / 2848 vitest / 185 e2e, `GATE_EXIT=0`). F6, P77, `h_ai` serialisation, D3 and A3 all landed
