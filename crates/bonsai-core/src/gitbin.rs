@@ -161,9 +161,9 @@ impl GitEnv for HostGitEnv {
         let mut cmd = Command::new(&reg_exe);
         // P112: an EMPTY value name means the key's DEFAULT value, which
         // `reg.exe` selects with `/ve` and prints as `(Default)` (verified
-        // here: `reg query HKCR\.txt /ve`). Windows App Paths keeps the
-        // program path there. A localized `reg.exe` naming it otherwise yields
-        // `None` — a miss, never a wrong hit. `/v <name>` callers are untouched.
+        // here: `reg query HKCR\.txt /ve`). Windows App Paths keeps the program
+        // path there. NOT always `None`: an existing key with an UNSET default
+        // exits 0 and prints `(value not set)` — a non-path `Some`; shape-check.
         let (args, parse_name): (Vec<&str>, &str) = if value.is_empty() {
             (vec!["query", key, "/ve"], "(Default)")
         } else {
@@ -177,7 +177,7 @@ impl GitEnv for HostGitEnv {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
-        // ANY failure (spawn error, non-zero exit, unparseable output) => None.
+        // A spawn error, a non-zero exit or unparseable output => `None`.
         let out = cmd.output().ok()?;
         if !out.status.success() {
             return None;
@@ -439,7 +439,7 @@ fn child_path(dir: &Path, existing: &std::ffi::OsStr) -> Option<std::ffi::OsStri
     let mut dirs = vec![dir.to_path_buf()];
     // Empty components are dropped: on Unix an empty PATH entry means "the
     // current directory", which we must not hand to a child that we then run
-    // with `.current_dir(repo)` (Windows' `split_paths` already filters them).
+    // with `.current_dir(repo)` (Windows' `split_paths` yields them too).
     dirs.extend(std::env::split_paths(existing).filter(|p| !p.as_os_str().is_empty()));
     std::env::join_paths(dirs).ok()
 }

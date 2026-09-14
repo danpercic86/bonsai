@@ -17,7 +17,9 @@ use super::ToolKind;
 
 /// One catalog row, in the contract table's field order.
 ///
-/// A macro (rather than 36 spelled-out struct literals) keeps the table one
+/// A macro (rather than 35 spelled-out struct literals — a count pinned by
+/// `catalog_tests::the_catalog_has_exactly_the_rows_the_contract_lists`, not
+/// just asserted here) keeps the table one
 /// screen-scannable block that diffs 1:1 against the contract, and keeps this
 /// file inside the ~500-line rule. It adds no behaviour: the expansion is the
 /// plain [`ToolEntry`] literal.

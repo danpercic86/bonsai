@@ -27,6 +27,48 @@ const MAX_LEN: usize = 512;
 /// the row.
 const MAX_LABEL: usize = 48;
 
+/// The stored browsed path, as a type a renderer-supplied string cannot become.
+///
+/// P112's security property is that `UiSettingsPatch` has **no field able to
+/// carry a program path**, making a renderer-written path *unrepresentable*
+/// rather than merely rejected. This extends the same discipline one layer
+/// down: [`super::tool_scan`] / [`super::picked`] took the browsed path as a
+/// bare `&str`, and nothing in those signatures stopped a future command
+/// handler from sourcing it out of a request body instead of
+/// `settings::Settings` — the exact route P112 exists to delete.
+///
+/// There is deliberately **no** `From<&str>`, `From<String>`, `FromStr`,
+/// `Deserialize` or `Default` impl, and there must never be one: each silently
+/// reopens that hole (`Default` more mildly — it can only yield `""` — but it
+/// is still a second, unnamed constructor, and the type's whole value is that
+/// construction is a deliberate, grep-able act). [`Self::from_settings_field`]
+/// is therefore the only constructor; "no browsed tool" is
+/// `from_settings_field("")`.
+///
+/// **Honest limitation.** `settings` lives in the `bonsai` (src-tauri) crate
+/// while this lives in `bonsai-core`, and Rust has no cross-crate form of
+/// "constructible only in that module" — so the constructor must be `pub`.
+/// What the type buys is that a request-body `&str` no longer *type-checks*
+/// into a scan or a launch; it does not prove the string's origin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowsedProgram(String);
+
+impl BrowsedProgram {
+    /// The ONE constructor: the `custom_terminal_path` / `custom_editor_path`
+    /// field of the settings file, which only a native dialog **the backend
+    /// opened itself** ever writes (§5.4). `""` = no browsed tool.
+    pub fn from_settings_field(stored: &str) -> BrowsedProgram {
+        BrowsedProgram(stored.to_string())
+    }
+
+    /// The stored path, for the `pub(crate)` half of `tools` that works in
+    /// `&str` (scan assembly, the launch recheck) and is unreachable from a
+    /// command handler.
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// What shape the browsed target is. Chooses the launch recipe
 /// ([`synthesize_recipe`]) and nothing else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,10 +89,15 @@ fn is_disallowed_char(c: char) -> bool {
     c.is_control() || bidi
 }
 
-/// A UNC / double-slash root (`\\server\share`, `//host/share`, `\\?\C:\…`).
-/// A remote share is not a local tool, and `is_file()` on one goes to the
-/// network — so it is refused before the filesystem is touched.
-fn is_unc(value: &str) -> bool {
+/// A UNC / double-slash root (`\\server\share`, `//host/share`) — including the
+/// `\\?\` and `\\.\` device prefixes, which share the shape.
+///
+/// **Shape only: this says nothing about whether such a path is refused.** That
+/// is each caller's decision, and the two callers deliberately disagree — see
+/// AMEND-6 (user ruling #26) in
+/// `docs/contracts/P112-external-tool-detection.md`: the browse path is to
+/// accept shares, detection keeps refusing them.
+pub(super) fn is_unc(value: &str) -> bool {
     let mut cs = value.chars();
     matches!(
         (cs.next(), cs.next()),
@@ -58,9 +105,26 @@ fn is_unc(value: &str) -> bool {
     )
 }
 
-/// Absolute for the **target** OS. `Path::is_absolute` is host-relative, which
-/// would make the macOS and Linux rules unassertable from a Windows box.
-fn is_absolute_for(os: TargetOs, value: &str) -> bool {
+/// Absolute for the **target** OS — the one predicate genuinely SHARED with
+/// [`super::detect`]'s probe hits.
+///
+/// `Path::is_absolute` cannot be used: it is host-relative, so
+/// `/usr/bin/konsole` is not absolute on Windows and the Linux/macOS ladders
+/// would be untestable from a Windows box (AC2) while silently accepting
+/// relative candidates there.
+///
+/// Windows requires a DRIVE LETTER, so `\Windows\x.exe` AND `/Windows/x.exe`
+/// are both rejected: Win32 treats each as drive-relative (`Path::is_absolute`
+/// agrees — it is `false` for both), so either would resolve against the
+/// process cwd. **That drive-relative rule is what both callers want, and it is
+/// why this predicate is shared.**
+///
+/// It deliberately does **not** answer the UNC question. A UNC root has no
+/// drive letter, so it is not absolute here *today*, and AMEND-6 (user ruling
+/// #26) will change that for the browse path — at which point [`is_unc`] at
+/// detection's call site is what keeps detection refusing shares. Keeping the
+/// two decisions separate is the whole point; do not fold `is_unc` back in.
+pub(super) fn is_absolute_for(os: TargetOs, value: &str) -> bool {
     match os {
         TargetOs::Windows => {
             let mut cs = value.chars();
@@ -109,6 +173,13 @@ pub fn validate_custom_program(path: &Path, os: TargetOs) -> Result<CustomKindSh
     if value.chars().any(is_disallowed_char) {
         return Err(refuse());
     }
+    // THIS module's stance on UNC, deliberately separate from the identical
+    // stance detection takes at its own call site (`detect::locally_absolute`).
+    // AMEND-6 (user ruling #26, `docs/contracts/P112-external-tool-detection.md`)
+    // relaxes THIS arm to accept `\\server\share\…` — a browse is a deliberate
+    // one-time act, so the network cost is paid knowingly — while detection,
+    // which has one 1500 ms budget for the whole machine, keeps refusing it.
+    // The device prefixes `\\?\` / `\\.\` stay refused here even then.
     if is_unc(&value) || !is_absolute_for(os, &value) {
         return Err(refuse());
     }
@@ -195,19 +266,41 @@ pub fn display_label(path: &Path) -> String {
     }
 }
 
-/// A stored browsed path as DISPLAY text (`DetectedTool::detail`).
+/// A path as DISPLAY text (`DetectedTool::detail`), for EVERY row.
 ///
-/// Verbatim for anything [`validate_custom_program`] would accept — it already
-/// refuses these characters. It matters for the one row that is displayed
-/// *despite* failing validation: a remembered path that is gone or was
-/// hand-written into `settings.json` is still listed (so the UI can explain
-/// itself), and it must not be able to carry a bidi override into the picker
-/// subtitle.
+/// Not a browsed-row special case: a probe-derived path never passes through
+/// [`validate_custom_program`] either, and `detect::executable_hit` performs no
+/// character check — so a PATH directory whose *name* carries a bidi override
+/// would otherwise yield a row whose label is trustworthy (the static catalog)
+/// but whose subtitle reads as a different path than the one that launches.
+///
+/// Verbatim for anything [`validate_custom_program`] would accept: it refuses
+/// these characters, and [`MAX_LEN`] bounds it at 512 *bytes*, so such a path
+/// has at most 512 chars and the truncation cannot fire.
+///
+/// **The cap can fire on any row, not just the browsed one.** Two sources are
+/// length-unbounded: a remembered browsed path that is gone or was hand-written
+/// into `settings.json` (displayed *despite* failing validation, so the UI can
+/// explain itself), and a **probe-derived** `Resolution::program` — a `PATH`
+/// directory plus a program name, which never passes `MAX_LEN` and which
+/// `is_file()` accepts at any length because `std` applies the `\\?\` prefix
+/// internally. The cap is only a no-op for paths validation has *accepted*.
+///
+/// Truncation **appends an ellipsis**, so a subtitle showing a trustworthy
+/// prefix cannot be mistaken for the whole path: the result is at most
+/// `MAX_LEN` content chars + `…` (513 chars).
 pub(crate) fn sanitize_detail(value: &str) -> String {
-    if value.chars().any(is_disallowed_char) {
-        return value.chars().filter(|c| !is_disallowed_char(*c)).collect();
+    let cleaned: String = if value.chars().any(is_disallowed_char) {
+        value.chars().filter(|c| !is_disallowed_char(*c)).collect()
+    } else {
+        value.to_string()
+    };
+    // `char_indices().nth(MAX_LEN)` is a char boundary by construction, so the
+    // slice can never split a multi-byte character.
+    match cleaned.char_indices().nth(MAX_LEN) {
+        Some((idx, _)) => format!("{}…", &cleaned[..idx]),
+        None => cleaned,
     }
-    value.to_string()
 }
 
 /// `(kind, shape)` ⇒ the recipe a browsed tool launches with (P112 §5.4).

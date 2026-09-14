@@ -87,6 +87,38 @@ fn bundle_rungs_only_appear_on_macos_rows() {
 }
 
 #[test]
+fn the_catalog_has_exactly_the_rows_the_contract_lists() {
+    // Pins the count two comments assert but nothing guarded:
+    // `catalog_table.rs`'s macro doc ("rather than 35 spelled-out struct
+    // literals") and `docs/contracts/P112-tool-catalog.md`'s table. A row added
+    // here without a contract row (or vice versa) now fails instead of drifting.
+    // Bump this deliberately, together with both.
+    assert_eq!(CATALOG.len(), 35);
+}
+
+#[test]
+fn every_app_paths_row_also_has_a_well_known_folder_rung() {
+    // The premise `SCAN_REG_BUDGET`'s doc (`detect.rs`) rests on: a cold scan
+    // can spend the whole 1.5 s registry budget on the PATH walk before the
+    // first `AppPaths` rung runs, after which every one of them yields `None`.
+    // That is only SAFE because a default install is still found by a
+    // `WinFolder` rung — an `AppPaths`-ONLY row would silently become
+    // undetectable on a cold boot. Host-independent on purpose: the host scan
+    // test asserts per-row shape and never that a `Registry` rung resolved,
+    // which is exactly why that starvation was silent.
+    for e in CATALOG {
+        if e.rungs.iter().any(|r| matches!(r, Rung::AppPaths { .. })) {
+            assert!(
+                e.rungs.iter().any(|r| matches!(r, Rung::WinFolder { .. })),
+                "{} has an AppPaths rung with no WinFolder fallback: an \
+                 exhausted SCAN_REG_BUDGET makes it undetectable",
+                e.id
+            );
+        }
+    }
+}
+
+#[test]
 fn every_auto_rung_resolves_for_its_own_os() {
     for kind in KINDS {
         for os in OSES {

@@ -123,6 +123,21 @@ fn a_windows_path_hit_without_an_extension_is_not_launchable_so_the_ladder_falls
 }
 
 #[test]
+fn a_windows_path_hit_with_an_extension_is_a_hit_even_when_it_is_a_cmd_shim() {
+    // The sibling of the test above, after the P112 follow-up made
+    // `procutil::resolve_program` prefer PATHEXT matches: `resolve_on_path`
+    // now returns `bin\code.cmd`, not the extension-less shim. The extension
+    // guard passes it BY DESIGN — it is launchable (the auto ladder launches
+    // the same file), so the rung hits and no longer falls through to
+    // App Paths. The guard only ever catches the extension-LESS shape.
+    let shim = r"C:\Users\ada\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd";
+    let env = FakeToolEnv::new().on_path("code", shim).file(shim);
+    let res = probe(&env, ToolKind::Editor, "vscode", TargetOs::Windows).expect("PATH hit");
+    assert_eq!(res.program, shim);
+    assert_eq!(res.source, ToolSource::Path);
+}
+
+#[test]
 fn built_in_rungs_touch_nothing() {
     // Deliberately the "nothing exists" env: `cmd` and `powershell` are present
     // by definition on Windows, and an `is_file("cmd")` test would be false and
@@ -316,13 +331,23 @@ fn every_rung_degrades_under_a_failing_env() {
 #[test]
 fn a_unc_or_drive_relative_candidate_is_never_a_hit() {
     for cand in [
-        // A remote share is not a local tool (and stat-ing one inside a
-        // budgeted scan goes to the network).
+        // A remote share is not a local tool. On THIS rung (`AppPaths`) the
+        // refusal also spares the network stat, since the shape check precedes
+        // it — on `OnPath` it does not (see `detect::locally_absolute`).
+        // AMEND-6 (ruling #26) keeps this refusal for DETECTION while allowing
+        // UNC via Browse: if the browse relaxation ever leaks into detection
+        // through a shared predicate, this case fails loudly.
         r"\\server\share\Code.exe",
         "//host/share/Code.exe",
         // Drive-RELATIVE on Windows, so it would resolve against the process
         // cwd — the same class of bug as an empty PATH component.
         r"\Windows\Code.exe",
+        // The SAME shape with the other separator, which the predicate used to
+        // ACCEPT: on Win32 `/foo` is drive-relative exactly as `\foo` is
+        // (`Path::is_absolute` is `false` for both). The one `os`-aware
+        // predicate SHARED with the browse path
+        // (`custom::is_absolute_for`) now answers for both spellings.
+        "/Windows/Code.exe",
     ] {
         let env = FakeToolEnv::new()
             .registry(APP_PATHS_HKCU_CODE, "", cand)
@@ -367,20 +392,6 @@ fn host_registry_reads_stop_at_the_scan_budget_without_spawning() {
     // `registry_string` is inert by design.)
     let spent = HostToolEnv::with_deadline(Instant::now());
     assert_eq!(spent.registry_string(r"HKCR\.txt", ""), None);
-}
-
-#[test]
-fn detection_never_constructs_a_child_process_for_a_candidate() {
-    // `ToolEnv` has no run/spawn method, and the prober builds no `Command`.
-    // The ONLY process detection ever starts is `reg.exe`, via `gitbin` — a
-    // reader of the registry, never a candidate tool.
-    let src = include_str!("detect.rs");
-    for forbidden in ["Command::new", "Stdio", "std::process"] {
-        assert!(
-            !src.contains(forbidden),
-            "tools/detect.rs must not spawn: found `{forbidden}`"
-        );
-    }
 }
 
 // ---- host-touching tests -----------------------------------------------------
@@ -431,8 +442,16 @@ fn host_scan_finds_real_tools_and_only_absolute_existing_paths() {
         }
         // End-to-end proof of the `/ve` (default value) convention against the
         // real `reg.exe`: `HKCR\.txt` exists on every Windows install.
+        //
+        // A FRESH env, deliberately: `env` carries this scan's 1.5 s registry
+        // deadline and the scan above just spent it — measured here, 2.1 s on a
+        // COLD filesystem cache (55 PATH dirs x 11 PATHEXT entries) versus
+        // 0.45 s warm. Reusing `env` made this a cache-temperature coin flip
+        // instead of a statement about `reg.exe`.
         assert_eq!(
-            env.registry_string(r"HKCR\.txt", "").as_deref(),
+            HostToolEnv::new()
+                .registry_string(r"HKCR\.txt", "")
+                .as_deref(),
             Some("txtfile")
         );
     }

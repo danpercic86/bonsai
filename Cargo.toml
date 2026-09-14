@@ -2,6 +2,14 @@
 members = ["src-tauri", "crates/bonsai-core", "crates/bonsai-mcp", "crates/bonsai-forge"]
 resolver = "2"
 
+# Enforced MSRV floor, not a convention. `rust-toolchain.toml` pins 1.97 and CI
+# honours it, but a build that bypasses the rustup override got no refusal at
+# all — and the app now launches `.cmd` files, whose argv escaping mitigation
+# (CVE-2024-24576) only exists from Rust 1.77.2. `cargo` refuses to build below
+# this; every member inherits it with `rust-version.workspace = true`.
+[workspace.package]
+rust-version = "1.97"
+
 [workspace.dependencies]
 # git2 0.21 dropped `ssh`, `https`, and `cred` from its default features, so we
 # opt back into the transports we use. `cred` (git2's own CredentialHelper) is

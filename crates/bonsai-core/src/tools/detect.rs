@@ -30,9 +30,23 @@ use super::{Resolution, ToolKind, ToolSource};
 /// running out of time, or PATH rehydration losing the time it needs to make
 /// the app usable at all.
 ///
-/// The scan's own cost is a few tens of milliseconds on a healthy machine; 1.5 s
-/// is headroom before it gives up. On exhaustion every remaining `AppPaths`
-/// rung yields `None`, which is safe: the tool is simply not offered.
+/// **Measured, because the original "a few tens of milliseconds" estimate was
+/// wrong** (this host, 2026-09-14): a full scan is ~0.45 s warm and ~2.1 s on a
+/// COLD filesystem cache, dominated by the PATH walk (55 `PATH` directories x
+/// 11 `PATHEXT` entries ~ 4 400 stats) and NOT by the registry at all. The
+/// clock starts at [`HostToolEnv::new`], before any of that, so a cold scan can
+/// spend this whole budget before the first `AppPaths` rung even runs — and
+/// then every remaining one yields `None`.
+///
+/// That is safe (the tool is simply not offered, and every `AppPaths` entry in
+/// today's catalog also carries a `WinFolder` rung, so a default install is
+/// still found — that premise is no longer just this comment: it is pinned by
+/// `catalog_tests::every_app_paths_row_also_has_a_well_known_folder_rung`), but
+/// it does mean an install in a NON-default folder — the case
+/// only `AppPaths` can find — can be missed on the first scan after a cold
+/// boot; the picker's Rescan then finds it. Starting the deadline at the first
+/// registry call, or budgeting registry time only, is the fix and is its own
+/// change.
 ///
 /// Enforcement is a **pre-spawn** cut-off (it bounds how many spawns a scan may
 /// start, not how long one may hang). That is deliberate: `reg.exe` is invoked
@@ -62,8 +76,17 @@ pub trait ToolEnv {
     /// `PATH` (+ `PATHEXT` on Windows) lookup of a bare program name.
     fn resolve_on_path(&self, program: &str) -> Option<PathBuf>;
     /// ONE registry string value. `value == ""` means the key's **default**
-    /// value (`reg query <key> /ve`). `None` on ANY failure, including an
-    /// exhausted [`SCAN_REG_BUDGET`].
+    /// value (`reg query <key> /ve`).
+    ///
+    /// `None` on a spawn error, a non-zero exit, unparseable output, or an
+    /// exhausted [`SCAN_REG_BUDGET`] — but **not** on every failure. An
+    /// existing key whose default value is UNSET makes `reg query ... /ve` exit
+    /// 0 and print `(Default) REG_SZ (value not set)`, which the parser returns
+    /// as a non-path `Some` (verified against `HKCU\Environment` on this host,
+    /// 2026-09-14). Callers must therefore SHAPE-CHECK the result; the only
+    /// caller here is [`executable_hit`], whose [`locally_absolute`] refuses it
+    /// (`(` is not a drive letter). Do NOT "fix" this by matching the literal —
+    /// `reg.exe` localizes it.
     fn registry_string(&self, key: &str, value: &str) -> Option<String>;
     /// The user's home directory, for `$HOME`-relative bundle rungs.
     fn home(&self) -> Option<PathBuf>;
@@ -152,50 +175,73 @@ impl ToolEnv for HostToolEnv {
     }
 }
 
-/// A LOCAL absolute path in the sense of the **target** OS, not the host.
-///
-/// `Path::is_absolute` is host-relative: `/usr/bin/konsole` is not absolute on
-/// Windows, so using it would make the Linux and macOS ladders untestable from
-/// a Windows box (AC2) while silently accepting relative candidates there.
-///
-/// Two shapes are refused on purpose, both of which `Path::is_absolute` would
-/// get wrong for our purpose:
-/// * a UNC / double-slash root (`\\server\share`, `//host/share`) — the house
-///   rule (`external_cmd::is_unc`, `git::submodule_abs_path`): a remote share
-///   is not a local tool, and stat-ing one inside a budgeted scan goes to the
-///   network;
-/// * a single leading `\` (`\Windows\x.exe`), which is DRIVE-relative on
-///   Windows, not absolute, and so would resolve against the process cwd.
-fn looks_absolute(p: &Path) -> bool {
-    let s = p.to_string_lossy();
-    let mut cs = s.chars();
-    match (cs.next(), cs.next(), cs.next()) {
-        (Some('/'), Some('/'), _) | (Some('\\'), Some('\\'), _) => false,
-        (Some('/'), _, _) => true,
-        (Some(c), Some(':'), Some('/' | '\\')) => c.is_ascii_alphabetic(),
-        _ => false,
-    }
-}
-
 /// `"C:\X\y.exe"` ⇒ `C:\X\y.exe`. App Paths default values are often quoted.
 fn trim_quotes(value: &str) -> &str {
     value.trim().trim_matches('"').trim()
 }
 
-/// An executable resolution: an absolute, existing — and on Windows,
-/// *launchable* — file.
+/// DETECTION's "a local absolute path on `os`" test — deliberately **stricter
+/// than the browse path's**, and kept here rather than shared so it can stay
+/// that way.
 ///
-/// **The Windows extension rule, and why it is here.** Verified on this host
-/// (2026-09-14): `resolve_on_path("code")` returns
-/// `…\Microsoft VS Code\bin\code`, VS Code's extension-LESS POSIX shim, because
-/// [`crate::procutil::resolve_program`] tries the bare name before each
-/// `PATHEXT` extension (it must, for npm's `claude.cmd`). Windows cannot
-/// execute an extension-less file, so offering that path in the picker would
-/// mean a tool that is listed and then fails to launch. Requiring an extension
-/// makes the rung MISS and the ladder fall through to the App Paths /
-/// well-known rungs, which name the real `Code.exe`. Every Windows candidate
-/// this crate builds itself already carries `.exe`, so the rule only ever
-/// rejects a PATH hit that could not have launched.
+/// [`super::custom::is_absolute_for`] IS shared: the drive-relative refusal
+/// (`\Windows\Code.exe` and `/Windows/Code.exe` both resolve against the
+/// process cwd on Win32) is what both callers want, and it must be `os`-aware
+/// because `Path::is_absolute` is host-relative.
+///
+/// The UNC arm is **not** shared. AMEND-6 (user ruling #26,
+/// `docs/contracts/P112-external-tool-detection.md`) allows UNC via Browse and
+/// keeps refusing it here: a scan has ONE 1500 ms budget
+/// ([`SCAN_REG_BUDGET`]) for every rung on the machine, and a picker that comes
+/// up empty on a slow VPN is worse than one that omits a share install. A
+/// single shared predicate would make that divergence unrepresentable — so the
+/// decision lives at this call site. Today both sides still refuse UNC; the
+/// split is what lets the browse side change alone.
+///
+/// **Which rungs this actually spares network I/O on:** `WinFolder` and
+/// `AppPaths` only — there the check precedes the stat. (`UnixFile` stats
+/// first, via `is_executable` in [`probe_entry`], so it is post-hoc too; it is
+/// moot there, since those candidates are static catalog literals and can
+/// never be UNC.) For **`OnPath` the refusal is purely post-hoc**:
+/// `crate::procutil::resolve_in` calls `is_file()` on every candidate and
+/// `HostToolEnv::resolve_on_path` delegates straight to it, so one UNC `PATH`
+/// entry has already cost ~12 network stats before this is reached. Moving the
+/// guard into `resolve_in` would prevent that I/O, but it changes app-wide
+/// program resolution and is its own change (filed separately). Do not justify
+/// this refusal on I/O-avoidance grounds without that caveat.
+fn locally_absolute(os: TargetOs, value: &str) -> bool {
+    !super::custom::is_unc(value) && super::custom::is_absolute_for(os, value)
+}
+
+/// An executable resolution: a local absolute path for detection
+/// ([`locally_absolute`]), an existing file, and on Windows a *launchable* one.
+///
+/// **The Windows extension rule is a correctness heuristic, NOT a security
+/// boundary.** It catches exactly one shape: an extension-LESS PATH hit.
+/// Measured on this host (2026-09-14), VS Code installs a `#!/usr/bin/env sh`
+/// shim at `...\Microsoft VS Code\bin\code` beside `bin\code.cmd`, and
+/// spawning the shim fails with `os error 193` ("%1 is not a valid Win32
+/// application") because it carries no PE header — a tool that would be listed
+/// and then fail to launch.
+///
+/// It is NOT true that Windows cannot execute an extension-less file:
+/// `CreateProcess` ignores the extension and validates the image header, so a
+/// PE named without one runs fine (`.cmd`/`.bat` are the shell's special
+/// cases). `Path::extension()` also yields `Some("")` for a trailing-dot name
+/// (`code.`), which Windows resolves by stripping the dot — so the guard is
+/// trivially bypassable and nothing may lean on it for safety.
+///
+/// Since [`crate::procutil::resolve_program`] now prefers `PATHEXT` matches
+/// over the bare name (the follow-up that fixed the shipped "Open in editor"
+/// failure), `resolve_on_path("code")` returns `bin\code.cmd` and this rung
+/// **hits** — it no longer misses and falls through to the App Paths rung's
+/// `Code.exe`. That is intended: the auto ladder launches the same `.cmd`, and
+/// `std`'s spawn applies batch-specific argv escaping (the mitigated
+/// CVE-2024-24576 class).
+///
+/// `TargetOs::Windows` is the predicate, never the host OS: host-gating would
+/// zero AC2's unix ladders, whose `/usr/bin/...` candidates are all
+/// extension-less.
 fn executable_hit(
     env: &dyn ToolEnv,
     cand: PathBuf,
@@ -205,8 +251,14 @@ fn executable_hit(
     if os == TargetOs::Windows && cand.extension().is_none() {
         return None;
     }
-    (looks_absolute(&cand) && env.is_file(&cand)).then(|| Resolution {
-        program: cand.to_string_lossy().into_owned(),
+    let value = cand.to_string_lossy();
+    // DETECTION's predicate, not the browse path's: per AMEND-6 (ruling #26)
+    // the two diverge on UNC on purpose — the disagreement IS the ruling.
+    if !locally_absolute(os, &value) {
+        return None;
+    }
+    env.is_file(&cand).then(|| Resolution {
+        program: value.into_owned(),
         bundle: None,
         source,
     })
@@ -289,6 +341,13 @@ pub fn scan_for(env: &dyn ToolEnv, os: TargetOs) -> Vec<(&'static ToolEntry, Res
 /// A launch never re-runs the ladder — a `Registry` rung spawns a process — so
 /// this is the whole liveness check: one stat, or nothing at all for `BuiltIn`.
 pub(crate) fn still_present(env: &dyn ToolEnv, res: &Resolution) -> bool {
+    // Loud rather than silent: a `Custom` resolution is revalidated by
+    // `validate_custom_program` instead, so routing one here is a caller bug
+    // that would otherwise surface as an unexplained "the tool is gone".
+    debug_assert!(
+        res.source != ToolSource::Custom,
+        "a Custom resolution is revalidated by validate_custom_program, never by still_present"
+    );
     match res.source {
         // Present by definition; an fs test here would silently break `cmd`.
         ToolSource::BuiltIn => true,

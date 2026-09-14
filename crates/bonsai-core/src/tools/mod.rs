@@ -19,7 +19,7 @@
 //! | [`catalog`] | the row types + the lookups |
 //! | `catalog_table` | the static candidate table (data only) |
 //! | [`detect`] | [`ToolEnv`], the probe ladders, the host prober |
-//! | [`custom`] | the browsed path: validation, label, recipe |
+//! | [`custom`] | the browsed path: [`BrowsedProgram`], validation, label, recipe |
 //! | this file | the DTOs, the process-wide scan cache, [`tool_scan`], [`picked`] |
 //!
 //! Detection is **lazy and explicit**: nothing scans at boot, the scan is
@@ -53,10 +53,12 @@ mod custom_tests;
 #[cfg(test)]
 mod detect_tests;
 #[cfg(test)]
+mod no_spawn_tests;
+#[cfg(test)]
 mod scan_tests;
 
 pub use catalog::{Recipe, ToolEntry, CUSTOM_ID};
-pub use custom::{synthesize_recipe, validate_custom_program, CustomKindShape};
+pub use custom::{synthesize_recipe, validate_custom_program, BrowsedProgram, CustomKindShape};
 pub use detect::{scan_for, HostToolEnv, ToolEnv};
 
 /// Which of the two configurable tool slots. The file manager is deliberately
@@ -70,7 +72,11 @@ pub enum ToolKind {
 
 /// Where a resolution came from. Not surfaced in the UI (DEC-2); it is the
 /// provenance record that drives the launch-time recheck and the tests.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+///
+/// `Serialize` only, deliberately: it rides along inside [`DetectedTool`], and
+/// the backend never accepts one back. The inbound vocabulary is [`ToolKind`]
+/// and a catalog id — nothing else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ToolSource {
     BuiltIn,
@@ -182,6 +188,12 @@ fn now_ms() -> u64 {
 }
 
 /// Poison-recovering read of the cache; a miss probes the host once.
+///
+/// Two threads that both miss each run a full [`probe_host`] and the last
+/// writer wins. Known and benign rather than overlooked: a probe only READS
+/// (filesystem + `reg.exe`), so it is idempotent and both callers get an
+/// equally valid row set — while holding the write lock across the probe would
+/// park every other caller behind up to [`detect::SCAN_REG_BUDGET`].
 fn cached_rows() -> (u64, Vec<(&'static ToolEntry, Resolution)>) {
     {
         let guard = SCAN.read().unwrap_or_else(|p| p.into_inner());
@@ -208,17 +220,36 @@ fn probe_host() -> (u64, Vec<(&'static ToolEntry, Resolution)>) {
 ///
 /// BLOCKING (filesystem, and `reg.exe` on Windows) — call under
 /// `spawn_blocking`. `custom_terminal` / `custom_editor` are the stored browsed
-/// paths (`""` = none).
-pub fn tool_scan(custom_terminal: &str, custom_editor: &str) -> ExternalToolScan {
+/// paths ([`BrowsedProgram::from_settings_field`]`("")` = none), typed so a
+/// renderer-supplied string cannot reach here.
+pub fn tool_scan(
+    custom_terminal: BrowsedProgram,
+    custom_editor: BrowsedProgram,
+) -> ExternalToolScan {
     let (at_ms, rows) = cached_rows();
-    scan_from_rows(&rows, custom_terminal, custom_editor, TargetOs::host(), at_ms)
+    scan_from_rows(
+        &rows,
+        custom_terminal.as_str(),
+        custom_editor.as_str(),
+        TargetOs::host(),
+        at_ms,
+    )
 }
 
 /// [`tool_scan`] with a forced re-probe (the picker's Rescan): `scanned_at_ms`
 /// advances and a tool installed since the last scan appears.
-pub fn refresh_tool_scan(custom_terminal: &str, custom_editor: &str) -> ExternalToolScan {
+pub fn refresh_tool_scan(
+    custom_terminal: BrowsedProgram,
+    custom_editor: BrowsedProgram,
+) -> ExternalToolScan {
     let (at_ms, rows) = probe_host();
-    scan_from_rows(&rows, custom_terminal, custom_editor, TargetOs::host(), at_ms)
+    scan_from_rows(
+        &rows,
+        custom_terminal.as_str(),
+        custom_editor.as_str(),
+        TargetOs::host(),
+        at_ms,
+    )
 }
 
 /// The pure assembly half of [`tool_scan`]: probe rows in, DTO out.
@@ -272,11 +303,19 @@ fn kind_rows(
 }
 
 /// The resolved absolute path, or the literal `"built in"`.
+///
+/// Sanitized UNCONDITIONALLY, and this is not a browsed-row special case: a
+/// probe-derived path never passes through [`validate_custom_program`], and
+/// `detect::executable_hit` performs no character check — so a PATH directory
+/// whose *name* carries a bidi override would otherwise produce a row whose
+/// label is trustworthy (the static catalog) but whose subtitle reads as a
+/// different path than the one that launches. A path without those characters
+/// is byte-identical, so nothing normal changes.
 fn detail_of(res: &Resolution) -> String {
     match (&res.source, &res.bundle) {
         (ToolSource::BuiltIn, _) => BUILT_IN_DETAIL.to_string(),
-        (_, Some(bundle)) => bundle.clone(),
-        (_, None) => res.program.clone(),
+        (_, Some(bundle)) => custom::sanitize_detail(bundle),
+        (_, None) => custom::sanitize_detail(&res.program),
     }
 }
 
@@ -291,10 +330,15 @@ fn custom_row(kind: ToolKind, custom_path: &str, os: TargetOs) -> DetectedTool {
         label: custom::display_label(path),
         kind,
         source: ToolSource::Custom,
-        // A stored path that FAILS validation is still displayed here, so it is
-        // sanitized like the label: validation is what normally refuses bidi
-        // overrides, and this is the one row that is shown despite failing it
-        // (a hand-edited settings.json). Any path that validates is verbatim.
+        // Sanitized exactly like every other row's detail (`detail_of`) — the
+        // treatment is unconditional. It matters MOST here: this is the one row
+        // displayed DESPITE failing validation (a hand-edited settings.json, or
+        // a path that is simply gone), so it is the only detail string that
+        // reaches the UI without validation having refused those characters
+        // first. The length cap can fire on a probe-derived row too — nothing
+        // bounds a `PATH`-derived program path's length — it just cannot fire
+        // on one validation ACCEPTED (`MAX_LEN` is 512 bytes, hence <= 512
+        // chars).
         detail: custom::sanitize_detail(custom_path),
         present,
     }
@@ -310,7 +354,10 @@ fn custom_row(kind: ToolKind, custom_path: &str, os: TargetOs) -> DetectedTool {
 /// BLOCKING, but cheap: it reads the process cache (populating it on first use)
 /// and does **one** recheck. It never re-runs the ladder — an `AppPaths` rung
 /// spawns a process, and a launch must not.
-pub fn picked(setting: &str, kind: ToolKind, custom_path: &str) -> Option<PickedTool> {
+///
+/// `setting` is renderer-writable (it is only ever a lookup key); `custom_path`
+/// is NOT, which is why it is a [`BrowsedProgram`] and not a `&str`.
+pub fn picked(setting: &str, kind: ToolKind, custom_path: BrowsedProgram) -> Option<PickedTool> {
     let (_, rows) = cached_rows();
     picked_from(
         &HostToolEnv::new(),
@@ -318,7 +365,7 @@ pub fn picked(setting: &str, kind: ToolKind, custom_path: &str) -> Option<Picked
         &rows,
         setting,
         kind,
-        custom_path,
+        custom_path.as_str(),
     )
 }
 
