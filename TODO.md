@@ -147,31 +147,28 @@ Killed; port confirmed free; no other `node` process on this repo remains. Found
    the server still up, so it is a contributor at most. But it is a **concrete** mechanism where I
    previously had only "ambient load", and it is one I created.
 
-# ✅ MERGE BLOCK LIFTED — full 8-step gate GREEN at `dcff54b`, 454.0s, exit 0
+# ✅ MERGE BLOCK LIFTED — full 8-step gate GREEN, CONFIRMED AT HEAD'S SOURCE TREE
 
-> **Read the commit this green belongs to.** It is `dcff54b`, **not HEAD.** Two `src/` files changed
-> afterwards in `0a084dc` (a subtitle string and a comment). Those were covered by targeted vitest
-> (**69 files / 791 tests**), tsc, eslint, the ratchet and a real-browser read of the rendered copy —
-> and no `e2e/` spec references the subtitle — but that is **not the same as a gate run at HEAD**, so a
-> confirming run is in flight. The distinction is recorded rather than glossed because a hedged gate
-> claim on this board is exactly what invites a resumed session to assume the tree is healthy.
+**Two independent green runs, 2026-09-14.** The second was run specifically because the first was
+attached to `dcff54b` while two `src/` files had changed after it — a subagent flagged the gap and was
+right to.
 
-**2026-09-14. The first gate run since the bridge, and therefore the first that measures the
-application rather than the mock.** All 8 steps, zero FAIL lines:
+| run | commit | total | nextest | vitest | e2e |
+|---|---|---|---|---|---|
+| first | `dcff54b` | **454.0s** | 2564 passed, 10 skipped, **0 leaky** | 2906 / 260 files | 185 passed, 1 skipped |
+| **confirming** | HEAD's source tree (started after `b1acb1f`) | **427.4s** | 2564 passed, 10 skipped, **1 leaky** | 2906 / 260 files | 185 passed, 1 skipped |
 
-| step | time | result |
-|---|---|---|
-| `cargo nextest` | 165.6s | **2564 passed, 10 skipped, 0 leaky** |
-| `cargo test --doc` | 3.5s | pass |
-| `cargo clippy` | 15.3s | pass |
-| eslint | 12.9s | pass |
-| file-size ratchet | 0.66s | pass |
-| vitest | 56.4s | **2906 passed, 260 files** |
-| tsc + vite build | 13.8s | pass |
-| playwright e2e | 185.9s | **185 passed, 1 skipped** |
+Both exit 0, all 8 steps, zero FAIL lines. Identical test counts. **Precise claim:** the confirming
+run measured the **same `src/`, `crates/` and `src-tauri/` tree as HEAD** — the only commit made during
+it (`dc628fc`) touches `TODO.md` alone, and `pnpm gate` does not read the board.
 
-Against the `b53618a` baseline (461.9s): Rust **2467 → 2564** (+97), vitest **2848 → 2906** (+58),
-e2e unchanged at 185, and the whole gate **7.9s FASTER** despite 155 more tests.
+Against the `b53618a` baseline (461.9s): Rust **2467 → 2564** (+97), vitest **2848 → 2906** (+58), e2e
+unchanged at 185, and **faster** despite 155 more tests.
+
+**The leaky count differed between the two runs (0 then 1)** on
+`external_spawn::detached_spawn_ignores_nonzero_exit`, which settles that question: leakiness there
+is **intermittent**, so it is a detached child's timing and not a defect. Also worth knowing clippy
+read **1.0s** on the second run against 15.3s on the first — that is the cache, not a change in work.
 
 **Be precise about what this green does and does not establish.**
 - It **does** establish that the cross-language DTO is consistent again: the parity oracle is total,
