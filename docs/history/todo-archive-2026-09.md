@@ -34,6 +34,31 @@ Four **open user decisions** also stayed live rather than being archived: the e2
 flip, security **F6** (`usage.json` disclosure), home-directory/username masking in raw log paths,
 and **D3** (whether `.op-worktree-warning` should be painted danger at all).
 
+## Third sweep — **2026-09-14** (Parts 62–70)
+
+`TODO.md` went **1537 → 988** lines; **1215 lines were extracted verbatim** into Parts 62-70, every
+range diffed byte-identical against the pre-pass file before removal. Extraction is **verbatim**;
+nothing was summarized away, and no status was upgraded by the curator. The board did not fall by
+1215 because a large share of the archived text was **live remnant** — open follow-ups, the
+verified-CLEAN pointers, the P77 design, the F6 backend facts — which was relocated, not removed. The trigger was the 2026-09-11 session, in which the user ruled
+every open FOR-USER decision (22 rulings across two rounds) and the implementation of those rulings
+landed as `dc295c5`, `1953c0a`, `216ca45`, `9422e8b`, plus the P112 and F6 contracts.
+
+**What did NOT move (still live in `TODO.md`):** both USER-RULING blocks in full — the 17-row ledger,
+the commit-count correction, the three process rules, and the second round's items 18–22 **with their
+four evidence subsections** · `## Durable lessons — the rules` · `## Accepted decisions that must
+survive compaction` · every open follow-up · the four outstanding **user actions** (the Dev-mode boot
+for P91's owed `logs/*.jsonl` parse, the `.tauri/updater-prod.key` backup, the unidentified Dependabot
+moderate, macOS ad-hoc signing) · the UNC/`\\wsl$` `canonicalize` ship-blocker · `h_ai` parallel
+flakiness · the P112 / F6 / P77 implementation queue.
+
+**Status facts this sweep relied on** (supplied by the orchestrator, verified where cheap): branch
+`feat/p91-observability` was **merged to `dev` and pushed** on 2026-09-11 — a pure fast-forward.
+Verified 2026-09-14: `dev` = `origin/dev` = `8b88efd`, and `git rev-list --count cb70f4a..8b88efd`
+= **165** (the ledger's "164" was measured before `8b88efd`, the jbcontext commit of ruling #2,
+existed). The board's old "DO NOT MERGE" / "unmerged by user instruction" language is therefore
+**void**, and survives below only as history.
+
 ---
 
 ## Part 22 — P94 — e2e parallel-worker isolation — DONE (AI gate only, no USER CHECKPOINT)
@@ -4244,3 +4269,1204 @@ USER CHECKPOINT **198** · P110 + P109 **~84** · SEC-2026-09-03 **~52** · dura
 decisions clear** — and not before. Going further today would mean archiving a pending checkpoint
 (forbidden) or stripping the 2026-09-03 sweep's freshly-verified `file:line` citations out of the
 open follow-ups, which is the evidence a cold resume needs most.
+
+---
+
+## Part 62 — The `⏸ RESUME HERE — updated 2026-09-10` block, its `Next, in order` items (1, 1d, 1c, 1b, 2, 2b, 3) and the `Verification state` block, verbatim, moved off the board 2026-09-14.
+
+Superseded by the 2026-09-14 resume block: FU-1 shipped (`1d8c6f9`), the branch was merged to `dev`
+2026-09-11, and item 3's two security calls were ruled by the user (ledger #4/#6, then second-round
+#21 — removal, milestone **P112**). **What stays live on the board:** the `whichAll` `PATH_EXTS`
+standing warning from item 2 · item 2b (`src/obs/types.ts:68`, the A26 lettered-scheme decision) ·
+the P87b contract-hygiene residue from `1b`/`1c`/`1d`, **condensed to one line and NOT closed**
+(commit `2aa1e06` is subject-lined "P87b hygiene that was mostly already done"; the curator did not
+verify which of the five items it closed) · the gate-state numbers.
+
+## ⏸ RESUME HERE — updated 2026-09-10
+
+**Branch `feat/p91-observability`. Nothing pushed, by instruction.** 30 commits ahead of `5c2dcd2`
+(one, `2a0b8f1`, is a PEER session's MCP work — not this session's).
+**DO NOT MERGE this branch to `dev` without the user.** The user confirmed 2026-08-31 that it is
+WIP; the 2026-09-10 checkpoint confirmation is **not** authorisation to merge. The branch's own
+commit messages must not be read as an authoritative status.
+**Tree is NOT clean, and deliberately so:** `CLAUDE.md` and `.claude/agents/context-explorer.md`
+carry uncommitted edits that predate the 2026-09-10 session and are **not** FU-1's — they were left
+unstaged on purpose. Don't spend time reconciling them; find out whose they are first.
+
+**Current step: see `## 🔄 IN FLIGHT` — the 2026-09-11 ruling queue. Previously:** FU-1 (`1d8c6f9`), P111 (`1192f2a`) and every reviewer
+follow-up (`e9d025d` / `7f9f16b` / `c03d11d`) are done and committed; all eight USER CHECKPOINTs
+were confirmed 2026-09-10 (`548cc0a`). Narratives: archive Parts 54-60.
+
+**SUPERSEDED 2026-09-11 — all 17 FOR-USER items are now RULED; see `## USER DECISION LEDGER`.**
+The implementation queue those rulings created is the current work. Previously this read:
+**There is no unblocked implementation work in this block.** What remains here is FOR-USER
+decisions (the seven in the next section, plus item 3's two security calls) and **two owed AI-gate
+items** — `### P108 — AC11 is still OWED` and `### P91 — open items`, both under
+`## OPEN follow-ups`. Neither is closed by a native confirmation. For code work, pick from
+`1b` / `1c` / `1d` below or from `## OPEN follow-ups`.
+
+### Next, in order
+
+1. **✅ FU-1 is DONE — `1d8c6f9`.** Both halves shipped, both reviews approved with **no MUST-FIX**,
+   all 5 SHOULD-FIX + 7 NITs applied, **full 8-step gate green (452.5s, 2344 Rust tests, 185 e2e)**.
+   Contracts: `docs/contracts/P87b-FU1-run-target.md` and
+   `docs/contracts/P87b-FU1-FU4-git-dock-ui.md`. Both declare **no USER CHECKPOINT item**, so the
+   milestone is fully closed. Full narrative: archive Part 59.2.
+
+1d. **Contract-hygiene residue surfaced 2026-09-10 (architect's own list, filed not fixed).**
+   All in `docs/contracts/P87b-FU1-run-target.md`. Hand these to the **next** architect spawn that
+   touches the file — none is worth a spawn of its own:
+   - The header blockquote still says "as of HEAD (`1be3a85`)" and "a senior-dev is mid-change in
+     `GitActivity*` / `stash.ts` / `styles/`" — a pre-implementation snapshot. F-4 says the same.
+   - §3's `remote_push_activity.rs:67-94` / `:226-256` line ranges have drifted (upstream
+     resolution now starts ~`:56` and ~`:215`).
+   - §8 understates the shipped seams: `?gitLongTarget` and `?gitBidiTarget` apply to
+     `push || forcePush`, not push alone; the exported `MOCK_LONG_TARGET` / `MOCK_BIDI_TARGET`
+     consts are never named; the `query()` idiom is at `:70-79`, not `:58-63`.
+   - **§8's `?gitBidiTarget` row and §9 items 8-9 embed literal U+202E / zero-width characters
+     while the same section instructs "write the escape, not the literal char"** — the contract
+     violates its own rule. Same defect class as the one fixed in `gitActivityFormat.test.ts`
+     during FU-1. Highest-value of this group.
+   - §1's line-count estimates and §9's "`activity.rs` lands ~430" were never verified (it shipped
+     at 437).
+
+   **Closed 2026-09-10:** the designer's **F-G** (the two contracts disagreeing on the
+   `MOCK_LONG_TARGET` literal) — the architect corrected §8 to the shipped 95-char string, and the
+   orchestrator marked F-G resolved in `P87b-FU1-FU4-git-dock-ui.md` §5, since that section is
+   addressed to the orchestrator. Both contracts now agree with the code.
+
+1c. **Small follow-ups filed from the FU-1 pass (velocity mode — none blocking).**
+   - `.git-run-noun` lacks the `white-space: nowrap` that `.git-dock-noun` has — the second
+     bar-vs-row asymmetry after the `font-weight: 600` one FU-1 fixed. Found by the fix pass.
+   - `.git-run-summary`'s gap is a hardcoded `8px` while `.git-dock-header` uses `--git-dock-gap`
+     (6px compact). **Pre-existing**, not from FU-1 (ui-designer NIT 5).
+   - Size-ratchet baseline drift: it reports `RepoWorkspace.tsx 2265 → 2264 (1 reclaimed)`, which
+     predates FU-1 and wants `pnpm lint:size -- --update-baseline`.
+   - Mock target fidelity is on disk as **F-F(a)** in `P87b-FU1-FU4-git-dock-ui.md` §5 (call sites
+     pass literal `'main'`/`'origin/main'` regardless of the fixture's HEAD, so a `detached`/
+     `unborn` mock fixture would render `Commit main`). Per spec; only matters if those seams are
+     used with the dock open.
+   - Code-reviewer NIT 7 (the running row's `aria-label` re-renders each tick because
+     `durationWords` uses `.toFixed(1)`) was **judged conformant** with §3.7, which includes the
+     duration in its own examples. Deliberately not filed as a defect.
+
+1b. **Doc corrections owed from the FU-1 pass (three one-liners, none blocking).** Filed rather than
+   fixed, to respect contract ownership:
+   - **`docs/contracts/P87b-FU1-run-target.md` §4** — its unborn-HEAD rationale is **factually
+     wrong**: it says `read_head_info` returns `branch_name: None` for unborn HEAD "so this is
+     free", but it returns `Some` (it reads HEAD's symbolic target). The `null` is enforced by an
+     explicit `if head.unborn || head.detached` guard, which is **load-bearing** — a future reader
+     must not delete it as redundant. (architect's file)
+   - **`docs/contracts/P87b-FU1-run-target.md` §8** — still carries the **83-char**
+     `MOCK_LONG_TARGET` literal, which fails the same section's own "≥90 chars" requirement.
+     Shipped as 95. §9.2 and §177 also still name the old test name. (architect's file)
+   - **`docs/contracts/P87b-FU1-FU4-git-dock-ui.md` F-E** — claims `commitAmend` is not
+     activity-wrapped. **It is** (`src-tauri/src/commands/staging.rs:179`, `with_activity(…,
+     Amend, target, …)`). This stale line has now caused **two separate agents** to report a
+     nonexistent FU-2 gap (architect's F-4 refuted it; the refutation never made it into the UI
+     contract, so the next reader picked the wrong one up again). Highest-value of the three.
+
+   **Batch these into the next `architect` / `ui-designer` spawn rather than spawning for them.**
+   Lesson from this pass: F-E was known stale *before* ui-designer was invoked (both senior-devs were
+   told so in their prompts) and the designer was editing §5 of that very file — the correction should
+   have been in its prompt. When an agent that OWNS a contract is spawned for any reason, hand it the
+   known corrections to that contract.
+
+2. **✅ All reviewer follow-ups from the `a82740ff` pass are CLOSED — `e9d025d` / `7f9f16b` /
+   `c03d11d`** (full 8-step gate green, 542.4s). Three of the six were not what the board said; the
+   corrections are archive Part 59.3.
+   **One standing warning from that pass, kept live because it is exactly the kind of fix a later
+   session would "simplify" back:** in `whichAll` (`scripts/lib/spawn-tool.mjs`), prepending `''` to the Windows
+   `PATH_EXTS` unconditionally would *regress* tool resolution — npm/corepack install
+   **extensionless POSIX shell scripts** beside every shim, and `resolveTool` picks
+   `hits.find(p => !isBatch(p))` as the real executable, so `''` first selects an unrunnable script.
+   `''` is gated behind `hasExecExt` **deliberately**; 3 regression tests guard it. Do not ungate it.
+
+2b. **One follow-up NOT taken (deliberate).** `src/obs/types.ts:68` still cites `A26 §D`, the same
+   dead lettered scheme retired inside `raw_args.rs`. A repo-wide letter→section migration is a
+   decision, not a drive-by; flagged rather than half-migrated.
+
+3. **Security, still open** (`docs/audit-2026-09-03-external-launch.md`): MEDIUM-2
+   (`terminalCommand`/`editorCommand` unvalidated — renderer compromise still converts to local
+   execution) and LOW-1 (cwd DLL search order). **Both deliberately left for the user:** MEDIUM-2's
+   suggested remedy breaks a legitimate absolute path to a portable editor, and LOW-1's mitigation
+   changes launch behaviour. Product calls, not patches.
+
+### Verification state
+
+- **Full 8-step gate green at `1d8c6f9` (2026-09-10, 452.5s)** — 2344 Rust tests, 185 e2e passed /
+  1 skipped. Per step: nextest 133.2s · doctests 3.7s · clippy 22.8s · eslint 12.7s · size ratchet
+  0.9s · vitest 82.9s · tsc+build 15.3s · e2e 181.1s. A **later** full 8-step green run (542.4s)
+  closed the reviewer follow-ups across the pair `e9d025d` (the code) + `7f9f16b` (docs/contracts
+  only — verified `--stat`: `TODO.md` + the two `P87b-FU1-*` contracts, so the gate cannot have run
+  *at* it). Both runs supersede the `c218258` state (archive Part 58).
+- Exit code 0 is not sufficient evidence on its own: **grep the log** for failures. Many test NAMES
+  contain `error`/`failed`, so a naive scan returns false positives — filter them.
+- Verify the machine is idle first, and **redirect the whole log to a file** — piping `pnpm gate`
+  through `tail` lost a failure detail and cost a re-run.
+- Port **1420 is free**. Keep it so: `strictPort: true` means a held port breaks `pnpm tauri dev`.
+
+
+---
+
+## Part 63 — The `FOR USER — decisions (ALL RULED 2026-09-11)` section, verbatim: the full evidence blocks for items 0–6 — happy-dom, the e2e bundle default, F6 `usage.json`, home/username masking, D3 `.op-worktree-warning`, the two 1.0.0 items, and the record contradictions. Moved off the board 2026-09-14.
+
+Moved **because every one of them is RULED.** The authoritative record of *what* was decided is the
+live `## ✅ USER DECISION LEDGER — 2026-09-11`, which this pass did not touch; the blocks below are
+the *evidence that justified* each ruling, including the measured happy-dom comparison (jsdom 60.3 s
+wall / 574 s environment CPU vs happy-dom 44.6 s / 321 s) and the dead option 2
+(`environmentMatchGlobs`, killed by `src/ipc/mock/repoState.ts:160`).
+
+**What stays live on the board:** ruling #9's owed measurement (one cold `E2E_BUNDLE=1` run vs the
+162 s dev figure *including build*, with the `playwright.config.ts:38` one-line flip recorded but
+**not** to be made) · item 5's two user actions (the `.tauri/updater-prod.key` backup, the
+unidentified Dependabot moderate) · the F6 implementation queue. Item 6's five record contradictions
+were all verified and closed on 2026-09-11 — see Part 64.
+
+## FOR USER — decisions (ALL RULED 2026-09-11 — evidence kept, rulings in the ledger above)
+
+### 0. happy-dom — ✅ RULED 2026-09-11: **ADOPT, plus the lazy `window.location` fix**
+
+> Evidence below is the measurement that justified it. Apply `docs/proposals/happy-dom.patch`, then
+> `pnpm install`. Also make `src/ipc/mock/repoState.ts:160` lazy (the board already called this worth
+> doing regardless). The shim's quiet a11y-naming failure mode is an ACCEPTED risk — if a future
+> test uses an inline tag outside the shim's set it silently gets `display: block`.
+
+**Patch is saved at `docs/proposals/happy-dom.patch`** — apply with
+`git apply docs/proposals/happy-dom.patch` then `pnpm install`. The working tree was **restored to
+jsdom** so nothing downstream is measured against an unapproved toolchain.
+
+**The win is real and measured**, five jsdom runs against four happy-dom runs, machine-load sampled
+before each, plus a back-to-back control 45 seconds apart so it is not a stale-baseline artifact:
+
+| | wall (median) | environment CPU | tests CPU |
+|---|---|---|---|
+| jsdom 30.0.1 | 60.3 s | 574 s | ~118 s |
+| happy-dom + shim | **44.6 s** | **321 s** | **~64 s** |
+
+**−26% wall, −44% environment CPU, −46% test CPU**, and variance tightens from ±6 s to ±0.4 s.
+
+**Two things make this your call, not mine.**
+
+1. **A dependency add:** `happy-dom ^20.12.2` as a devDependency (+13 transitive, −4). `jsdom` is
+   deliberately **left installed** so the shim's self-guard stays meaningful and rollback is one line.
+2. **It needs a hand-maintained shim, and that is the part I would weigh hardest.** happy-dom's
+   `getComputedStyle` omits the UA default stylesheet — `display` on every inline element and
+   `visibility` on all elements come back `""`. `dom-accessibility-api` branches on `display` to
+   decide whether to insert a space between child text alternatives, so three tests computed
+   `"Added src/ app.rs"` instead of `"Addedsrc/app.rs"` — **a space injected mid-path**. The shim
+   supplies the missing UA values and is self-guarding (inert under jsdom, verified by flipping the
+   config back). But it is **a hand-maintained subset of the UA stylesheet**, and *if a future test
+   uses an inline tag outside that set it silently gets `display: block`.*
+
+   **Exposure:** 715 `ByRole(…, { name })` call sites across 77 files depend on that computation;
+   712 are unaffected today only because they target leaf elements with flat text. So the
+   silent-failure mode sits precisely in accessibility-name computation — the area where this
+   session found several real defects. That is the trade: **26% faster tests against a maintained
+   shim with a quiet failure mode in a11y naming.**
+
+**Option 2 (`environmentMatchGlobs`, so only DOM-touching files pay) is DEAD** — and the reason is
+worth keeping. Of 156 DOM-project files, 137 use the DOM directly; the other 19 *look* DOM-free but
+**all 19 fail in a node environment for one root cause**: `src/ipc/mock/repoState.ts:160` calls
+`new URLSearchParams(window.location.search)` at **module init**, so anything that transitively
+imports the mock IPC layer needs `window`. Measured anyway: 57.0 s with 18 files failing, and its
+theoretical ceiling was only ~6.7% of total CPU.
+
+**Filed follow-up (unlocks option 2, ~3-line app change, not made):** make that `window.location`
+read **lazy** in `repoState.ts`. It would move ~19 files to the node environment, worth roughly a
+further 70 s of CPU, and is worth doing *regardless* of the happy-dom decision.
+
+**Verified clean, no shim needed:** `Range`, `Selection`, `createRange`, `MutationObserver`,
+`IntersectionObserver` (happy-dom *has* it and jsdom does not — a gain), canvas stubs, `DOMRect`,
+`requestAnimationFrame`, `structuredClone`. `toBeVisible()` was checked against jsdom on all six
+hiding mechanisms — **no silent-pass hazard**.
+
+---
+
+### 1. e2e bundle default — ✅ RULED 2026-09-11: **MEASURE and REPORT, do NOT flip**
+
+- P104 is cleared, so nothing blocks the flip; the orchestrator deliberately did **not** make it.
+- The blocker is a measurement gap: the figures are **162 s dev server vs 122 s bundle**, and it is
+  not established that the 122 s includes the **bundle build step**. If it does not, flipping could
+  make the default gate *slower* — the opposite of the purpose.
+- In favour: bundle mode is equally green (181 passed / 1 skipped / 0 failed in both modes) and has
+  **higher fidelity** — P103 was a real product bug only the bundle-vs-dev check exposed, because
+  `import.meta.env.DEV` code is absent from a production bundle.
+- One line each, trivially reversible: `playwright.config.ts:38` →
+  `const BUNDLE = process.env.E2E_BUNDLE !== '0'`, plus inverting `--e2e-bundle` in `gate.mjs`.
+- **To decide it: time one `E2E_BUNDLE=1` run from a cold build** and compare with the 162 s dev
+  figure including build. Full context: archive Part 48.
+
+### 2. F6 `usage.json` — ✅ RULED 2026-09-11: **always-on stays; 90-day window + deletable**
+
+> Not option A/B/C as specced: the user kept collection always-on (so a future Statistics page stays
+> viable) but cut 400 days → **90** and required it be **deletable**. The disclosure copy is still
+> owed and must name the **`metrics` folder**, not the file.
+
+- `usage.json` is **always-on durable local telemetry**, independent of Dev mode, from first launch:
+  `firstSeen`, launch count, and a **400-day** per-day profile of which operations ran and how long.
+- It survives `logs_delete_all` **by design**, `metrics_reset` has **no UI**, and the privacy panel
+  never mentions the file exists.
+- Content is non-identifying by construction, so this is a **disclosure** question, not a leak. But
+  the panel is headed "What a log file contains" and ends with "removes every one of them", so **by
+  omission it reads as though Dev mode is the only thing recorded and the delete button clears it**.
+- `ui-designer` recommends **option A: disclose, no reset button**. Option B (a reset row) reverses
+  ratified §10 and belongs on a future Statistics page.
+- The remedy must name the **`metrics` folder**, not the file: deleting `usage.json` alone lets
+  `usage.json.bak` restore it.
+- **Until the user rules, only §2-§5 of the copy contract get implemented.**
+- P91 has never shipped, so now is the moment to decide whether a local Git client should keep an
+  undeletable 400-day usage profile with no disclosure. Full text: archive Part 43.
+
+### 3. Home/username masking — ✅ RULED 2026-09-11: **mask the home prefix, CROSS-PLATFORM**
+
+- `scrub.rs` has **no username rule** (verified independently by grep), so a **raw absolute repo path
+  carries the OS account name** into a mailed export zip.
+- Not a leak of repo content, but it is identifying, and the export workflow mails it to a third party.
+- Now **disclosed** in the consent copy (`0a785b3`); **whether to also mask it is unresolved** —
+  masking would undercut raw mode's stated purpose of showing real paths.
+
+### 4. D3 `.op-worktree-warning` — ✅ RULED 2026-09-11: **repaint as the warning hue**
+
+- It is a **warning painted danger**: a *tone/semantics* question, not a contrast one.
+- Deliberately **not** folded into P108 — changing it alters what the UI means, not whether it can be
+  read. P108's fix kept the danger hue and changed only legibility, so the tone question is untouched.
+
+### 5. Two 1.0.0 items — ⏳ 2026-09-11: both DEFERRED by the user, still user actions
+
+1. **Back up `.tauri/updater-prod.key`.** Correctly gitignored and untracked, so it exists in exactly
+   ONE place: this working copy. Losing it permanently breaks auto-update for every installed client.
+   (The committed `tauri.conf.json` pubkey was verified to match it.) **Also: P71 must not touch it.**
+2. **GitHub reported 2 Dependabot alerts (1 high, 1 moderate)** on push. The high is the known
+   `nanoid` GHSA-2v37-7h3g-55p8 — build/test tooling only, deliberately ignored in
+   `pnpm-workspace.yaml`. **The moderate is unidentified** — `gh` is not installed here; both project
+   gates are green. Check the Dependabot page.
+
+### 6. Record contradictions — 🔧 2026-09-11: **orchestrator to verify and close these** (user assented)
+
+The curator refuses to resolve these; resolving any would upgrade a status.
+
+- ~~**P107's board heading says "CONTRACT DONE, IMPL PENDING"**~~ — **RESOLVED by the orchestrator
+  2026-09-03.** The heading predated `2168057` and was stale; it was restated in P107's own section
+  — **which is now archive Part 54.4** (the section left the board 2026-09-10). The clause "AC11 /
+  AC12 / AC13 remain pending USER CHECKPOINTs" was true when written and is **no longer true**: the
+  user confirmed all three on 2026-09-10 (`548cc0a`). Kept, corrected in place, because this bullet
+  is the board's record of its own staleness.
+- ~~**`no_proxy_client()` is claimed both open and closed.**~~ — **RESOLVED: CLOSED, verified by the
+  orchestrator 2026-09-03.** Checked directly rather than taken from the audit report:
+  `src-tauri/src/mcp.rs:411` declares `#[cfg(test)] mod http_support;`, so the module carrying the
+  raw `.expect("build reqwest client")` (`http_support.rs:221`) **is never compiled into a shipped
+  binary**. The DEP-REFRESH follow-up filed it as a panic path reachable in production; that premise
+  is false, so the item is closed on evidence rather than on a report's say-so. Closing a follow-up
+  on a verified fact is not a status upgrade — no checkpoint is involved.
+- **Four follow-ups from the 2026-09-02 file-size refactor look addressed by later commits on this
+  branch, but nothing records them closed:** `52c815e`/`6092eb3`/`338d71f` (reflog + overlay
+  teardown), `1d9d9bf` (armed dialogs during confirm dialogs), `734b310` (the `ai::session*` clock
+  seam). Kept open below.
+- **Two 2026-09-01 velocity follow-ups read as superseded** by the 2026-09-03 pass (`737cc4b`,
+  `5731d37`), which banded `prop_status` (3.25x) and `prop_stash_roundtrip` (3.2x).
+- **No contract file was ever written for P94.**
+
+
+---
+
+## Part 64 — The `🔄 IN FLIGHT` block (the implementation queue the 2026-09-11 rulings created), the `✅ CLOSED 2026-09-11 by orchestrator verification` section, and the `⚠️ NEW — unreviewed MCP write-tool code rode the merge onto dev` warning, verbatim, moved off the board 2026-09-14.
+
+The queue's `Current step:` line (architect / senior-dev / security-auditor mid-run) is preserved
+below exactly as it stood; **all three finished on 2026-09-11**, which is why the live board no
+longer carries it.
+
+**What stays live on the board:** the two code changes **OWED to senior-dev** — D3
+(`src/styles/dialogs.css:238`, `var(--danger-strong)` → `var(--warning-strong)`) and the two stale
+"pending A3 sign-off" comments (`SettingsAiRunSection.tsx:25` and `:46`) — carried as
+**in-progress on 2026-09-14, not done** · the three F6 backend facts (recursive `metrics` delete,
+the in-memory `MetricsState` reset, and the `lifetime`-figures ruling) · the P77 tag-sync wiring
+design with its `file:line` citations.
+
+The `security-auditor` pass this section recorded as owed on `2a0b8f1` **was done** — report
+`docs/audit-2026-09-11-mcp-tool-contracts.md`, board text at Part 65 — and its findings were
+implemented in `216ca45`.
+
+## 🔄 IN FLIGHT — the implementation queue the 2026-09-11 rulings created
+
+**Current step: architect amending `P91-observability.md` for F6; senior-dev on the security
+increment; security-auditor on `2a0b8f1`. ui-designer DONE.**
+
+### ✅ ui-designer pass DONE 2026-09-11 — contracts written, two code changes OWED to senior-dev
+
+- **A3 — SIGNED: the SHIPPED string stays.** `Turn on "Enable AI features" above to change these.`
+  ui-designer **withdrew its own preferred reword** after finding `SettingsAiSection.tsx:110`
+  byte-identical modulo `this`/`these` and `SettingsDevCaptureSection.tsx:52` a third instance — it
+  is a pattern, not a string. Signed into `ui-reference.md` §12.12 + `P68g-ui.md`. **No string in
+  `src/` changes, so no test moves.**
+  → **OWED to senior-dev:** clear two now-stale comments, `SettingsAiRunSection.tsx:25` and `:46`,
+  both reading "pending A3 sign-off".
+- **D3 — SPECCED, NOT APPLIED** (`src/styles/**` is outside ui-designer's remit).
+  → **OWED to senior-dev:** `src/styles/dialogs.css:238`, `.op-worktree-warning`:
+  `var(--danger-strong)` → **`var(--warning-strong)`**.
+  Measured on `.dialog-card`'s `--bg-1`: **8.38:1 dark / 6.65:1 light** vs P108's ≥4.5:1 bar. P108
+  shipped `--danger-strong` there at 7.62/6.01, so **the tone repaint RAISES contrast in both
+  themes** — it does not trade legibility for semantics. No new token; no grep invariant moves.
+- **D1 and D2 were BOTH already fixed — my brief to it was stale on both.** F-E was corrected
+  2026-09-10 (`P87b-FU1-FU4-git-dock-ui.md:461-478`) and re-verified 2026-09-11.
+  `.forge-connect-link:hover` was fixed by P107 at `forge-pr-create.css:209-225` (thickness pinned
+  1px at rest, 2px on hover, with a comment naming this exact defect).
+  **The actual stale line was `docs/contracts/INDEX.md:54`** — the propagation vector for the third
+  false `commitAmend` report. **FIXED by the orchestrator 2026-09-11**; the P91 row's "unmerged by
+  user instruction" claim was corrected in the same pass.
+
+### F6 — two backend facts the copy now depends on, ONE OF WHICH FAILS SILENTLY
+
+Recorded here because a later session must not implement half of it:
+
+1. The delete must remove the **`metrics` directory recursively** — `usage.json.bak` restores the
+   file if only the file goes.
+2. It must **also reset the in-memory `MetricsState`**. Otherwise the next flush writes the
+   just-deleted data straight back, **and a test that only asserts the file is gone PASSES while the
+   button does nothing.** ui-designer's AC 8 asserts the snapshot, not the file, for this reason.
+
+**Also corrected 2026-09-11 — the board (and my own brief) OVERCLAIMED what is always-on.** The
+always-on data is **counts**; the **durations half is Dev-mode-only** (`metrics.rs:148-152`). A
+privacy surface claiming always-on durations would be an overclaim. `P91-privacy-copy-ui.md` §6.1.1
+now tables the verified field-by-field picture and is the source of truth over the board.
+
+**`lifetime` figures — RULED 2026-09-11 (user): KEEP them.** `first_seen` and `sessions` survive the
+90-day fold; the window applies to the **per-day profile only**. Rationale: both are inherently
+lifetime values and the Statistics page — the user's stated reason for keeping collection always-on
+instead of Dev-mode-gating it — needs the total. Deletion still removes everything, lifetime figures
+included: "retained 90 days" and "cleared by the delete action" are **separate promises and both
+must hold**. Do not let a later session tidy the lifetime fields into the prune.
+
+**Scope the F6 amendment correctly — §10 is NOT the only place asserting metrics survive deletion.**
+Also `P91-observability.md` §6.1 `:713-726`, §8 `:1425`, §13 row 6 `:1936`, §8 prose at `:1404`
+`:1494` `:1575` `:1597`, and the rationale in `src-tauri/src/obs/metrics_keys.rs:44`.
+`RETAIN_DAYS` is `src-tauri/src/obs/metrics.rs:40`, currently **400**.
+
+**Design hole the ruling opened, fixed in `P91-privacy-copy-ui.md` §6.4:** the delete row was gated
+on `hasLogs`, so a user who never enabled Dev mode would face up to 90 days of usage counts behind a
+permanently disabled button. Gate dropped. No new IPC field needed — `metrics.rs:210`/`:235` bump
+`sessions` at init every launch, so there is no reachable "nothing to delete" state.
+
+---
+
+## ✅ CLOSED 2026-09-11 by orchestrator verification (user assented to my closing these)
+
+Each was verified by reading the commit or the file, not by trusting the board.
+
+- **The four 2026-09-02 file-size refactor follow-ups — CLOSED.** All five commits exist and do what
+  the board guessed: `52c815e` "clear the reflog overlay on the repo-went-unusable teardown",
+  `6092eb3` "close every overlay on the repo-went-unusable teardown", `338d71f` "add the
+  diff/composer/palette overlays to the unusable-repo teardown", `1d9d9bf` "disarm every armed dialog
+  on the repo-went-unusable teardown", `734b310` "drive the session watchdog from an injectable clock,
+  not wall time".
+- **The two 2026-09-01 velocity follow-ups — CLOSED as superseded.** `737cc4b` is literally "band the
+  two slowest proptests -- 3.25x and 3.2x"; `5731d37` cut the workspace test wall 14%.
+- **`P91-raw-args-privacy.md` — CLOSED, already done.** The file is absent from `docs/contracts/`;
+  `INDEX.md` records it folded into `P91-observability.md` §7.4 by `12b0ab6`. The board's
+  "consolidation recommended" item and its stale "Contracts:" line were both describing finished work.
+- **`P91-observability-ui.md:496`/`:951` vs `INDEX.md` — RESOLVED: `INDEX.md` is right, the BOARD was
+  stale.** Verified directly: `:496` correctly states `log_export_session()` takes **no** destination,
+  and `:514-516` explicitly refute the `dest` form as webview-supplied. `fc9c36e` did fix it. The
+  architect's own `P91-observability.md` §6/§10 are the copies still stale — routed to `architect`.
+- **P87b `FU-1..4` — the four-way-stale line is now resolved, three of four were NOT open.**
+  FU-1 shipped `1d8c6f9`. **FU-2's premise is false** (`commitAmend` *is* activity-wrapped at
+  `src-tauri/src/commands/staging.rs:179`). FU-3 closed by `833f2f9` "dock row gets a role".
+  FU-4 answered by *rejecting* the change, `763866a`. Only the `AiActivityPanel` aria-label NIT is
+  arguably live — and `src/components/AiActivityPanel.tsx:192-193` **does** carry
+  `role="region"` + `aria-label="AI activity"`, so the NIT needs restating against the current file
+  or closing. Do not re-open the other three; the board has been wrong about this entry three times.
+- **P94 has no contract file — CONFIRMED, accepted as debt.** P94 is shipped; a retroactive contract
+  buys nothing. Recorded here so the gap stops being rediscovered as a live defect.
+
+### P77 tag-sync — the ruling's design is settled by measurement, not guesswork
+
+The user chose "fold into the auto-fetch cycle". Verified what that can mean:
+
+- Auto-fetch **already downloads tags**: `src-tauri/src/scheduler/exec.rs:151` → `fetch_all()` →
+  `crates/bonsai-core/src/git/remote_activity.rs:52`, `opts.download_tags(AutotagOption::Auto)`.
+- **But a purely local compare is NOT sufficient.** Fetched tags land in `refs/tags/*` alongside local
+  ones, so after a fetch you cannot distinguish a local-only tag from a fetched one. Classification
+  (local-only / remote-only / diverged) genuinely needs the `ls-remote`:
+  `crates/bonsai-core/src/git/tag_sync.rs:275-288` → `ls_remote_tags()` → `remote.list()` at `:132-173`.
+- **Therefore the increment is: trigger the existing `list_tag_sync` on auto-fetch completion**, not
+  a new local-only comparison. That still honours the ruling — it rides a network cycle the user
+  already opted into (5-min interval, enabled) and adds no repo-open call and no new network policy.
+- Current trigger to replace/augment: `src/components/sidebar/TagsSection.tsx:165-172` → `onExpand` →
+  `src/components/RepoWorkspace.tsx:1878` `onTagsExpand={() => void refetchTagSync()}`, with a 10 s
+  cache guard at `src/components/repoWorkspace/useTagSync.ts:57-60`.
+
+### ⚠️ NEW — unreviewed MCP write-tool code rode the merge onto `dev`
+
+`2a0b8f1` was described on the board as "a PEER session's MCP work". It is **not docs-only**:
+
+```
+ .claude/agents/context-explorer.md          |   2 +-
+ crates/bonsai-mcp/src/server/tools_read.rs  |  85 +++++++++++++-
+ crates/bonsai-mcp/src/server/tools_write.rs | 147 ++++++++++++++++++++--
+```
+
+**222 insertions into the MCP server's read AND write tools**, from a session that ended, reviewed by
+nobody in this line of work — and it is now on `dev` and pushed. CLAUDE.md names "the MCP server's
+write tools" as a `security-auditor` surface. **A `security-auditor` pass on `2a0b8f1` is owed.**
+
+
+---
+
+## Part 65 — `SEC-2026-09-11` — the MCP tool-contract audit of `2a0b8f1`, verbatim, moved off the board 2026-09-14. HIGH (`stage_paths` missing the symlink-escape guard), MEDIUM (`git add -f` semantics with the stated precondition unenforced over MCP), four LOWs, the PROCESS finding, and its **verified-CLEAN register**.
+
+Implemented and reviewed in **`216ca45`** ("close the MCP audit — stage escape, status membership,
+and the hook gate"); the review of that implementation is Part 66. Second-round ruling #19 turned the
+PROCESS finding into a standing **CLAUDE.md path trigger**: any diff touching
+`crates/bonsai-mcp/src/server/tools_*.rs` requires a `security-auditor` pass regardless of the commit
+subject, plus a description-snapshot test. Full report: `docs/audit-2026-09-11-mcp-tool-contracts.md`.
+
+**Read the CLEAN register below before opening any MCP audit** — it exists to stop a later session
+re-auditing the same ground — together with its explicit "NOT checked, so the CLEAN register does not
+over-claim" list, which is the boundary of that claim.
+
+### SEC-2026-09-11 — MCP tool-contract audit of `2a0b8f1` (full report: `docs/audit-2026-09-11-mcp-tool-contracts.md`)
+
+**The merge itself was safe.** `2a0b8f1` changed **zero non-doc-comment lines** — proven by
+`git show 2a0b8f1 --unified=0 -- tools_read.rs tools_write.rs | grep -vE '^[+-]\s*///'` returning
+empty. No new tool, no signature change, no router change. The write gate is structural and
+untouched (`crates/bonsai-mcp/src/server.rs:156` merges `write_router()` only inside
+`if allow_write`, so unauthorised tools are **unregistered**, not merely refused). Capability and
+authorisation: **CLEAN.**
+But it is **not inert**: `rmcp-macros` concatenates every doc line into the JSON-Schema
+`description`, so all 222 lines ship as **model-facing instruction text** on 33 of 34 tools.
+Auditing whether those claims are true is what surfaced the finding below.
+
+#### HIGH — `stage_paths` is missing the symlink-escape guard (PRE-EXISTING, not from `2a0b8f1`)
+
+**Independently verified by the orchestrator 2026-09-11, not taken from the report.**
+`crates/bonsai-core/src/git/stage.rs:119-143` calls only the **lexical** `validate_rel_path` and
+never `ensure_within_workdir` — which is defined **40 lines above it** at `stage.rs:76`.
+
+Every sibling write primitive DOES call it: `conflict.rs:151`, `:271`, `:348`, `discard.rs:109`,
+`stage_partial.rs:104`. There is even a dedicated test module for the guard
+(`crates/bonsai-core/src/git/path_traversal_tests.rs`). **Partial staging is guarded; full-file
+staging is not.** That asymmetry is an oversight, not a decision.
+
+Consequence: a symlinked **ancestor** is followed (`stage.rs:136` uses
+`wd.join(rel).symlink_metadata()`), so `index.add_path` reads a real out-of-repo file into the object
+database. libgit2 has **no** "beyond a symbolic link" refusal (the string is absent from all of
+`libgit2/src`; the git CLI has it). The file/directory collision does not stop it either —
+`git_index_add_bypath` passes `replace=1`.
+
+- **Also reachable from the webview, so this is NOT MCP-only:**
+  `src-tauri/src/commands/staging.rs` passes frontend-supplied paths straight into `stage_paths`
+  with no extra guard — verified. It is a renderer-compromise primitive too.
+- **Not exploitable on this host as configured:** Windows defaults `core.symlinks=false`, so the
+  hostile symlink materialises as a text file. That is why HIGH, not CRITICAL. Needs one
+  macOS/Linux scratch-repo run to demonstrate empirically.
+- **Fix:** call `ensure_within_workdir` in `stage_paths`. The guard already rejects this case —
+  canonicalising the parent yields the escape target, which fails its `starts_with(base)` test.
+  `unstage_paths` needs no fs guard (index-only).
+
+#### MEDIUM — `add_path` has `git add -f` semantics, and MCP breaks its stated precondition
+
+`stage.rs:117` documents it and justifies it: "acceptable — the UI only offers paths already present
+in `StatusSnapshot`". **A model is not the UI.** Gitignored files (`.env`, `secrets.json`) are
+stageable and committable. `tools_write.rs:22` restates that precondition as *advice to the model*
+with nothing enforcing it. Fix: enforce membership in `read_status()` output on the MCP path — which
+is what the description already promises.
+
+#### LOW x 4
+
+1. **A false guarantee introduced BY `2a0b8f1`.** `tools_write.rs:22-23` tells the model "a path that
+   does not exist fails the batch". It does not — `stage.rs:134-141` routes a missing path to
+   `index.remove_path`, which **stages a deletion** for a tracked path, or silently succeeds for an
+   untracked one. A model told nonexistent paths are rejected may pass paths liberally and stage
+   deletions it never intended. Notable because that commit message asserts "Every claim was checked
+   against the actual signature and outcome enum" — false for at least one write tool.
+2. **MCP commit tools run repository hooks with the disclosure structurally unreachable.**
+   `tools_write.rs:66` passes `skip_hooks=false`; `src-tauri/src/commands/hooks.rs:1-10` states the
+   gate "lives in the frontend (`useHookDisclosure`)". Standalone `bonsai-mcp --repo X --allow-write`
+   has no frontend, so a repo whose hooks the user was never shown executes code on the agent's
+   commit. CLAUDE.md requires hook execution be user-consented and clearly disclosed; this path is
+   neither. Narrow — hooks are not transferred by clone.
+3. **Read-tool descriptions carry no untrusted-data labelling** — zero hits for
+   `untrusted|instruction|do not follow` in `tools_read.rs`, on tools returning attacker-controlled
+   text (conflict blobs, all three diff families, branch names, paths). Credit where due: content
+   travels as JSON `structured_content` with a payload-free text summary (`helpers.rs:21-33`), so
+   there is **no framing escape** — the residual risk is plain instruction-following.
+4. **"Trust the caller" now has a model as the caller.** `conflict.rs:309-311` / `:332` rely on the
+   frontend Save-button marker gate. Over MCP a model can write and stage a file still containing
+   conflict markers. Fix in the MCP tool, not the shared primitive, to preserve UI behaviour.
+
+#### PROCESS — why this escaped review, and the fix at the right layer
+
+`docs(mcp)` is *literally* accurate and *materially* understating: doc comments here ARE the tool
+contracts a model reads before invoking worktree-destructive operations. 222 lines of that landed on
+subject-line trust. **Fix at the path layer, not by commit-message discipline:** a review trigger
+keyed on `crates/bonsai-mcp/src/server/tools_*.rs`, plus a test snapshotting `list_all()`
+descriptions so text drift on the write router produces a reviewable diff. The commit cites
+"No test asserts on description text" as reassurance; that IS the gap.
+Minor: every write description says "Requires `--allow-write`" — the standalone CLI flag — but the
+embedded server's gate is the `mcpAllowWrite` **setting**, so the name is wrong for half the
+deployments.
+
+#### Verified CLEAN (do not re-audit) + the boundary of that claim
+
+CLEAN: `resolve_conflict*` path handling (three layers, no escape found); destructive-abort claims
+(`abort_merge`, `rebase_abort` both refuse when nothing is in flight, with an untracked-collision
+guard); `create_branch_here`; `checkout_branch` no-autostash; `delete_branch` (no force parameter);
+`resolution` parsing; `bonsai_stage` **atomicity** (validate-all-then-single-`index.write()`); oid
+parsing; no prompt-framing break (MCP descriptions are JSON-encoded; the `prompts_are_single_line`
+guard covers a different surface); **the write router exposes no push/force/reset/clean/discard tool,
+so there is no direct network exfiltration from MCP.** No commit touched these two files between
+`2a0b8f1` and HEAD, so every line number matches the current tree.
+
+**NOT checked, so the CLEAN register does not over-claim:** `merge_branch`/`rebase_branch`
+`operationInProgress`; merge autostash-and-restore and `stashPopConflicts`; `create_stash` claims;
+stash apply/pop outcome tags; `unstage` atomicity; `commit` `hookRejected` vs `configMissing`
+mapping; `rebase_skip`; `list_repos`/`select_repo` session semantics. **LOW 1 is the one factual
+error found, not necessarily the only one present.**
+
+
+---
+
+## Part 66 — `SEC-2026-09-11b` — the review of the MCP audit **implementation**, verbatim, moved off the board 2026-09-14. Written while the increment was uncommitted; it shipped as `216ca45`.
+
+Contains its own **verified-CLEAN register** — the `stage_paths` fix is complete and atomic (every
+path guarded before `repo.index()`, existence checked on the guard's *returned* path, a leaf symlink
+still stages as a link); status membership cannot desynchronise into fail-open; the rejection of
+`repo_has_runnable_hooks` is justified on both axes; the router split preserved the gate exactly;
+`repos.rs` is a pure move — plus four informational findings (the `merge_branch` `commit-msg` gate,
+three doc claims the increment introduced, the snapshot's narrower-than-claimed coverage, and the
+untyped `other` error kind).
+
+**What stays live on the board:** the `⚠️ UNVERIFIED REGRESSION RISK`. `stage_paths` now inherits
+`ensure_within_workdir`'s `fs::canonicalize(workdir)` dependence, so on a UNC, `\\wsl$` or
+cloud-placeholder (OneDrive) workdir a canonicalize failure becomes `AppError::Io` and **refuses
+every stage, including from the UI**. Not reproducible on this host's `D:\Data\Repos` layout —
+**check before this ships.**
+
+### SEC-2026-09-11b — review of the MCP audit IMPLEMENTATION (uncommitted at time of writing)
+
+**The two findings that mattered are genuinely CLOSED**, correctly and without over-restriction. No
+CRITICAL, no HIGH; nothing the increment introduced is exploitable. But one of its six claims is
+incomplete, and the increment's own new prose asserts the stronger invariant it did not achieve.
+
+#### 🟡 LOW — claim #4 (hooks) gates 2 of the 3 commit-producing MCP paths
+
+`bonsai_merge_branch`'s clean auto-merge runs the repository's **`commit-msg`** hook with **no gate**,
+while the server now *tells the model it is refused*.
+
+- `crates/bonsai-mcp/src/server/tools_write.rs:191` — `merge_branch(wd, &args.name, false)`:
+  `skip_hooks = false`, and **no** `hooks_need_disclosure()` / `ensure_commit_hooks_disclosed` call,
+  unlike `bonsai_commit` (`:88-94`) and `bonsai_commit_merge` (`:213-219`).
+- `crates/bonsai-core/src/git/merge/branch.rs:273-277` — the clean auto-merge selects
+  `MergeHooks::MessageOnly` whenever `hooks_enabled(cfg, false)`.
+- `crates/bonsai-core/src/git/merge/finalize.rs:68` → `commit.rs:152` runs `commit-msg`, **blocking**,
+  before the commit.
+- **The false prose:** `server.rs:387-403` appends "A commit in a repository that has runnable git
+  hooks is refused here", and `crates/bonsai-mcp/README.md` says a commit "is refused unless started
+  with `--allow-hooks`". **Both are false for this tool.**
+
+**Do NOT fix it by adding the existing gate before the call — that over-refuses twice:**
+(a) `commit_hooks_that_would_run` returns `pre-commit`/`post-commit`, which a merge never fires, so
+the refusal would name hooks that would not run; (b) fast-forward (`branch.rs:173`), `UpToDate`
+(`:97`) and `Conflicts` (`:253`) all return **before** the hook selection, so a pre-call gate refuses
+merges that execute nothing. Either parameterise the probe (a `commit-msg`-scoped sibling of
+`COMMIT_HOOKS`) and gate **inside** `merge_branch` where the FF-vs-auto-commit branch is known, or
+pass `skip_hooks = self.hooks_need_disclosure()` and accept `--no-verify` semantics. **Refusal is
+preferred, for consistency with `bonsai_commit`.** Either way the `hooks_note` and README must narrow
+to what is actually gated.
+
+#### ℹ️ Three doc claims the increment INTRODUCED that are not true
+
+Same species as the audit's own LOW 1 — which is the point worth noticing.
+
+1. `crates/bonsai-mcp/src/server/write_guards.rs:125` — "Same predicate as the frontend's, shared
+   from core so the two can never drift." **The frontend's gate is an independent TypeScript
+   implementation** (`src/utils/conflictRegions.ts:8`, `const MARKER_RE = /^(<{7}|={7}|>{7})/`, used
+   at `:127`). Rust cannot share it. They are semantically equivalent **today**, so there is no
+   behavioural gap — but the stated anti-drift guarantee **does not exist**.
+2. `crates/bonsai-core/src/git/ai_resolve_bulk.rs:183` — "One definition, three gates." There are
+   **two** Rust callers (`:264`, `write_guards.rs:132`); the third is the separate TS definition.
+3. The `merge_branch` overstatement above.
+
+The `pub` widening itself is **fine** — the predicate means "this text contains a marker-prefixed
+line", which is what all three gates need. But its **placement is odd**: a conflict predicate living
+in `ai_resolve_bulk`, when `git::conflict` is its natural home.
+
+#### ℹ️ The description snapshot is real, but narrower than "the model-facing contract"
+
+It genuinely fails on write-router text drift (pins the tool-name set **with its gate**, the
+read/write counts, and every description byte; CRLF-normalised). The regen test is `#[ignore]`d and
+**no gate tier runs ignored tests** (zero hits for `--run-ignored` / `--include-ignored` across all
+configs and scripts), so it cannot fire accidentally, and it writes a **tracked** file so a
+regeneration always shows as a reviewable diff. Two property tests are independent of the snapshot,
+so regen cannot bless those regressions.
+
+**What it does NOT cover:** **parameter schemas** — `render()` reads `tool.description` only, while
+`schemars` derives JSON-Schema property descriptions from the arg-struct doc comments (`PathsArgs`,
+`ResolveConflictArgs`, …), equally model-facing and entirely unpinned; **`get_info().instructions`**,
+which is the string carrying the false `merge_branch` claim above; and the safety-relevant *content*
+of the write descriptions — a regenerated fixture could weaken "paths are ENFORCED to come from
+`bonsai_get_status`" into advice and still pass both property tests. **Cheap hardening:**
+property-assert the two load-bearing claims the way write-access and untrusted-labelling already are.
+
+#### ℹ️ The hook refusal arrives as the untyped `other` kind
+
+`write_guards.rs:178-192` returns `AppError::Other` → kind `"other"` (pinned at
+`mcp_stdio_4.rs:378`). The whole premise is that the caller is a **model branching on typed kinds**;
+a refusal indistinguishable from a generic failure invites a blind retry loop. The stage and marker
+guards got proper kinds (`invalidName`, `unresolvedConflicts`); this one deserves one too.
+
+#### ⚠️ UNVERIFIED REGRESSION RISK — needs one manual check on a network path
+
+`stage_paths` now inherits `ensure_within_workdir`'s **`fs::canonicalize(workdir)`** dependence.
+That was pre-existing for `discard` / `stage_partial` / `conflict`, but it is **newly extended to the
+highest-traffic write primitive**. On a UNC, `\\wsl$`, or cloud-placeholder (OneDrive) workdir a
+`canonicalize` failure becomes `AppError::Io` and **refuses EVERY stage, including from the UI.**
+Not reproducible on this host's `D:\Data\Repos` layout. **Check before this ships.**
+
+#### Small edges, all fail-CLOSED (recorded so they are not rediscovered)
+
+- `ensure_worktree_has_no_markers` refuses `too_large`, so a conflicted file above
+  `MAX_CONFLICT_BYTES` can no longer be staged or `markResolved` over MCP at all. **Capability loss,
+  documented.**
+- `binary` passes with `text: ""`. The doc says markers are "impossible"; more precisely, a file with
+  a NUL in the first 8000 bytes skips the check. Impact nil (git would not produce markers in a
+  binary conflict) — but the claim is stronger than the code.
+- `read_status` decodes non-UTF-8 paths lossily; a lossy path passes membership, then matches no
+  worktree file and no index entry → `remove_path` swallows `ENOTFOUND` → no-op.
+- The guard reads status then mutates through a second repo open; a concurrent worktree change could
+  desync, but `ensure_within_workdir` still runs inside `stage_paths`, so **the escape stays shut**.
+
+#### Verified CLEAN — do not re-audit
+
+**The `stage_paths` fix is complete and atomic:** `stage.rs:149-151` collects the guard's result for
+**every** path before `repo.index()` at `:154`, so the first escape propagates with **zero** index
+entries touched; the existence check at `:157` uses the guard's **returned** path, not a re-join, so
+the ancestor-symlink hole is closed rather than relocated. **Not over-restricted** — a leaf symlink
+still stages as a link (mode `0o120000`). Tests prove the out-of-repo bytes never enter the ODB
+(`odb().exists(hash("SECRET"))` is false) and that a mixed batch stages nothing.
+**The conflicted-path bypass the implementer found beyond the audit is real** and its reasoning is
+right: `stageable_paths` admits `snap.conflicted`, so guarding only the resolve tools would have left
+a one-call bypass — finding 6 would have been decorative. The new gate is not blanket.
+**Status-membership cannot be desynchronised into fail-open:** matching is exact `&str` set
+membership, so every divergence (case, `./`, trailing slash, directory prefix, unicode form,
+truncation) **refuses** rather than admits. `recurse_untracked_dirs(true)` makes untracked rows files
+not `dir/` summaries; `include_ignored(false)` is what excludes `.env`.
+**The rejection of `repo_has_runnable_hooks` is justified on both axes** — `DISCLOSABLE_HOOKS`
+includes `PrePush`, which no commit fires and MCP cannot reach at all (no push tool), and it never
+consults config. `hooks_enabled(&cfg, false)` is **not** fail-open: the second parameter is `skip`.
+**`--allow-hooks` cannot be reached or implied on the embedded server** — `with_session` hardcodes
+`allow_hooks: true`, so embedded behaviour is byte-identical and the flag exists only in `main.rs`.
+**The router split preserved the gate exactly:** `write_mutation_router()` is the single thing merged
+under `allow_write` **and** the source of `write_tool_names()` / `write_tool_count()`, so
+registration, name list and count cannot disagree; three independent guards would catch a regression.
+**`repos.rs` is a pure move** (byte-identical bodies).
+
+**Still pre-existing and deliberately out of scope:** the audit's MEDIUM on the **webview** path —
+`src-tauri/src/commands/staging.rs:19-23` still passes frontend paths straight to `stage_paths`,
+which keeps `git add -f` semantics with no status-membership check. The **escape** half is now closed
+for that caller too. Also pre-existing: `ensure_within_workdir` treats `.git` as inside the boundary.
+
+
+---
+
+## Part 67 — `P108 — AC11`, verbatim, moved off the board 2026-09-14. **CLOSED 2026-09-11 by user ruling** (ledger #13): the two source-derived **3.05** contrast figures for the two unreachable states are ACCEPTED and the limitation is recorded.
+
+Kept here in full because the qualifier is the point: "source-derived and **unverified**", and the
+~8 harness rounds that failed to reach `.file-count-del` selected and
+`.context-menu-item[data-tone='danger']` hovered. Milestone detail: Part 54.5. Contract:
+`docs/contracts/P108-hue-as-text-on-neutral-ui.md`. This was the last of the two owed AI-gate items
+the 2026-09-10 checkpoint confirmation could not reach; the other (P91's real `logs/*.jsonl` parse)
+is **still owed** and stays on the board as a user action.
+
+### P108 — `AC11` — ✅ CLOSED 2026-09-11 by user ruling: source-derived figures ACCEPTED
+
+> The user accepted the two source-derived 3.05 figures for the unreachable states, with the
+> limitation recorded. Kept verbatim below because the qualifier is the record of *why* it could not
+> be measured — do not re-open it as owed.
+
+P108 shipped in `42206fd` and its AC12/AC13/AC14 native halves were confirmed by the user
+2026-09-10, but **`AC11` is an AI-gate contrast measurement and is not closed by that
+confirmation** — a person cannot confirm a 3.05 contrast ratio by eye. Milestone detail:
+archive Part 54.5. Contract: `docs/contracts/P108-hue-as-text-on-neutral-ui.md`.
+
+Carried **verbatim**; the qualifier is the point:
+
+> Two states could not be reached: `.file-count-del` selected (3.05) and
+> `.context-menu-item[data-tone='danger']` hovered (3.05). **The orchestrator also tried and
+> failed**, across ~8 harness rounds: keyboard nav focuses `.graph-scroll` but never mounts the diff
+> panes; `?forge=auth` does not render `.file-count-*`; and synthetic `contextmenu` events do not
+> open the menu because React requires **trusted** input. Both figures are source-derived and
+> unverified. Recording it as owed rather than manufacturing a pass — the same call the implementing
+> agent made, and the standard this programme applies to its agents applies to the orchestrator too.
+
+
+---
+
+## Part 68 — The `Known load-flakes` section as it stood on 2026-09-14, verbatim, including the full happy-dom narrative: the three-gate-run table, the vitest-4 `withTimeout` mechanism, the correction that happy-dom is "not exonerated, but not convicted either", the two real test defects fixed in `9422e8b`, and the three tests deliberately left unchanged.
+
+happy-dom was **ADOPTED** by user ruling #8 and landed in `1953c0a`; the board's own overclaim
+("identical test counts are the equivalence evidence") was corrected in `8026622`.
+
+**What stays live on the board, condensed:** the **5 s default-budget fragility** — vitest 4's
+`withTimeout` checks wall clock **on completion**, so a test that passed every assertion still fails
+with "Test timed out in 5000ms" (proved with a synchronous 6000 ms busy-wait); tail inflation is
+**1.3–2.8×** in the gate's rust-then-vitest condition; three tests already cross 5000 ms and are green
+only on explicit 20 s/30 s budgets; the most exposed default-budget tests are `App.test.tsx`
+"Arrow-key pane nudge" (2394 ms) and `Sidebar.churn` (2110 ms) — plus the `h_ai` parallel-flakiness
+defect with its `--test-threads=1` workaround, the `rust-lld` stale-`.exe` artifact, and the two
+single-instance flakes.
+
+### Known load-flakes (timing-sensitive, not correctness bugs)
+
+- **The full gate failed twice on vitest under happy-dom — cause NOT established; see the correction
+  at the end of this entry. My `1953c0a` commit message also OVERCLAIMED.** That message called identical test counts "the equivalence
+  evidence". They are evidence that nothing was **skipped**; they say nothing about behaviour under
+  scheduling pressure, and only the gate exercises that. I had not run it.
+
+  | Condition | happy-dom | jsdom |
+  |---|---|---|
+  | `dom` project alone (1828) | 3/3 green | green |
+  | full `vitest run` (2830) | 4/4 green | green |
+  | `pnpm gate --frontend` (no Rust first) | green | green |
+  | **full `pnpm gate`** (Rust compiles first) | **0/2 green** | **1/1 green, all 8 steps** |
+
+  It reproduces **only** when heavy Rust compilation immediately precedes the vitest step; the gate
+  runs plain `vitest run` with no special flags or env, so the difference is purely machine state.
+  Gate vitest: **64.4s happy-dom vs 86.4s jsdom** — the 22s is the real prize, not the 32% standalone
+  figure. **The five affected tests** (`SettingsPanel.test.tsx:335`, `Sidebar.test.tsx:184`,
+  `settingsCatalog.coverage.test.tsx:148`, `SettingsSearch.test.tsx:338`,
+  `SettingsGitConfigSection.test.tsx:337`) are all **async-window exhaustion**, not rendering or
+  correctness failures — `findByRole` and `toBeChecked` succeed first in every case.
+  **RULED 2026-09-11 (user): KEEP happy-dom and FIX THE TESTS** — not revert, not a blanket
+  `testTimeout` raise. `docs/proposals/happy-dom.patch` stays on disk so reverting is one command.
+  **CORRECTED 2026-09-11, LATER THE SAME DAY — the heading above OVERSTATES happy-dom's role, and
+  my async-window diagnosis was right for ONE of the five, not all five.**
+
+  **The reporting mechanism, which reframes every one of those failures:** vitest 4's `withTimeout`
+  checks wall clock **on completion** (`@vitest/runner` `chunk-artifact.js:2288-2294`). A test that
+  passed every assertion is still rejected with "Test timed out in 5000ms" if
+  `performance.now() - startTime` crosses the budget. **Proved with a probe:** a purely *synchronous*
+  6000 ms busy-wait reports `Test timed out in 5000ms`. So **"timed out" does NOT imply a pending
+  async chain** — it can mean the machine stalled while anything at all ran.
+
+  **What happy-dom's causal role actually rests on: 2 failing runs vs 1 passing jsdom run.** A direct
+  comparison found **no meaningful difference** — all 112 tests in the five affected files pass under
+  **both** environments, with no meaningful perf gap across two single-run pairs. The mechanism above
+  does not require happy-dom at all. So happy-dom is **not exonerated, but not convicted either**;
+  treat the table above as a correlation over three gate runs, not a demonstrated cause.
+
+  **The real fragility is the 5 s default budget.** Measured in the gate's own condition (rust tier →
+  vitest): **tail inflation 1.3-2.8×**, and **three tests already cross 5000 ms**, green only because
+  they carry explicit `20_000`/`30_000` budgets. The most exposed default-budget tests are
+  `App.test.tsx` "Arrow-key pane nudge" (2394 ms, 2.1× headroom) and `Sidebar.churn` (2110 ms).
+
+  **Two REAL test defects were found and fixed (`9422e8b`), neither caused by happy-dom:**
+  (a) `SettingsGitConfigSection.test.tsx:337` — `SettingsHooksToggle` renders the checkbox
+  `disabled={loading || busy}`, so it is present, **already checked**, and inert until the config read
+  lands. `findByRole` resolves on that first inert paint, `toBeChecked()` passes, and
+  `fireEvent.click` is **silently swallowed** — which is why the failure blamed `setConfig` for a
+  click that never happened. Reproduced 1/1 with `getConfig` delayed 50 ms. **This is the only
+  component in the repo with that inert-but-visible design**, so the audit found no sibling cases.
+  (b) `Sidebar.test.tsx:184` polled a full second on a **microtask-only** boundary.
+  **Three of the five were deliberately NOT changed** — two are fully synchronous (no boundary to
+  await, and no test edit makes a test immune to a wall-clock check) and one is already
+  macrotask-flushed via `act`. Their timeouts were **not** raised: that would be cargo-culting two
+  runs' victims.
+
+  **Diagnostic trap worth keeping anyway:** failure #5 reported as an assertion (`"setConfig" … Number
+  of calls: 0`). I read that as a `waitFor` window expiring. It was neither — it was a click that
+  never dispatched. **Both of my readings were wrong, and the error text supported all three.**
+
+- **`h_ai` is genuinely flaky in PARALLEL — characterised 2026-09-11, and this one is a real defect,
+  not a timing artifact.** **0 of 57 fail with `--test-threads=1`** (57 passed, 130s); under default
+  threading it fails or stalls. Cause is **57 tests concurrently spawning the `claude_stub.cmd`
+  harness on Windows**, which presents *two* ways depending on which test loses the race: **stalls**
+  (the 5 `ai_stream_bulk_cli` tests, which finish in 18.6s serially) **and cross-talk** (e.g.
+  `ai_explain` receiving another test's `createBranch` stub body). Pre-existing; not caused by the 2026-09-11 security work.
+  **Follow-up: isolate the AI stub per test.** Until then, run `h_ai` with `--test-threads=1`.
+  Note how this was nearly misdiagnosed: the orchestrator saw six of these failures through a
+  truncating pipe, with the `test result:` summary cut off, and reported them as a possible
+  regression from the increment under review. Both halves were wrong — they are neither the
+  increment's nor mere pipe artifacts. **A flake you cannot see the summary for is indistinguishable
+  from a regression.**
+- **`rust-lld: failed to write output … permission denied` on a stale `.exe`** hit an `h_ai` link
+  twice on 2026-09-11; deleting the file fixed it. A lock/AV artifact rather than code — and the
+  likely cause was the orchestrator force-killing cargo mid-link (see the serialize-cargo rule).
+
+- `ai::session_tests::watchdog_tests::watchdog_does_not_fire_while_awaiting_input` (path updated
+  2026-09-02 by the size-ratchet split) — failed once under load, passed on immediate re-run. See the
+  clock-seam candidate fix `734b310` under FOR USER item 6.
+- `src/App.test.tsx > App shell > an Arrow-key pane nudge persists the POST-nudge width` (added
+  2026-09-02) — failed once at 2662ms (`setUiSettings` never called, i.e. the debounced persist had
+  not fired), then 4/4 isolated and 2644/2644 on a full re-run.
+
+
+---
+
+## Part 69 — OPEN follow-ups as they stood on 2026-09-14, verbatim, before the curator condensed them. **Nothing here was closed.** Every item still carries at least one line on the board; this part exists so the condensation is lossless.
+
+Three ranges. **69.1** — the `P91 — open items` section; its heading "branch NOT merged" and its
+`DO NOT MERGE` bullet are **void** as of the 2026-09-11 merge, and its F6 / home-masking pointers are
+superseded (both ruled; home masking shipped fail-closed with a `homeMasking` stamp in `dc295c5`,
+folded into `P91-observability.md` §7.5). **69.2** — `SEC-2026-09-03` external-launch residue, the
+archived-housekeeping residue, P110/P111 residue, the 2026-09-02 file-size-refactor follow-ups, the
+2026-09-01 velocity follow-ups, and the items hoisted off milestones archived 2026-09-01.
+**69.3** — the `P69 Settings follow-ups` section, whose A3 bullet ("the frozen AI gate-note copy is
+still unsigned") was overtaken on 2026-09-11 when `ui-designer` **signed the shipped string**.
+
+### Part 69.1 — `P91 — open items`
+
+### P91 — open items (checkpoint confirmed 2026-09-10; branch NOT merged, one AI-gate item owed)
+
+Milestone detail: archive Part 54.6. Security arc: Part 42. Audit F1–F9: Part 43. Build diary:
+Part 44. SHOULD-FIX full text: Part 45. User decisions + architectural rulings: see
+`## Accepted decisions that must survive compaction` above.
+
+- **DO NOT MERGE `feat/p91-observability` to `dev` without the user** (user instruction
+  2026-08-31). The 2026-09-10 checkpoint confirmation does **not** authorise a merge.
+- **OWED AI-GATE ITEM — the real `logs/*.jsonl` parse from a `pnpm tauri dev` boot+idle.**
+  **The orchestrator checked the disk on 2026-09-10: `settings.json` was written that day, so the
+  app DID run — but there is no `logs/` directory and no Dev-mode key in the persisted settings.** Dev mode has
+  therefore **never been enabled in the real app**, so this needs a boot **with Dev mode turned
+  on**, not just any boot. Do not assume the confirmation run produced logs; it did not.
+- **F6 — `usage.json` disclosure** → FOR USER item 2 above.
+- **Home-directory / username masking in raw log paths** → FOR USER item 3 above.
+- **F7 — LOW, mostly latent.** `redact_names` misses bare ref/file names and never touches JSON keys;
+  a branch like `feature/acme-client-migration` would be written verbatim into a strict file. Not
+  reachable today, but `strict::enforce` is the **sole** enforcement point for both Rust and frontend
+  records, so a gap there is a single point of failure.
+- **F9 — INFO.** The two redactors cannot disagree, because **only one enforces**: `redact.ts` has no
+  equivalent of `redact_names`. That is the correct architecture, and it is why F7's gaps matter more
+  than their reachability suggests.
+- **Verified CLEAN, so a later session does not re-audit** (CSP + capabilities · updater trust chain ·
+  argument-vector process launching · keychain forge credentials · rotation/purge traversal · error
+  strings never crossing IPC · zero-cost-when-off): full list in archive Part 54.6.
+- **SHOULD-FIX: `SAVE_LOCK` orders the rename pair but NOT the snapshot** (`metrics.rs:379-382`,
+  `:409-425`). Two savers can snapshot A→B but acquire `SAVE_LOCK` B→A, so older bytes land last —
+  and the dangerous instance is exactly the pair the doc cites as its motivation: **a `metrics_reset`
+  can be silently undone on disk**. No deadlock risk (verified). Fix, or amend the overstated doc at
+  `metrics_file.rs:52-66`.
+- **SHOULD-FIX: the `last_fire` prune assumes non-decreasing `ts`** (`window.rs:52-63`) and the
+  comment states it unconditionally. `ts` comes from two unsynchronised clocks (`src/obs/log.ts:43`,
+  `sink.rs:385`) with no monotonic clamp. Blast radius is a **duplicate** anomaly record, never a
+  missed one.
+- **NIT:** `dup_ipc_debounce_map_stays_bounded_over_a_long_session` spaces events 100 ms apart against
+  a 300 ms window, making `len <= 4` nearly tautological. `last_fire` has **no numeric cap**, unlike
+  `open_calls` (FIFO 1024) and `slow` (LRU 200).
+- **`P91-observability-ui.md:496` and `:951` are stale** — both still describe
+  `log_export_session(dest)` and a native save dialog **that never existed**. → `ui-designer`.
+  **CONTRADICTION (2026-09-10):** `docs/contracts/INDEX.md` records this as **fixed in `fc9c36e`**
+  and calls the board's note itself stale. Unresolved — verify before acting on either.
+- **Contract consolidation (architect recommendation):** fold `P91-raw-args-privacy.md` into
+  `P91-observability.md` (≈ −250 active lines); keep `P91-privacy-copy-ui.md` standalone since it is
+  `ui-designer`-owned. **CONTRADICTION (2026-09-10): `P91-raw-args-privacy.md` no longer exists** —
+  `INDEX.md` records it folded into `P91-observability.md` §7.4 by `12b0ab6`, and the file is absent
+  from `docs/contracts/`. Both this item and the board's old "Contracts:" line that listed the file
+  look already-done; **not closed by the curator.**
+- **Contract follow-ups owed to `architect`:** §6/§10 still specify the removed
+  `log_export_session(dest?)`; §8/§8.1 must record that `cmd.*` keys are camelCase `IpcApi` names
+  **and that they recorded nothing before the fix**; `MAX_KEYS_PER_MAP = 512` + the `meta.overflow`
+  bucket needs ratification; decision 25's counter-key shape now literally requires the dot.
+- **`.forge-connect-link:hover` is now a no-op** — the resting-underline MUST-FIX means hover
+  declares the same underline, so the link has **no hover feedback at all**. → `ui-designer`.
+
+
+### Part 69.2 — `SEC-2026-09-03` residue through the items hoisted off milestones archived 2026-09-01
+
+### SEC-2026-09-03 — external-launch residue (remediated `0806596`; three things left)
+
+Full narrative: archive Part 56. Report: `docs/audit-2026-09-03-external-launch.md` (`7e426c3`).
+
+- **MEDIUM-2** (`terminalCommand`/`editorCommand` unvalidated) and **LOW-1** (cwd DLL search order)
+  are **FOR USER item 3** above — product calls, not patches.
+- **INFO (CSP `form-action` / `base-uri` / `object-src`) — FIXED `8dd5b24`**, native half confirmed
+  by the user 2026-09-10.
+- **One residual documented, not closed:** a symlink introduced inside an already-checked-out
+  superproject at a not-yet-created leaf bypasses the canonicalize recheck (`canonicalize` fails on
+  a missing leaf). Primary vectors are closed lexically regardless of filesystem state.
+- **Test gap, partially closed — CONTRADICTION flagged 2026-09-10.** The board said
+  `external_tests.rs` has **zero** path-hostility cases and `submodule_info`'s `abs_path` has no
+  test at all. Since then `c218258` "added the file-target case MEDIUM-1 was actually about, which
+  had no test at all" and `151232d` covered the UNC case end to end. Whether the set is now adequate
+  is **unverified**; the curator did not close it.
+
+### Residue of the archived `Queued housekeeping` section (archive Part 57)
+
+The `src/styles/forge-pr.css` split is **DONE** (`e149382`, five modules, emitted stylesheet proven
+byte-identical) and `.css` is now in `scripts/check-file-size.mjs` `SCAN_TARGETS`. Still open:
+
+- Three items found during that split and deliberately NOT fixed (each would reorder the cascade or
+  cross into another file): `context-menu.css:89` now points at a rule that lives in
+  `forge-account.css`; a duplicate `.pr-create-actions` rule in `forge-pr-create.css`; and the
+  generic `.btn-secondary-danger` sitting in `forge-pr-create.css` where it belongs with
+  `controls.css`.
+- **`image_diff_cli_2.rs`** numbered split still owed — renaming changes nextest IDs, so it needs its
+  own increment where that IS the expected diff. Path re-verified 2026-09-03:
+  `crates/bonsai-core/tests/diff/image_diff_cli_2.rs`.
+- **The 90-char branch-name chip** becomes a 50 px two-line stadium at `border-radius: 999px` —
+  pre-existing, newly visible because P102/P105 added the fixture that reaches it.
+- **`ui-reference.md` is growing fast** (§2 now carries a 16-row evidence table) — worth its own
+  curation pass.
+- **Two velocity items filed and deliberately NOT taken** (2026-09-03): C1 could drop 17s → 11s by
+  giving one surface its own test and its own corrupted repo — **not taken**, it changes the shape of
+  a crash-safety test for ~6s; and `crates/bonsai-mcp/tests/common/mod.rs:131-133` still spawns 3
+  `git config` calls (board said `:127`; re-measured 2026-09-03 — same fix applies verbatim; left
+  alone to keep the blast radius in one crate).
+- **The gate script emits Node `DEP0190`** — it passed args to a child with `shell: true`, which
+  concatenates rather than escapes. **CONTRADICTION flagged 2026-09-10:** `833f2f9`'s commit message
+  is "the gate stops concatenating argv", so this looks already closed. Not closed by the curator.
+
+### P110 / P111 residue (milestones done; archive Parts 55 and 59.1)
+
+- **P110 — latent pre-existing gap, NOT introduced by P110 (candidate follow-up):** op-state files
+  (`MERGE_HEAD`, `REBASE_HEAD`, `rebase-merge/**`, `CHERRY_PICK_HEAD`) are excluded by the watcher
+  filter and never triggered a refresh before or after P110. Op-state freshness during a conflicted
+  rebase rides on incidental worktree churn. Deliberately left alone — changing it would widen which
+  bursts fire.
+- **P110 — deliberately NOT done:** the canvas selected-row highlight is not sticky. The highlight is
+  row-index-based and there is no honest row to draw while the row is absent from the partial layout;
+  anchoring it to a stale index is exactly the wrong-commit hazard the fix removes.
+- **P111 — filed not fixed:** `.asset-chip` got the R1 line guard but no R2 `max-width`, so a model
+  id far longer than the fixture would widen the chip rather than ellipsize.
+
+### From the 2026-09-02 file-size refactor pass (archive Part 36)
+
+Ratchet baseline moved **27 offenders / 6241 excess → 20 / 3528**; full gate green 8/8, 603s.
+
+- **Fold-pill cursor is dead** in `GraphCanvas.handleMouseMove` — P92 §1.4's overflow-cursor write
+  unconditionally clobbers spec-004 §1/§2's `foldCursorFor`, and `computeHoverTarget` returns null on
+  exactly those rows. Real regression; no vitest mounts `GraphCanvas`, so e2e is the only net.
+  **STILL OPEN, re-verified 2026-09-03** at `src/graph/GraphCanvas.tsx` (note: `src/graph/`, not
+  `src/components/`): `:535` writes `foldCursorFor(...)`, then `:551` unconditionally overwrites it
+  with `next?.kind === 'overflow' ? 'pointer' : ''`. No guard between them.
+- **Reflog overlay not torn down** when a repo goes unusable — candidate fix `52c815e` /
+  `6092eb3` / `338d71f`, not recorded as closed. See FOR USER item 6.
+  **Evidence completed 2026-09-03 (closure still belongs to item 6, not to the curator):** all three
+  SHAs are ancestors of HEAD, and `src/components/repoWorkspace/unusableRepoTeardown.ts:232-240`
+  now tears down "all three read-overlay siblings" including `setReflog` / `reflogReqId`. The
+  described symptom is not reproducible from source.
+- **Shortcuts stay live during confirm dialogs** (`pendingForcePush`, `pendingCommitPush`,
+  `pendingBisectBad` absent from `dialogOpen`) — ~~candidate fix `1d9d9bf`~~. **STILL OPEN, and the
+  candidate-fix citation was wrong.** Re-verified 2026-09-03: `1d9d9bf` IS an ancestor of HEAD, but
+  it is `fix(P38): disarm every armed dialog on the repo-went-unusable teardown` — a different
+  concern, and it did not close this. `dialogOpen` (`src/components/RepoWorkspace.tsx:1624-1629`) is
+  `anyDialogArmed || askOpen || pendingProposedOp || hookGate.pendingHook ||
+  hookDisclosure.pendingHookDisclosure`, and `anyDialogArmed`
+  (`src/components/repoWorkspace/useWorkspaceDialogState.ts:265-300`) enumerates ~35 flags but
+  **not** `pendingForcePush` (`:208`), `pendingCommitPush` (`:205`) or `abortConfirmOpen` (`:178`);
+  `pendingBisectBad` lives outside the hook entirely at `RepoWorkspace.tsx:299`. Four flags, not
+  three.
+- ~~**`ai::session*` is load-flaky** — needs a clock seam, not wider sleeps.~~ — **the clock seam
+  LANDED in `734b310`**, an ancestor of HEAD; `crates/bonsai-core/src/ai/clock.rs` +
+  `session_watchdog_tests.rs:41/67/115` drive it with `TestClock`. Evidence not in doubt, but the
+  **formal close belongs to FOR USER item 6**, so it stays open here. Detail: archive Part 52.3.
+- **Contract divergences the tests document as bugs-in-the-contract:** rebase §3.1.5/§9.7
+  unstaged-changes precondition, and the libgit2-vs-CLI rename/delete conflict index-entry count.
+  Plus a near-tautological `expected_presence` oracle.
+- ~~**Duplicated external-tool launchers**~~ — **DONE** `9273238`; hoisted to
+  `src/hooks/useExternalTools.ts`, `App.tsx` 602 → 590, `sessionSaveTimer` fixed with a proven-red
+  test. **Standing warning:** the toast auto-dismiss timer fix is **deliberately REVERTED** —
+  `React.StrictMode` makes cancel-on-unmount strand a toast on screen permanently. Do not re-apply;
+  `useToastQueue.test.tsx` carries the finding. Full reasoning: archive Part 52.4.
+- **Duplicated helpers left visible, not merged** (behavior risk, not a move): atomic-write helpers
+  across `assets/bundle/write.rs` + `assets/profiles/store.rs`; test helper families across
+  `tests/diff/` and the four `tests/rebase_merge/*_support.rs`.
+- **Three files deliberately stopped short of 500** (each further cut would forward 15-100 values to
+  exactly one consumer). Line counts re-measured 2026-09-03: `src/components/RepoWorkspace.tsx`
+  **2264** (board said 2309), `src/graph/GraphCanvas.tsx` **784** (unchanged; the board omitted the
+  path and it is `src/graph/`, not `src/components/`), `src/App.tsx` **590** (board said 602 — the
+  `9273238` bullet above already recorded the 602 → 590 drop, so the two bullets disagreed).
+
+### Velocity follow-ups from the 2026-09-01 measurement pass
+
+Baseline numbers: `docs/history/velocity-2026-09-01.md`. Done in that pass: proptest banding
+(`d635464`), doc curation (`0174abf`), 78 → 8 test harnesses (`12882f9`).
+
+- `prop_status::status_matches_porcelain` (23.5s) and `prop_stash_roundtrip` (14.3s) — both banded by
+  the 2026-09-03 pass (`737cc4b`); see FOR USER item 6 before closing them.
+- **`submodule_cli::oracle_add_deinit_remove_roundtrip` 12-14s** — NOT a proptest (a git-CLI oracle
+  roundtrip), so banding does not apply; needs its own look if the ~12s floor matters.
+- **vitest jsdom construction dominates the frontend leg** — CPU-aggregate `environment` 613s vs
+  `tests` 147s. Try `happy-dom`, or `environmentMatchGlobs` so only DOM-touching files pay. Untried.
+- **`pnpm gate --quick` is 305s and only drops e2e**, so it is not a fast tier; `cargo nextest
+  --workspace` alone is 181s of it. Either add a genuinely narrow tier or lean on `--rust` /
+  `--frontend`.
+- **Candidate process changes — ✅ ALL THREE ADOPTED 2026-09-11 (user).** Now rules, recorded in
+  `## USER DECISION LEDGER` → "The three process rules adopted 2026-09-11": batch small P-tasks
+  through one senior-dev spawn; skip the architect contract for single-component fixes; fold the
+  board update into the feat commit.
+
+### Hoisted off milestones archived 2026-09-01
+
+- **keyring 3 → 4** needs a dedicated increment: 4.x moves onto `keyring-core`, renames every
+  per-backend feature, drops `crypto-rust`, and requires explicit credential-store registration —
+  real changes to `crates/bonsai-forge/src/auth.rs`. (DEP REFRESH, archive Part 24.)
+- ~~**`no_proxy_client()` `.expect("build reqwest client")`**~~ — **CLOSED 2026-09-03.** The
+  `.expect` survives at `src-tauri/src/mcp/http_support.rs:221`, but the module is `#[cfg(test)]`
+  (`src-tauri/src/mcp.rs:410-411`), so it never reaches a shipped binary. **FOR USER item 6 is the
+  canonical record**; this line is a pointer, not a second opinion. Detail: archive Part 52.5.
+- **P87b FU-1..4** — **this line is four-way stale; corrected 2026-09-10, not closed by the
+  curator.** As filed: target row label (FU-1), commitAmend row (FU-2), row `role`/`aria-expanded`
+  (FU-3), clickable dock bar (FU-4), plus the `AiActivityPanel` aria-label NIT. (archive Part 27.)
+  What the tree says: **FU-1 shipped `1d8c6f9`** (archive Part 59.2); **FU-2's premise is false** —
+  `commitAmend` *is* activity-wrapped at `src-tauri/src/commands/staging.rs:179`, which is the stale
+  `P87b-FU1-FU4-git-dock-ui.md` F-E line that has now misled two agents (`TODO.md` item `1b`);
+  **FU-3 looks closed by `833f2f9`** ("dock row gets a role"); **FU-4 was answered by rejecting the
+  change** (`763866a`). Only the `AiActivityPanel` aria-label NIT is unambiguously still open.
+  Verify each before ticking any of them — the board has been wrong about this entry twice.
+- **RepoWorkspace refactor** still stands for maintainability (not perf); P88's audit re-confirmed it.
+- **P90.1 deferred:** per-check timing fields; header commit-summary text; command-palette
+  `Refresh checks` / `Show checks`; mock fixtures for noForge/error reachable by click.
+- **Known flake (pre-existing, untouched):** `watcher::tests::git_internals_filtered` is a timing
+  flake; passes on isolated re-run. Located and the shape corrected 2026-09-03: it lives at
+  `src-tauri/src/watcher/tests.rs:127`, and the flaky assertion is `rx.recv_timeout(
+  Duration::from_millis(1500)).unwrap_err() == RecvTimeoutError::Timeout` (`:144`) — an `unwrap_err`
+  on a **channel-recv Result**, not "on an `Instant`" as the board said. Note the test now carries a
+  long comment defending that 1.5 s negative window as sound after `watch_into_channel`'s sentinel
+  sync (`29e72a7`), so whether it still flakes is **undetermined** — not re-run in this sweep.
+- **FLAG FOR USER (peer session, now ended):**
+  `src/components/repoWorkspace/useWorkspaceKeyboard.test.tsx` failed in ISOLATION on the committed
+  baseline (1 graph-nav `defaultPrevented` case), introduced by the peer's graph-a11y commit
+  `590f2ef`. Likely test-isolation flakiness. **Status unverified since 2026-08-23.**
+
+
+### Part 69.3 — `P69 Settings follow-ups` (A3 as it stood before the 2026-09-11 signing)
+
+### P69 Settings follow-ups — A3 ✅ RULED 2026-09-11 (ui-designer finalises); A8/A9 still backlog
+
+> **A3:** the user handed the gate-note copy to `ui-designer` to finalise with the surrounding copy
+> in view; whatever it signs ships. **A8/A9 were deliberately NOT put to the user** — they are
+> backlog, not blocked on a decision.
+
+- **A8 — bundle the two specced-but-unimplemented items into one increment** (both `ui-designer` and
+  the orchestrator recommend bundling): (a) the help-text highlight fallback
+  (`docs/contracts/archive/P69-settings-ui.md` §3.2.1) — the flagship query `graph` returns 5 hits and
+  highlights **nothing**; and (b) the half-landed draft-hint feature (§13). The draft-hint CSS is
+  genuinely dead but costs no visible layout today.
+- **A9 — a scoped a11y sweep of `color: var(--accent)` on text over `--selection`** (measured
+  3.51-3.74:1). Now **prohibited** in `ui-reference.md` §2 so new code cannot add to the backlog. The
+  one deviation P69k shipped: the rail hit-count is `--text-1`; the exact declaration to flip is
+  marked in `settings-shell.css`.
+- **A3 — the frozen AI gate-note copy is still unsigned.** §5.4's replacement for `Turn on "Enable AI
+  features" above to change these.`; `ui-designer` prefers `These take effect once AI features are
+  on.` The current string ships until the user rules.
+
+
+
+### Part 69.4 — The `OPEN follow-ups` header and the `Roadmap: REMOVE user-supplied terminalCommand / editorCommand` section, verbatim
+
+Condensed on the live board into the ruling queue's **P112** entry, which keeps all three
+load-bearing facts: both settings are empty strings in the user's real `settings.json`; **`safe_cwd()`
+must STAY** (the architect's correction of this very section); and `dc295c5`'s shape validation is the
+stopgap, not the design, so MEDIUM-2 / LOW-1 stay `partially closed` until P112 ships.
+
+## OPEN follow-ups (genuine unresolved items, not checkpoints)
+
+### Roadmap: REMOVE user-supplied `terminalCommand` / `editorCommand` (user ruling 2026-09-11)
+
+The user chose "validate the shape now **and** drop the feature" for security MEDIUM-2. The
+validation is the stopgap; **removal is the end state and is NOT yet scheduled.** Filed here because
+the ledger records the decision but a decision without a queue entry is how this board loses things.
+
+- The capability exists for convenience, not necessity: both values are **empty strings** in the
+  user's real `settings.json`, so nothing in the current install depends on them.
+- Removal retires the shape-validation code added in the same increment.
+- **CORRECTION 2026-09-11 (architect refuted my original line here):** removal must **NOT** retire the
+  LOW-1 cwd hardening. I wrongly wrote that both "exist only to make this surface safe". LOW-1 is
+  about a hostile **repo** as cwd on the **auto** rungs and is unrelated to user-supplied commands.
+  **`safe_cwd()` must STAY** — `external_url.rs:127` depends on it, and `P112` moves it verbatim into
+  `procutil.rs`. Recorded in the P112 contract §0 and §7 so no implementer deletes it on this board's
+  authority.
+- Until then the validation comment in the launch path must keep saying the capability is slated for
+  removal, so a later reader does not mistake the stopgap for the design.
+
+
+Condensed to one line per item on 2026-09-03; the pre-condensation text is archive Part 50.
+
+---
+
+## Part 70 — Superseded curator bookkeeping from the board, verbatim, replaced 2026-09-14. Nothing here is project history; it is the board's own navigation and self-measurement text, kept so this pass is lossless down to the meta-lines it rewrote.
+
+Contains: the pre-pass `Where the rest of the board went` body (the 2026-09-10 and 2026-09-03 pass
+notes), the pre-pass `## Archive` section with its long summary table, and the **2026-09-10 curator
+note** "Why this board is ~915 lines, not ~300".
+
+That note's prediction is what this pass tested. It said the honest floor was **~900 today**, falling
+to roughly **~650** "the moment the user rules on the seven FOR USER decisions", and to ~300 only once
+the follow-up backlog is worked down. The user ruled all of them on 2026-09-11. The board landed at
+**~430** — below the ~650 estimate — because the rulings retired more than the decision blocks
+themselves: they also closed out the two SEC narratives, the happy-dom decision block, P108's `AC11`,
+and the `IN FLIGHT` queue. The note's structural claim held: what is left is open work and
+user-ruling records, not curatable history.
+
+## Where the rest of the board went
+
+Full detail for everything compacted out of this file is in `docs/history/` — start at
+`docs/history/README.md`. The **Archive** table at the bottom of this file is the short form.
+Nothing below was closed by the curator: a milestone with a pending USER CHECKPOINT stays here, an
+owed AI-gate item stays here, and open follow-ups stay here however old they are.
+
+**2026-09-10 compaction pass — Parts 54-60.** The event the board was waiting on happened: the user
+confirmed **all eight** native USER CHECKPOINTs on 2026-09-10 (`548cc0a`). Moved off the board: the
+seven-milestone checkpoint block — P102+P105, P106, P107, P108, P91 (Part 54) and P110 + P109
+(Part 55); the 2026-09-03 closures plus the SEC-2026-09-03 remediation (Part 56); the `Queued
+housekeeping` section (Part 57); the superseded `c218258` and earlier gate states (Part 58); the
+2026-09-10 session — P111, FU-1 and the six reviewer-follow-up closures (Part 59); and the board's
+own record of the confirmation (Part 60). **What did NOT move:** P108's `AC11` (an owed *AI-gate*
+measurement, so a native confirmation does not reach it), P91's owed `logs/*.jsonl` parse and its
+do-not-merge instruction, all seven FOR USER decisions, every open follow-up, every accepted
+decision and every durable rule.
+
+**2026-09-03 passes.** Compaction Parts 51-53 moved the gate states, the narratives of everything
+closed that day, and the stories behind the durable lessons; the **rules** those stories taught
+stayed here. A same-day staleness sweep (no archiving) cross-checked **35 open entries against the
+tree and found 11 had drifted** — corrections are inline below, each marked `re-verified 2026-09-03`
+or struck through with its SHA. The board's own record of being wrong is kept deliberately. Two
+findings are worth reading before trusting anything nearby: the `ai::session*` clock seam **is in
+the tree** (`734b310`), and the M1 design-review residue was telling sessions to delete
+`aria-activedescendant`, which `ui-reference.md:865` explicitly sanctions.
+
+
+## Archive
+
+**Start at `docs/history/README.md`** — it is the navigable index of every archived milestone and
+part number. The table below is the short form.
+
+| File | Covers |
+|---|---|
+| `docs/history/README.md` | **The archive index** — which file/part holds which milestone. |
+| `docs/history/todo-archive-2026-09.md` | **Parts 54-61 (moved 2026-09-10, after all eight USER CHECKPOINTs were confirmed):** the whole checkpoint block — P102+P105, P106, P107, P108, P91 (Part 54) · P110 + P109 (Part 55) · the 2026-09-03 closures + the SEC-2026-09-03 external-launch remediation (Part 56) · the `Queued housekeeping` section incl. the `e149382` CSS-split proof (Part 57) · the superseded `c218258` and earlier gate states (Part 58) · the 2026-09-10 session: P111, FU-1, the six reviewer-follow-up closures (Part 59) · the board's own record of the confirmation (Part 60) · superseded curator bookkeeping — the pre-pass navigation text, the old `Verification state`, and the 2026-09-03 curator note whose “~470 lines” prediction this pass tested (Part 61). **Parts 51-53 (moved 2026-09-03, compaction pass):** the `5c2dcd2` + `c6cd7dd` gate states and the e2e-contention mis-diagnosis story · the full narratives of everything closed 2026-09-03 (P107 F2, the four `112800c` ticks, the `4002ad2` struck entries) · the durable-lessons stories and worked numbers. **Parts 36-50 (moved 2026-09-03):** the file-size refactor pass · the full narratives of P102+P105, P106, P107, P108 and the P91 security arc + audit + build diary · superseded pre-ship filings for P102/P105/P106/P108, the dead-CSS decision block and the resolved `lint:size` blocker · the 2026-09-03 velocity pass · P99, P100, P101, P98, P95, P96, P97 and the P100+P101+DX-e2e banner · built-bundle e2e + P103 + P104 · the DX/velocity stubs · the pre-condensation open-follow-up text. **Parts 33-35 (2026-09-01):** the P84 record gap · macOS ad-hoc signing · the two 2026-08-22 design reviews. **Parts 22-32 (2026-09-01, verbatim):** P94 · P93+P92 · DEP REFRESH · P90+P89 · P88 · the P85-P87 batch · P82+P83 · divergence reconcile + Release 1.1.0 · the DX dev-loop text · the confirmed-checkpoints block · the 2026-08-21 resolved follow-ups. |
+| `docs/history/todo-archive-2026-08.md` | Parts 1-9: P65 to P28 build detail, the Phase 1-4 banners, resolved FOR-USER decisions, P69(1.0.0)/P67/P68 detail. Parts 10-16: the P62-P74 checkpoint waiver + P71-P74, the P69 Settings redesign, the Audit #2 fix batch. Parts 17-18: P70 and P77. Part 19: the follow-ups resolved 2026-08-21, verbatim. Part 20: P78/P79/P80. Part 21: P80b/P81/P82. |
+| `docs/history/todo-archive.md` | P27 to P2, M0-M6 |
+| `docs/history/milestones-mvp.md` | the M0-M6 AI-gate vs USER CHECKPOINT split |
+| `docs/history/context-pollution-audit.md` | the context/token-cost audit |
+| `docs/history/velocity-2026-09-01.md` | gate wall-clock, test-suite hotspots, inner-loop rebuild cost, ceremony-vs-machine-time split (2026-09-01) |
+| `docs/contracts/INDEX.md` | one line per contract file — milestone, scope, status |
+
+Move a milestone's section into the current dated archive file only once **both** halves of its gate
+have passed (or the native half is explicitly waived). A milestone with a pending USER CHECKPOINT
+stays on this board. **An owed AI-gate item also keeps its entry here** — P108 `AC11` and P91's
+`logs/*.jsonl` parse are the live examples.
+
+### Why this board is ~915 lines, not ~300 (curator note, 2026-09-10)
+
+The 2026-09-03 note said "~470 lines become archivable the instant the seven USER CHECKPOINTs and
+seven FOR USER decisions clear — and not before". The checkpoints cleared on 2026-09-10 and **557
+lines were archived** (Parts 54-60, every range verified byte-identical against the pre-pass copy).
+The board did not fall by 557, because ~193 lines of that content were **live remnant embedded
+inside the archived sections** — P108's `AC11`, P91's user decisions / architectural rulings /
+security findings / SHOULD-FIX list, the SEC residue, the housekeeping items deliberately not
+fixed, and the gate-running rules. Those were relocated, not removed. **1244 → 915.**
+
+Residual composition, measured after this pass: header + conventions + pointers **64** · RESUME
+HERE (incl. the `1b`/`1c`/`1d` contract-hygiene residue owed to `architect`/`ui-designer`) **123** ·
+FOR USER decisions **135** · durable-lesson rules **115** · accepted decisions **78** · open
+follow-ups **347** · archive + this note **43**.
+
+**~300 is still not the honest floor, and the reason has changed.** It is no longer pending
+checkpoints — it is that **the seven FOR USER decisions and the open-follow-up backlog are 482 of
+the 915 lines**, and both are load-bearing: the decisions are briefs only the user can rule on, and
+the follow-ups carry the freshly-verified `file:line` citations a cold resume needs most.
+**The honest floor is ~900 today**; it drops to roughly **~650** the moment the user rules on the
+seven FOR USER decisions, and only reaches ~300 once the follow-up backlog is actually worked down.
+Neither is a curation job — going further today would mean deleting open work.

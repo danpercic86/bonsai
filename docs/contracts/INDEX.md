@@ -50,11 +50,15 @@ carries open, tracked work).
 | `002-bonsai-graph-theme-ui.md` | spec-002 | Commit-graph theme: lane palette, dots, ref pills, canvas metrics. | spec — own header says "ready for implementation"; implementation status unverified |
 | `P110-watcher-burst-scoping.md` | P110 | Watcher path classification (`Worktree`/`Refs`) carried into `repo-changed` so a worktree-only burst refreshes narrowly instead of re-streaming the graph. | done — shipped `84bbf85` + `1be3a85`; checkpoint confirmed USER **2026-09-10** (archive Part 55); **archive-eligible** |
 | `P111-pill-truncation-ui.md` | P111 | Ref-pill / chip truncation policy: long refs stay one line, the leaf ellipsizes instead of hard-clipping (head `flex-shrink: 999` vs leaf `1`). | done — implemented `1192f2a`, e2e `e2e/33-pill-truncation.spec.ts`. **`:326` states "Not a USER CHECKPOINT — every surface here is reachable in the browser harness"**, so no native half is owed. Open: `.asset-chip` has no R2 `max-width` (`TODO.md`). **archive-eligible** |
-| `P87b-FU1-run-target.md` | P87b FU-1 | Git-activity runs carry their target ref: backend resolution, the `?gitNoTarget` / `?gitLongTarget` / `?gitBidiTarget` harness seams, AC §9.1-13. | done — implemented `1d8c6f9`; **§9 header states "AI gate — no USER CHECKPOINT item"** (`:425`). **Kept active: five contract-hygiene corrections are owed** (`TODO.md` items `1b` / `1d`), the highest-value being that §8's own `?gitBidiTarget` row embeds literal U+202E / zero-width characters while the same section forbids exactly that |
-| `P87b-FU1-FU4-git-dock-ui.md` | P87b FU-1 / FU-4 | Git-dock UI for the run target: row copy, `.git-run-noun` / `.git-run-summary` geometry, the FU-4 clickable-dock-bar rejection, and the §5 F-A…F-G findings. | done — implemented `1d8c6f9`; **`:385` states "No USER CHECKPOINT item in this contract"**. **F-E is FIXED — do not re-report it.** It was corrected in place 2026-09-10 (`:461-478`) and independently re-verified 2026-09-11 against source (`staging.rs:178` resolves `activity_target(state, repo_id, Amend)`, `:179` wraps in `with_activity(…, Amend, target, …)`). The contract now carries the refutation, not the claim: **there is no FU-2 amend-wrapping gap.** This INDEX line was itself the propagation vector for a third false report. F-G was resolved 2026-09-10; F-F(a) mock-target fidelity stays open (`TODO.md` `1b`/`1c`) |
+| `P112-external-tool-detection.md` | P112 | Removes free-text `terminalCommand` / `editorCommand`: detected-list picker + native Browse, `procutil`/`safe_cwd` move, the launch invariant (no renderer/`settings.json` byte becomes a program path). | spec — signed 2026-09-11, ready for `senior-dev`; **not started**. Authorised by user ledger #4 end state + second-round ruling #21 |
+| `P112-tool-catalog.md` | P112 | Data half of the P112 spec: the compile-time candidate table, auto ladders and legacy aliases for `crates/bonsai-core/src/tools/catalog.rs`. | spec — only the `catalog.rs` implementer needs it; split out under the ~500-line rule |
+| `P112-ui.md` | P112 | UI contract for the two external-tool pickers: `Combobox` + `btn-secondary` Browse, state table (§5), signed copy (§8); replaces the free-text rows in `SettingsExternalToolsSection.tsx`. | spec — signed by `ui-designer` 2026-09-11; ~520 lines, overage flagged (split point: §8 → `P112-ui-copy.md`) |
+| `P87b-FU1-run-target.md` | P87b FU-1 | Git-activity runs carry their target ref: backend resolution, the `?gitNoTarget` / `?gitLongTarget` / `?gitBidiTarget` harness seams, AC §9.1-13. | done — implemented `1d8c6f9`; **§9 header states "AI gate — no USER CHECKPOINT item"** (`:425`). **Kept active: five contract-hygiene corrections are owed** (`TODO.md` → `OPEN follow-ups` → `Still open, short form` → the P87b hygiene bullet; the old `1b`/`1d` item labels went with the 2026-09-14 compaction, archive Part 62), the highest-value being that §8's own `?gitBidiTarget` row embeds literal U+202E / zero-width characters while the same section forbids exactly that |
+| `P87b-FU1-FU4-git-dock-ui.md` | P87b FU-1 / FU-4 | Git-dock UI for the run target: row copy, `.git-run-noun` / `.git-run-summary` geometry, the FU-4 clickable-dock-bar rejection, and the §5 F-A…F-G findings. | done — implemented `1d8c6f9`; **`:385` states "No USER CHECKPOINT item in this contract"**. **F-E is FIXED — do not re-report it.** It was corrected in place 2026-09-10 (`:461-478`) and independently re-verified 2026-09-11 against source (`staging.rs:178` resolves `activity_target(state, repo_id, Amend)`, `:179` wraps in `with_activity(…, Amend, target, …)`). The contract now carries the refutation, not the claim: **there is no FU-2 amend-wrapping gap.** This INDEX line was itself the propagation vector for a third false report. F-G was resolved 2026-09-10; F-F(a) mock-target fidelity stays open (`TODO.md` → `OPEN follow-ups` → `Still open, short form`; the old `1b`/`1c` labels went with the 2026-09-14 compaction, archive Part 62) |
 | `P91-observability.md` | P91 | Architecture of record: Dev mode, JSONL logs, trace ids, spans, anomaly rules, durable metrics, redaction. | living — checkpoint confirmed USER **2026-09-10**, but **kept active**: the branch was **MERGED to `dev` and pushed 2026-09-11** by user ruling (fast-forward, 165 commits — the board's "30" was wrong); the real `logs/*.jsonl` parse is still owed, and the §6/§8/§8.1/§10 contract follow-ups are open (`TODO.md`) |
 | `P91-observability-ui.md` | P91 | Dev-mode Settings surface + React causality instrumentation on the six surfaces. | living — awaiting USER CHECKPOINT. The `:496`/`:951` save-dialog staleness was **fixed in `fc9c36e`** (§ now states `log_export_session()` takes no destination and always writes to `<app_config_dir>/exports`); the old note here was itself stale as of 2026-09-03 |
-| `P91-privacy-copy-ui.md` | P91 | Dev-mode privacy consent copy across all three surfaces (satisfies raw-args AC12). | spec — §2-§5 implemented (`b26833f`); the rest is held pending the F6 user decision, which the 2026-09-10 checkpoint confirmation did not resolve |
+| `P91-F6-usage-retention.md` | P91 F6 | **Normative amendment** to `P91-observability.md`: `usage.json` stays always-on, gains a 90-day window and becomes deletable via `logs_delete_all`. Lists the ten superseded passages (§2) and three new §13 decision rows (§11). | spec — not yet implemented. Its §2 pointers and §11 rows were **spliced into `P91-observability.md` by `docs-curator` 2026-09-14** |
+| `P91-privacy-copy-ui.md` | P91 | Dev-mode privacy consent copy across all three surfaces (satisfies raw-args AC12). | spec — §2-§5 implemented (`b26833f`); the rest was held pending the F6 user decision, **which the user ruled 2026-09-11** (ledger row 3 + the `lifetime` follow-up ruling; design of record `P91-F6-usage-retention.md`). Copy §6 is unimplemented work, no longer a blocked decision |
 | `P98-text3-readtext-ui.md` | P98 | `--text-3` read-text sweep; §8.8 is the canonical enumerate/bucket/verdict audit method. | done — checkpoint confirmed USER 2026-09-01; kept active because §8.8 is still the method of record |
 | `P100-accent-fill-ui.md` | P100 | Accent-fill contrast: recipe A (a state demotes to `--selection`) vs recipe B (an action keeps the fill, flips the ink). | done — checkpoint confirmed USER 2026-09-02 (archive Part 47); archive-eligible |
 | `design-review-2026-09-01-P100.md` | P100 | Design review + contract amendments. Verdict: APPROVE with amendments, no MUST-FIX. | done — archive-eligible with P100 |
@@ -64,7 +68,7 @@ carries open, tracked work).
 | `P107-hue-over-own-tint-ui.md` | P107 | Hue text over its own tint: 38 call sites (§2 had claimed 6); the three-pass search incl. `--h` indirection. | done — implemented `2168057`, errata `ef06e6b`; AC11/AC12/AC13 confirmed USER **2026-09-10** (archive Part 54.4); **archive-eligible**. Must not be re-opened against the original AC2 wording — see the errata. |
 | `P107-F2-copy-chip-ui.md` | P107 F2 | The copy-candidate chip's `unknown` verdict gets its own neutral variant; resolves P107 §10/§12 F2. Touches `WorktreeCopyCandidates.tsx`, `dialogs-forms.css`, one mock knob. | implemented `8337d9b` — **contract's own header still says "spec complete, awaiting implementation"; that header is stale, the board is right** |
 | `P109-status-badge-semantics-ui.md` | P109 | The status letter's *meaning*, not its ink: one `FileStatusBadge.tsx` replaces 8 drifted render sites; badges get accessible names. Zero CSS/token/geometry diff. | done — implemented `5a254ba`, recorded `5c2dcd2`; AC13/AC14 confirmed USER **2026-09-10** (archive Part 55); **archive-eligible** |
-| `P108-hue-as-text-on-neutral-ui.md` | P108 | Hue used as text over a NEUTRAL `--bg-*` surface: 62 call sites, 28 fixes, no new tokens. | in-progress — `AC11` owed. Implemented `42206fd`; AC12/AC13/AC14 confirmed USER **2026-09-10** (archive Part 54.5) — **kept active: `AC11` is still OWED**, an AI-gate contrast measurement a native confirmation cannot close (`.file-count-del` selected and `.context-menu-item[data-tone='danger']` hovered, both source-derived at 3.05) |
+| `P108-hue-as-text-on-neutral-ui.md` | P108 | Hue used as text over a NEUTRAL `--bg-*` surface: 62 call sites, 28 fixes, no new tokens. | done — Implemented `42206fd`; AC12/AC13/AC14 confirmed USER **2026-09-10** (archive Part 54.5); **`AC11` CLOSED 2026-09-11 by user ruling** (ledger #13 — the two source-derived 3.05 figures for the unreachable states are ACCEPTED, limitation recorded; full text archive Part 67). **archive-eligible** |
 | `spec-003-ui.md` | spec-003 | Graph declutter modes (first-parent, seed-ref filtering) — UI contract. | implemented; e2e `e2e/28-graph-filter.spec.ts`. No USER CHECKPOINT record mapped |
 | `spec-004-ui.md` | spec-004 | Fold linear runs: the fold pill as a frontend display row over `FoldSpan` metadata. | implemented; e2e `e2e/29-graph-fold.spec.ts`. Open bug: the fold-pill cursor is dead (`TODO.md`) |
 | `spec-005-ui.md` | spec-005 | Graph overview rail: match ticks + on-demand minimap. | implemented; e2e `e2e/30-graph-rail.spec.ts`. No USER CHECKPOINT record mapped |
@@ -106,7 +110,35 @@ carries open, tracked work).
 >
 > **One contradiction recorded, not resolved:** this index says `P91-observability-ui.md`'s
 > `:496`/`:951` save-dialog staleness was fixed in `fc9c36e`; `TODO.md` still carries it as an open
-> `ui-designer` follow-up. Verify before acting on either.
+> `ui-designer` follow-up. Verify before acting on either. — **RESOLVED 2026-09-11 by the
+> orchestrator: this index was right and the board was stale.** The board line is gone; the
+> architect's own `P91-observability.md` §6/§10 are the copies that are still stale.
+>
+> **Correction to the note above:** its reason for keeping the three `P91-*` files active — "the
+> branch is unmerged by user instruction" — is **void**. The user ruled MERGE on 2026-09-11 and the
+> branch was fast-forwarded onto `dev` and pushed. They stay active for the other two reasons (the
+> owed `logs/*.jsonl` parse, and F6 — now ruled and contracted, not decided-pending).
+
+> **2026-09-14 sweep (post-ruling).** The user ruled **all 22** open FOR-USER items on 2026-09-11;
+> `TODO.md` was compacted 1537 → 988 the same week (`docs/history/todo-archive-2026-09.md`
+> Parts 62-70). **Four files had no row and are added:** `P112-external-tool-detection.md`,
+> `P112-tool-catalog.md`, `P112-ui.md` and `P91-F6-usage-retention.md`. **Two statuses moved on the
+> user's ruling, not on the curator's judgement:** `P108-hue-as-text-on-neutral-ui.md` is now `done`
+> and archive-eligible (`AC11` closed by ruling #13), and `P91-privacy-copy-ui.md` is no longer
+> "held pending a user decision" — F6 was ruled, so its unimplemented §6 copy is **work**, not a
+> blocked decision. **No file was moved** (`git mv` is outside the curator's file allowlist); the
+> archive-eligible set is unchanged apart from gaining `P108`.
+>
+> **Audit reports are deliberately NOT indexed here.** `docs/audit-2026-08-07.md`,
+> `audit-2026-08-18.md`, `audit-2026-09-03-external-launch.md` and
+> `audit-2026-09-11-mcp-tool-contracts.md` are not contracts and have never had rows; they are
+> reachable from `TODO.md`'s security section and from `docs/history/` Parts 56, 65 and 66. Raise it
+> if that ever costs someone a search.
+>
+> **One contract task executed by the curator, 2026-09-14** (the architect has `Write` only and
+> could not safely edit a 2029-line file): the ten `SUPERSEDED` pointers listed in
+> `P91-F6-usage-retention.md` §2 were spliced into `P91-observability.md`, and §11's three decision
+> rows were appended to its §13 as rows 34-36.
 
 > **Why the P68 cluster stays active despite `done`.** `TODO.md` §"P68 contract debt" schedules edits
 > *to these files* (apply the `P68g-ui.md` §3.1–3.5 splice into `P68e-ai-activity-dock.md`, then

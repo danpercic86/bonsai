@@ -81,7 +81,10 @@ to regenerate these._
   changelog and PR-description drafting. AI is off until you enable it and accept the consent
   dialog, which spells out what is sent.
 - **AI-ready for other tools** — an embedded MCP server exposes structured Git data (graph,
-  diffs, conflicts) to AI tools, plus an optional "what changed" digest.
+  diffs, conflicts) to AI tools, plus an optional "what changed" digest. Read access is the
+  default; the write tools (stage, commit, branch, merge, rebase, stash) are **registered only
+  when you turn write access on** — the `mcpAllowWrite` setting in the app, or `--allow-write` on
+  the standalone server — so an unauthorised tool is absent, not merely refused.
 
 ## Install
 

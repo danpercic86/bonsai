@@ -36,6 +36,31 @@ All notable changes to Bonsai are documented here. The format is based on
   sources were already restricted to the application itself, with no inline script and no `eval`.
   These three directives close the remaining ways a compromised renderer could aim a form submission
   somewhere else, rewrite how relative URLs resolve, or embed a plugin object.
+- **Staging a file could follow a symlinked directory out of the repository.** Full-file staging
+  validated paths only lexically — it never checked that the resolved location stayed inside the
+  working tree, unlike partial staging, discard and conflict resolution, which all did. A repository
+  containing a symlinked ancestor could therefore have an out-of-repository file read into its
+  object database by a single stage. Every path is now resolved against the working directory before
+  the index is touched, and a batch containing one escape stages nothing at all; a symlink you stage
+  directly is still stored as a link. This affected staging from the app as well as through the MCP
+  server, and it was not reachable on a stock Windows setup, where Git materialises symlinks as
+  ordinary files.
+- **The MCP server's write tools no longer inherit the user interface's assumptions.** Staging
+  through a model is now limited to paths the repository status actually reports, so an ignored file
+  such as `.env` can no longer be staged and committed by an agent that simply named it — the tool
+  description had promised this, and nothing enforced it. Commit-producing tools in a repository
+  with runnable git hooks are refused rather than running those hooks behind a disclosure a headless
+  server cannot show. A test now snapshots every tool description, because those descriptions are
+  the contract a model reads before it invokes a destructive operation.
+- **A custom terminal or editor command is checked before it is launched.** The value must be an
+  absolute path to an existing file or a bare program name, with no shell metacharacters and no
+  smuggled arguments, and a configured command no longer runs with the repository as its working
+  directory. **This narrows the surface rather than closing it**, in two ways worth naming: an audit
+  showed that validating the *shape* of a program string a compromised renderer can write cannot
+  make it safe — so free-text entry for these two settings is slated for removal in favour of a
+  picker over detected tools — and the built-in "open in terminal" rungs that must start *in* the
+  repository still do, because the alternative (building a `Set-Location` command line out of a
+  repository-authored path) would be a worse hazard.
 
 ### Fixed
 
