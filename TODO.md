@@ -149,6 +149,13 @@ Killed; port confirmed free; no other `node` process on this repo remains. Found
 
 # ✅ MERGE BLOCK LIFTED — full 8-step gate GREEN at `dcff54b`, 454.0s, exit 0
 
+> **Read the commit this green belongs to.** It is `dcff54b`, **not HEAD.** Two `src/` files changed
+> afterwards in `0a084dc` (a subtitle string and a comment). Those were covered by targeted vitest
+> (**69 files / 791 tests**), tsc, eslint, the ratchet and a real-browser read of the rendered copy —
+> and no `e2e/` spec references the subtitle — but that is **not the same as a gate run at HEAD**, so a
+> confirming run is in flight. The distinction is recorded rather than glossed because a hedged gate
+> claim on this board is exactly what invites a resumed session to assume the tree is healthy.
+
 **2026-09-14. The first gate run since the bridge, and therefore the first that measures the
 application rather than the mock.** All 8 steps, zero FAIL lines:
 
