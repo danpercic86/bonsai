@@ -43,6 +43,7 @@ import type {
   UiSettingsPatch,
 } from '../../ipc';
 import { type McpScope } from '../../lib/mcpAddCommand';
+import type { SettingsOutcome } from './SettingsOutcomeNote';
 import type { AiRunPrefs } from '../../settings/aiRunPrefs';
 import type { UpdateUiState } from '../../hooks/useUpdateController';
 import type { SettingsActions, SettingsValues } from './SettingsContext';
@@ -103,6 +104,16 @@ export interface SettingsPanelProps {
   // Embedded MCP server (P16). Live runtime status (null until first loaded);
   // consent gate + start/stop are owned by App, like the AI section.
   mcpStatus: McpStatus | null;
+  /** P113 §17.3 — the four MCP outcomes and the AI-access announcement, from
+   *  `useMcpControls`. Passed through untouched; the section renders both. */
+  mcpOutcomes: ReadonlyMap<string, SettingsOutcome>;
+  mcpAnnounce: string;
+  /** P113 §17.3 — the debounced settings write is failing. Shown as the card's
+   *  save banner (`SettingsSaveBanner`), which is why it stops at the shell and
+   *  never enters the value bag: it is not a setting, and it is category-wide. */
+  settingsSaveFailed: boolean;
+  /** Send the pending patch now (the banner's Retry). */
+  onRetrySettingsSave(): void;
   mcpConsented: boolean;
   /** Start/stop the embedded MCP server (read-only in P16b). */
   onSetMcpEnabled(enabled: boolean): void;
@@ -130,10 +141,6 @@ export interface SettingsPanelProps {
   /** P44: named identity profiles (global app setting). CRUD persists via
    *  `onChange({ profiles })`; Apply is owned by the section's own IPC. */
   profiles: IdentityProfile[];
-  /** P49b: external-tool command templates ('' ⇒ auto-detect). Threaded from
-   *  App's UiSettings state; persisted via `onChange` like every other setting. */
-  terminalCommand: string;
-  editorCommand: string;
   /** P91 §10: Dev-mode / observability settings (whole-struct, the autoFetch
    *  idiom). Patched via `onChange({ dev })`. */
   dev: DevSettings;
@@ -177,6 +184,8 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     aiConsented,
     onRequestEnableAi,
     mcpStatus,
+    mcpOutcomes,
+    mcpAnnounce,
     mcpConsented,
     onSetMcpEnabled,
     onRequestEnableMcp,
@@ -267,8 +276,6 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     aiRun,
     autoCheckUpdates,
     profiles,
-    terminalCommand,
-    editorCommand,
     dev,
     repoPath,
     configInitialFocus,
@@ -310,8 +317,6 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       mcpWriteConsented,
       autoCheckUpdates,
       profiles,
-      terminalCommand,
-      editorCommand,
       dev,
       ...aiRun,
     }),
@@ -334,8 +339,6 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       mcpWriteConsented,
       autoCheckUpdates,
       profiles,
-      terminalCommand,
-      editorCommand,
       dev,
       aiRun,
     ],
@@ -379,8 +382,6 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       mcpWriteConsented,
       autoCheckUpdates,
       profiles,
-      terminalCommand,
-      editorCommand,
       dev,
       repoPath,
       aiAvailability,
@@ -389,6 +390,8 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       mcpEnabled: mcpStatus?.enabled ?? false,
       mcpAllowWrite: mcpStatus?.allowWrite ?? false,
       mcpRegistering,
+      mcpOutcomes,
+      mcpAnnounce,
       updateCurrentVersion,
       updateState,
       configInitialFocus,
@@ -418,13 +421,13 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       mcpWriteConsented,
       autoCheckUpdates,
       profiles,
-      terminalCommand,
-      editorCommand,
       dev,
       repoPath,
       aiAvailability,
       mcpStatus,
       mcpRegistering,
+      mcpOutcomes,
+      mcpAnnounce,
       updateCurrentVersion,
       updateState,
       configInitialFocus,

@@ -1,4 +1,11 @@
-// P69g — the "General" category page: background activity + external tools.
+// P69g — the "General" category page: background activity + committing.
+//
+// P112 §5.1: the "External tools" group is GONE from this page for now. Its two
+// rows were free-text PROGRAM fields, and the replacement settings
+// (`terminalTool` / `editorTool`) are catalog ids — a text box writing one would
+// let the user type a non-id, which the backend's `coerce_tool_id` turns into
+// `''`, i.e. a control that silently discards input. Until sub-increment 4 lands
+// the detected-tool picker, the per-OS auto-detect ladder IS the behaviour.
 //
 // Re-skinned onto the canonical row (UI §5.1): the two checkboxes are
 // `SettingsSwitchRow` (the row+switch pairing, including the `{rowId}-input` id
@@ -11,7 +18,6 @@
 // id; nothing here restates them.
 
 import { NumberSlider } from '../../NumberSlider';
-import { SettingsExternalToolsSection } from '../../SettingsExternalToolsSection';
 import {
   AUTO_FETCH_INTERVAL_MAX,
   AUTO_FETCH_INTERVAL_MIN,
@@ -33,8 +39,7 @@ const REFRESH_INTERVAL = 'general.refresh-interval';
 const PRIMARY_COMMIT_ACTION = 'general.primary-commit-action';
 
 export function GeneralCategory() {
-  const { autoFetch, healthRefresh, terminalCommand, editorCommand, primaryCommitAction } =
-    useSettingsValues();
+  const { autoFetch, healthRefresh, primaryCommitAction } = useSettingsValues();
   const { change } = useSettingsActions();
 
   return (
@@ -108,12 +113,6 @@ export function GeneralCategory() {
           />
         </SettingsRow>
       </SettingsGroup>
-
-      <SettingsExternalToolsSection
-        terminalCommand={terminalCommand}
-        editorCommand={editorCommand}
-        onChange={change}
-      />
     </>
   );
 }

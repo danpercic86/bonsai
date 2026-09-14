@@ -2,11 +2,30 @@
 // mutates it — start/stop, the `claude mcp add` registration, the write gate,
 // and the two deferring consent dialogs. Extracted verbatim from App so the
 // container only wires SettingsPanel and the dialogs to it.
+//
+// P113 §17.3 (call sites 11-14): every control here renders a SETTINGS row, so
+// none of its outcomes may be a toast — Settings draws inside `.dialog-overlay`
+// (z-index 100) and `.toast-stack` is 90, so a toast raised from here is
+// unclickable, not merely dim. This hook therefore owns a `useOutcomeNotes`
+// instance and returns the note map plus the section's one announcement;
+// `SettingsMcpSection` renders both.
+//
+// It lives in `src/hooks/` and is wired from `App.tsx`, which is exactly why the
+// path-scoped lint could never see it: it took `pushToast` as a PARAMETER and
+// imported no toast module. **That parameter is now deleted** — after the sweep
+// it had no caller left, and a hook that cannot raise a toast cannot regress
+// into one. This is the strongest available guard and it costs nothing (§13.1).
 import { useCallback, useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { ipc } from '../ipc';
 import type { McpStatus, UiSettingsPatch } from '../ipc';
-import type { PushToast } from '../ToastContext';
+import type { SettingsOutcome } from '../components/settings/SettingsOutcomeNote';
+import {
+  MCP_ALLOW_WRITE_SLOT,
+  MCP_ENABLED_SLOT,
+  MCP_REGISTER_SLOT,
+} from '../components/settings/mcpOutcomeSlots';
+import { useOutcomeNotes } from '../components/settings/useOutcomeNotes';
 import { errorMessage } from '../utils/errors';
 
 export interface UseMcpControls {
@@ -20,13 +39,19 @@ export interface UseMcpControls {
   handleConfirmMcpConsent: () => void;
   handleSetMcpAllowWrite: (allowWrite: boolean) => void;
   handleConfirmMcpWriteConsent: () => void;
+  /** P113 §17.3: slot key (`mcpOutcomeSlots`) → its newest outcome. */
+  mcpOutcomes: ReadonlyMap<string, SettingsOutcome>;
+  /** The AI-access section's ONE announcement. Rendered by `SettingsMcpSection`
+   *  — the live element must live IN the section for the per-section count to
+   *  mean anything (§17.3, AC6). */
+  mcpAnnounce: string;
 }
 
 export function useMcpControls(
-  pushToast: PushToast,
   activeRepo: string | null,
   handleSettingsChange: (patch: UiSettingsPatch) => void,
 ): UseMcpControls {
+  const { notes, announce, begin, report } = useOutcomeNotes();
   // P16: embedded MCP server. `mcpStatus` is the live runtime state (from the
   // backend, kept fresh via `mcp-server-changed`); the one-time consent gates
   // (`mcpConsented` / `mcpWriteConsented`) are persisted settings and live in
@@ -64,25 +89,46 @@ export function useMcpControls(
   // `mcp-server-changed` subscription also updates it, but this is immediate).
   const handleSetMcpEnabled = useCallback(
     (enabled: boolean) => {
+      begin(MCP_ENABLED_SLOT);
       ipc.setMcpEnabled(enabled).then(
-        (s) => setMcpStatus(s),
-        (e) => pushToast('error', `Could not ${enabled ? 'start' : 'stop'} MCP server: ${errorMessage(e)}`),
+        (s) => {
+          setMcpStatus(s);
+          // Stopping the server unmounts the two register rows, so their slots
+          // lose their home while the KEYS survive. Without this, re-enabling
+          // resurrects a stale `Could not register: …` after something has
+          // happened since — the §7 rule the Accounts host slots also broke.
+          if (!enabled) {
+            begin(MCP_REGISTER_SLOT.user);
+            begin(MCP_REGISTER_SLOT.local);
+          }
+        },
+        (e) =>
+          report(
+            MCP_ENABLED_SLOT,
+            'error',
+            `Could not ${enabled ? 'start' : 'stop'} MCP server: ${errorMessage(e)}`,
+          ),
       );
     },
-    [pushToast],
+    [begin, report],
   );
 
   // P16: run `claude mcp add` for the running server at the chosen scope. Returns
   // the promise so SettingsPanel can clear its in-flight state when it settles.
   const handleRegisterMcp = useCallback(
-    (scope: 'user' | 'local'): Promise<void> =>
-      ipc.registerMcpWithClaude(scope, activeRepo).then(
-        () => pushToast('success', `Registered bonsai with Claude Code (${scope})`),
+    (scope: 'user' | 'local'): Promise<void> => {
+      // Scope-keyed: the two register rows are independent operations and must
+      // not report into each other's slot.
+      const slot = MCP_REGISTER_SLOT[scope];
+      begin(slot);
+      return ipc.registerMcpWithClaude(scope, activeRepo).then(
+        () => report(slot, 'success', `Registered bonsai with Claude Code (${scope})`),
         (e) => {
-          pushToast('error', `Could not register: ${errorMessage(e)}`);
+          report(slot, 'error', `Could not register: ${errorMessage(e)}`);
         },
-      ),
-    [pushToast, activeRepo],
+      );
+    },
+    [activeRepo, begin, report],
   );
 
   // Enabling the MCP server the first time records consent, then starts it.
@@ -97,16 +143,18 @@ export function useMcpControls(
   // `mcp-server-changed` re-emit.
   const handleSetMcpAllowWrite = useCallback(
     (allowWrite: boolean) => {
+      begin(MCP_ALLOW_WRITE_SLOT);
       ipc.setMcpAllowWrite(allowWrite).then(
         (s) => setMcpStatus(s),
         (e) =>
-          pushToast(
+          report(
+            MCP_ALLOW_WRITE_SLOT,
             'error',
             `Could not ${allowWrite ? 'enable' : 'disable'} MCP write access: ${errorMessage(e)}`,
           ),
       );
     },
-    [pushToast],
+    [begin, report],
   );
 
   // First enabling write records the stronger write consent, then flips the gate.
@@ -127,5 +175,7 @@ export function useMcpControls(
     handleConfirmMcpConsent,
     handleSetMcpAllowWrite,
     handleConfirmMcpWriteConsent,
+    mcpOutcomes: notes,
+    mcpAnnounce: announce,
   };
 }

@@ -65,9 +65,12 @@ describe('DEFAULT_UI_SETTINGS ⟷ the shared Rust⟷TS oracle', () => {
     expect(DEFAULT_UI_SETTINGS.aiBulkMaxBytes).toBe(400_000);
   });
 
-  it('leaves the external-tool commands empty — `` means auto-detect (§3.4)', () => {
-    expect(DEFAULT_UI_SETTINGS.terminalCommand).toBe('');
-    expect(DEFAULT_UI_SETTINGS.editorCommand).toBe('');
+  it('leaves the external-tool SELECTIONS empty — `` means auto-detect (§3.4)', () => {
+    // P112 §5.1: these are catalog ids, not programs. `''` is the auto ladder,
+    // and the two pre-P112 free-text command keys are gone from the whole
+    // boundary (the Rust migration maps an old settings file once, on load).
+    expect(DEFAULT_UI_SETTINGS.terminalTool).toBe('');
+    expect(DEFAULT_UI_SETTINGS.editorTool).toBe('');
   });
 
   it('has an EMPTY env-derived escape hatch, and every listed key would be real', () => {

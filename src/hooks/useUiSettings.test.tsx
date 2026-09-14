@@ -16,6 +16,7 @@ import { appErr } from '../test/actionHookKit';
 import { deferred, GRAPH_PATCH, HYDRATED, mountUiSettings as mount } from '../test/uiSettingsKit';
 import type { ToastTone } from '../components/Toasts';
 import type { UiSettings } from '../ipc';
+import { SETTINGS_SAVE_FAILURE_TEXT } from './useSettingsSaveFailure';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -170,7 +171,11 @@ describe('AI-run knobs (P68g)', () => {
 });
 
 describe('save failure', () => {
-  it('a rejected write pushes an error toast with the exact copy prefix', async () => {
+  // P113 §17.3 amendment A4: the raw `{e}` tail is GONE. In a transient toast it
+  // was merely against house rules; the same string now also renders in a
+  // persistent banner, where a raw OS error would sit on screen indefinitely
+  // naming no action. One string, both channels.
+  it('a rejected write pushes an error toast with the A4 copy, and no raw error', async () => {
     vi.useFakeTimers();
     vi.spyOn(mockIpc, 'setUiSettings').mockRejectedValue(appErr('io', 'disk on fire'));
     const push = vi.fn();
@@ -184,8 +189,8 @@ describe('save failure', () => {
     expect(push).toHaveBeenCalledTimes(1);
     const [tone, text] = push.mock.calls[0] as [ToastTone, string];
     expect(tone).toBe('error');
-    expect(text.startsWith('Could not save settings: ')).toBe(true);
-    expect(text).toBe('Could not save settings: disk on fire');
+    expect(text).toBe(SETTINGS_SAVE_FAILURE_TEXT);
+    expect(text).not.toContain('disk on fire');
     // A failed write does not roll back the live preview.
     expect(result.current.panelDensity).toBe('compact');
   });
@@ -226,8 +231,6 @@ describe('hydrateUiSettings', () => {
     expect(result.current.autoFetch).toEqual(HYDRATED.autoFetch);
     expect(result.current.healthRefresh).toEqual(HYDRATED.healthRefresh);
     expect(result.current.profiles).toEqual(HYDRATED.profiles);
-    expect(result.current.terminalCommand).toBe('wt.exe');
-    expect(result.current.editorCommand).toBe('code');
     expect(result.current.aiDockHeight).toBe(320);
     expect(result.current.aiDockCollapsed).toBe(true);
     expect(result.current.aiStreamLog).toBe(false);

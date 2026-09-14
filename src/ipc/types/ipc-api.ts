@@ -537,8 +537,8 @@ export interface IpcApi extends IpcApiForge, IpcApiObs {
   /** Applies a partial patch (only defined fields) and returns the resulting settings. */
   setUiSettings(patch: UiSettingsPatch): Promise<UiSettings>;
   /** P49: launch the OS terminal at `path` (a repo/worktree/submodule dir). Uses
-   *  the configured terminalCommand PROGRAM (empty ⇒ auto-detect). Rejects
-   *  AppError('externalToolFailed' | 'io'). */
+   *  the selected terminal tool (P112 `terminalTool`; `''` ⇒ the per-OS
+   *  auto-detect ladder). Rejects AppError('externalToolFailed' | 'io'). */
   openInTerminal(path: string): Promise<void>;
   /** P49: reveal `path` in the OS file manager. Rejects AppError('externalToolFailed' | 'io'). */
   revealInFileManager(path: string): Promise<void>;

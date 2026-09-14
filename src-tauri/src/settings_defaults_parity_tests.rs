@@ -95,52 +95,6 @@ fn collect_diffs(path: &str, rust: &Value, oracle: &Value, out: &mut Vec<String>
     out.push(message);
 }
 
-/// The four keys P112 moves across the language boundary in TWO increments, and
-/// the only transitional exemption this oracle has ever carried.
-///
-/// The Rust `UiSettings` drops `terminalCommand` / `editorCommand` and gains
-/// `terminalTool` / `editorTool` in the increment that changes the settings
-/// SHAPE (P112 §5.1/§5.2). The TS half of the four-link chain — the `UiSettings`
-/// interface, `DEFAULT_UI_SETTINGS`, and the oracle it regenerates — belongs to
-/// the picker-UI increment (contract §7's `src/` deletion list), so the two
-/// halves cannot land in one commit without one agent editing the other's
-/// surface mid-flight.
-///
-/// Only these four names are exempt, and only at the TOP level; every other key
-/// is still compared. The exemption is SELF-DELETING — see
-/// [`the_p112_key_transition_is_still_in_flight`].
-const P112_KEYS_IN_TRANSIT: [&str; 4] = [
-    "terminalCommand",
-    "editorCommand",
-    "terminalTool",
-    "editorTool",
-];
-
-/// Fails once the TypeScript half of P112 §5.1 lands — at which point
-/// [`P112_KEYS_IN_TRANSIT`] and this test must both be deleted, restoring the
-/// oracle to total coverage.
-///
-/// The trigger is `||`, and deliberately the WEAKEST condition that means "the
-/// TS side has started moving": the moment EITHER new key appears, the
-/// exemption must go. A conjunction ("both new keys present AND both legacy
-/// keys gone") would leave a window in which the TS side has already written
-/// `terminalTool` with a WRONG DEFAULT while still carrying `terminalCommand`,
-/// and this oracle — the only cross-boundary check in the project — would stay
-/// quiet about it. AC19 forbids `terminalCommand` surviving in `src/` anyway,
-/// so the stricter trigger costs nothing.
-#[test]
-fn the_p112_key_transition_is_still_in_flight() {
-    let oracle: Value = serde_json::from_str(ORACLE_JSON).expect("the oracle parses");
-    let keys = oracle.as_object().expect("the oracle is a JSON object");
-    let caught_up = keys.contains_key("terminalTool") || keys.contains_key("editorTool");
-    assert!(
-        !caught_up,
-        "the TS oracle now carries a P112 §5.1 key: delete `P112_KEYS_IN_TRANSIT` and this \
-         test, so the parity check covers both keys (and the two legacy names, which AC19 \
-         forbids in `src/`) again"
-    );
-}
-
 /// The serialised Rust default `UiSettings` deep-equals the checked-in oracle.
 ///
 /// There is no `UiSettings::default()` — `UiSettings` is a projection, so the value
@@ -152,17 +106,8 @@ fn rust_default_ui_settings_match_the_shared_oracle() {
         "src/settings/uiSettingsDefaults.json parses as JSON (it is a checked-in \
          source file, not repo- or user-derived state)",
     );
-    let mut rust = serde_json::to_value(crate::commands::ui_settings_of(&Settings::default()))
+    let rust = serde_json::to_value(crate::commands::ui_settings_of(&Settings::default()))
         .expect("UiSettings serialises (derived Serialize over plain scalars/enums/Vec)");
-    let mut oracle = oracle;
-    for key in P112_KEYS_IN_TRANSIT {
-        if let Some(o) = rust.as_object_mut() {
-            o.remove(key);
-        }
-        if let Some(o) = oracle.as_object_mut() {
-            o.remove(key);
-        }
-    }
 
     // Compared as parsed `Value`s, never as text: key order and whitespace in the
     // oracle must not matter.

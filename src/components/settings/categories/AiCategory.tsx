@@ -23,6 +23,8 @@ export function AiCategory() {
     mcpEnabled,
     mcpAllowWrite,
     mcpRegistering,
+    mcpOutcomes,
+    mcpAnnounce,
     repoPath,
   } = useSettingsValues();
   const { change, setAiEnabled, setMcpEnabled, setMcpAllowWrite, registerMcp } =
@@ -54,6 +56,8 @@ export function AiCategory() {
         onToggleEnabled={setMcpEnabled}
         onToggleAllowWrite={setMcpAllowWrite}
         onRegister={registerMcp}
+        outcomes={mcpOutcomes}
+        announce={mcpAnnounce}
       />
     </>
   );

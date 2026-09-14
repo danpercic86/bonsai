@@ -98,14 +98,19 @@ export interface UiSettings {
   autoCheckUpdates: boolean;
   /** P44: named identity profiles (global). */
   profiles: IdentityProfile[];
-  /** P49: terminal launch PROGRAM — a bare command name or an absolute path to
-   *  an existing executable, no arguments and no shell syntax (audit MEDIUM-2;
-   *  Rust validates at the launch site and rejects `externalToolFailed` naming
-   *  this setting). Empty ⇒ per-OS auto-detect. */
-  terminalCommand: string;
-  /** P49: editor launch PROGRAM, same shape rules as `terminalCommand`. Empty ⇒
-   *  auto-detect VS Code. */
-  editorCommand: string;
+  /** P112 §5.1: the SELECTED TERMINAL — `''` (the per-OS auto-detect ladder), a
+   *  compile-time catalog id (`'windows-terminal'`), or the pseudo-id
+   *  `'custom'`. Never a program string: the renderer's value is only ever a
+   *  lookup key, coerced on write by Rust's `coerce_tool_id` (a miss becomes
+   *  `''`), which is what makes a renderer-written program path unrepresentable
+   *  rather than merely rejected.
+   *
+   *  There is deliberately NO `customTerminalPath`/`customEditorPath` here: the
+   *  browsed path travels outbound only, as `DetectedTool.detail`, and is
+   *  written solely by the backend's own native dialog (§5.4). */
+  terminalTool: string;
+  /** P112 §5.1: the selected editor; same rules as `terminalTool`. */
+  editorTool: string;
   // ---- P68 §8.3: streaming AI-run knobs. Each patches independently; the two
   // LOCKED defaults are `aiHardCapSecs = 0` (unbounded — the user cancels instead)
   // and `aiMaxBudgetUsd = 0` (the `--max-budget-usd` flag is omitted entirely).
@@ -176,10 +181,12 @@ export interface UiSettingsPatch {
   autoCheckUpdates?: boolean;
   /** P44: identity profiles — whole-array replace (like paneWidths). */
   profiles?: IdentityProfile[];
-  /** P49: terminal launch command template; patches independently. */
-  terminalCommand?: string;
-  /** P49: editor launch command template; patches independently. */
-  editorCommand?: string;
+  /** P112 §5.1: the selected terminal id; patches independently and is COERCED
+   *  on write (`coerce_tool_id`) — an unknown id lands as `''`, i.e. the auto
+   *  ladder. A renderer may not express a program path at all. */
+  terminalTool?: string;
+  /** P112 §5.1: the selected editor id; same coercion. */
+  editorTool?: string;
   // P68 §8.3: the ten streaming AI-run knobs; each patches independently of
   // `graph` / `listView` / `panelDensity` and is clamped on write in Rust.
   aiIdleTimeoutSecs?: number;

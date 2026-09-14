@@ -429,19 +429,18 @@ export const forgeHandlers = {
   async forgeRemoveAccount(accountId: string): Promise<void> {
     await delay(120);
     offGuard();
-    // P113 §14: `?forgeRemoveFail=1|long` — the remove failure (outcome sweep
-    // row 8) had NO reachable trigger, and it is the one outcome whose dialog
-    // deliberately stays open.
-    //
-    // FIDELITY NOTE, verified against `commands/forge_accounts.rs:280-310`: the
-    // real `forge_remove_account_inner` swallows BOTH substantive failures
-    // (`let _ = delete_token(...)`, `let _ = settings::update(...)`), so its only
-    // reachable rejections are `settings::settings_file`'s
+    // P113 §14: `?forgeRemoveFail=1|long` — row 8 had NO reachable trigger, and
+    // it is the one outcome whose dialog deliberately stays open.
+    // FIDELITY NOTE, verified against `forge_remove_account_inner`
+    // (`src-tauri/src/commands/forge_accounts.rs:280-310`): it swallows BOTH
+    // substantive failures (`let _ = delete_token(...)`, `let _ = update(...)`),
+    // so its only reachable rejections are `settings::settings_file`'s
     // `cannot resolve app config dir: {e}` and `task join error: {e}`. The former
-    // is mirrored verbatim here — an invented keychain refusal would be fiction.
-    // `long` keeps the same message SHAPE and supplies a pathological `{e}`: a
-    // ~300-char space-free Windows path, which is what `overflow-wrap: anywhere`
-    // on the note/dialog error exists to contain.
+    // is mirrored verbatim — an invented keychain refusal would be fiction.
+    // `long` supplies §14's BOTH pathological halves: a ~330-char space-free path
+    // in `{e}`, and a 61-char HOST, which comes from the account store rather than
+    // this handler — so `forgeAccountStore` seeds `FORGE_ACCOUNT_LONG` for this
+    // knob; until then the long-host half was unreachable at any `{e}` length.
     const removeFail = urlParam('forgeRemoveFail');
     if (removeFail === '1' || removeFail === 'long') {
       const cause =
@@ -461,7 +460,8 @@ export const forgeHandlers = {
     await delay(80);
     offGuard();
     // P113 §14: `?forgeDefaultFail=1` — the refusal below is the command's ONLY
-    // reachable error (`commands/forge_accounts.rs:339`), but reaching it from
+    // reachable error (`forge_set_host_default_inner`,
+    // `src-tauri/src/commands/forge_accounts.rs:340`), but reaching it from
     // the UI needs an off-host account, which the radiogroup cannot produce. Same
     // message, verbatim, so the note renders what the backend would send.
     if (urlParam('forgeDefaultFail') === '1') {

@@ -109,6 +109,17 @@ type FixtureValues = Omit<
 
 const D = cloneDefaultUiSettings();
 
+/** P113 §17.3 — the four call sites the phase-1 sweep missed arrive as props, so
+ *  both fixtures carry the idle shape: no MCP outcome, a silent announcer, and a
+ *  settings write that is not failing. Every P69-era expectation in the suites
+ *  that use these fixtures therefore holds byte for byte. */
+const NO_OUTCOMES = {
+  mcpOutcomes: new Map(),
+  mcpAnnounce: '',
+  settingsSaveFailed: false,
+  onRetrySettingsSave: () => {},
+} as const;
+
 export const MINIMAL: FixtureValues = {
   theme: D.theme,
   listView: D.listView,
@@ -143,14 +154,13 @@ export const MINIMAL: FixtureValues = {
     aiMaxBudgetUsd: D.aiMaxBudgetUsd,
     aiBulkMaxBytes: D.aiBulkMaxBytes,
   },
+  ...NO_OUTCOMES,
   mcpStatus: MCP_STOPPED,
   mcpConsented: false,
   mcpWriteConsented: false,
   repoPath: null,
   configInitialFocus: null,
   profiles: [],
-  terminalCommand: D.terminalCommand,
-  editorCommand: D.editorCommand,
   // P91: Dev mode off at the production defaults, so the fieldset is disabled and
   // no dev ↺ shows in the minimal fixture.
   dev: D.dev,
@@ -208,15 +218,12 @@ export const MAXIMAL: FixtureValues = {
     aiMaxBudgetUsd: 2.5,
     aiBulkMaxBytes: 200_000,
   },
+  ...NO_OUTCOMES,
   mcpStatus: MCP_RUNNING,
   mcpConsented: true,
   mcpWriteConsented: true,
   repoPath: '/repo/fixture',
   profiles: [...FIXTURE_PROFILES],
-  // Program-only since the 2026-09-11 security increment: the backend refuses
-  // arguments and shell syntax, so a fixture must not advertise a template.
-  terminalCommand: 'wt',
-  editorCommand: 'code',
   autoCheckUpdates: true,
   // P91: Dev mode ON with every resettable dev knob off its default, so each dev
   // row's ↺ is present. `level: 'info'` (not 'trace') keeps Frame timing a live

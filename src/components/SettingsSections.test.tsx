@@ -1,11 +1,15 @@
 /** T3.5 — the presentational Settings*Section leaves: Graph (whole-struct
- *  patches), External tools (program edits + reset), and Updates (state
- *  machine rendering). GitConfig/Profiles sections own IPC and are covered via
- *  their own flows elsewhere; range clamping is unit-tested in settings/ranges. */
+ *  patches) and Updates (state machine rendering). GitConfig/Profiles sections
+ *  own IPC and are covered via their own flows elsewhere; range clamping is
+ *  unit-tested in settings/ranges.
+ *
+ *  P112 §5.1: the External-tools suite is GONE with its component. Both rows
+ *  were free-text PROGRAM fields writing keys the backend no longer accepts; the
+ *  replacement is a detected-tool picker (sub-increment 4), which will bring its
+ *  own tests rather than inherit assertions about typing a command. */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { SettingsGraphSection } from './SettingsGraphSection';
-import { SettingsExternalToolsSection } from './SettingsExternalToolsSection';
 import { SettingsUpdatesSection } from './SettingsUpdatesSection';
 import type { GraphPrefs, UpdateCheckResult } from '../ipc';
 import { ROW_HEIGHT_MAX, ROW_HEIGHT_MIN } from '../settings/ranges';
@@ -61,53 +65,6 @@ describe('SettingsGraphSection', () => {
     expect(onChange).toHaveBeenCalledWith({ graph: { ...GRAPH, rowHeight: ROW_HEIGHT_MIN } });
     fireEvent.change(row, { target: { value: '500' } });
     expect(onChange).toHaveBeenCalledWith({ graph: { ...GRAPH, rowHeight: ROW_HEIGHT_MAX } });
-  });
-});
-
-describe('SettingsExternalToolsSection', () => {
-  function renderTools(terminalCommand = '', editorCommand = '') {
-    const onChange = vi.fn();
-    render(
-      <SettingsExternalToolsSection
-        terminalCommand={terminalCommand}
-        editorCommand={editorCommand}
-        onChange={onChange}
-      />,
-    );
-    return onChange;
-  }
-
-  // The values are PROGRAMS since the 2026-09-11 security increment (the backend
-  // refuses arguments), so the fixtures are program-only — the field is still a
-  // free-text input and the frontend still patches whatever is typed.
-  it('edits patch the matching program key', () => {
-    const onChange = renderTools();
-    fireEvent.change(screen.getByLabelText('Terminal command'), {
-      target: { value: 'wt' },
-    });
-    expect(onChange).toHaveBeenCalledWith({ terminalCommand: 'wt' });
-    fireEvent.change(screen.getByLabelText('Editor command'), {
-      target: { value: 'code' },
-    });
-    expect(onChange).toHaveBeenCalledWith({ editorCommand: 'code' });
-  });
-
-  // P69g / UI §5.7: the dedicated "Reset to auto-detect" button is gone. The one
-  // app-wide idiom is the row ↺, which is ABSENT (not disabled) at the default —
-  // behaviour genuinely changed, so the assertion changes with it.
-  it('the row ↺ is absent at the default and clears a set program', () => {
-    renderTools();
-    expect(screen.queryByRole('button', { name: /^Reset .* to default$/ })).toBeNull();
-
-    cleanup();
-    const onChange = renderTools('wt', '');
-    expect(
-      screen.queryByRole('button', { name: 'Reset Editor command to default' }),
-    ).toBeNull();
-    const termReset = screen.getByRole('button', { name: 'Reset Terminal command to default' });
-    expect(termReset).toHaveAttribute('title', 'Reset to default (auto-detect)');
-    fireEvent.click(termReset);
-    expect(onChange).toHaveBeenCalledWith({ terminalCommand: '' });
   });
 });
 

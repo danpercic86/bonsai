@@ -228,7 +228,13 @@ describe('SettingsAccountsSection — inline outcomes (P113)', () => {
     await screen.findByText('danpercic86');
     fireEvent.click(screen.getAllByRole('radio', { name: 'Default' })[1]);
 
-    const text = 'Could not set the default account: account is not on the given host';
+    // P113 A5: the string names its HOST. One announcer serves N host groups, so
+    // a failure that names neither host nor login announces no subject — a
+    // sighted user reads it off the note's placement, which no screen reader
+    // conveys. `setDefault(host, accountId)` has no null branch, so this is
+    // unconditional.
+    const text =
+      'Could not set the default account for github.com: account is not on the given host';
     await waitFor(() => expect(outcomeNote('github.com')).toHaveTextContent(text));
     expect(outcomeNote('github.com')).toHaveClass('settings-row-note--warn');
     // The section slot is NOT a fallback — the outcome is keyed by host.
@@ -237,6 +243,9 @@ describe('SettingsAccountsSection — inline outcomes (P113)', () => {
     expect(document.querySelectorAll('.toast')).toHaveLength(0);
   });
 
+  // A5's other half: the global add form has NO host yet (`host ?? ADD_SLOT`), so
+  // this one string keeps the subject-less wording — the fallback is required,
+  // not defensive.
   it('a token-page failure raised by the GLOBAL add form lands in the section slot', async () => {
     vi.spyOn(ipc, 'forgeListAccounts').mockResolvedValue([]);
     vi.spyOn(ipc, 'openUrl').mockRejectedValue({

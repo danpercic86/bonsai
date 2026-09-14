@@ -13,10 +13,16 @@
 
 import type { McpStatus } from '../ipc';
 import { buildClaudeAddCommand, type McpScope } from '../lib/mcpAddCommand';
+import {
+  MCP_ALLOW_WRITE_SLOT,
+  MCP_ENABLED_SLOT,
+  MCP_REGISTER_SLOT,
+} from './settings/mcpOutcomeSlots';
 import { SettingsGroup } from './settings/SettingsGroup';
+import { SettingsOutcomeNote, type SettingsOutcome } from './settings/SettingsOutcomeNote';
 import { SettingsRow } from './settings/SettingsRow';
 import { SettingsSwitchRow } from './settings/SettingsSwitchRow';
-import { settingsRowLabelId } from './settings/settingsCatalog';
+import { settingsRowHelpId, settingsRowLabelId } from './settings/settingsCatalog';
 import type { SettingsRowId } from './settings/types';
 
 /** Best-effort clipboard copy (harness + native). Silent on failure — the
@@ -25,14 +31,22 @@ function copyText(text: string): void {
   void navigator.clipboard?.writeText(text).catch(() => {});
 }
 
-const ENABLED = 'ai.mcp-enabled';
-const ALLOW_WRITE = 'ai.mcp-allow-write';
+const ENABLED = MCP_ENABLED_SLOT;
+const ALLOW_WRITE = MCP_ALLOW_WRITE_SLOT;
 const URL_ROW = 'ai.mcp-server-url';
 const TOKEN_ROW = 'ai.mcp-token';
-const REGISTER: Readonly<Record<McpScope, SettingsRowId>> = {
-  user: 'ai.mcp-register-global',
-  local: 'ai.mcp-register-repo',
-};
+const REGISTER = MCP_REGISTER_SLOT;
+
+/** P113 §9 - the outcome elements' DOM ids, composed onto each control's
+ *  `aria-describedby`. Literals because each row exists exactly once here. */
+const ENABLED_OUTCOME_ID = 'mcp-enabled-outcome';
+const ALLOW_WRITE_OUTCOME_ID = 'mcp-allow-write-outcome';
+/** §17.3 - the write row's STATE note is conditional (`mcpEnabled ? ... :
+ *  undefined`), so it needs an id of its own for the composition below; the
+ *  OUTCOME note beside it is unconditional, which is the always-mounted shape
+ *  `:empty` collapses. */
+const ALLOW_WRITE_NOTE_ID = 'mcp-allow-write-note';
+const registerOutcomeId = (scope: McpScope): string => `mcp-register-${scope}-outcome`;
 
 export interface SettingsMcpSectionProps {
   /** Live runtime status (null until first loaded). */
@@ -51,6 +65,15 @@ export interface SettingsMcpSectionProps {
   onToggleAllowWrite(checked: boolean): void;
   /** Run `claude mcp add` for the given scope. */
   onRegister(scope: McpScope): void;
+  /** P113 §17.3 - slot key (`mcpOutcomeSlots`) to its newest outcome, owned by
+   *  `useMcpControls`. This section raises NO toasts: it renders inside
+   *  `.dialog-overlay` (z-index 100) while `.toast-stack` is 90, so a toast from
+   *  here is unclickable, not merely dim (ui-reference §12.14). */
+  outcomes: ReadonlyMap<string, SettingsOutcome>;
+  /** The section's ONE announcement, written by the same `report()` call that
+   *  wrote the note. Rendered here, not upstream, so AC6's per-section
+   *  live-region count of 1 is a property of this component. */
+  announce: string;
 }
 
 /**
@@ -107,6 +130,8 @@ export function SettingsMcpSection({
   onToggleEnabled,
   onToggleAllowWrite,
   onRegister,
+  outcomes,
+  announce,
 }: SettingsMcpSectionProps) {
   // `mcpStatus.url`/`token` are non-null while running; fall back defensively.
   const url = mcpStatus?.url ?? '';
@@ -122,19 +147,51 @@ export function SettingsMcpSection({
         is read-only unless you allow write access.
       </p>
 
-      <SettingsSwitchRow id={ENABLED} checked={mcpEnabled} onChange={onToggleEnabled} />
+      <SettingsSwitchRow
+        id={ENABLED}
+        checked={mcpEnabled}
+        /* §9: composed, never replaced - the catalog help stays, the outcome id
+           is appended and is always present (an id resolving to an empty element
+           reads as nothing, while mutating the attribute can itself re-announce). */
+        describedBy={`${settingsRowHelpId(ENABLED)} ${ENABLED_OUTCOME_ID}`}
+        hint={
+          <SettingsOutcomeNote
+            slot={ENABLED}
+            id={ENABLED_OUTCOME_ID}
+            outcome={outcomes.get(ENABLED) ?? null}
+          />
+        }
+        onChange={onToggleEnabled}
+      />
 
       <SettingsSwitchRow
         id={ALLOW_WRITE}
         checked={mcpAllowWrite}
         disabled={!mcpEnabled}
+        /* The state note is conditional, so its id joins only while it renders;
+           the outcome id is unconditional. Order is help then state then outcome. */
+        describedBy={[
+          settingsRowHelpId(ALLOW_WRITE),
+          ...(mcpEnabled ? [ALLOW_WRITE_NOTE_ID] : []),
+          ALLOW_WRITE_OUTCOME_ID,
+        ].join(' ')}
         hint={
-          mcpEnabled ? (
-            <p className="settings-row-note">
-              Adds staging, commit, merge, and conflict-resolution tools. Changing this restarts the
-              server and drops any active connection; the client reconnects automatically.
-            </p>
-          ) : undefined
+          <>
+            {mcpEnabled ? (
+              <p className="settings-row-note" id={ALLOW_WRITE_NOTE_ID}>
+                Adds staging, commit, merge, and conflict-resolution tools. Changing this restarts
+                the server and drops any active connection; the client reconnects automatically.
+              </p>
+            ) : undefined}
+            {/* The SECOND tenant of the help slot (§6.1): the state note above is
+                never replaced, and this one is mounted even while the row is
+                disabled - `:empty` gives it zero height (AC11). */}
+            <SettingsOutcomeNote
+              slot={ALLOW_WRITE}
+              id={ALLOW_WRITE_OUTCOME_ID}
+              outcome={outcomes.get(ALLOW_WRITE) ?? null}
+            />
+          </>
         }
         onChange={onToggleAllowWrite}
       />
@@ -165,9 +222,20 @@ export function SettingsMcpSection({
 
           {(['user', 'local'] as const).map((scope) => {
             const rowId = REGISTER[scope];
+            const outcomeId = registerOutcomeId(scope);
             const disabled = !ready || (scope === 'local' && repoPath === null);
             return (
-              <SettingsRow id={rowId} key={scope}>
+              <SettingsRow
+                id={rowId}
+                key={scope}
+                hint={
+                  <SettingsOutcomeNote
+                    slot={rowId}
+                    id={outcomeId}
+                    outcome={outcomes.get(rowId) ?? null}
+                  />
+                }
+              >
                 <div className="settings-value-copy">
                   <button
                     type="button"
@@ -176,6 +244,10 @@ export function SettingsMcpSection({
                        does not say what is being added, and two rows would then
                        offer two identically-named buttons (UI §7.1). */
                     aria-labelledby={settingsRowLabelId(rowId)}
+                    /* §9: the row's catalog help plus this scope's own outcome.
+                       Scope-keyed, so the global row never describes itself with
+                       the repository row's result. */
+                    aria-describedby={`${settingsRowHelpId(rowId)} ${outcomeId}`}
                     disabled={disabled || mcpRegistering !== null}
                     onClick={() => onRegister(scope)}
                   >
@@ -205,6 +277,14 @@ export function SettingsMcpSection({
           })}
         </>
       )}
+
+      {/* P113 §8/§17.3 - the section's ONE live region, always mounted so its
+          text always arrives in a LATER commit than its mount (the condition for
+          being announced at all). Every `[data-outcome-note]` above is
+          description-only: no `aria-live`, no `role`. AI-access count: 1. */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {announce}
+      </p>
     </SettingsGroup>
   );
 }

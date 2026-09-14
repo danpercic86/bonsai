@@ -383,15 +383,16 @@ export function readUiSettings(): UiSettings {
     // degrade to default when absent/malformed or when no element survives.
     const profiles: IdentityProfile[] =
       sanitizeProfiles(parsed.profiles) ?? structuredClone(DEFAULT_UI_SETTINGS.profiles);
-    // P49 external-tool templates (additive): fall back to default ("").
-    const terminalCommand =
-      typeof parsed.terminalCommand === 'string'
-        ? parsed.terminalCommand
-        : DEFAULT_UI_SETTINGS.terminalCommand;
-    const editorCommand =
-      typeof parsed.editorCommand === 'string'
-        ? parsed.editorCommand
-        : DEFAULT_UI_SETTINGS.editorCommand;
+    // P112 §5.1 external-tool SELECTIONS (additive): fall back to default ("" =
+    // the auto ladder). A blob still carrying the pre-P112 free-text command
+    // keys is ignored here on purpose — the real migration is Rust's, it runs
+    // once on `load_from`, and mirroring it would be inventing a second one.
+    const terminalTool =
+      typeof parsed.terminalTool === 'string'
+        ? parsed.terminalTool
+        : DEFAULT_UI_SETTINGS.terminalTool;
+    const editorTool =
+      typeof parsed.editorTool === 'string' ? parsed.editorTool : DEFAULT_UI_SETTINGS.editorTool;
     // P68 §8.3 (additive, like the P13 AI fields): per-field tolerant parse +
     // the clamp mirror; a pre-P68 blob loads every default.
     const aiRun = parseAiRunSettings(parsed);
@@ -423,8 +424,8 @@ export function readUiSettings(): UiSettings {
       onboardingSeen,
       autoCheckUpdates,
       profiles,
-      terminalCommand,
-      editorCommand,
+      terminalTool,
+      editorTool,
       dev,
       ...aiRun,
     };

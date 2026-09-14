@@ -29,6 +29,9 @@
 @import './styles/graph-replay.css';
 @import './styles/right-panel-density.css';
 @import './styles/empty-and-errors.css';
+/* P113 §17.3: the Settings save-failure banner composes `.error-banner` above,
+   so it is imported after it — the composition and the cascade read the same way. */
+@import './styles/settings-save-banner.css';
 @import './styles/status-panel.css';
 @import './styles/commit-box.css';
 @import './styles/diff.css';

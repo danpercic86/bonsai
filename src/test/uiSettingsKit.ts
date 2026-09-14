@@ -60,10 +60,10 @@ export const HYDRATED: UiSettings = {
   profiles: [
     { id: 'p1', label: 'Work', userName: 'A Dev', userEmail: 'dev@example.com', signingKey: null },
   ],
-  // Program-only since the 2026-09-11 security increment (the backend refuses
-  // arguments and shell syntax).
-  terminalCommand: 'wt.exe',
-  editorCommand: 'code',
+  // P112 §5.1: catalog ids, never programs. Real ids from the Rust catalog, so
+  // the fixture stays a value the backend's `coerce_tool_id` would keep.
+  terminalTool: 'windows-terminal',
+  editorTool: 'vscode',
   // P68g: every one of these is now UI-reachable, so hydration must seed them all.
   aiIdleTimeoutSecs: 120,
   aiHardCapSecs: 900,
@@ -91,7 +91,12 @@ export const HYDRATED: UiSettings = {
 export const GRAPH_PATCH: GraphPrefs = { ...HYDRATED.graph, rowHeight: 36 };
 
 /** Stable toast pusher — identity must not churn, or the referential-stability
- *  behaviour is untestable. */
-export function mountUiSettings(push: (tone: ToastTone, text: string) => void = vi.fn()) {
-  return { push, ...renderHook(() => useUiSettings(push)) };
+ *  behaviour is untestable. `settingsOpen` is P113 §17.3's routing signal: the
+ *  default `false` is "Settings closed", where the save failure is still a toast
+ *  and every pre-P113 expectation in these suites holds unchanged. */
+export function mountUiSettings(
+  push: (tone: ToastTone, text: string) => void = vi.fn(),
+  settingsOpen: { readonly current: boolean } = { current: false },
+) {
+  return { push, ...renderHook(() => useUiSettings(push, settingsOpen)) };
 }

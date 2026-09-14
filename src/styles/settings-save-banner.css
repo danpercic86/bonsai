@@ -1,0 +1,55 @@
+/* Bonsai — the Settings card's save-failure banner (P113 §17.3).
+
+   Its own class composed with the shared `.error-banner` recipe, NOT a tail on
+   that rule: `.error-banner` has thirteen other call sites, none of which is
+   always-mounted, and scoping the `:empty` collapse to this class is what keeps
+   the shared rule untouched (the §5/§7 argument, applied again).
+
+   Its own FILE for the same reason `settings-outcome-note.css` is one:
+   `settings-shell.css` is at 467 lines and the 500-line ratchet has no baseline
+   entry for it. Import order is not load-bearing here — every selector below is
+   (0,2,0) or higher and beats `.error-banner`'s (0,1,0) whatever the order —
+   but it is imported after `empty-and-errors.css` anyway so the cascade reads
+   in the same direction as the composition. */
+
+/* Row 3 of the card grid, column 2: the content column, so the banner is
+   visible from EVERY category, and above the pane's own scrollport so it cannot
+   be scrolled away while the condition holds. `auto` height means the row is
+   zero while the banner is `:empty`. */
+.settings-save-banner {
+  grid-column: 2;
+  grid-row: 3;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  /* The pane's own 24px side gutter (`settings-pane { padding: 16px 24px 24px }`)
+     so the banner's box lines up with the rows it is talking about, and 12px of
+     air above the pane content. `max-width: none` overrides `.error-banner`'s
+     480px cap: this box spans the column by design (point 3 in the component). */
+  margin: 12px 24px 0;
+  max-width: none;
+}
+
+/* The §12.3.4 always-mounted shape: the element is PRESENT with no children
+   while the write is fine, so `role="alert"` has a live region to fire in when
+   the text arrives. `:empty` zeroes every part of the `.error-banner` recipe
+   that would otherwise occupy space — margin included, since the grid row is
+   `auto` and a margin alone would give the card a 12px seam it does not have
+   today (AC11's card-level analogue). `display: none` is forbidden: it costs
+   the announcement. */
+.settings-save-banner:empty {
+  margin: 0;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+/* Narrow window (UI §2.2): the rail becomes a strip above the search bar, so
+   every cell below it shifts down one row. */
+@media (max-width: 720px) {
+  .settings-save-banner {
+    grid-column: 1;
+    grid-row: 4;
+  }
+}

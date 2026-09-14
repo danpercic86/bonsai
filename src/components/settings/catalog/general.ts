@@ -1,4 +1,10 @@
-/** P69 §4 — General category rows (UI §1.3 #5–#9, #32–#33). */
+/** P69 §4 — General category rows (UI §1.3 #5–#9, #61).
+ *
+ *  P112 §5.1: UI §1.3 #32–#33 ("Terminal command" / "Editor command") are NOT
+ *  here any more. They were free-text program fields; their replacements are
+ *  catalog ids, so the row comes back as a detected-tool picker in sub-increment
+ *  4 rather than as a text box that would accept a value the backend discards.
+ *  `settingsCatalogRows.test.ts` carries them as RETIRED_ROWS until then. */
 import type { SettingsIndexEntry } from '../types';
 import { resetField, resetKey } from './reset';
 
@@ -52,25 +58,5 @@ export const GENERAL_ENTRIES: readonly SettingsIndexEntry[] = [
     keywords: 'commit push button default primary emphasize',
     control: 'segmented',
     reset: resetKey('primaryCommitAction', 'Commit'),
-  },
-  {
-    id: 'general.terminal-command',
-    category: 'general',
-    group: 'External tools',
-    label: 'Terminal command',
-    help: 'Program used by "Open in terminal" — a command name or a full path, no arguments. Empty auto-detects per OS.',
-    keywords: 'shell console external open in',
-    control: 'text',
-    reset: resetKey('terminalCommand', 'auto-detect'),
-  },
-  {
-    id: 'general.editor-command',
-    category: 'general',
-    group: 'External tools',
-    label: 'Editor command',
-    help: 'Program used by "Open in editor" — a command name or a full path, no arguments. Empty auto-detects VS Code.',
-    keywords: 'ide vscode external open in',
-    control: 'text',
-    reset: resetKey('editorCommand', 'auto-detect'),
   },
 ];

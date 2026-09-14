@@ -42,18 +42,26 @@ export const FORGE_PROJECT: string | null =
 export const FORGE_EXPIRED = urlParam('forge') === 'expired';
 export const FORGE_MULTI = urlParam('forge') === 'multi';
 
+/** P113 §14 — `?forgeRemoveFail=long` needs a host to remove, and the removal
+ *  message interpolates the HOST from this store. Without a seed the knob could
+ *  only ever fire on `github.com` (14 chars), so §14's second pathological half
+ *  — a 60-char host — was unreachable however long the `{e}` tail got. Seeds the
+ *  EXISTING `FORGE_ACCOUNT_LONG` fixture (61-char self-hosted GitLab host), the
+ *  same pair `?forge=auth` already uses; nothing here is invented. */
+const FORGE_LONG_HOST_CASE = urlParam('forgeRemoveFail') === 'long';
+
 /** The mock account index: accounts + host defaults + per-repo overrides. */
 class AccountStore {
   accounts: ForgeAccount[] = FORGE_MULTI
     ? [{ ...FORGE_ACCOUNT_GITHUB }, { ...FORGE_ACCOUNT_GITHUB_2 }]
-    : urlParam('forge') === 'auth'
+    : urlParam('forge') === 'auth' || FORGE_LONG_HOST_CASE
       ? [{ ...FORGE_ACCOUNT_GITHUB }, { ...FORGE_ACCOUNT_LONG }]
       : FORGE_EXPIRED
         ? [{ ...FORGE_ACCOUNT_GITHUB, login: null, avatarUrl: null }]
         : [];
 
   hostDefaults: Record<string, string> =
-    FORGE_MULTI || urlParam('forge') === 'auth' || FORGE_EXPIRED
+    FORGE_MULTI || urlParam('forge') === 'auth' || FORGE_EXPIRED || FORGE_LONG_HOST_CASE
       ? { 'github.com': FORGE_ACCOUNT_GITHUB.accountId }
       : {};
 

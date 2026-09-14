@@ -5,10 +5,10 @@
 // AppError shape the frontend's error→toast path expects.
 //
 // Like `validate_web_url` (note below), the mock deliberately does NOT replicate
-// the 2026-09-11 `terminalCommand`/`editorCommand` shape rules
-// (`external_cmd::validate_command_setting`): there is no launcher here, Rust
-// owns the rule, and the IPC surface is unchanged by it. A harness case that
-// needs the refusal toast uses the `#fail` sentinel.
+// the tool-resolution rules behind these launches (P112: the `terminalTool` /
+// `editorTool` catalog lookup and the per-OS auto-detect ladder): there is no
+// launcher here, Rust owns the rule, and the IPC surface is unchanged by it. A
+// harness case that needs the refusal toast uses the `#fail` sentinel.
 import type { AppError, IpcApi } from '../../types';
 import { delay, query } from '../repoState';
 

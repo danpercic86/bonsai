@@ -17,7 +17,12 @@ import { settingsRowHelpId, settingsRowLabelId } from './settingsCatalog';
 
 const SWITCH_ROW = 'general.auto-fetch'; // label "Auto-fetch from remotes", has reset
 const SEG_ROW = 'appearance.theme'; // label "Theme", no reset
-const TEXT_ROW = 'general.terminal-command'; // label "Terminal command", has reset
+/** A row that HAS a `↺` descriptor, for the reset-affordance assertions. It was
+ *  `general.terminal-command` until P112 §5.1 removed the two free-text
+ *  external-tool rows — after which no `control: 'text'` row carries a reset, so
+ *  this is a segmented row instead. `SettingsRow` only branches on
+ *  `numberSlider`, so nothing about the affordance changes. */
+const RESET_ROW = 'general.primary-commit-action'; // label "Primary commit action", has reset
 
 function renderSwitch(over: { checked?: boolean; disabled?: boolean } = {}) {
   const onChange = vi.fn();
@@ -140,19 +145,19 @@ describe('SettingsRow', () => {
   it('renders ↺ only off-default, with the catalog default in its title', () => {
     const onReset = vi.fn();
     const { rerender } = render(
-      <SettingsRow id={TEXT_ROW} controlId="t" reset={{ isDefault: true, onReset }}>
+      <SettingsRow id={RESET_ROW} controlId="t" reset={{ isDefault: true, onReset }}>
         <input id="t" />
       </SettingsRow>,
     );
     expect(screen.queryByRole('button', { name: /^Reset/ })).toBeNull();
 
     rerender(
-      <SettingsRow id={TEXT_ROW} controlId="t" reset={{ isDefault: false, onReset }}>
+      <SettingsRow id={RESET_ROW} controlId="t" reset={{ isDefault: false, onReset }}>
         <input id="t" />
       </SettingsRow>,
     );
-    const reset = screen.getByRole('button', { name: 'Reset Terminal command to default' });
-    expect(reset).toHaveAttribute('title', 'Reset to default (auto-detect)');
+    const reset = screen.getByRole('button', { name: 'Reset Primary commit action to default' });
+    expect(reset).toHaveAttribute('title', 'Reset to default (Commit)');
     fireEvent.click(reset);
     expect(onReset).toHaveBeenCalledTimes(1);
   });
@@ -160,11 +165,11 @@ describe('SettingsRow', () => {
   it('a disabled row disables its ↺ — a dimmed control may not stay clickable', () => {
     const onReset = vi.fn();
     render(
-      <SettingsRow id={TEXT_ROW} controlId="t" disabled reset={{ isDefault: false, onReset }}>
+      <SettingsRow id={RESET_ROW} controlId="t" disabled reset={{ isDefault: false, onReset }}>
         <input id="t" disabled />
       </SettingsRow>,
     );
-    expect(screen.getByRole('button', { name: 'Reset Terminal command to default' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reset Primary commit action to default' })).toBeDisabled();
   });
 
   it('never renders ↺ for a row the catalog gives no reset descriptor', () => {
@@ -178,7 +183,7 @@ describe('SettingsRow', () => {
 
   it('the stacked variant and the slider help reservation are class-driven', () => {
     const { container } = render(
-      <SettingsRow id={TEXT_ROW} controlId="t" stacked>
+      <SettingsRow id={RESET_ROW} controlId="t" stacked>
         <input id="t" />
       </SettingsRow>,
     );

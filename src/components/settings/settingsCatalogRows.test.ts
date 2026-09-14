@@ -50,8 +50,6 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
   29: ['git-config.user-email'],
   30: ['git-config.behaviour'],
   31: ['git-config.custom-keys'],
-  32: ['general.terminal-command'],
-  33: ['general.editor-command'],
   34: [
     'identities.profile-label',
     'identities.profile-name',
@@ -125,12 +123,36 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
  */
 const DISSOLVED_ROWS: ReadonlySet<number> = new Set([5, 25, 38, 39, 40, 43, 52, 55]);
 
+/**
+ * Coverage rows whose CONTROL has been removed from the product, pending a
+ * replacement — they are neither covered nor phantom.
+ *
+ * #32/#33 are UI §1.3's "Terminal command" / "Editor command". P112 §5.1 deleted
+ * the free-text program settings behind them; their replacements (`terminalTool`
+ * / `editorTool`) are catalog ids, so a text box would accept values the backend
+ * coerces to `''`. The rows return as ONE detected-tool picker in P112
+ * sub-increment 4, at which point this set empties again and UI §1.3 needs the
+ * matching edit (owned by `ui-designer`, not by this test).
+ */
+const RETIRED_ROWS: ReadonlySet<number> = new Set([32, 33]);
+
+/** The ids those retired rows used to own. Pinned so they cannot creep back in
+ *  as text rows: P112 AC19 forbids the legacy keys anywhere in `src/`. */
+const RETIRED_ROW_IDS = ['general.terminal-command', 'general.editor-command'] as const;
+
 describe('UI §1.3 coverage — all 78 rows, structurally', () => {
-  it('maps exactly rows 1..78', () => {
-    const rows = Object.keys(COVERAGE)
-      .map(Number)
-      .sort((a, b) => a - b);
+  it('maps exactly rows 1..78, minus the retired ones', () => {
+    const rows = [...Object.keys(COVERAGE).map(Number), ...RETIRED_ROWS].sort((a, b) => a - b);
     expect(rows).toEqual(Array.from({ length: 78 }, (_, i) => i + 1));
+    // A retired row may not ALSO be covered — that would hide a resurrection.
+    for (const row of RETIRED_ROWS) expect(COVERAGE[row]).toBeUndefined();
+  });
+
+  it('keeps the retired rows out of the catalog entirely', () => {
+    for (const id of RETIRED_ROW_IDS) {
+      expect(findSettingsRow(id as SettingsRowId), `${id} is back in the catalog`).toBeUndefined();
+      expect(SETTINGS_INDEX.some((e) => e.id === (id as SettingsRowId))).toBe(false);
+    }
   });
 
   it('names only real entries, and every entry is claimed by some row', () => {

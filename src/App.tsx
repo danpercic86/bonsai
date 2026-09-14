@@ -16,8 +16,7 @@ import { HeaderToolbar } from './components/HeaderToolbar';
 import { ShortcutOverlay } from './components/ShortcutOverlay';
 import { TabStrip, type TabMeta } from './components/TabStrip';
 import { Toasts } from './components/Toasts';
-import { UpdateNotification } from './components/UpdateNotification';
-import { UpdateDialog } from './components/UpdateDialog';
+import { AppUpdateSurfaces } from './components/AppUpdateSurfaces';
 import { useAiAvailability } from './hooks/useAiAvailability';
 import { useAppCommands } from './hooks/useAppCommands';
 import { useCloneFlow } from './hooks/useCloneFlow';
@@ -79,8 +78,9 @@ export default function App() {
   // every App render).
   const gitRecheck = git.recheck;
 
-  // P3e §5.5 / P70: the one global toast stack (see hooks/useToastQueue.ts).
-  const { toasts, pushToast, dismissToast } = useToastQueue();
+  // P3e §5.5 / P70: the one global toast stack; P113 §13.1's DEV toast guard and
+  // the settings-open signal it publishes (see hooks/useToastQueue.ts).
+  const { toasts, pushToast, dismissToast, settingsOpen } = useToastQueue(settings.open);
   // P11c §3.2: every persisted setting that rides the debounced `setUiSettings`
   // patch path, plus that path itself (see src/hooks/useUiSettings.ts). Declared
   // after `pushToast` because the debounced write reports failures through it;
@@ -100,8 +100,7 @@ export default function App() {
     mcpWriteConsented,
     autoCheckUpdates,
     profiles,
-    terminalCommand,
-    editorCommand, dev,
+    dev,
     aiDockHeight,
     aiDockCollapsed,
     aiStreamLog,
@@ -109,7 +108,9 @@ export default function App() {
     handleSettingsChange,
     queueSettingsWrite,
     hydrateUiSettings,
-  } = useUiSettings(pushToast);
+    settingsSaveFailed,
+    retrySettingsSave,
+  } = useUiSettings(pushToast, settingsOpen);
 
   // spec-002 §4.2: reflect the active graph style onto <html> (alongside
   // data-theme) so the --graph-canvas-bg token switches the DOM surface behind
@@ -205,7 +206,9 @@ export default function App() {
     handleConfirmMcpConsent,
     handleSetMcpAllowWrite,
     handleConfirmMcpWriteConsent,
-  } = useMcpControls(pushToast, activeRepo, handleSettingsChange);
+    mcpOutcomes,
+    mcpAnnounce,
+  } = useMcpControls(activeRepo, handleSettingsChange);
 
   // P21: the clone dialog's lifecycle (see hooks/useCloneFlow.ts).
   const {
@@ -496,6 +499,10 @@ export default function App() {
           onRequestEnableAi={() => setConsentOpen(true)}
           aiRun={aiRun}
           mcpStatus={mcpStatus}
+          mcpOutcomes={mcpOutcomes}
+          mcpAnnounce={mcpAnnounce}
+          settingsSaveFailed={settingsSaveFailed}
+          onRetrySettingsSave={retrySettingsSave}
           mcpConsented={mcpConsented}
           onSetMcpEnabled={handleSetMcpEnabled}
           onRequestEnableMcp={() => setMcpConsentOpen(true)}
@@ -506,8 +513,7 @@ export default function App() {
           configInitialFocus={settings.request.focus}
           focusProfileId={settings.request.focusProfileId}
           profiles={profiles}
-          terminalCommand={terminalCommand}
-          editorCommand={editorCommand} dev={dev}
+          dev={dev}
           onRegisterMcp={handleRegisterMcp}
           onShowOnboarding={showOnboarding}
           onOpenRepository={openRepository}
@@ -557,20 +563,8 @@ export default function App() {
           onSubmit={(u) => void handleCloneSubmit(u)}
           onCancel={handleCloneCancel}
         />
-        <UpdateDialog
-          open={update.dialogOpen}
-          state={update.state}
-          onDownload={update.download}
-          onRestart={update.restart}
-          onClose={update.closeDialog}
-        />
-        {update.notificationVisible && update.state.status === 'available' && (
-          <UpdateNotification
-            version={update.state.info.version ?? ''}
-            onView={update.openDialog}
-            onDismiss={update.dismissNotification}
-          />
-        )}
+        {/* The updater's two surfaces, from one controller (own file). */}
+        <AppUpdateSurfaces update={update} />
         {tabMenu !== null && (
           <ContextMenu
             x={tabMenu.x}

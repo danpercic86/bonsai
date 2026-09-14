@@ -20,6 +20,7 @@ import { SETTINGS_CATEGORIES, searchSettings, settingsTabId } from './settingsCa
 import { SettingsRail } from './SettingsRail';
 import { SettingsPaneHeader } from './SettingsPaneHeader';
 import { SettingsResults } from './SettingsResults';
+import { SettingsSaveBanner } from './SettingsSaveBanner';
 import { SettingsSearchBar } from './SettingsSearchBar';
 import { useSettingsValues } from './SettingsContext';
 import type { SettingsCategoryId } from './types';
@@ -28,12 +29,19 @@ export function SettingsShell({
   initialCategory,
   requestSeq,
   onClose,
+  saveFailed,
+  onRetrySave,
 }: {
   initialCategory?: SettingsCategoryId;
   /** Monotonic per OPEN request (§5.4). Every open path bumps it — including the
    *  plain ⚙ click, which passes no category and therefore only clears state. */
   requestSeq: number;
   onClose(): void;
+  /** P113 §17.3 — the debounced settings write is failing. Props rather than the
+   *  values context: it is not a setting, and it belongs to the CARD, not to any
+   *  category page. */
+  saveFailed: boolean;
+  onRetrySave(): void;
 }) {
   const { configInitialFocus, repoPath, aiEnabled, aiConsented, mcpStatus, profiles } =
     useSettingsValues();
@@ -187,6 +195,12 @@ export function SettingsShell({
           onSelect={select}
           onFocusPane={() => paneRef.current?.focus()}
         />
+
+        {/* P113 §17.3: spans the content column and sits OUTSIDE the pane's
+            scrollport, so a failed settings write is visible from every category
+            and cannot be scrolled away while the condition holds. Always
+            mounted; `:empty` gives it zero height when the write is fine. */}
+        <SettingsSaveBanner failed={saveFailed} onRetry={onRetrySave} />
 
         <div
           className="settings-pane"

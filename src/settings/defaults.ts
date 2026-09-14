@@ -89,10 +89,11 @@ const DEFAULTS: UiSettings = {
   /** P42 D4: update checks are opt-in. */
   autoCheckUpdates: false,
   profiles: [],
-  /** P49 / §3.4: `''` means "backend auto-detects per OS" — a real, stable
-   *  default, surfaced on the `↺` as `auto-detect`. */
-  terminalCommand: '',
-  editorCommand: '',
+  /** P112 §5.1 / §3.4: `''` means "use the backend's per-OS auto-detect
+   *  ladder" — a real, stable default, not "unset". The value is a catalog id
+   *  or `'custom'`, never a program string. */
+  terminalTool: '',
+  editorTool: '',
   /** P68 §8.3: the ten streaming AI-run knobs. `aiHardCapSecs: 0` (unbounded)
    *  and `aiMaxBudgetUsd: 0` (no `--max-budget-usd` flag) are LOCKED mode
    *  sentinels, not "unset" — which is why §3.4 gives those rows no `↺`. */
@@ -135,7 +136,7 @@ export const DEFAULT_UI_SETTINGS: UiSettings = Object.freeze(DEFAULTS);
 /**
  * §3.4 escape hatch — settings whose default is environment- or repo-derived.
  *
- * EMPTY today, and that is the point: `terminalCommand` / `editorCommand` default
+ * EMPTY today, and that is the point: `terminalTool` / `editorTool` default
  * to `''`, which is a REAL, stable default meaning "auto-detect in the backend",
  * so parity holds for them like any other field. If Rust ever computes a genuinely
  * env-dependent default, that key moves in here AND the Rust parity test drops it

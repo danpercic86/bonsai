@@ -17,6 +17,7 @@ import { createContext, useContext } from 'react';
 
 import type { AiAvailability, McpStatus, UiSettings, UiSettingsPatch } from '../../ipc';
 import type { McpScope } from '../../lib/mcpAddCommand';
+import type { SettingsOutcome } from './SettingsOutcomeNote';
 import type { AiRunPrefs } from '../../settings/aiRunPrefs';
 import type { UpdateUiState } from '../../hooks/useUpdateController';
 import type { SettingsRowId } from './types';
@@ -53,8 +54,6 @@ export type SettingsPersistedValues = Pick<
   | 'mcpWriteConsented'
   | 'autoCheckUpdates'
   | 'profiles'
-  | 'terminalCommand'
-  | 'editorCommand'
   | 'dev'
 > &
   /** Spec-002: optional in `UiSettings` (frontend-only, absent from the Rust
@@ -87,6 +86,10 @@ export interface SettingsRuntimeValues {
   mcpEnabled: boolean;
   mcpAllowWrite: boolean;
   mcpRegistering: McpScope | null;
+  /** P113 §17.3 — the AI-access section's outcome notes + its ONE announcement,
+   *  owned by `useMcpControls` (which no longer has a `pushToast` to raise). */
+  mcpOutcomes: ReadonlyMap<string, SettingsOutcome>;
+  mcpAnnounce: string;
   updateCurrentVersion: string | null;
   updateState: UpdateUiState;
   /** Passed through verbatim (`undefined` included) so the Git-config section's

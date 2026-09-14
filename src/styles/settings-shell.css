@@ -21,7 +21,10 @@
      precede the rail in the DOM (tab order ✕ → search → rail → pane, UI §7.2)
      while still sitting beside it on screen. */
   grid-template-columns: 200px 1fr;
-  grid-template-rows: 48px 56px 1fr;
+  /* P113 §17.3: a fourth row for the save-failure banner, between the search bar
+     and the pane. `auto` and the banner is always-mounted-empty, so an idle card
+     is geometrically identical to the pre-P113 three-row grid. */
+  grid-template-rows: 48px 56px auto 1fr;
   overflow: hidden;
   border-radius: 6px;
   background: var(--bg-1);
@@ -55,7 +58,7 @@
 
 .settings-rail {
   grid-column: 1;
-  grid-row: 2 / span 2;
+  grid-row: 2 / span 3;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -283,7 +286,7 @@
 
 .settings-pane {
   grid-column: 2;
-  grid-row: 3;
+  grid-row: 4;
   padding: 16px 24px 24px;
   overflow-y: auto;
   scroll-behavior: auto;
@@ -433,7 +436,7 @@
 @media (max-width: 720px) {
   .dialog-card.settings-card {
     grid-template-columns: 1fr;
-    grid-template-rows: 48px 40px 56px 1fr;
+    grid-template-rows: 48px 40px 56px auto 1fr;
   }
 
   .settings-rail {
@@ -462,6 +465,6 @@
 
   .settings-pane {
     grid-column: 1;
-    grid-row: 4;
+    grid-row: 5;
   }
 }

@@ -6,9 +6,10 @@
 //
 // P69g: re-skinned onto the canonical row (UI §5.1) inside the About category's
 // "Version" group — the group title replaces the old section heading, and the
-// section paragraph is gone in favour of per-row help from the catalog. Like the
-// external-tools section it keeps its own props (§2.3 leaf boundary) and supplies
-// its own reset source, so it still renders standalone in its unit suite.
+// section paragraph is gone in favour of per-row help from the catalog. It keeps
+// its own props (§2.3 leaf boundary) and supplies its own reset source, so it
+// still renders standalone in its unit suite. (The external-tools section was
+// the other leaf on that pattern until P112 §5.1 deleted it.)
 
 import { DEFAULT_UI_SETTINGS } from '../settings/defaults';
 import { SettingsGroup } from './settings/SettingsGroup';

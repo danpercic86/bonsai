@@ -210,7 +210,13 @@ describe('settings search — unavailable rows are not matches (review A3)', () 
     renderPanel({ ...MAXIMAL });
     type('bearer');
     await settle();
-    expect(screen.getByRole('status')).toHaveTextContent('1 setting matches');
+    // P113 §17.3: a rendered result block now brings its SECTION's announcer
+    // with it (here `SettingsMcpSection`'s), so `getByRole('status')` is
+    // ambiguous. The shell's own count line is `.settings-search-status` — the
+    // same disambiguation `settingsOutcomeNotes.test.tsx` already uses.
+    expect(document.querySelector('.settings-search-status')).toHaveTextContent(
+      '1 setting matches',
+    );
     expect(screen.getByRole('button', { name: 'Copy bearer token' })).toBeInTheDocument();
   });
 });

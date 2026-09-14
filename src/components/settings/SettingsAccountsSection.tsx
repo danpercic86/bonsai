@@ -84,7 +84,19 @@ export function SettingsAccountsSection() {
         // mapped lead. Rendering it verbatim is deliberate for this increment —
         // mapping it needs the backend error-kind inventory — and
         // `overflow-wrap: anywhere` is what keeps a space-free token in its box.
-        report(slot, 'error', `Could not open the token page: ${errorMessage(e)}`);
+        // P113 §8.2/§12.2 amendment (A5): ONE announcer serves N host groups, so
+        // a failure that names neither host nor login announces no subject at
+        // all — a sighted user reads it off the note's placement, which is not
+        // an accessible carrier of meaning. `host` is null for the global add
+        // form (`slot` is then ADD_SLOT), where no host has been chosen yet and
+        // the bare string is the accurate one.
+        report(
+          slot,
+          'error',
+          host === null
+            ? `Could not open the token page: ${errorMessage(e)}`
+            : `Could not open the token page for ${host}: ${errorMessage(e)}`,
+        );
       });
     },
     [begin, report],
@@ -107,7 +119,9 @@ export function SettingsAccountsSection() {
     (host: string, accountId: string) => {
       begin(host);
       void ipc.forgeSetHostDefault(host, accountId).then(refetch, (e: unknown) =>
-        report(host, 'error', `Could not set the default account: ${errorMessage(e)}`),
+        // A5: unconditional — `host` is a required parameter of this callback,
+        // so there is no subject-less branch to write.
+        report(host, 'error', `Could not set the default account for ${host}: ${errorMessage(e)}`),
       );
     },
     [begin, refetch, report],
@@ -184,6 +198,12 @@ export function SettingsAccountsSection() {
             onOpenUrl={(url) => openUrl(url, g.host)}
             onAdded={(host, login) => {
               refetch();
+              // AC17: adding the same login to the same host twice announces
+              // twice. Rows 9/10 have no observable operation start (the form
+              // exposes only `onSuccess`), so they never call `begin` for their
+              // own key — the transition is `report`'s job, guaranteed in
+              // `useOutcomeNotes` on TEXT identity. The local
+              // `flushSync(() => begin(key))` this used to need is gone.
               report(host, 'success', `Added ${login} to ${host}.`);
             }}
             outcome={notes.get(g.host) ?? null}
@@ -196,6 +216,14 @@ export function SettingsAccountsSection() {
           onSuccess={(host, login) => {
             setAddOpen(false);
             refetch();
+            // S1 — the host is (re)created HERE, so any note still keyed to it is
+            // stale by §7's own test ("a stale error is true, because nothing has
+            // happened since": something has). The sequence this kills: a failed
+            // `setDefault` on a host, then the user removes that host's last
+            // account, then re-adds a token for the same host — the group
+            // unmounts but the KEY survives, so the old
+            // `Could not set the default account for …` comes back with it.
+            begin(host);
             // The section slot, not a host slot: the new host's group does not
             // exist until `refetch` resolves, and may never if it fails.
             report(ADD_SLOT, 'success', `Connected to ${host} as ${login}.`);

@@ -34,6 +34,7 @@ import {
 } from '../DevConfirmDialogs';
 import { deleteErrorText, deleteResultToast, exportErrorText } from '../devLogMessages';
 import { useOutcomeNotes } from '../useOutcomeNotes';
+import { useOutcomeScrollCorrection } from '../useOutcomeScrollCorrection';
 
 /** Faster than the header pill's 3 s (`DevModePill`) ON PURPOSE — do not unify
  *  them. This card is the surface the user watches while reproducing something:
@@ -52,6 +53,10 @@ export function DevCategory() {
   const { dev } = useSettingsValues();
   const { change } = useSettingsActions();
   const { notes, announce, begin, report } = useOutcomeNotes();
+  // P113 §10.3/§17.1-R1 — Dev slots ONLY. `dev.delete-logs` is the last row on
+  // this page, so a grown note can end up below `.settings-pane`'s clip even
+  // though focus restore put the button back in view.
+  useOutcomeScrollCorrection(notes);
 
   const [info, setInfo] = useState<LogSessionInfo | null>(null);
   const [busy, setBusy] = useState<DevLogsBusy>(NO_BUSY);

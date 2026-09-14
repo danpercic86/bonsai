@@ -3,9 +3,9 @@ import type { IpcApi } from '../../types';
 import { clampAiRunSettings } from '../aiRunSettings';
 import { jobStatusListeners, mockMcp, repoChangedListeners, tagAutoSyncListeners } from '../events';
 import { clampAutoFetch, clampGraphPrefs, clampHealthRefresh, clampPaneWidths, readRecents, readSession, readUiSettings, writeRecents, writeSession, writeUiSettings } from '../persistence';
-import { delay, requireRepo } from '../repoState';
+import { delay, query as urlParam, requireRepo } from '../repoState';
 import { applyMockJobTimers, completeMockJobRun, seedJobStatuses } from '../scheduler';
-import type { JobKind, JobStatus, JobStatusChangedPayload, RecentRepo, RepoChangedPayload, SessionState, TagAutoSyncEvent, UiSettings, UiSettingsPatch, Unsubscribe } from '../../types';
+import type { AppError, JobKind, JobStatus, JobStatusChangedPayload, RecentRepo, RepoChangedPayload, SessionState, TagAutoSyncEvent, UiSettings, UiSettingsPatch, Unsubscribe } from '../../types';
 
 export const sessionHandlers = {
   async getRecentRepos(): Promise<RecentRepo[]> {
@@ -78,6 +78,33 @@ export const sessionHandlers = {
 
   async setUiSettings(patch: UiSettingsPatch): Promise<UiSettings> {
     await delay(150);
+    // P113 §14/§17.3: `?settingsSaveFail=1` — nothing in this mock rejected a
+    // settings write before, which is why the app's highest-traffic Settings
+    // failure (`useUiSettings`'s save-failure channel: EVERY toggle, radio and
+    // field goes through this path) had never been seen rendered by anyone.
+    //
+    // FIDELITY NOTE, verified against `src-tauri/src/settings.rs` `save_to()`:
+    // the write is a temp-file write + atomic rename, and its permission-denied
+    // branch is `AppError::Io(format!("write {}: {e}", tmp.display()))`. That is
+    // mirrored verbatim in shape here — a `.<pid>.<n>.tmp` sibling of
+    // `settings.json` under the app config dir, and a real Windows os error 5.
+    // The other reachable rejections of `set_ui_settings` are
+    // `cannot resolve app config dir: {e}` (settings_file), `create settings dir
+    // {parent}: {e}`, `rename {tmp} -> {file}: {e}` and `task join error: {e}`;
+    // the write failure is the one the banner's "check that Bonsai can write to
+    // its config folder" names, so it is the honest fixture for this knob.
+    //
+    // The banner does NOT render this text (amendment A4 dropped the raw tail),
+    // so the value here is what a developer sees in the console/network view —
+    // which is exactly why it must not be invented.
+    if (urlParam('settingsSaveFail') === '1') {
+      const err: AppError = {
+        kind: 'io',
+        message:
+          'write C:\\Users\\dev\\AppData\\Roaming\\com.bonsai.app\\settings.json.4812.0.tmp: Access is denied. (os error 5)',
+      };
+      throw err;
+    }
     const current = readUiSettings();
     // Spec-002 (additive/optional): merge only when a value exists (patch or
     // stored blob), so a write never mints keys the Rust-pinned oracle lacks.
@@ -120,8 +147,14 @@ export const sessionHandlers = {
       onboardingSeen: patch.onboardingSeen ?? current.onboardingSeen,
       autoCheckUpdates: patch.autoCheckUpdates ?? current.autoCheckUpdates,
       profiles: patch.profiles ?? current.profiles,
-      terminalCommand: patch.terminalCommand ?? current.terminalCommand,
-      editorCommand: patch.editorCommand ?? current.editorCommand,
+      // P112 §5.1: catalog ids, merged like any other scalar. NOT coerced here —
+      // Rust's `coerce_tool_id` maps an unknown id to `''` against the
+      // compile-time catalog, and that catalog has no TypeScript mirror until
+      // P112 sub-inc 4 brings the detected-tool picker (and its `DetectedTool`
+      // IPC) over. Inventing a partial allowlist here would be a second,
+      // divergent source of truth; until then no UI can write these keys at all.
+      terminalTool: patch.terminalTool ?? current.terminalTool,
+      editorTool: patch.editorTool ?? current.editorTool,
       // P91 §10: whole-struct patch (mirrors Rust `apply_patch`); the harness
       // sink is (re)started from the merged value, exactly as Rust restarts the
       // real sink after the save.

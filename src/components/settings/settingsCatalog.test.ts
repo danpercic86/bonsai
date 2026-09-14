@@ -59,8 +59,8 @@ const MUTATED: UiSettings = {
   graphFoldLinear: true,
   // Spec-005: the overview-rail always-show row's reset leaf.
   graphMinimapAlwaysShow: true,
-  terminalCommand: 'wt.exe',
-  editorCommand: 'code',
+  terminalTool: 'windows-terminal',
+  editorTool: 'vscode',
   aiEnabled: false,
   aiConflictAutonomy: 'autoResolve',
   aiConflictTools: 'none',
@@ -82,8 +82,6 @@ const RESET_LEAVES: Readonly<Record<string, string>> = {
   'general.fetch-interval': 'autoFetch.intervalMinutes',
   'general.auto-refresh': 'healthRefresh.enabled',
   'general.refresh-interval': 'healthRefresh.intervalMinutes',
-  'general.terminal-command': 'terminalCommand',
-  'general.editor-command': 'editorCommand',
   'general.primary-commit-action': 'primaryCommitAction',
   'graph.node-size': 'graph.avatarRadius',
   'graph.row-height': 'graph.rowHeight',
@@ -116,13 +114,11 @@ const RESET_LEAVES: Readonly<Record<string, string>> = {
 };
 
 /**
- * The six ↺ labels that are FORMATTED rather than the raw value (five distinct
- * strings), each pinned together with the raw default it claims to name. Changing
+ * The ↺ labels that are FORMATTED rather than the raw value, each pinned together
+ * with the raw default it claims to name. Changing
  * either side alone is copy drift the user reads in "Reset to default (…)".
  */
 const FORMATTED_DEFAULT_LABELS: Readonly<Record<string, readonly [string, unknown]>> = {
-  'general.terminal-command': ['auto-detect', ''],
-  'general.editor-command': ['auto-detect', ''],
   'general.primary-commit-action': ['Commit', 'commit'],
   'graph.date-basis': ['Author', 'author'],
   'ai.conflict-resolution': ['Propose & review', 'proposeReview'],

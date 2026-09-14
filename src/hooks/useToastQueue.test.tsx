@@ -20,12 +20,17 @@ import { StrictMode, useEffect } from 'react';
 import { act, renderHook } from '@testing-library/react';
 import { useToastQueue } from './useToastQueue';
 
+/** P113 §13.1: the DEV reachability guard's input. These cases all run with
+ *  Settings CLOSED — the guard's own behaviour is covered in
+ *  `settingsToastGuard.test.tsx`. */
+const CLOSED = false;
+
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe('useToastQueue auto-dismiss timers', () => {
   it('drops a non-error toast after 5s and leaves an error toast sticky', () => {
-    const { result } = renderHook(() => useToastQueue());
+    const { result } = renderHook(() => useToastQueue(CLOSED));
 
     act(() => result.current.pushToast('info', 'saved'));
     act(() => result.current.pushToast('error', 'broke'));
@@ -40,7 +45,7 @@ describe('useToastQueue auto-dismiss timers', () => {
 
 
   it('leaves no pending timer behind once a toast has dismissed itself', () => {
-    const { result } = renderHook(() => useToastQueue());
+    const { result } = renderHook(() => useToastQueue(CLOSED));
 
     act(() => result.current.pushToast('info', 'a'));
     act(() => void vi.advanceTimersByTime(5000));
@@ -53,7 +58,7 @@ describe('useToastQueue auto-dismiss timers', () => {
   it('still auto-dismisses a toast pushed synchronously during the StrictMode first mount pass', () => {
     const { result } = renderHook(
       () => {
-        const q = useToastQueue();
+        const q = useToastQueue(CLOSED);
         const { pushToast } = q;
         useEffect(() => {
           pushToast('info', 'mounted');

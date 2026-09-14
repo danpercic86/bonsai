@@ -26,7 +26,8 @@ export type { SettingsPanelProps };
 export function SettingsPanel(props: SettingsPanelProps) {
   // Hooks run unconditionally (before the `open` early-return below).
   const { values, actions } = useSettingsPanelAdapter(props);
-  const { open, onClose, initialCategory, requestSeq } = props;
+  const { open, onClose, initialCategory, requestSeq, settingsSaveFailed, onRetrySettingsSave } =
+    props;
 
   if (!open) return null;
 
@@ -39,6 +40,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
           initialCategory={initialCategory}
           requestSeq={requestSeq}
           onClose={onClose}
+          saveFailed={settingsSaveFailed}
+          onRetrySave={onRetrySettingsSave}
         />
       </GitConfigScopeProvider>
     </SettingsProvider>

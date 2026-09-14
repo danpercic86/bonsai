@@ -62,6 +62,12 @@ function renderPanel(over: Partial<SettingsPanelProps> = {}) {
     open: true,
     onClose: vi.fn(),
     requestSeq: 0,
+    // P113 §17.3 — the idle shape: no MCP outcome, a silent announcer, and a
+    // settings write that is not failing.
+    mcpOutcomes: new Map(),
+    mcpAnnounce: '',
+    settingsSaveFailed: false,
+    onRetrySettingsSave: vi.fn(),
     theme: 'dark',
     listView: 'flat',
     panelDensity: 'cozy',
@@ -94,8 +100,6 @@ function renderPanel(over: Partial<SettingsPanelProps> = {}) {
     onRequestEnableMcpWrite: vi.fn(),
     repoPath: null,
     profiles: [],
-    terminalCommand: '',
-    editorCommand: '',
     dev: {
       enabled: false,
       level: 'debug',
