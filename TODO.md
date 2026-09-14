@@ -121,6 +121,32 @@ bookkeeping complaint — and it is the direct consequence of my batching.
 routed; review the fix against a small diff. The nine files above should get a targeted second pass
 before this branch is considered done.
 
+### 🚨 AN AGENT ORPHANED A DEV SERVER ON PORT 1420 FOR 3.5 HOURS — found and killed
+
+**This would have broken the USER CHECKPOINT I had just asked for.** `vite --mode mock` (PID 12712,
+parent `cmd.exe /d /s /c vite --mode mock`) started **13:18:31** and was still listening at
+**16:50:55**. `vite.config.ts` sets **`strictPort: true`**, so `pnpm tauri dev` does not fall back to
+another port — it **fails outright**. The board has carried the line *"Port 1420 is free. Keep it so"*
+for exactly this reason, and I let an agent violate it and then told the user to go run the command
+it breaks.
+
+Killed; port confirmed free; no other `node` process on this repo remains. Found only because my own
+`preview_start` was auto-assigned **53948** instead of 1420 — i.e. **by luck, not by checking.**
+
+**Two durable consequences:**
+
+1. **Agents that drive `pnpm dev` by hand orphan it.** `playwright.config.ts` already warns that a
+   hand-run dev server orphans the port on Windows; the Playwright-managed lifecycle
+   (`scripts/e2e-server.mjs`) does not. **Brief agents to use the managed path, and check 1420 after
+   any harness-heavy pass.** A one-line `Get-NetTCPConnection -LocalPort 1420` is the whole check.
+2. **This is a candidate contributor to the `watcher::tests::git_internals_filtered` flake.** That
+   test declares quiet after a 1 s sweep, then asserts **nothing arrives for 1500 ms of wall clock**.
+   A vite dev server **watching this repo** for 3.5 hours is exactly the kind of ambient filesystem
+   and CPU activity the reviewer identified as the real variable — and it was running during at least
+   some of the runs where that test failed. Not proven, and the test passed in the final gate with
+   the server still up, so it is a contributor at most. But it is a **concrete** mechanism where I
+   previously had only "ambient load", and it is one I created.
+
 # ✅ MERGE BLOCK LIFTED — full 8-step gate GREEN at `dcff54b`, 454.0s, exit 0
 
 **2026-09-14. The first gate run since the bridge, and therefore the first that measures the
