@@ -1076,6 +1076,58 @@ routine** — and a DTO change must land its Rust and TypeScript halves in the s
 JSON and mock). It **cannot** run concurrently with P113 phase 2 — both touch `App.tsx` and
 `useUiSettings.ts`.
 
+### 🔧 P113 PHASE 2 IMPLEMENTED (in review) — AC1 says zero, and it was earned
+
+**AC1's full accounting**, the check that has never been run in this form and whose absence lost five
+call sites: `rg -n "pushToast\(" src/` → **233**, every one classified.
+**0 reachable from the Settings surface.** One deliberate survivor
+(`useSettingsSaveFailure.ts:70`, gated on `!settingsOpen.current`); **11 background callers** that can
+fire *while* Settings is open; 3 in `useExternalTools` **accounted-for, not swept** (repo-UI today, in
+scope when P112-4 lands a picker); 3 interface *declarations*, not calls; 7 in tests; 1 mock seam;
+207 repo-UI where a toast is correct and visible.
+
+**§13.3's background case is now proven, not theoretical.** Auto-fetch raised `Fetched 2 refs` with
+Settings open, the new guard tripped, and the toast's centre hit-tested `dialog-overlay`.
+
+Numbers: tsc 0 · eslint 0 errors in touched files · ratchet clean · **full frontend vitest 2903/259**
+· **full Playwright e2e 185 passed, 1 skipped, 0 `console.error`**. `useMcpControls`'s `pushToast`
+**parameter is deleted** — the hook can no longer regress into raising one.
+
+### 🚨 A4, FINDING 6 — my approval was ambiguous and the implementation lost the raw error
+
+The implementer read "Settings closed → the toast, unchanged" as **the channel** unchanged, and ships
+**one string in both channels**. **I approve that half** — a single string cannot drift, and the new
+copy is true in both contexts.
+
+**But I checked what happened to the underlying error and it is gone.** `useSettingsWriteQueue.ts:128`
+calls `noteFailure(streak)` with **only the streak**; there is no `errorMessage(e)`, no `console`, no
+log call anywhere on the new path. The raw OS error previously rode in the toast text
+(`Could not save settings: ${errorMessage(e)}`) and **now nothing captures it at all.**
+
+That is a **diagnostic regression**, and a pointed one: the approved copy tells the user to *"check
+that Bonsai can write to its config folder"*, which is a **guess** — disk-full, permission-denied,
+path-too-long and a locked file all produce the same sentence, and the raw error is exactly what would
+distinguish them. P91's whole observability programme exists so failures are diagnosable; this change
+quietly removed the only record of a real one. **Routing: keep the user-facing string, and preserve
+the raw error on the diagnostic path (dev-mode log).** Not a copy change — the string stays as
+approved.
+
+### 📐 Two contract corrections earned by measurement, for `ui-designer`
+
+1. **§10.3 condition 2 is insufficient as written.** `scrollIntoView({block:'nearest',
+   behavior:'auto'})` **alone does not satisfy AC2b**: it settles at `scrollTop 1269`, leaving the
+   note bottom at **687.171875** against a clip bottom of exactly **687** (pane rect 137→687, zero
+   borders — real clipping, not `clientHeight` rounding). `scrollTop += 0.171875` reads back **1269**
+   because DPR 1 snaps to whole pixels, so **`Math.ceil` → 1270** is what makes the four-edge test
+   pass. A sub-pixel residue defeats the correction the contract prescribes.
+2. **§8.2's key-scoped clearing — which I routed — reopens §8.1 across keys.** Two **different** keys
+   with byte-identical text now announce **once**. Real cases: both REGISTER rows share
+   `Could not register: {e}`; `Could not open the token page: {e}` on host A then host B. The
+   implementer reports it is not fixable inside `report` without breaking AC7's exactly-once mutation
+   spy. **I traded a global-clear bug for a narrower cross-key one** — the designer should rule
+   whether that trade is the right one, with both concrete cases in hand. (A previous "no way to do
+   this" claim in this contract turned out to be too strong, so the claim is under review too.)
+
 ### ✅ `watcher::tests::git_internals_filtered` — SETTLED, and my mechanism was wrong
 
 **I characterised this four times and was wrong three times.** Final, evidence-based reading, from the
