@@ -125,12 +125,19 @@ describe('DevCategory — delete wiring', () => {
     const callsBeforeDelete = info.mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: 'Delete all' }));
 
+    // §6.10 R10: `logParts` = 4 - 0 exports - 0 metrics = 4, and the failure is
+    // reported as a file rather than as an invented fifth log file.
     await waitFor(() =>
       expect(push).toHaveBeenCalledWith(
         'error',
-        expect.stringContaining('Deleted 4 of 5 log files.'),
+        expect.stringContaining('Deleted 4 log files.'),
         'dev-delete',
       ),
+    );
+    expect(push).toHaveBeenCalledWith(
+      'error',
+      expect.stringContaining('1 file could not be deleted'),
+      'dev-delete',
     );
     expect(del).toHaveBeenCalledTimes(1);
     // §8.5.5: re-polled after the outcome so the row/card never go stale.
@@ -225,8 +232,14 @@ describe('DevCategory — delete with no log files (§F6)', () => {
  *  usage counts only and then deleted however many log files were on disk — a
  *  confirmation naming a smaller target than it destroys, which is the exact
  *  defect §6.4 exists to prevent. `refresh` swallows the rejection by design, so
- *  the page stays usable and the delete must still be reachable. */
-describe('DevCategory — delete when the count read fails (§6.8 R3)', () => {
+ *  the page stays usable and the delete must still be reachable.
+ *
+ *  §6.10 R8 — the lead line was only ONE of the state's three strings. The row
+ *  hint (R8a, and §6.8 R6 wired it to the danger button as `aria-describedby`)
+ *  and the dialog's archives line (R8b) collapsed the same `null` into a known
+ *  zero, so both are asserted here too — this is the only test that renders the
+ *  whole page with every read failing. */
+describe('DevCategory — delete when the count read fails (§6.8 R3, §6.10 R8)', () => {
   it('states the widest scope instead of the known-zero copy, and still deletes', async () => {
     vi.spyOn(mockIpc, 'logSessionInfo').mockRejectedValue(new Error('logs dir unreadable'));
     const del = vi.spyOn(mockIpc, 'logsDeleteAll');
@@ -234,6 +247,17 @@ describe('DevCategory — delete when the count read fails (§6.8 R3)', () => {
 
     const deleteBtn = await screen.findByRole('button', { name: 'Delete all…' });
     await waitFor(() => expect(deleteBtn).toHaveAttribute('aria-disabled', 'false'));
+
+    // §6.10 R8a — the understating copy R3 removed from the dialog had been
+    // relocated verbatim into this button's accessible description by §6.8 R6's
+    // `aria-describedby`. An unknown count is not "No log files yet".
+    const hintId = deleteBtn.getAttribute('aria-describedby');
+    const hint = hintId === null ? null : document.getElementById(hintId);
+    expect(hint).toHaveTextContent(
+      "Bonsai could not count the log files. Removes all of them and Bonsai's usage counts, including the log being recorded now. Recording continues in a new file.",
+    );
+    expect(hint).not.toHaveTextContent('No log files yet');
+
     await act(async () => {
       fireEvent.click(deleteBtn);
     });
@@ -241,8 +265,14 @@ describe('DevCategory — delete when the count read fails (§6.8 R3)', () => {
     const dialog = await screen.findByRole('dialog', {
       name: 'Delete logs and usage counts?',
     });
+    // §6.10 R8b — the archives line must not vanish while the reassurance it
+    // qualifies ("saved elsewhere") stays, which reads as "no archives involved".
     expect(dialog).toHaveTextContent(
-      "Delete all log files and clear Bonsai's usage counts? Bonsai could not count them first. This cannot be undone.",
+      "This includes any exported log archives in Bonsai's exports folder.",
+    );
+    expect(dialog).toHaveTextContent('Exports you saved elsewhere are not removed.');
+    expect(dialog).toHaveTextContent(
+      "Delete all log files and clear Bonsai's usage counts? Bonsai could not count the log files first. This cannot be undone.",
     );
     // The regression itself: the known-zero lead line must NOT appear.
     expect(dialog).not.toHaveTextContent("Clear Bonsai's usage counts? This cannot be undone.");

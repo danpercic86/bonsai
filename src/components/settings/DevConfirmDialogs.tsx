@@ -154,7 +154,9 @@ export function DeleteLogsConfirmDialog({
           hint 8px above it (§6.8 R4) — `Delete 1 log files` was the bug. */}
       <p>
         {n === null
-          ? "Delete all log files and clear Bonsai's usage counts? Bonsai could not count them first. This cannot be undone."
+          ? // §6.10 R11: "could not count THEM first" bound "them" to the nearest
+            // plural — the usage counts — not to the log files it means.
+            "Delete all log files and clear Bonsai's usage counts? Bonsai could not count the log files first. This cannot be undone."
           : n === 0
             ? "Clear Bonsai's usage counts? This cannot be undone."
             : `Delete ${NUM.format(n)} log file${n === 1 ? '' : 's'} (${size}) and clear Bonsai's usage counts? This cannot be undone.`}
@@ -169,7 +171,16 @@ export function DeleteLogsConfirmDialog({
         <span className="mono">metrics</span> folder beside your log files, and Bonsai removes
         that whole folder.
       </p>
-      {exportFiles > 0 && <p>{`This includes ${archives(exportFiles)}.`}</p>}
+      {/* §6.10 R8b — THREE-way, not two. On a failed read this line used to
+          vanish while "Exports you saved elsewhere are not removed." below stayed,
+          so the reassurance survived the thing it qualifies and the dialog read as
+          "no archives are involved". "in Bonsai's exports folder" is load-bearing:
+          it is what that "saved elsewhere" line contrasts against. */}
+      {info === null ? (
+        <p>{"This includes any exported log archives in Bonsai's exports folder."}</p>
+      ) : (
+        exportFiles > 0 && <p>{`This includes ${archives(exportFiles)}.`}</p>
+      )}
       {devEnabled && (
         <p>
           This includes the session being recorded right now. Bonsai starts a new, empty log file

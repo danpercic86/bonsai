@@ -1,7 +1,9 @@
 /**
- * P91 §12 row-7 — Developer-page states that the browser harness cannot reach
- * (the mock reports `totalFiles: 0` when Dev mode is off, and has no partial /
- * exports scenario). These are asserted here against stubbed shapes.
+ * P91 §12 row-7 — Developer-page states the browser harness reaches only behind
+ * a fixture flag, or not at all. `?obsDeleteFail=1` covers partial failure and
+ * §6.10's `?obsInfoFail=1` covers the unknown count, but the mock's counts are
+ * fixed (one log file with Dev mode on, zero with it off) and it has no EXPORTS
+ * scenario at all. These are asserted here against stubbed shapes.
  */
 import { describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
@@ -206,13 +208,51 @@ describe('deleteResultToast (§16.4)', () => {
       metricsCleared: false,
     });
     expect(t.tone).toBe('error');
-    expect(t.text).toContain('Deleted 4 of 5 log files.');
-    expect(t.text).toContain('could not be deleted');
+    // §6.10 R10: the successes are reported the way the success branch reports
+    // them (`logParts`, here 4 — 4 deleted files, no exports, no metrics), and the
+    // failed count gets the only noun that is certainly true. `4 of 5` claimed a
+    // 5th LOG file that `LogsDeleteResult` cannot attribute to any category.
+    expect(t.text).toContain('Deleted 4 log files.');
+    // ...and the failed count agrees with its own pronoun: the shipped string
+    // said "1 could not be deleted — THEY may be open".
+    expect(t.text).toContain('1 file could not be deleted — it may be open in another program.');
+    expect(t.text).not.toContain('of 5');
     // §6.8 R5 NIT — an error says what to do next, and a retry is what actually
     // clears the counts. Partial-failure path ONLY: the total-failure path maps
     // to `deleteErrorText`, whose branches already name a cause.
     expect(t.text).toContain('Usage counts were not cleared. Try again.');
     expect(t.announce).toContain('Usage counts were not cleared. Try again.');
+  });
+
+  // §6.10 R10 — the other two partial-failure rows. The exports-only row, and
+  // row 1 keyed on the `logParts`/`exports` PAIR rather than on `deletedFiles`:
+  // metrics deleted fine while the active log file was held open gives
+  // `deletedFiles > 0` with `logParts === 0 && exports === 0`, and keying row 1 on
+  // `deletedFiles === 0` would leave that state with no string at all.
+  it('partial failure: the exports-only and metrics-only rows', () => {
+    const withExports = deleteResultToast({
+      ...base,
+      deletedFiles: 2,
+      deletedExports: 2,
+      failedFiles: 1,
+    });
+    expect(withExports.text).toMatch(
+      /^Deleted 2 exports\. .* freed\. 1 file could not be deleted — it may be open in another program\. Usage counts cleared\.$/,
+    );
+    expect(withExports.text).not.toContain('log file');
+
+    // Dev ON, the one log file held open by another program; the usage file went.
+    const logHeldOpen = deleteResultToast({
+      ...base,
+      deletedFiles: 1,
+      deletedMetrics: 1,
+      failedFiles: 1,
+    });
+    expect(logHeldOpen.text).toBe(
+      '1 file could not be deleted — it may be open in another program. Usage counts cleared.',
+    );
+    expect(logHeldOpen.announce).toBe('1 file could not be deleted. Usage counts cleared.');
+    expect(logHeldOpen.text).not.toContain('Deleted 0');
   });
 });
 

@@ -139,6 +139,20 @@ export const obsHandlers = {
 
   async logSessionInfo(): Promise<LogSessionInfo> {
     await delay(30);
+    // §6.10 harness seam: `?obsInfoFail=1` makes EVERY read fail — the one on
+    // mount, the 2 s poll and the delete dialog's re-read — so the page's `info`
+    // stays `null` and the unknown-count copy (R8a's hint, R8b's archives line,
+    // R3/R11's lead line) becomes visible in a browser. Without it that whole
+    // family is unreachable: this handler never threw and returned a zero-filled
+    // record with Dev mode off, which is a KNOWN ZERO, a different state.
+    // The message mirrors the backend VERBATIM: `log_session_info` can only fail
+    // in `obs::logs_dir`/`exports_dir`, as `cannot resolve app config dir: {e}`
+    // over a `tauri::Error::UnknownPath` ("unknown path"). Every caller
+    // (`DevCategory.refresh`, `DevModePill`, `batcher.refreshSalt`) swallows it,
+    // so the flag degrades the copy, it does not break the page.
+    if (query('obsInfoFail') === '1') {
+      throw new Error('cannot resolve app config dir: unknown path');
+    }
     const dev = readUiSettings().dev;
     const { records, dropped } = ringStats();
     const redaction = dev.includeRawNames ? 'raw' : 'strict';

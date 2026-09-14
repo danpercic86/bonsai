@@ -464,7 +464,7 @@ Three lead lines, replacing two. `DeleteLogsConfirmDialog` takes the count as
 |---|---|
 | `n > 0` | `Delete {N} log file{s} ({size}) and clear Bonsai's usage counts? This cannot be undone.` |
 | `n === 0` | `Clear Bonsai's usage counts? This cannot be undone.` |
-| **`n === null`** | `Delete all log files and clear Bonsai's usage counts? Bonsai could not count them first. This cannot be undone.` |
+| **`n === null`** | `Delete all log files and clear Bonsai's usage counts? Bonsai could not count the log files first. This cannot be undone.` *(revised by §6.10 R11 — as first shipped this said "count **them** first", whose "them" binds to "usage counts". One signed version of this line, and it is this one.)* |
 
 The null line states the scope at its **widest**, which is the only safe direction for a destructive
 confirm, and the dialog stays open and actionable rather than dying silently.
@@ -540,6 +540,164 @@ user who had none — the harness actively contradicts the copy it exists to ver
 
 **§2–§5 were implemented pending this ruling; the ruling is in, so §6 implements in full.** The
 "implement §2–§5 only" instruction that stood here is withdrawn.
+
+### 6.10 Round 2 — R8–R11, after harness verification of the shipped §6.8 fixes
+
+Copy only; no geometry, token, colour or motion change, so §7 is untouched and both themes and both
+densities are unaffected. R8 and R10 are the substantive ones: each is a string that describes a
+**smaller or different scope than the command acts on**, which is the same defect class as R3.
+
+**R8 — R3 fixed one of the unknown state's three strings. MUST-FIX.** I specced the third *lead
+line* and stopped there. Two strings adjacent to it still collapse `info === null` into "known
+zero", and R6 made the first of them worse by wiring it to the destructive button.
+
+- **8a — the danger button's accessible description.** `SettingsDevLogsSection.tsx` derives
+  `hasLogs` from `info?.totalFiles ?? 0`, so a failed read yields *"No log files yet. Removes
+  Bonsai's usage counts."* — and R6's `aria-describedby` now reads that sentence out as the
+  description of a control that is about to delete however many log files exist. The screen-reader
+  user gets the understating confirmation that R3 removed from the dialog, relocated verbatim into
+  the description. Change `deleteNote`'s first parameter from `hasLogs: boolean` to
+  `count: number | null` (null = not known) and derive it at the call site as
+  `info === null ? null : info.totalFiles`. `hasLogs` **stays** as it is for the reveal/export
+  buttons above — collapsing null to "no logs" there only disables two harmless actions, which is
+  the safe direction.
+
+  | `count` | Dev mode | Hint (= the button's accessible description) |
+  |---|---|---|
+  | **`null`** | off | `Bonsai could not count the log files. Removes all of them and Bonsai's usage counts from this computer.` |
+  | **`null`** | on | `Bonsai could not count the log files. Removes all of them and Bonsai's usage counts, including the log being recorded now. Recording continues in a new file.` |
+  | `0` | either | unchanged — `No log files yet. Removes Bonsai's usage counts.` |
+  | `> 0` | either | unchanged |
+
+  The caveat leads rather than trails: it is the exceptional fact, and a screen-reader user hearing
+  this as a description needs the scope uncertainty before the detail. "all of them" binds to "the
+  log files" in the sentence before it.
+
+- **8b — the dialog's archives line disappears when the count is unknown.**
+  `DevConfirmDialogs.tsx:172` is a two-way `exportFiles > 0 && …` over `info?.exportFiles ?? 0`, so
+  on a failed read the archives line vanishes while line 179's *"Exports you saved elsewhere are not
+  removed."* still renders — the reassurance survives and the thing it qualifies does not, which
+  reads as "no archives are involved". Make it three-way, parallel to `archives()`'s vocabulary:
+
+  | State | Line |
+  |---|---|
+  | `info === null` | `This includes any exported log archives in Bonsai's exports folder.` |
+  | `exportFiles > 0` | unchanged — `This includes {N} exported log archive{s}.` |
+  | `exportFiles === 0` | omitted, as now |
+
+  "in Bonsai's exports folder" is load-bearing: it is what the *"saved elsewhere"* line one
+  paragraph below contrasts against.
+
+**R9 — `Deleted 1 log files` is now the DEFAULT success toast. MUST-FIX, and the bad string is mine
+twice over.** R4 pluralised the dialog and I reviewed `devLogMessages.ts` under R5 without noticing
+the same hard-coded `log files` at lines 68–69. Since R7 made the mock report the fixture's single
+file, this is the ordinary Dev-ON success path, not an edge case — observed below. Pluralise off
+`logParts`, exactly as R4 did off `n`, in **both** the toast and the announcement:
+
+```
+text:     `Deleted ${NUM.format(logParts)} log file${logParts === 1 ? '' : 's'}${exportsClause}. ${freed} freed.${usage}`
+announce: `Deleted ${NUM.format(logParts)} log file${logParts === 1 ? '' : 's'}. ${freed} freed.${usage}`
+```
+
+No test cements the bug: `obsDeleteCounts.test.ts:80` matches the prefix `/^Deleted 1 log file/`.
+
+**R10 — the partial-failure toast calls the usage-counts file a log file. MUST-FIX on the copy;
+costs three test updates.** Not previously specced anywhere in this contract — the comment calling
+it "externally-locked" is the implementer's, not a ruling of mine, so it is mine to correct.
+
+The success branch carefully decomposes `deletedFiles` (`logParts = deletedFiles - deletedExports -
+deletedMetrics`) precisely because `deletedFiles` is a **category total**. The `failedFiles > 0`
+branch skips that step and feeds the raw totals into the noun *"log files"*, so the failed
+`metrics/usage.json` is reported to the user as a log file that would not delete. With Dev mode off
+— zero log files on disk — the harness shows *"Deleted 0 of 1 log files."*, which invents a log file
+and misattributes the failure. The `X of Y` framing cannot be salvaged: `LogsDeleteResult` carries
+no per-category failure attribution, so `Y` is unknowable per category. Report the successes the
+same way the success branch does, and give the failed count the only noun that is certainly true —
+`file`:
+
+Discriminate on the **same `logParts`/`exports` pair the success branch uses** — never on
+`deletedFiles`, which is what caused this. Three rows, exhaustive:
+
+| State | Toast |
+|---|---|
+| `logParts === 0 && exports === 0` | `{F} file{s} could not be deleted — {it/they} may be open in another program.{usage}` |
+| `logParts > 0` | `Deleted {logParts} log file{s}{exportsClause}. {freed} freed. {F} file{s} could not be deleted — {it/they} may be open in another program.{usage}` |
+| `logParts === 0 && exports > 0` | `Deleted {N} export{s}. {freed} freed. {F} file{s} could not be deleted — {it/they} may be open in another program.{usage}` |
+
+Row 1 keyed on the pair, not on `deletedFiles === 0`, deliberately: **metrics deleted fine while a
+log file failed** (Dev ON, the active log held open by an editor — plausibly the commonest partial
+failure on Windows) gives `deletedFiles > 0` with `logParts === 0` and `exports === 0`, and keying
+row 1 the other way would leave that state with no string at all. Row 1's text is already correct
+there — `{usage}` resolves to ` Usage counts cleared.` and the sentence reports the real failure.
+
+`{usage}` is unchanged: ` Usage counts cleared.` / ` Usage counts were not cleared. Try again.`
+(the R5 NIT clause, correct as shipped). The announcement is each row minus the ` — {it/they} may be
+open in another program` clause, matching the existing pattern. Singular agreement fixes the shipped
+*"1 could not be deleted — **they** may be open"* at the same time.
+
+Dev OFF then becomes: *"1 file could not be deleted — it may be open in another program. Usage
+counts were not cleared. Try again."* — true, and it no longer claims a log file existed.
+
+**Test impact — hand these to `tester`, not `senior-dev` alone.** Three assertions cement the old
+noun. Expected replacements below are **derived from each fixture**, not guessed
+(`logParts = deletedFiles - deletedExports - deletedMetrics`):
+
+| Assertion | Fixture | `logParts` | Replace with |
+|---|---|---|---|
+| `obsDeleteCounts.test.ts:97` | `deletedFiles 1`, exports `0`, metrics `0` | 1 | `Deleted 1 log file.` + `1 file could not be deleted` |
+| `dev.test.tsx:209` | `base` = `deletedFiles 4`, exports `0` (absent), metrics `0` | 4 | `Deleted 4 log files.` + `1 file could not be deleted` |
+| `DevCategory.test.tsx:131` | `deletedFiles 4`, exports `0`, metrics `0` | 4 | `Deleted 4 log files.` + `1 file could not be deleted` |
+
+`obsDeleteCounts.test.ts:98`'s `not.toContain('of 4')` guard goes vacuous — replace it with a
+Dev-**OFF** fixture asserting `not.toContain('log file')`, which guards the actual R10 defect (the
+zero-log user must never be told a log file failed). **R11 additionally moves
+`DevCategory.test.tsx:245`,** which asserts the null lead line verbatim; that is the only assertion
+on it (`DevConfirmDialogs.tsx:157` is the only other occurrence in `src/`).
+
+**R11 — NIT, my R3 line's dangling "them".** *"Delete all log files and clear Bonsai's usage counts?
+Bonsai could not count them first."* — "them" binds to the nearest plural, *usage counts*, not to the
+log files it means. Apply only because `DevConfirmDialogs.tsx` is open for 8b anyway:
+`…Bonsai could not count the log files first. This cannot be undone.` "first" stays here (a dialog
+does have a "before asking you"); it is deliberately absent from R8a's standing row hint, which has
+no such moment.
+
+#### Harness observations (`VITE_MOCK_IPC=1`, 2026-09-14, post-R7 mock) — verbatim
+
+| State | Dialog lead line | Toast | Announcement |
+|---|---|---|---|
+| Dev ON | `Delete 1 log file (1.1 KiB) and clear Bonsai's usage counts? This cannot be undone.` | `Deleted 1 log files. 5.1 KiB freed. Usage counts cleared. Still recording — Bonsai started a new log file.` | `Deleted 1 log files. 5.1 KiB freed. Usage counts cleared. Still recording in a new log file.` |
+| Dev OFF | `Clear Bonsai's usage counts? This cannot be undone.` | `Usage counts cleared. 4.0 KiB freed.` | `Usage counts cleared.` |
+| `?obsDeleteFail=1`, Dev OFF | `Clear Bonsai's usage counts? This cannot be undone.` | `Deleted 0 of 1 log files. 1 could not be deleted — they may be open in another program. Usage counts were not cleared. Try again.` | `Deleted 0 of 1 log files. 1 could not be deleted. Usage counts were not cleared. Try again.` |
+
+R3, R4, R5's `logParts === 0` branch, R5's `Try again.` NIT, R6's `aria-describedby` and R7's
+fixture all verify correct. R9 and R10 are the two defects above, both visible on the default paths.
+Read from the DOM (`innerText` of the dialog and of the `aria-live` regions) rather than from a
+screenshot — for copy, the text node *is* the evidence and pixels are strictly weaker. Toast motion
+and dismissal timing were not judged: the harness is headless, so they stay a USER CHECKPOINT.
+
+**The unknown (`info === null`) state cannot be seen in the harness — USER CHECKPOINT or a new
+fixture flag.** Nothing in `src/ipc/mock/handlers/obs.ts` ever fails `logSessionInfo`; it returns a
+zero-filled record when Dev mode is off and never throws, so neither R8a's hint nor R8b's archives
+line nor R3/R11's lead line is reachable in a browser. Two options, **recommendation: (a)** —
+R7 already set the precedent that a state named in a copy ruling must be visible in the harness, and
+without it the whole unknown-state family stays unverifiable by anyone but the user:
+
+- **(a)** `senior-dev` adds `?obsInfoFail=1` to the mock, making `logSessionInfo` reject with a
+  mapped error so the page's `info` stays `null`. Fixture-only, in scope of R7.
+- **(b)** R8/R11 are covered by unit tests only, and the visual check moves to USER CHECKPOINT.
+
+#### Follow-ups, not this increment
+
+- **`logsNote` and the `title="No logs yet."` tooltips collapse `null` → "no logs"** the same way 8a
+  did (`SettingsDevLogsSection.tsx:62-75, 90, 102`). Left alone deliberately: they only disable two
+  non-destructive actions, so the collapse errs safe. SHOULD-FIX whenever that row is next touched.
+- **`LogsDeleteResult` has no per-category failure counts** (`failedLogs` / `failedExports` /
+  `failedMetrics`). R10 works around it with an honest generic noun; an architect follow-up could
+  make the partial-failure toast say which kind of file failed. Not worth an IPC change on its own.
+- **The row hint can be one poll stale after the Dev-mode toggle** — observed as
+  `Removes all 1 log file (0 B)…` immediately after switching Dev mode off. Self-corrects on the
+  next poll, and opening the delete dialog re-reads, so the *consented* count is never the stale
+  one. Cosmetic; log it, do not chase it.
 
 ---
 

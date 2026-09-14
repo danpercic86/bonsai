@@ -29,13 +29,26 @@ export interface DevLogsBusy {
 /** §F6 §6.4 — three branches, because the delete now clears the usage counts too
  *  and the no-logs branch is a REACHABLE, ACTIONABLE state rather than a dead end.
  *  It used to read 'No log files to delete.', which after §F6 is both false and
- *  the reason the row would look dead to the user who most needs it. */
-function deleteNote(hasLogs: boolean, enabled: boolean, count: number, size: string): string {
-  if (!hasLogs) return "No log files yet. Removes Bonsai's usage counts.";
-  const files = `${NUM.format(count)} log file${count === 1 ? '' : 's'} (${size})`;
+ *  the reason the row would look dead to the user who most needs it.
+ *
+ *  §6.10 R8a — `count` is `number | null`, where null means NOT KNOWN (the
+ *  `logSessionInfo` read failed), never a known zero. §6.8 R3 removed the
+ *  understating copy from the dialog; collapsing null to 0 HERE put it straight
+ *  back, because §6.8 R6 wired this hint up as the danger button's
+ *  `aria-describedby`: a screen-reader user was told "No log files yet" as the
+ *  description of a control about to delete however many exist. The caveat LEADS
+ *  rather than trails — it is the exceptional fact, and the scope uncertainty has
+ *  to arrive before the detail. "all of them" binds to "the log files" before it.
+ *  No "first" here, unlike the dialog's line: a standing row hint has no
+ *  "before asking you" moment to be first of. */
+function deleteNote(count: number | null, enabled: boolean, size: string): string {
+  if (count === 0) return "No log files yet. Removes Bonsai's usage counts.";
+  const lead = count === null ? 'Bonsai could not count the log files. ' : '';
+  const target =
+    count === null ? 'of them' : `${NUM.format(count)} log file${count === 1 ? '' : 's'} (${size})`;
   return enabled
-    ? `Removes all ${files} and Bonsai's usage counts, including the log being recorded now. Recording continues in a new file.`
-    : `Removes all ${files} and Bonsai's usage counts from this computer.`;
+    ? `${lead}Removes all ${target} and Bonsai's usage counts, including the log being recorded now. Recording continues in a new file.`
+    : `${lead}Removes all ${target} and Bonsai's usage counts from this computer.`;
 }
 
 export function SettingsDevLogsSection({
@@ -53,8 +66,12 @@ export function SettingsDevLogsSection({
   onExport(): void;
   onRequestDelete(): void;
 }) {
+  // §6.10 R8a: `hasLogs` STAYS collapsed for the two benign actions below —
+  // treating an unknown count as "no logs" only disables reveal/export, which is
+  // the safe direction. The destructive row gets the honest `number | null`.
   const count = info?.totalFiles ?? 0;
   const hasLogs = count > 0;
+  const deleteCount = info === null ? null : info.totalFiles;
   const size = formatBytes(info?.totalBytes ?? 0);
   const dir = info?.dir ?? '';
   const anyBusy = busy.reveal || busy.export || busy.delete;
@@ -74,9 +91,7 @@ export function SettingsDevLogsSection({
     </p>
   );
 
-  const deleteText = busy.delete
-    ? 'Deleting…'
-    : deleteNote(hasLogs, dev.enabled, count, size);
+  const deleteText = busy.delete ? 'Deleting…' : deleteNote(deleteCount, dev.enabled, size);
 
   return (
     <SettingsGroup id="dev-logs" title="Log files">

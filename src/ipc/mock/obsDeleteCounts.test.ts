@@ -75,9 +75,10 @@ describe('mock logsDeleteAll derives its counts from the fixture (§6.8 R7)', ()
     expect(r.rolled, 'Dev ON rolls into a fresh file').toBe(true);
 
     const t = deleteResultToast(r);
-    // Prefix only: the toast's own pluralisation is not a ruled string, and this
-    // guard is about the COUNT coming from the fixture, not about the wording.
-    expect(t.text).toMatch(/^Deleted 1 log file/);
+    // §6.10 R9: this is the DEFAULT Dev-ON success path, and it is where
+    // `Deleted 1 log files.` shipped. The trailing `\. ` is the whole point of the
+    // assertion — the prefix-only form this replaces matched the bug.
+    expect(t.text).toMatch(/^Deleted 1 log file\. /);
     expect(t.text).not.toMatch(/export/);
   });
 
@@ -94,8 +95,48 @@ describe('mock logsDeleteAll derives its counts from the fixture (§6.8 R7)', ()
 
     const t = deleteResultToast(r);
     expect(t.tone).toBe('error');
-    expect(t.text).toContain('Deleted 1 of 2 log files.');
-    expect(t.text).not.toContain('of 4');
+    // §6.10 R10: `logParts` = 1 - 0 exports - 0 metrics = 1. `1 of 2 log files`
+    // counted the failed `metrics/usage.json` as a second LOG file.
+    expect(t.text).toContain('Deleted 1 log file.');
+    expect(t.text).toContain('1 file could not be deleted');
     expect(t.text).toContain('Usage counts were not cleared. Try again.');
+  });
+
+  /** §6.10 R10 — this is the assertion that pins the defect. With Dev mode off
+   *  the fixture has NO log files, so the only thing that can fail is the usage
+   *  file; the old toast still said "Deleted 0 of 1 log files." and invented one.
+   *  (The `not.toContain('of 4')` guard this replaces went vacuous with `X of Y`.) */
+  it('?obsDeleteFail=1 with Dev OFF never claims a log file existed', async () => {
+    setDevEnabled(false);
+    window.history.replaceState(null, '', '/?obsDeleteFail=1');
+    const r = await obsHandlers.logsDeleteAll();
+    expect(r.deletedFiles, 'precondition: nothing deleted — no logs, and the usage file failed').toBe(
+      0,
+    );
+    expect(r.failedFiles).toBe(1);
+
+    const t = deleteResultToast(r);
+    expect(t.text).not.toContain('log file');
+    expect(t.text).toBe(
+      '1 file could not be deleted — it may be open in another program. Usage counts were not cleared. Try again.',
+    );
+    expect(t.announce).toBe(
+      '1 file could not be deleted. Usage counts were not cleared. Try again.',
+    );
+  });
+});
+
+/** §6.10 harness seam — the unknown-count state (`info === null`) has to be
+ *  reachable in the browser, or R8a/R8b/R11's copy can only ever be seen by the
+ *  user. `?obsInfoFail=1` is the flag that reaches it. */
+describe('mock logSessionInfo can fail on demand (§6.10)', () => {
+  it("rejects with the backend's message under ?obsInfoFail=1, and not otherwise", async () => {
+    setDevEnabled(true);
+    await expect(obsHandlers.logSessionInfo()).resolves.toBeTruthy();
+
+    window.history.replaceState(null, '', '/?obsInfoFail=1');
+    await expect(obsHandlers.logSessionInfo()).rejects.toThrow(
+      'cannot resolve app config dir: unknown path',
+    );
   });
 });
