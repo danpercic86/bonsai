@@ -1076,15 +1076,43 @@ routine** — and a DTO change must land its Rust and TypeScript halves in the s
 JSON and mock). It **cannot** run concurrently with P113 phase 2 — both touch `App.tsx` and
 `useUiSettings.ts`.
 
-### ⚠ The `watcher::tests::git_internals_filtered` characterisation, third revision — now with a mechanism
+### ✅ `watcher::tests::git_internals_filtered` — SETTLED, and my mechanism was wrong
 
-I have called this a gate flake, then "not a flake", and both were too confident. The full record:
-failed once under `-p bonsai --lib`; **passed** in a full `pnpm gate --rust` nextest run under load
-(2542); **failed again** under full-suite `cargo test` load while passing in isolation and under
-nextest. The consistent reading: **nextest runs each test in its own process, `cargo test` runs them
-as threads in one**, so a load- or timing-sensitive test can be reliable under the former and flaky
-under the latter. **This is not academic** — `scripts/gate.mjs:148` has a `cargo test --workspace`
-fallback. Reviewer adjudicating both the mechanism and whether that path is reachable.
+**I characterised this four times and was wrong three times.** Final, evidence-based reading, from the
+reviewer who actually ran it rather than reasoned about it:
+
+**Three for three green today**, including the exact `gate.mjs:148` fallback: `cargo test --workspace`
+green with this test included, `cargo test -p bonsai --lib` green, `nextest --workspace` green.
+
+**My "nextest isolates processes, `cargo test` uses threads" mechanism is refuted by two facts:**
+- `serialize_watcher_test()` (`src-tauri/src/watcher/tests.rs:20-24`) is a **process-wide mutex**.
+  Under `cargo test` it serialises the watcher tests against each other; under nextest,
+  process-per-test makes it a **no-op**. If the process model were the variable, **nextest would be
+  the LESS protected configuration** — the opposite of what I claimed.
+- The one recorded failure was under `-p bonsai --lib`, the **lightest** configuration, not under
+  full-suite load.
+
+**What actually fits: ambient load.** The mutex excludes only the ~4 other watcher tests, so ~538
+same-process tests still contend with the `notify` backend and debounce threads.
+`git_internals_filtered` (`tests.rs:127-153`) declares quiet after a 1 s residual sweep, then asserts
+**nothing arrives for 1500 ms of wall clock**. Under enough ambient load a stale init event delayed
+past the sweep lands inside that negative window. **The real variable is almost certainly my own
+parallelism** — concurrent agents running vitest/tsc/e2e/cargo while a wall-clock negative assertion
+is timing out. Same root cause as the happy-dom timeout class.
+
+**Two facts about the gate worth keeping:**
+- The `cargo test --workspace` fallback is a **fresh-contributor path, not a pipeline path** —
+  `hasNextest` gates it (`gate.mjs:86`), this box has nextest, and CI installs it explicitly
+  (`.github/workflows/ci.yml:92`). It is real but never exercised by our own gates.
+- **The local gate is STRICTER than CI on flakes:** CI runs `--profile ci` with `retries = 1`
+  (`.config/nextest.toml`); `gate.mjs` uses `default` with **no retries**.
+
+**Deterministic fix direction (follow-up, not urgent):** `watcher::classify::is_relevant` already
+pins `objects/aa/bb ⇒ false` as a **pure unit test** (`classify.rs:118`), so the negative-window half
+of `git_internals_filtered` is **redundant coverage carrying all of the timing risk**. The `.git/HEAD`
+positive (`tests.rs:149-152`) is the half that earns its keep.
+
+**Stop re-characterising this.** It is ambient-load sensitivity in a wall-clock negative assertion.
 
 ### ✅ P113 PHASE 1 COMMITTED `0c86376` — approved, no MUST-FIX. Phase 2 in flight.
 
