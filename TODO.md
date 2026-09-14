@@ -296,13 +296,22 @@ Same authority as the 23 before them. Both were asked with evidence in hand, not
 
 | # | Item | Ruling |
 |---|---|---|
-| 24 | Settings toasts render behind Settings' own `.dialog-overlay` — scope of the fix | **SWEEP ALL 17 CALL SITES.** Not the delete outcome alone (which is what I recommended, on the grounds that it was the highest-stakes one and would build the recipe cheaply). The user chose the full surface. So: every `pushToast` reachable from Settings moves to an inline note, bringing the surface into line with `ui-reference.md:2377`'s standing rule instead of leaving 16 known violations behind a fixed one. |
+| 24 | Settings toasts render behind Settings' own `.dialog-overlay` — scope of the fix | **SWEEP EVERY CALL SITE** (asked as "all 17"; the true figure is **10** — see the correction below). Not the delete outcome alone (which is what I recommended, on the grounds that it was the highest-stakes one and would build the recipe cheaply). The user chose the full surface. So: every `pushToast` reachable from Settings moves to an inline note, bringing the surface into line with `ui-reference.md:2377`'s standing rule instead of leaving 16 known violations behind a fixed one. |
 | 25 | The 30 unpushed commits on `feat/post-p91-rulings` | **DO NOT PUSH.** Stays local. **Do not raise this again** — it has now been asked and answered, and re-raising it is noise. |
 
-**Scope facts established before ruling #24 was asked**, so the next session does not re-derive them:
-- **17 `pushToast` call sites** are reachable from Settings, across at least
-  `src/components/settings/categories/DevCategory.tsx` (`:96`, `:115`, `:118`, `:149`, `:152`) and
-  `src/components/settings/SettingsAccountsSection.tsx` (`:57`, `:79`, `:97`, `:138`, `:149`).
+**Scope facts**, so the next session does not re-derive them:
+- **CORRECTION.** The question was put to the user as "17 call sites". **The real figure is 10
+  invocations in 2 files** — the 17 came from a `wc -l` that also counted `usePushToast()`
+  declarations and `[pushToast]` dependency-array entries. The ruling is unaffected (a sweep is a
+  sweep) but the increment is materially smaller than the user was told when deciding. The
+  exhaustive list:
+  - `src/components/settings/categories/DevCategory.tsx` — `:96` (log-delete outcome, the measured
+    one), `:115` (export success), `:118` (export failure), `:149` (delete outcome tone+text),
+    `:152` (delete thrown path)
+  - `src/components/settings/SettingsAccountsSection.tsx` — `:57` (token page), `:79` (default
+    account), `:97` (remove host), `:138` (added login), `:149` (connected)
+  Verified exhaustive by `grep -rn "pushToast(" src/components/settings/ src/components/Settings*.tsx`
+  minus declarations and dep arrays; **no other file on the Settings surface raises a toast.**
 - **The `--warn` note recipe is NOT built.** `ui-designer` called the fix "pure reuse of an existing
   signed recipe"; that is true of the *design* and false of the *code*. `.settings-row-note` is
   widely used with its rule at `src/styles/settings-primitives.css:180`, but
