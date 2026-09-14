@@ -19,7 +19,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { deleteResultToast } from '../../components/settings/devLogMessages';
+import { deleteErrorText, deleteResultToast } from '../../components/settings/devLogMessages';
 import { obsHandlers } from './handlers/obs';
 import { ringClear } from './obsRing';
 
@@ -120,8 +120,148 @@ describe('mock logsDeleteAll derives its counts from the fixture (§6.8 R7)', ()
     expect(t.text).toBe(
       '1 file could not be deleted — it may be open in another program. Usage counts were not cleared. Try again.',
     );
-    expect(t.announce).toBe(
-      '1 file could not be deleted. Usage counts were not cleared. Try again.',
+    // §6.11.1 R12 — the announcement used to drop the cause clause, which is the
+    // most actionable sentence in the message.
+    expect(t.announce).toBe(t.text);
+  });
+
+  /** §6.11.5 — `?obsMetricsUnreadable=1`. The ONLY way to reach §6.11.2 R13a:
+   *  `metrics/` is present but unreadable, so `purge_metrics_dir` fails
+   *  `read_dir`, counts nothing, fails nothing and reports `dir_removed: false`.
+   *  Before this flag the state was unreachable in a browser, and it is the one
+   *  that rendered "Usage counts were not cleared." in success GREEN. */
+  it('?obsMetricsUnreadable=1 reaches a failed clear with nothing failed', async () => {
+    setDevEnabled(false);
+    window.history.replaceState(null, '', '/?obsMetricsUnreadable=1');
+    const r = await obsHandlers.logsDeleteAll();
+    expect(r.failedFiles, 'the read failed: nothing was even enumerated').toBe(0);
+    expect(r.deletedMetrics).toBe(0);
+    expect(r.metricsCleared).toBe(false);
+    expect(r.deletedFiles).toBe(0);
+
+    // §6.11.3's "unreadable `metrics/`, nothing else to do" row, verbatim.
+    const t = deleteResultToast(r);
+    expect(t.tone, 'AC2: a failed clear is never a success toast').toBe('error');
+    expect(t.text).toBe('Usage counts were not cleared. Try again.');
+    expect(t.announce).toBe(t.text);
+    expect(t.text).not.toContain('0 B');
+  });
+
+  it('?obsMetricsUnreadable=1 leaves the log half succeeding', async () => {
+    setDevEnabled(true);
+    window.history.replaceState(null, '', '/?obsMetricsUnreadable=1');
+    const info = await obsHandlers.logSessionInfo();
+    const r = await obsHandlers.logsDeleteAll();
+    expect(r.deletedFiles).toBe(info.totalFiles);
+    expect(r.failedFiles).toBe(0);
+
+    const t = deleteResultToast(r);
+    expect(t.tone).toBe('error');
+    expect(t.text).toMatch(/^Deleted 1 log file\./);
+    expect(t.text).toContain('Usage counts were not cleared. Try again.');
+    // §6.11.2 R13c — the roll happened before the purge, on this branch too.
+    expect(t.text).toContain('Still recording — Bonsai started a new log file.');
+    expect(t.announce).toBe(t.text);
+  });
+
+  /** §6.11.5 — `?obsMetricsFresh=1`: a launch younger than the first 60 s flush.
+   *  The aggregate is live in memory with nothing on disk, so the clear succeeds
+   *  having deleted no file and reclaimed no bytes. This is the state that made
+   *  the toast say "Usage counts cleared. 0 B freed." (§6.11.2 R13b). */
+  it('?obsMetricsFresh=1 is a zero-byte success with no freed clause', async () => {
+    setDevEnabled(false);
+    window.history.replaceState(null, '', '/?obsMetricsFresh=1');
+    const r = await obsHandlers.logsDeleteAll();
+    expect(r.metricsCleared).toBe(true);
+    expect(r.deletedMetrics).toBe(0);
+    expect(r.deletedBytes).toBe(0);
+
+    const t = deleteResultToast(r);
+    expect(t.tone).toBe('success');
+    expect(t.text).toBe('Usage counts cleared.');
+    expect(t.text).not.toContain('0 B');
+    expect(t.announce).toBe(t.text);
+  });
+
+  /** §6.11.8 AC5 — no log files ON DISK, which is NOT the same as Dev mode off:
+   *  logs outlive the toggle, so `?obsLogFiles=0` with Dev mode ON is the honest
+   *  shape of that state and the flag is the only way to reach it. */
+  it('?obsLogFiles=0 with Dev ON names no log file, failure or not', async () => {
+    setDevEnabled(true);
+    window.history.replaceState(null, '', '/?obsLogFiles=0');
+    const info = await obsHandlers.logSessionInfo();
+    expect(info.totalFiles, 'Dev ON, nothing flushed to disk yet').toBe(0);
+    expect(info.files).toEqual([]);
+
+    // AC5 asks that no string NAME a log file. Read as "no COUNTED log file":
+    // the one occurrence below is the `rolled` reassurance clause, which is true
+    // in this state (the delete rolled into a fresh part) and is not a count of
+    // anything. What must be unreachable is the fabricated `Deleted 0 of 1 log
+    // files.` — i.e. `{N} log file` in a deleted or a failed clause.
+    const clean = deleteResultToast(await obsHandlers.logsDeleteAll());
+    expect(clean.text).not.toMatch(/\d+ log file/);
+    expect(clean.text).toBe(
+      'Usage counts cleared. 4.0 KiB freed. Still recording — Bonsai started a new log file.',
+    );
+
+    // ...and with every category forced to fail, the failed count still cannot
+    // become a log file it does not have.
+    window.history.replaceState(null, '', '/?obsLogFiles=0&obsDeleteFail=all');
+    const failed = await obsHandlers.logsDeleteAll();
+    expect(failed.failedFiles, 'only the usage file could fail').toBe(1);
+    const t = deleteResultToast(failed);
+    expect(t.text).not.toMatch(/\d+ log file/);
+    expect(t.text).toBe(
+      '1 file could not be deleted — it may be open in another program. Usage counts were not cleared. Try again. Still recording — Bonsai started a new log file.',
+    );
+    expect(t.tone).toBe('error');
+  });
+
+  /** §6.11.5 — `?obsLogFiles=N` / `?obsExports=N`. Without them the partial row
+   *  and EVERY export-bearing string were invisible in the harness: the fixture
+   *  reported one log file and zero exports, so `Deleted 2 log files and 1
+   *  export`, the plural failure sentence and the confirm dialog's `This includes
+   *  2 exported log archives.` had never been rendered. */
+  it('?obsLogFiles / ?obsExports drive both handlers, and =partial fails a share of each', async () => {
+    setDevEnabled(false);
+    window.history.replaceState(null, '', '/?obsLogFiles=3&obsExports=2&obsDeleteFail=partial');
+    const info = await obsHandlers.logSessionInfo();
+    expect(info.totalFiles, 'log files outlive the Dev-mode toggle').toBe(3);
+    expect(info.exportFiles, 'what the confirm dialog counts archives from').toBe(2);
+
+    const r = await obsHandlers.logsDeleteAll();
+    // Derived, not invented: one part and one zip are held open (10%, min 1).
+    expect(r.failedFiles).toBe(2);
+    expect(r.deletedExports).toBe(1);
+    expect(r.deletedFiles).toBe(2 + 1 + r.deletedMetrics);
+    // `exportBytes` is optional on the wire; the fixture always sets it.
+    expect(r.deletedBytes).toBeLessThan(info.totalBytes + (info.exportBytes ?? 0));
+
+    const t = deleteResultToast(r);
+    expect(t.text).toMatch(/^Deleted 2 log files and 1 export\. /);
+    expect(t.text).toContain(
+      '2 files could not be deleted — they may be open in another program.',
+    );
+    expect(t.text).toContain('Usage counts cleared.');
+    expect(t.announce).toBe(t.text);
+  });
+
+  /** §6.11.5 — `?obsDeleteFail=throw`. The THROWN path (`deleteErrorText` plus
+   *  `Nothing was deleted.`) was unexercisable in the harness. §6.11's constraint
+   *  boundary: on every reachable rejection ZERO files were removed and the
+   *  counts were never touched, which is what makes that announcement true — so
+   *  the mock must reject before it touches either. */
+  it('?obsDeleteFail=throw rejects with the backend text and deletes nothing', async () => {
+    setDevEnabled(true);
+    window.history.replaceState(null, '', '/?obsDeleteFail=throw');
+    const before = await obsHandlers.metricsSnapshot();
+    await expect(obsHandlers.logsDeleteAll()).rejects.toThrow(
+      'cannot open log file: permission denied (os error 13)',
+    );
+    expect(await obsHandlers.metricsSnapshot(), 'the counts were never touched').toEqual(before);
+    // The mapped sentence the page actually shows for it.
+    expect(deleteErrorText('cannot open log file: permission denied (os error 13)')).toBe(
+      "Bonsai isn't allowed to delete files in that folder.",
     );
   });
 });

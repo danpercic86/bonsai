@@ -15,8 +15,34 @@ export interface DevToast {
   announce: string;
 }
 
-/** §16.4 — the delete outcome copy: three success rows and, since §6.10 R10,
- *  three partial-failure rows.
+/** §16.4 / §6.11.3 — the delete outcome copy: three templates, exhaustive.
+ *
+ *  T1 (something was deleted)   `{deleted}{freed?}{failure?}{usage}{rolled?}`
+ *  T2 (nothing deleted or failed) `{usage}{freed?}{rolled?}`
+ *  T3 (nothing deleted, something failed) `{failure}{usage}{rolled?}`
+ *
+ *  §6.11.1 R12: **`announce` is byte-identical to `text`.** The success
+ *  announcement used to drop the exports clause while the failure announcement
+ *  kept it, and the zero-log rows dropped the freed clause too — one deletion,
+ *  three shapes. An announcement that omits a count of files actually removed
+ *  states a NARROWER blast radius than the operation had, to the one user who
+ *  cannot read the toast. The house criterion for trimming a live-region string
+ *  is "not actionable by voice" (`DevCategory.tsx` drops the export FOLDER on
+ *  exactly that ground, and it is the only sanctioned trim here); nothing in a
+ *  delete outcome meets it — the counts are the scope, `— it may be open in
+ *  another program` is the most actionable sentence in the message, and
+ *  `Try again.` is the remedy. `announce: text` also cannot drift, where §6.8
+ *  R5, §6.10 R9 and R10 each fixed one twin and left the other.
+ *  `DevToast.announce` stays on the interface: the EXPORT path's divergence is
+ *  legitimate under the criterion above.
+ *
+ *  §6.11.2 R13a: `tone` is `error` whenever something the row promised did not
+ *  happen — `failedFiles > 0` **or** `metricsCleared === false`. Keying it on
+ *  `failedFiles` alone shipped a GREEN toast reading "Usage counts were not
+ *  cleared.": `metrics_purge.rs` reports `dir_removed: false` with
+ *  `failed_files: 0` for a present-but-unreadable `metrics/`. Consequently
+ *  ` Try again.` attaches wherever the clear failed, not only on the
+ *  partial-failure path (§6.8 R5's NIT, amended).
  *
  *  §6.10 R10: BOTH branches discriminate on the same `logParts`/`exports` pair,
  *  NEVER on `deletedFiles`. `deletedFiles` is a CATEGORY TOTAL (log parts + export
@@ -33,77 +59,63 @@ export interface DevToast {
  *  is live in memory with nothing on disk yet, so `deletedMetrics === 0` while the
  *  clear fully succeeded — "0 files deleted" is not proof of anything here. */
 export function deleteResultToast(r: LogsDeleteResult): DevToast {
-  const freed = formatBytes(r.deletedBytes);
-  const usageLead = r.metricsCleared
-    ? 'Usage counts cleared.'
-    : 'Usage counts were not cleared.';
-  const usage = ` ${usageLead}`;
   // `deletedFiles` is the TOTAL (log parts + export zips + metrics files), so both
-  // of the other two come off it or the log-file count overstates itself. Hoisted
-  // above the failure branch by §6.10 R10 — both branches count the same way.
+  // of the other two come off it or the log-file count overstates itself.
   const exports = r.deletedExports ?? 0;
   const logParts = Math.max(r.deletedFiles - exports - r.deletedMetrics, 0);
-  const exportsClause =
-    exports > 0 ? ` and ${NUM.format(exports)} export${exports === 1 ? '' : 's'}` : '';
-  if (r.failedFiles > 0) {
-    // §6.8 R5 NIT: an error says what to do next. The remedy belongs to the
-    // counts clause and to the PARTIAL-failure path only — a retry is what
-    // actually clears them, and the log half already names its own cause.
-    const partialUsage = r.metricsCleared ? usage : `${usage} Try again.`;
-    // §6.10 R10 — three rows, exhaustive over the same pair the success branch
-    // uses. Row 1 (no lead) is keyed on the PAIR, not on `deletedFiles === 0`:
+  const failed = r.failedFiles > 0;
+  // §6.11.2 R13a — an unkept promise is an error toast even with nothing failed.
+  const tone: DevToast['tone'] = failed || !r.metricsCleared ? 'error' : 'success';
+  // Every optional clause carries its own single leading space, so the templates
+  // below are pure concatenation: exactly one space between sentences, none
+  // trailing.
+  const usage = r.metricsCleared
+    ? ' Usage counts cleared.'
+    : ' Usage counts were not cleared. Try again.';
+  // §6.11.2 R13b — `formatBytes(0)` is `0 B`, and a clear before the first 60 s
+  // flush reclaims nothing while succeeding. "0 B freed." advertises a benefit
+  // that did not occur, so the clause is omitted at zero bytes — and it never
+  // accompanies a bare failure sentence (T3), where a byte count is noise.
+  const freed = r.deletedBytes > 0 ? ` ${formatBytes(r.deletedBytes)} freed.` : '';
+  // §6.11.2 R13c — on BOTH branches. The roll happens before the purge
+  // (`obs_delete.rs` sets `rolled: true` first), so it is true on a failure too,
+  // and that user is the one most likely to conclude logging has stopped.
+  const rolled = r.rolled ? ' Still recording — Bonsai started a new log file.' : '';
+  // Singular agreement: the shipped string said "1 could not be deleted — THEY
+  // may be open".
+  const failure = failed
+    ? ` ${NUM.format(r.failedFiles)} file${r.failedFiles === 1 ? '' : 's'} could not be deleted — ${
+        r.failedFiles === 1 ? 'it' : 'they'
+      } may be open in another program.`
+    : '';
+  let text: string;
+  if (logParts > 0 || exports > 0) {
+    // T1. §6.10 R9: `Deleted 1 log files` was the DEFAULT Dev-ON success toast.
+    // Each count pluralises off itself (R4/R9).
+    const exportsClause =
+      exports > 0 ? ` and ${NUM.format(exports)} export${exports === 1 ? '' : 's'}` : '';
+    const deleted =
+      logParts > 0
+        ? `Deleted ${NUM.format(logParts)} log file${logParts === 1 ? '' : 's'}${exportsClause}.`
+        : `Deleted ${NUM.format(exports)} export${exports === 1 ? '' : 's'}.`;
+    text = `${deleted}${freed}${failure}${usage}${rolled}`;
+  } else if (failed) {
+    // T3. Keyed on the `logParts`/`exports` PAIR, not on `deletedFiles === 0`:
     // metrics deleted fine while the active log file was held open gives
     // `deletedFiles > 0` with `logParts === 0 && exports === 0`, and keying it the
     // other way would leave that state with no string at all.
-    const failedLead = `${NUM.format(r.failedFiles)} file${
-      r.failedFiles === 1 ? '' : 's'
-    } could not be deleted`;
-    // Singular agreement: the shipped string said "1 could not be deleted — THEY
-    // may be open".
-    const cause = ` — ${r.failedFiles === 1 ? 'it' : 'they'} may be open in another program`;
-    const deletedLead =
-      logParts > 0
-        ? `Deleted ${NUM.format(logParts)} log file${
-            logParts === 1 ? '' : 's'
-          }${exportsClause}. ${freed} freed. `
-        : exports > 0
-          ? `Deleted ${NUM.format(exports)} export${exports === 1 ? '' : 's'}. ${freed} freed. `
-          : '';
-    return {
-      tone: 'error',
-      text: `${deletedLead}${failedLead}${cause}.${partialUsage}`,
-      // The announcement is each row minus the `cause` clause (the existing
-      // pattern on this branch).
-      announce: `${deletedLead}${failedLead}.${partialUsage}`,
-    };
-  }
-  // §6.8 R5 — `logParts === 0` leads with the counts instead of "Deleted 0 log
-  // files", which reads as a bug in the exact state §F6 made the row serve (never
-  // turned Dev mode on, so nothing but usage counts to delete). Exports are NOT
-  // assumed away: a saved zip outlives the logs it came from, so zero logs WITH
-  // exports is reachable and keeps its clause. The lead is `usageLead`, not a
-  // hard-coded "cleared", so an unreadable `metrics/` (no failed files, directory
-  // still there) cannot make this sentence claim a clear that did not happen.
-  let text: string;
-  let announce: string;
-  if (logParts === 0) {
-    text =
-      exports > 0
-        ? `Deleted ${NUM.format(exports)} export${exports === 1 ? '' : 's'}. ${freed} freed. ${usageLead}`
-        : `${usageLead} ${freed} freed.`;
-    announce = usageLead;
+    text = `${failure.trimStart()}${usage}${rolled}`;
   } else {
-    // §6.10 R9: `Deleted 1 log files` was the DEFAULT Dev-ON success toast — the
-    // row hint and the dialog 8px above both pluralise the same count already.
-    const s = logParts === 1 ? '' : 's';
-    text = `Deleted ${NUM.format(logParts)} log file${s}${exportsClause}. ${freed} freed.${usage}`;
-    announce = `Deleted ${NUM.format(logParts)} log file${s}. ${freed} freed.${usage}`;
+    // T2. §6.8 R5 — leading with the counts beats "Deleted 0 log files", which
+    // reads as a bug in the exact state §F6 made this row serve (never turned Dev
+    // mode on, so nothing but usage counts to delete). The lead is the usage
+    // clause itself, not a hard-coded "cleared", so an unreadable `metrics/` (no
+    // failed files, directory still there) cannot claim a clear that did not
+    // happen. The freed clause TRAILS it here, and is dropped with the
+    // not-cleared form (§6.11.2 R13b).
+    text = `${usage.trimStart()}${r.metricsCleared ? freed : ''}${rolled}`;
   }
-  if (r.rolled) {
-    text += ' Still recording — Bonsai started a new log file.';
-    announce += ' Still recording in a new log file.';
-  }
-  return { tone: 'success', text, announce };
+  return { tone, text, announce: text };
 }
 
 /** §8.5.5 total-failure mapping — permission / folder-missing / generic. */

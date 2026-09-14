@@ -675,6 +675,388 @@ Read from the DOM (`innerText` of the dialog and of the `aria-live` regions) rat
 screenshot — for copy, the text node *is* the evidence and pixels are strictly weaker. Toast motion
 and dismissal timing were not judged: the harness is headless, so they stay a USER CHECKPOINT.
 
+### 6.11 Round 3 — R12–R14: announcement parity, and per-category failure copy (conditional)
+
+Copy only. No geometry, token, colour or motion change: §7 is untouched, no new CSS custom property is
+introduced, and both themes and both `panelDensity` values are unaffected. Every string below lives in
+`devLogMessages.ts`'s `deleteResultToast`; nothing moves between files.
+
+**Read the conditionality before implementing.**
+
+| Subsection | Status |
+|---|---|
+| §6.11.1 **R12** — announcement parity | **Unconditional.** Implements against the fields that ship today |
+| §6.11.2 **R13a/b/c** — three adjacent result-copy fixes | **Unconditional.** Same |
+| §6.11.3 — the signed string table for today's fields | **Unconditional.** This is what the app must say now |
+| §6.11.4 **R14** — per-category failure copy | **CONDITIONAL on `failedLogs`/`failedExports` shipping in `LogsDeleteResult`.** Until they do, §6.10 R10's generic copy is the live spec and §6.11.4 describes nothing that exists |
+| §6.11.5 — harness states | Split: the R12/R13 states are needed now, the R14 states only if R14 ships |
+| §6.11.6 — delivery surface | **Flagged MUST-FIX, deliberately not specced.** Needs an orchestrator call and its own increment |
+
+§6.11.4 is written ahead of its fields **so the Rust/TS/IPC/mock change and the copy land in one
+increment**, not two. It is not a description of shipped behaviour and must not be read as one.
+
+**Constraint boundary — state it once, do not erode it.** §6.11 governs the **returned** path only:
+`logsDeleteAll` resolved, the metrics clear ran, and individual files may have failed. The **thrown**
+path is different in kind — `obs_delete.rs:85-103`'s second `?` returns *before* the metrics clear, and
+the writer thread's only in-thread `Err` is the `roll(true)` that runs before `purge_scope`, so on every
+reachable rejection **zero files were removed and the counts were never touched**. `deleteErrorText`'s
+`Couldn't delete the logs and usage counts.` plus `DevCategory.tsx:157`'s `Nothing was deleted.` are
+therefore literally true and a retry is idempotent. **No one may "improve" the thrown path by appending
+a usage clause to it** — there is nothing to report, and a clause there would claim a clear that
+deliberately did not run.
+
+#### 6.11.1 R12 — one string for the delete outcome. MUST-FIX, unconditional
+
+The success announcement drops the exports clause (`devLogMessages.ts:100`); the failure announcement
+keeps it (`:77`); the `logParts === 0` announcements drop the freed clause as well (§6.8 R5's
+Announcement column). One deletion, three shapes.
+
+**Ruling: the success announcement GAINS the clause — and the general form, which is stronger than the
+one-word fix: `announce` is byte-identical to `text` for this builder.**
+
+```
+return { tone, text, announce: text };
+```
+
+Four reasons, in order of weight:
+
+1. **It is the §6 defect class pointed at the outcome instead of the confirmation.** R3, R8 and R10 each
+   removed a string that named a smaller scope than the command acted on. An announcement that omits a
+   count of files *actually removed* tells the one user who cannot read the toast that less was
+   destroyed than was. Direction of error matters: understating a destruction is the unsafe direction.
+2. **The house criterion for trimming a live-region string is "not actionable by voice", not
+   brevity.** That is the stated reason the export toast drops the folder location
+   (`DevCategory.tsx:113-116`) — and it is the *only* sanctioned trim in this file. Nothing in the
+   delete outcome meets it: the counts are the scope, `— it may be open in another program` is the most
+   actionable sentence in the whole message, and `Try again.` is the remedy.
+3. **Structural enforcement beats a test.** `announce: text` cannot drift. Three rounds (R5, R9, R10)
+   each fixed one of these strings and left its twin; one string ends the class permanently.
+4. **§6.11.6.** On this surface the toast is dimmed and partly clipped. The live region is the only
+   channel that delivers the message intact, so it must carry all of it.
+
+`DevToast.announce` **stays on the interface** — the export path's divergence is legitimate under
+reason 2, and the field is shared. Only `deleteResultToast` collapses. The `rolled` announcement's
+separate wording (`Still recording in a new log file.`) goes away with it: the toast's
+`Still recording — Bonsai started a new log file.` wins, and it reads correctly aloud (the em dash is a
+pause).
+
+#### 6.11.2 R13 — three adjacent fixes, surfaced by enumerating every branch
+
+Each is a result message that misstates its own effect — the same family as R12, not new scope. Ranked,
+and each is independently deferrable without touching the others or R12.
+
+**R13a — a failed clear ships a success-toned toast. MUST-FIX.** Tone is `error` iff something the row
+promised did not happen: `failedFiles > 0` **or** `metricsCleared === false`. Today tone keys on
+`failedFiles` alone, and `metrics_purge.rs:52-57` makes `metricsCleared === false` with
+`failedFiles === 0` reachable — an unreadable-but-present `metrics/` fails `read_dir`, counts nothing,
+and reports `dir_removed: false`. That state currently renders a **green** toast reading *"Usage counts
+were not cleared."* with no remedy. Consequently ` Try again.` attaches to the not-cleared clause in
+**every** branch, not only the `failedFiles > 0` one — see the amendment to §6.8 R5's NIT in §6.11.7.
+The clause pair is otherwise unchanged: ` Usage counts cleared.` / ` Usage counts were not cleared. Try
+again.`, still driven by `metricsCleared` and never by `deletedMetrics`.
+
+**R13b — `0 B freed.` SHOULD-FIX.** `formatBytes(0)` is `0 B` (`utils/format.ts:6`), and
+`deletedBytes === 0` is reachable on a *success*: a launch younger than the first 60 s flush clears a
+live aggregate with nothing on disk, so `metricsCleared === true` with zero bytes — the §F6 state this
+row exists to serve. It currently says `Usage counts cleared. 0 B freed.`, advertising a benefit that
+did not occur. **The freed clause is omitted when `deletedBytes === 0`, and it never accompanies a bare
+failure sentence** (a byte count beside "could not be deleted" is noise, and the shipped failure rows
+already omit it). Encoded in §6.11.3's templates so there is nothing to infer.
+
+**R13c — a partial failure never says recording continues. NIT.** The `failedFiles > 0` branch
+`return`s at `devLogMessages.ts:72-78`, before `:102`'s `rolled` suffix, so Dev ON + a locked log file
+reports failures and stays silent about the new file. The roll genuinely happened (`obs_delete.rs:114`
+sets `rolled: true` before the purge), and this is the user most likely to conclude logging has
+stopped. Append the same suffix on both branches. Deferrable: its absence is a missing reassurance, not
+a false statement — the confirm dialog already promised it.
+
+#### 6.11.3 The signed strings — today's fields. Verbatim; announcement identical to the toast
+
+Three templates, exhaustive. `{L}` = `logParts`, `{E}` = `exports`, `{F}` = `failedFiles`, `{freed}` =
+`formatBytes(deletedBytes)`, counts formatted through `Intl.NumberFormat` as now.
+
+| # | When | `text` — and `announce`, identical |
+|---|---|---|
+| T1 | something was deleted (`L > 0 \|\| E > 0`) | `{deleted} {freed?}{failure?}{usage}{rolled?}` |
+| T2 | nothing deleted, nothing failed | `{usage}{ freed?}` |
+| T3 | nothing deleted, something failed | `{failure-lead}{usage}{rolled?}` |
+
+Every optional clause carries its own single leading space, so the templates above are read as
+concatenation, not as literal spacing. **Where the two disagree, the resolved rows below are
+authoritative: exactly one space between sentences, none trailing.**
+
+Clauses:
+
+- `{deleted}` — `Deleted {L} log file{s} and {E} export{s}.` / `Deleted {L} log file{s}.` /
+  `Deleted {E} export{s}.` Pluralised off each count independently (R4/R9).
+- `{freed?}` — ` {freed} freed.`; **omitted when `deletedBytes === 0`** (R13b). In T2 it trails the
+  usage clause and is omitted whenever the usage clause is the not-cleared form.
+- `{failure?}` — ` {F} file{s} could not be deleted — {it/they} may be open in another program.`
+  (`it` iff `F === 1`). `{failure-lead}` is the same sentence without the leading space.
+- `{usage}` — ` Usage counts cleared.` / ` Usage counts were not cleared. Try again.` (R13a).
+- `{rolled?}` — ` Still recording — Bonsai started a new log file.` when `rolled` (R13c: both branches).
+
+Resolved rows, verbatim, for every state the harness and the tests reach:
+
+| State | `text` = `announce` | tone |
+|---|---|---|
+| Dev ON, 1 log file, counts cleared | `Deleted 1 log file. 5.1 KiB freed. Usage counts cleared. Still recording — Bonsai started a new log file.` | success |
+| Dev ON, 4 log files + 2 exports | `Deleted 4 log files and 2 exports. 3.4 MiB freed. Usage counts cleared. Still recording — Bonsai started a new log file.` | success |
+| Dev OFF, no logs, counts cleared, bytes on disk | `Usage counts cleared. 4.0 KiB freed.` | success |
+| Dev OFF, no logs, counts cleared, **nothing on disk yet** | `Usage counts cleared.` | success |
+| no logs, 2 exports removed | `Deleted 2 exports. 1.2 MiB freed. Usage counts cleared.` | success |
+| unreadable `metrics/`, nothing else to do | `Usage counts were not cleared. Try again.` | **error** (R13a) |
+| Dev ON, 4 log files deleted, 1 file failed, counts not cleared | `Deleted 4 log files. 3.4 MiB freed. 1 file could not be deleted — it may be open in another program. Usage counts were not cleared. Try again. Still recording — Bonsai started a new log file.` | error |
+| Dev OFF, nothing deleted, 1 file failed, counts not cleared | `1 file could not be deleted — it may be open in another program. Usage counts were not cleared. Try again.` | error |
+| metrics deleted, active log held open (Dev ON) | `1 file could not be deleted — it may be open in another program. Usage counts cleared. Still recording — Bonsai started a new log file.` | error |
+
+The last two are R10's rows 1 and 3 with R13 applied; the generic noun `file` stays until R14's fields
+exist. **Nothing here contains a path or a file name** — `activeFile` is never interpolated into copy.
+
+#### 6.11.4 R14 — per-category failure copy. CONDITIONAL on `failedLogs`/`failedExports`
+
+Assumes `LogsDeleteResult` gains per-category failure attribution. **If those fields do not ship, this
+subsection does not apply and §6.10 R10 remains the live spec.**
+
+**Only two of the three proposed fields are needed by the copy, and `failedMetrics` is not one of
+them** — flag this to the architect. The metrics half is already reported, completely, by the usage
+clause: `metricsCleared` is its sole and correct driver, and a count could never drive it because
+`metrics_purge.rs:52-57` reaches `dir_removed: false` with `failed_files: 0`. Worse, a count *would*
+misreport: `merge_metrics_counts` (`obs_delete.rs:162-166`) adds a **sentinel `1`** when the clear
+returns `Err`, and `metrics_purge.rs:63-65` counts a *subdirectory* as a failure — neither is "a file
+that could not be deleted". Ship `failedMetrics` only if diagnostics want it; the copy must not read
+it.
+
+Two further notes for the architect: `PurgeCounts`/`PurgeReply` (`sink.rs:60-67`) carry a single
+`failed_files` covering log parts **and** export zips, so the split has to happen inside
+`writer::purge_scope`, not in the command layer. And the existing `failedFiles` total stops driving any
+string — keep it for tests and diagnostics, but the branch selector and every clause read the
+per-category fields, so the copy stays correct even if the total and the parts ever disagree.
+
+**Branch selector: `failedLogs + failedExports > 0`, never `failedFiles > 0`.** With the total, a
+metrics-only failure enters the failure branch and renders a failure sentence over a count of zero.
+
+`{failure}` becomes, with `FL` = `failedLogs` and `FE` = `failedExports`:
+
+| FL | FE | Clause |
+|---|---|---|
+| `> 0` | `0` | ` {FL} log file{s} could not be deleted — {it/they} may be open in another program.` |
+| `0` | `> 0` | ` {FE} export{s} could not be deleted — {it/they} may be open in another program.` |
+| `> 0` | `> 0` | ` {FL} log file{s} and {FE} export{s} could not be deleted — they may be open in another program.` |
+| `0` | `0` | omitted — and the branch is not entered |
+
+`it` iff the clause names exactly one item in exactly one category; the compound subject is always
+`they`, even at 1 + 1. Templates T1–T3 and the `{deleted}`/`{freed?}`/`{usage}`/`{rolled?}` clauses
+carry over from §6.11.3 unchanged. **Tone reads the per-category fields too:** `error` iff
+`failedLogs + failedExports > 0 || !metricsCleared`. Equivalent to §6.11.3's `failedFiles > 0` while the
+total and the parts agree, and correct rather than merely equivalent if they ever do not.
+
+Every case the increment must cover, verbatim. **The announcement is identical to the toast in every
+row — that is R12, and it is the answer to "do they differ": no, in no row.**
+
+| Case | `text` = `announce` | tone |
+|---|---|---|
+| **Logs only failed** — partial (5 log files, 3 deleted, 2 locked; Dev ON; counts cleared) | `Deleted 3 log files. 2.1 MiB freed. 2 log files could not be deleted — they may be open in another program. Usage counts cleared. Still recording — Bonsai started a new log file.` | error |
+| **Logs only failed** — none deleted (1 log file, locked; Dev OFF; counts cleared) | `1 log file could not be deleted — it may be open in another program. Usage counts cleared.` | error |
+| **Exports only failed** — partial (4 logs deleted, 1 of 2 exports failed; counts cleared) | `Deleted 4 log files and 1 export. 3.4 MiB freed. 1 export could not be deleted — it may be open in another program. Usage counts cleared.` | error |
+| **Metrics only failed** (Dev ON, 1 log file deleted, clear failed) | `Deleted 1 log file. 5.1 KiB freed. Usage counts were not cleared. Try again. Still recording — Bonsai started a new log file.` | error |
+| **Metrics only failed, nothing else to delete** (Dev OFF, no logs, no exports, clear failed) | `Usage counts were not cleared. Try again.` | error |
+| **Two failed** — logs + exports, nothing deleted, counts cleared | `2 log files and 1 export could not be deleted — they may be open in another program. Usage counts cleared.` | error |
+| **All three failed** — nothing deleted at all | `2 log files and 1 export could not be deleted — they may be open in another program. Usage counts were not cleared. Try again.` | error |
+| **Pathological** (9,998 of 10,010 logs, 126 of 129 exports, Dev ON, clear failed) | `Deleted 9,998 log files and 126 exports. 4.3 GiB freed. 12 log files and 3 exports could not be deleted — they may be open in another program. Usage counts were not cleared. Try again. Still recording — Bonsai started a new log file.` | error |
+
+Both metrics-only rows carry **no** failure sentence, by design: the usage clause is the report. This is
+the state `?obsDeleteFail=1` produces today (`mock/handlers/obs.ts:222-232` fails the metrics file
+only), so it is the row the harness shows by default — see §6.11.5.
+
+**The second metrics-only row is a real behaviour change, and the clearest proof that `failedMetrics`
+must drive no clause.** With nothing deleted and only the clear failing, `failedLogs + failedExports`
+is 0, so the branch is **T2, not T3** — `Usage counts were not cleared. Try again.` where R10 says
+`1 file could not be deleted — it may be open in another program. Usage counts were not cleared. Try
+again.` The R10 string double-reports one failure and attributes it to another program holding a file,
+which for a `metrics` clear is false: `merge_metrics_counts` invented that `1`. `obsDeleteCounts.test.ts`
+asserts the old string with `toBe`, so this row is a required test update, not a passing rename.
+
+The pathological row is ~250 characters. `.toast` sets `overflow-wrap: anywhere` with no line clamp
+(`toasts-and-overlays.css:22-30`), so it wraps to roughly seven lines in the 360px stack and **nothing
+is truncated** — correct, because a result message may never be clipped, and also the clearest argument
+for §6.11.6's inline home.
+
+**The R10 regression guard becomes structural.** A user with no log files has `failedLogs === 0`, so no
+string in this table can name a log file. The fabricated *"Deleted 0 of 1 log files."* is now
+unreachable by construction rather than by a careful branch.
+
+**`X of Y` stays rejected, even though the new fields make `Y` true.** Kept here so it is not
+re-proposed:
+
+1. `Deleted 0 of 1 log files.` — true under attribution, still the string §6.10 condemned, and still
+   reading as a bug. R5's "never lead with `Deleted 0`" forces a second shape for `X === 0`, so
+   `X of Y` cannot be the single grammar anyway.
+2. With two categories failing it double-states both counts: `Deleted 3 of 5 log files and 1 of 2
+   exports.` plus a failure sentence repeating `2` and `1`.
+3. The denominator is not actionable. What is: **what could not be deleted, why, and what to do** — all
+   three stated above, with `Y` available by adding two printed numbers.
+4. It is a new sentence grammar for every row; the table above is a one-noun change from the shipped
+   R10 grammar. Consistency beats local optimality.
+
+`devLogMessages.ts:26-29`'s comment asserts `X of Y` "cannot be salvaged" *because* attribution does
+not exist. When the fields land that premise is false while the conclusion stands. **Rewrite the
+comment to reasons 1–4; do not delete it** — it is the only place the rejection is recorded in the
+code.
+
+#### 6.11.5 Harness states (`VITE_MOCK_IPC=1`)
+
+Needed for R12/R13 (now):
+
+- **default Dev ON / Dev OFF** — rows 1 and 3 of §6.11.3. Already derived from fixture state per R7.
+- **`?obsDeleteFail=1`** — unchanged, and under R14 it is the metrics-only row. Keep the param name as
+  an alias for back-compat with the existing tests.
+- **`?obsMetricsUnreadable=1`** — new, and **the only way to see R13a**: returns `failedFiles: 0`,
+  `deletedMetrics: 0`, `metricsCleared: false` with the log half succeeding. Today unreachable, and it
+  is the state that ships a green toast reading "were not cleared".
+- **`?obsDeleteFail=throw`** — new: rejects `logsDeleteAll` so the thrown path (`deleteErrorText` +
+  `Nothing was deleted.`) can be seen at all. Currently unexercisable in the harness.
+- **zero-bytes success** — R13b needs `deletedBytes: 0` with `metricsCleared: true`; reachable by
+  making `?obsMetricsFresh=1` report the pre-first-flush state (aggregate live, nothing on disk).
+
+Needed only if R14 ships:
+
+- **`?obsDeleteFail=logs` / `=exports` / `=all` / `=partial`**, each deriving its counts from the
+  fixture's own log/export state per R7's rule.
+- **`?obsLogFiles=N` and `?obsExports=N`**, driving **both** `logSessionInfo` (`totalFiles`,
+  `exportFiles`) and `logsDeleteAll`. **Without them two whole families of copy are invisible in the
+  harness:** the fixture reports exactly one log file when Dev is ON (`obs.ts:216`) and
+  `exportFiles: 0` in both states (`obs.ts:202-203`), so the `3 of 5` partial row and **every** export
+  row cannot be reached — including §6.10 8b's confirm line `This includes {N} exported log
+  archive{s}.`, which has never been seen rendered. That is R7's fidelity gap one field over, and it is
+  MUST-FIX for the mock in the same increment.
+- **pathological**: `?obsLogFiles=10010&obsExports=129&obsDeleteFail=partial` — exercises
+  `Intl.NumberFormat` grouping, `GiB` formatting, and the seven-line toast wrap.
+
+There is no empty state for this row (§6.4 dropped the `hasLogs` gate) and no loading state beyond
+`anyBusy`, which is unchanged. **Verify by reading the text node**, as §6.10 did — for copy the string
+*is* the evidence. Toast motion, dwell and dismissal stay USER CHECKPOINT items: the harness is
+headless.
+
+#### 6.11.6 Delivery surface — flagged MUST-FIX, deliberately not specced here
+
+The task asked whether any string here can fire while a dialog is open. **The confirm dialog is not the
+problem; the Settings card is.**
+
+*Confirm dialog — clean.* `runDelete` pushes the toast at `DevCategory.tsx:149` and closes the dialog in
+the `finally` at `:162`, with no `await` between them, so React 18 batches both into one commit: the
+toast appears as the dialog unmounts. **Keep it that way** — an `await` inserted between the push and
+the close would park the toast behind `.dialog-overlay` for the whole gap.
+
+*Settings card — broken, and it is a house rule already.* `.toast-stack` is `z-index: 90`
+(`toasts-and-overlays.css:11`); `.dialog-overlay` is `z-index: 100` with `background: rgba(0,0,0,0.45)`
+over the full viewport (`dialogs.css:10-14`); `SettingsPanel.tsx:1` renders Settings *inside* that
+overlay, with `.dialog-card.settings-card` 880px wide, `min(660px, 100vh − 64px)` tall and centred both
+ways (`settings-shell.css:13-16`). So every toast raised from a Settings category is **always under the
+45% black scrim**, and is **clipped by the card only when the two overlap vertically** — stated
+precisely, because a flag that claims clipping where there is none will not survive first contact with
+the harness:
+
+- **Horizontal overlap** when they do collide: `812 − viewportWidth/2` px of the toast's 360 — 172px at
+  1280 wide, 92px at 1440, none at ≥1624.
+- **Vertical overlap** requires the card's top edge, `(viewportHeight − cardHeight)/2`, to be above the
+  toast's bottom. The toast sits at `top: 52`. A two-line toast therefore collides only below roughly
+  880px of height (at 1280×800 the card top is 70px: clipped). At **1920×1080 the card top is 210px and
+  a short toast clears it entirely — washed out, not clipped.** The seven-line pathological toast of
+  §6.11.4 reaches ~240px and collides even at 1080.
+
+`ui-reference.md:2377` already rules this exact case: *a Settings-surface error is inline, never a
+toast.* The dimming alone violates it; the clipping is the aggravating case, not the whole finding. The
+delete and export toasts predate that ruling.
+
+**Why two harness reviews and two code reviews missed it:** §6.10's observations were read from
+`innerText` (line 674-675, and correctly — for copy the text node is stronger evidence than pixels),
+and `innerText` is blind to stacking. On top of that, on the likeliest developer monitor the toast is
+fully on screen and merely dim, so a screenshot would have looked plausible too.
+
+**Recommended fix, reuse only:** the delete outcome lands in the delete row's note slot — the signed
+P107 `.settings-row-note--warn` recipe (12% `--warning` tint, `inset 3px 0 0 var(--warning)`, `--text-1`
+ink) for the error tone, plain `.settings-row-note` for success — sitting *beside* the row's state note
+per §12.2, with the button's `aria-describedby` composing both ids (R6's id is already there). **Every
+string in §6.11 is channel-independent**: the copy does not change, only its home. One constraint from
+`ui-reference.md:2386`: if that note becomes a live region, `DevCategory`'s single announcer must not
+also fire for the same event or AT queues two utterances — **recommendation: keep the announcer live and
+leave the note description-only.**
+
+Not specced here because it changes a component, which is outside this task's copy mandate. **Needs the
+orchestrator's call and its own increment.**
+
+#### 6.11.7 Supersessions, the noun NIT, and test impact
+
+**Superseded / amended** — per the convention, the old passages stay readable with a pointer:
+
+| Passage | Status |
+|---|---|
+| §6.8 R5's **Announcement** column (both rows) | **SUPERSEDED by §6.11.1** — the announcement equals the toast |
+| §6.10 R10's sentence *"The announcement is each row minus the ` — {it/they} may be open in another program` clause, matching the existing pattern."* | **SUPERSEDED by §6.11.1** |
+| §6.10 R10's three-row failure table and its `file` noun | **CONDITIONALLY SUPERSEDED by §6.11.4** — R10 stays the live spec until `failedLogs`/`failedExports` ship |
+| §6.8 R5's NIT (*"Append `Try again.` … in the `failedFiles > 0` path only"*) | **AMENDED by §6.11.2 R13a** — it attaches wherever `metricsCleared` is false. R5 did not consider the success-shaped path, which `metrics_purge.rs:52-57` makes reachable |
+| §6.8 R5's `logParts === 0` **Toast** column | **AMENDED by §6.11.2 R13b** — the freed clause is omitted when `deletedBytes === 0`, and when the usage clause is the not-cleared form |
+
+**Not** superseded, and unchanged: §6.4 in full; §6.10 R8, R9 and R11; the `{usage}` clause wording;
+`deleteErrorText` and `Nothing was deleted.` (the thrown path).
+
+**Noun NIT — ratified, not changed.** The confirm dialog says `exported log archive{s}`
+(`DevConfirmDialogs.tsx:13`) and the outcome says `export{s}`. Deliberate: the dialog *defines* the
+object for a user who may not know what is in the exports folder, while the outcome *counts* it inside a
+compound sentence that already carries "log files", where the long noun pushes the toast past two lines
+for no gain. `ExportConfirmDialog` (`:105`) already uses the short plural. **Guard: the short noun is
+permitted only in the outcome sentence** — anywhere the object is introduced rather than counted, it is
+`exported log archive`.
+
+**Test impact — hand these to `tester`, not `senior-dev` alone** (R10's rule: assertions cement copy,
+and the expected strings below are derived from each fixture, not guessed).
+
+Unconditional (R12/R13):
+
+| Assertion | Fixture | Breaks because | Replace with |
+|---|---|---|---|
+| `obsDeleteCounts.test.ts:123-124` | Dev OFF, `failedFiles 1`, not cleared | parity | `expect(t.announce).toBe(t.text)` |
+| `dev.test.tsx:173` | `deletedFiles 1, deletedMetrics 1` | parity | `expect(t.announce).toBe(t.text)` |
+| `dev.test.tsx:185` | `deletedFiles 3, deletedExports 2, deletedMetrics 1` | parity | `expect(t.announce).toBe(t.text)` |
+| `dev.test.tsx:254` | `deletedFiles 1, deletedMetrics 1, failedFiles 1` | parity | `expect(t.announce).toBe(t.text)` |
+| `dev.test.tsx:199-200` | `L 0, E 0, metricsCleared false, deletedMetrics 0` | R13a adds ` Try again.`; R13b drops the freed clause | `expect(t.text).toBe('Usage counts were not cleared. Try again.')`, `expect(t.announce).toBe(t.text)`, `expect(t.tone).toBe('error')` |
+| `dev.test.tsx:156` | rolled success | unaffected | keep |
+| `dev.test.tsx:151`, `:224`, `obsDeleteCounts.test.ts:58,81,100-102` | — | `toContain`/prefix matches survive | keep |
+
+Add **one invariant test** covering every fixture in the file: `expect(t.announce).toBe(t.text)`. It is
+two lines and it closes the class that took R5, R9, R10 and R12 to chase.
+
+Conditional (R14 only) — each of these asserts the generic `{F} file{s} could not be deleted` noun and
+must gain per-category fields in its fixture. Note the first one **changes meaning**: the mock's own
+comment says the failing file is the metrics one, which under R14 yields *no failure sentence at all*.
+
+| Assertion | Fixture today | Honest per-category fixture | Expected clause |
+|---|---|---|---|
+| `obsDeleteCounts.test.ts:100-101`, `:121` (a `toBe` on the whole string) | Dev OFF, `failedFiles 1`, metrics failed, nothing deleted | `failedLogs 0, failedExports 0` | no failure sentence; the whole string becomes `Usage counts were not cleared. Try again.` for both `text` and `announce`, tone `error` |
+| `dev.test.tsx:218` | `base`, `failedFiles 1`, not cleared | `failedLogs 1` (a held-open log part) | `1 log file could not be deleted — it may be open in another program.` |
+| `dev.test.tsx:240` | exports row, `failedFiles 1` | `failedExports 1` | `1 export could not be deleted — it may be open in another program.` |
+| `dev.test.tsx:252` | log held open | `failedLogs 1` | `1 log file could not be deleted — it may be open in another program.` |
+| `DevCategory.test.tsx:139` | `failedFiles 1`, `deletedFiles 4` | `failedLogs 1` | `1 log file could not be deleted` |
+| `dev.test.tsx:219` (`not.toContain('of 5')`) | — | — | keep: `X of Y` stays rejected (§6.11.4) |
+
+`obsDeleteCounts.test.ts:107-124`'s Dev-OFF guard keeps its point under R14 and gets stronger: assert
+`not.toContain('log file')` with `failedLogs: 0`, which is now structurally guaranteed.
+
+#### 6.11.8 Acceptance criteria
+
+1. `deleteResultToast` returns `announce` byte-identical to `text` for every input; an invariant test
+   asserts it across all fixtures.
+2. `tone` is `error` whenever `metricsCleared === false`, including when no file failed.
+3. No string contains `0 B freed`, and no failure sentence is followed by a freed clause.
+4. With `?obsMetricsUnreadable=1` the harness shows an **error**-toned `Usage counts were not cleared.
+   Try again.` and the same text in the live region.
+5. A user with **no log files on disk** (`totalFiles === 0` — which is not the same as Dev mode off,
+   since logs outlive the toggle) can produce no string containing `log file`, with and without a
+   forced failure.
+6. *(R14 only)* The failure sentence names the true category, is absent for a metrics-only failure, and
+   `failedFiles` is read by no string.
+
 **The unknown (`info === null`) state cannot be seen in the harness — USER CHECKPOINT or a new
 fixture flag.** Nothing in `src/ipc/mock/handlers/obs.ts` ever fails `logSessionInfo`; it returns a
 zero-filled record when Dev mode is off and never throws, so neither R8a's hint nor R8b's archives

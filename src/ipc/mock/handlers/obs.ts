@@ -20,6 +20,12 @@ import type {
 } from '../../types';
 import { delay, query } from '../repoState';
 import { readUiSettings } from '../persistence';
+import {
+  DELETE_THROW_MESSAGE,
+  deleteFailMode,
+  deleteOutcome,
+  logFixtureState,
+} from '../obsLogFixture';
 import { installLogDump, ringAnomalies, ringAppend, ringClear, ringStats } from '../obsRing';
 
 installLogDump();
@@ -125,9 +131,6 @@ const MOCK_DIR = '/mock/config/com.bonsai.app/logs';
 /** §6.2: exports are a SIBLING of logs/, never inside it. */
 const MOCK_EXPORTS_DIR = '/mock/config/com.bonsai.app/exports';
 const MOCK_SESSION_FILE = 'bonsai-2026-08-27T14-03-11-smock0001.jsonl';
-/** §6.8 R7 — the on-disk size of the fixture's single `usage.json`, so the
- *  delete toast's "N freed" traces to fixture state instead of a magic number. */
-const MOCK_USAGE_BYTES = 4_096;
 
 export const obsHandlers = {
   async logAppend(records: LogRecord[]): Promise<void> {
@@ -156,6 +159,11 @@ export const obsHandlers = {
     const dev = readUiSettings().dev;
     const { records, dropped } = ringStats();
     const redaction = dev.includeRawNames ? 'raw' : 'strict';
+    // ~180 bytes per JSONL line is what a real strict-mode record measures.
+    // §6.11.5: `?obsLogFiles=N` / `?obsExports=N` drive BOTH this read and the
+    // delete, from one fixture, so the reported and the deleted counts cannot
+    // disagree.
+    const state = logFixtureState(dev.enabled, records * 180);
     if (!dev.enabled) {
       return {
         sessionId: '',
@@ -167,22 +175,24 @@ export const obsHandlers = {
         dropped: 0,
         redaction,
         salt: '',
-        totalFiles: 0,
-        totalBytes: 0,
+        // Log files OUTLIVE the toggle: `?obsLogFiles=3` with Dev mode off is a
+        // real state, and the row hint / confirm dialog must count it.
+        totalFiles: state.logFiles,
+        totalBytes: state.logBytes,
         droppedParts: 0,
         writeFailed: false,
-        exportFiles: 0,
-        exportBytes: 0,
+        exportFiles: state.exportZips,
+        exportBytes: state.exportBytes,
       };
     }
-    // ~180 bytes per JSONL line is what a real strict-mode record measures.
-    const bytes = records * 180;
     const truncated = query('obsTruncated') === '1';
     return {
       sessionId: 'smock0001',
       dir: MOCK_DIR,
-      files: [MOCK_SESSION_FILE],
-      bytes,
+      // `?obsLogFiles=0` with Dev mode ON is §6.11.8 AC5's state: records live in
+      // the ring, nothing flushed to disk yet, so there is no part to name.
+      files: state.hasActivePart ? [MOCK_SESSION_FILE] : [],
+      bytes: state.activePartBytes,
       records,
       anomalies: ringAnomalies().length,
       // §16.8 independence proof: the `dev-truncated` fixture forces a nonzero
@@ -191,58 +201,52 @@ export const obsHandlers = {
       dropped: truncated ? Math.max(dropped, 42) : dropped,
       redaction,
       salt: MOCK_SALT,
-      totalFiles: 1,
-      totalBytes: bytes,
+      totalFiles: state.logFiles,
+      totalBytes: state.logBytes,
       // §6.3: a truncated session (`?obsTruncated=1`) exercises the Dev-page cap
       // warning; the default session is untruncated.
       droppedParts: truncated ? 3 : 0,
       // §8.4/§16.9: `?obsWriteFail=1` drives the "Not writing" disk-error state.
       writeFailed: query('obsWriteFail') === '1',
       // §6.2: exports live in <config>/exports and are inside the delete scope.
-      exportFiles: 0,
-      exportBytes: 0,
+      // §6.11.5: `?obsExports=N` is what makes every export-bearing string —
+      // the outcome's " and N exports" clause and the confirm dialog's
+      // "This includes N exported log archives." — reachable in a browser.
+      exportFiles: state.exportZips,
+      exportBytes: state.exportBytes,
     };
   },
 
   async logsDeleteAll(): Promise<LogsDeleteResult> {
     await delay(80);
-    // §6.8 R7: the counts are DERIVED from the same fixture state `logSessionInfo`
-    // reports, never hard-coded. Fixed numbers made the harness show "Deleted 3
-    // log files and 1 export" to a user with none — the harness contradicting the
-    // copy it exists to verify — and that fiction is what hid §6.8 R5's
-    // `logParts === 0` branch from view for an entire increment.
+    // §6.8 R7 / §6.11.5: the counts are DERIVED from the same fixture state
+    // `logSessionInfo` reports, never hard-coded. Fixed numbers made the harness
+    // show "Deleted 3 log files and 1 export" to a user with none — the harness
+    // contradicting the copy it exists to verify — and that fiction is what hid
+    // §6.8 R5's `logParts === 0` branch from view for an entire increment.
     const dev = readUiSettings().dev.enabled;
+    // §6.11.5 — `?obsDeleteFail=throw` reaches the THROWN path (`deleteErrorText`
+    // plus "Nothing was deleted."), which no harness flag could reach before.
+    // It returns FIRST, before the ring and the aggregate are touched: on every
+    // reachable backend rejection zero files were removed and the usage counts
+    // were never cleared (`obs_delete.rs`'s all-or-nothing note), and a mock that
+    // wiped them here would make that announcement a lie.
+    if (deleteFailMode() === 'throw') throw new Error(DELETE_THROW_MESSAGE);
     // Read the ring BEFORE clearing it: these are the bytes being reclaimed.
-    const logFiles = dev ? 1 : 0; // `logSessionInfo`: one file while Dev is on.
-    const logBytes = dev ? ringStats().records * 180 : 0;
-    const exportZips = 0; // the fixture's `exportFiles` is 0 in both states.
+    const state = logFixtureState(dev, ringStats().records * 180);
+    const result = deleteOutcome(state, dev);
     // Mirrors the backend: purging clears every prior record. The ring is the
     // mock's on-disk stand-in, so emptying it is the roll-then-purge equivalent.
     ringClear();
-    // §6.1 mock spec: `?obsDeleteFail=1` drives the `failedFiles > 0` warning
-    // copy path. The file that fails is the METRICS one (matching the F6 contract's
-    // `failedFiles: 1, deletedMetrics: 0, metricsCleared: false`), so the log half
-    // still reports whatever the fixture actually had.
-    const failed = query('obsDeleteFail') === '1';
-    // §F6: the delete now covers the usage counts too, and clearing the fixture is
-    // the mock's half of the in-memory reset — without it a following
+    // §F6: the delete covers the usage counts too, and clearing the fixture is the
+    // mock's half of the in-memory reset — without it a following
     // `metricsSnapshot()` would still return the aggregate the toast just claimed
-    // was cleared, which is exactly the "button does nothing" failure.
-    if (!failed) mockMetrics = emptyMetrics();
-    const metricsFiles = failed ? 0 : 1;
-    return {
-      // Log parts + export zips + metrics files, exactly as the backend counts it.
-      deletedFiles: logFiles + exportZips + metricsFiles,
-      deletedBytes: logBytes + metricsFiles * MOCK_USAGE_BYTES,
-      failedFiles: failed ? 1 : 0,
-      // Dev ON ⇒ logging rolls into a fresh file; Dev OFF ⇒ nothing to continue.
-      activeFile: dev ? 'bonsai-2026-08-27T14-05-52-smock0001.jsonl' : null,
-      rolled: dev,
-      deletedExports: exportZips,
-      // One `usage.json`, counted INSIDE `deletedFiles` like an export zip.
-      deletedMetrics: metricsFiles,
-      metricsCleared: !failed,
-    };
+    // was cleared, which is exactly the "button does nothing" failure. Reset even
+    // when `metricsCleared` is false: `metrics_clear.rs` replaces the in-memory
+    // file FIRST and only then touches the disk, so a failed on-disk half still
+    // leaves an empty aggregate behind.
+    mockMetrics = emptyMetrics();
+    return result;
   },
 
   async logRevealDir(): Promise<void> {
