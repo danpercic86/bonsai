@@ -100,7 +100,7 @@ instruction. Curator-verified 2026-09-14: `dev` = `origin/dev` = `8b88efd`, and
    `P91-F6-usage-retention.md`. **But see the observation above** — the tree suggests it started.
 3. **P77 — trigger `list_tag_sync` on auto-fetch completion** (ruling #11). Design settled.
 4. **The e2e cold-timing MEASUREMENT** (ruling #9 — measure and report, **do NOT flip**).
-5. **The UNC / `\\wsl$` `canonicalize` check** on `216ca45` — ship-blocker.
+5. ~~**The UNC / `\\wsl$` `canonicalize` check** on `216ca45` — ship-blocker.~~ **CLEARED 2026-09-14** by a real UNC probe; `\\wsl$` and OneDrive placeholders remain untested — see the section below.
 6. **`h_ai` stub isolation** — until then run that binary with `--test-threads=1`.
 
 ### Four USER ACTIONS — only the user can clear these
@@ -333,13 +333,35 @@ The rulings are in the two ledgers above; the contracts are on disk and indexed 
   `const BUNDLE = process.env.E2E_BUNDLE !== '0'`, plus inverting `--e2e-bundle` in `gate.mjs`.
   Bundle mode is equally green and higher-fidelity (P103 was visible only there). Context: Part 48.
 
-### ⚠️ UNC / `\\wsl$` `canonicalize` — a ship-blocker on `216ca45`, unverified
+### ✅ UNC `canonicalize` — ship-blocker on `216ca45` CLEARED by measurement 2026-09-14
 
-`stage_paths` now inherits `ensure_within_workdir`'s **`fs::canonicalize(workdir)`** dependence —
-pre-existing for `discard` / `stage_partial` / `conflict`, **newly extended to the highest-traffic
-write primitive**. On a UNC, `\\wsl$` or cloud-placeholder (OneDrive) workdir a canonicalize failure
-becomes `AppError::Io` and **refuses EVERY stage, including from the UI.** Not reproducible on this
-host's `D:\Data\Repos` layout. **Check before this ships.** Review: archive Part 66.
+`stage_paths` inherits `ensure_within_workdir`'s **`fs::canonicalize(workdir)`** dependence —
+pre-existing for `discard` / `stage_partial` / `conflict`, newly extended to the highest-traffic
+write primitive. The auditor's concern was that on a UNC, `\\wsl$` or cloud-placeholder workdir a
+canonicalize failure becomes `AppError::Io` and **refuses EVERY stage, including from the UI.**
+
+**Tested for real**, not reasoned about: a standalone replica of `ensure_within_workdir` (an exact
+copy of the function as of `d46c98e`) run against a real UNC workdir via the `\\localhost\D$` admin
+share.
+
+| Case | Result |
+|---|---|
+| Drive workdir (control) | OK — `canonicalize` yields the `\\?\D:\…` long-path form |
+| **UNC workdir, normal file** | **OK** — `canonicalize` yields `\\?\UNC\localhost\D$\…` |
+| UNC, nested existing dir | OK |
+| UNC, not-yet-created dir | OK — the walk-up loop terminates correctly |
+| UNC, `../outside.txt` escape | **correctly REFUSED** |
+
+`canonicalize` **succeeds** on UNC, and both `base` and `real` come back in the same `\\?\UNC\` form,
+so `starts_with` compares consistently — the guard neither fails open nor fails
+closed-on-everything, which was the actual worry.
+
+**Honest limits of this check:** `\\wsl$` could **not** be tested (WSL is not installed on this host
+— `Test-Path` on it returns false), and **cloud placeholders (OneDrive) were not tested**. Both go
+through the same `canonicalize` call that UNC now demonstrably survives, so the *mechanism* is
+exercised — but neither path is empirically confirmed, and this entry should not be read as saying
+otherwise. The probe is kept at `D:\Data\Temp\claude\unc-test\unc_check.rs` for whoever has such a
+host. Original review: archive Part 66.
 
 ---
 
