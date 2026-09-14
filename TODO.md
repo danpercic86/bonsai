@@ -871,6 +871,51 @@ included — proved only that a string was in the DOM. Going forward: **a claim 
 *visible* or *clickable* needs `elementFromPoint`, computed style, or bounding boxes. Text
 extraction cannot support it.**
 
+### 🆕 P113 — Settings inline notes (ruling #24). CONTRACT SIGNED 2026-09-14, implementation in flight
+
+`docs/contracts/P113-settings-inline-notes.md` (new) + `ui-reference.md` **§12.14** "Outcome notes —
+the Settings surface has no toasts (SIGNED 2026-09-14)". §12.13's two old bullets at `:2377-2390`
+became a pointer to it, since they were cross-section rules living inside the P112 picker section.
+**No new tokens.**
+
+**The design question I flagged got a better answer than the one I framed.** I asked whether success
+outcomes should get an inline note, stay as toasts, or something else. The decisive argument turned
+out to have nothing to do with the scrim: **`deleteResultToast` computes `tone` at runtime**, so one
+button press yields `success` or `error` — routing by tone would put the result of a single action in
+**two different places on screen depending on what the backend returned.** So: one component, two
+tones, and the success variant is deliberately quieter (`.settings-row-note--result`, `--text-1` ink,
+no tint, no bar, no `role`). A `--success` tint was rejected as new chrome, louder than the row's own
+state note, for the least consequential four of the ten.
+
+**Two Dev slots, not five** — all three Dev actions are `anyBusy`-gated so they cannot collide.
+**Row 8 (remove-host failure) goes in `.dialog-error`, not a row note**, because `confirmRemove`'s
+failure branch never clears `removeTarget`, so its confirm dialog stays open — a row note would have
+sat behind a **second** overlay, reproducing the defect one layer up. Live regions: DevCategory keeps
+the **one** it has; Accounts gains **one**; row 8 announces via the dialog's own `role="alert"` and
+the section announcer stays silent.
+
+**A live a11y bug this uncovered, fixed in passing:** a live region does **not** re-fire on an
+identical string. Export twice and React skips the identical state, so **the second outcome is
+announced silently — today, in shipped code.** The sweep would have carried it forward; `begin(key)`
+now clears the announcer to `''` at operation start. Relatedly the reveal failure sets **no**
+announcement at all today (toast-only), so inline-only would have made it visible-only — adding one
+is a MUST in the contract.
+
+**SEQUENCING CONSTRAINT — do not lose this.** P112 **sub-inc 4** references
+`.settings-row-note--warn`, which has **no CSS until P113 lands**. Either land P113 first, or
+sub-inc 4 must carry the recipe itself.
+
+**P113 residuals, each independently deferrable:**
+- **`P113-F1-accounts-error-copy` (own increment):** rows 6-8 append **raw `errorMessage(e)`** to a
+  mapped lead — raw backend text, now **permanent instead of transient**. Mapping it needs the
+  backend error-kind inventory, so P113 renders verbatim with `overflow-wrap: anywhere`.
+- **Recorded, not fixable by lint:** a toast raised by a **background** event while Settings is open
+  is equally invisible, and no lint rule can catch that. Deliberately changing no z-index.
+- **NIT, deliberately not done:** `DevToast` / `deleteResultToast` / `devDeleteToastRows.test.ts`
+  become misnomers. Renaming churns two test files for no behaviour change; the lint guard covers the
+  real risk. But the comments at `DevCategory.tsx:111-114` and `:119-120` that *assert* toast
+  behaviour are being corrected in place.
+
 ### 🆕 NEW 2026-09-14 — "Open in editor" is broken on Windows, and it is MEASURED
 
 Uncovered by P112 sub-inc 1's ladder work; **not a P112 bug — it is in shipped code.** Routed to
