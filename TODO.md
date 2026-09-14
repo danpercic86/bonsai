@@ -943,6 +943,82 @@ sub-inc 4 must carry the recipe itself.
   real risk. But the comments at `DevCategory.tsx:111-114` and `:119-120` that *assert* toast
   behaviour are being corrected in place.
 
+### ✅ SECURITY AUDIT of sub-inc 2 — "unrepresentable, not rejected" HOLDS. No CRITICAL/HIGH/MEDIUM.
+
+**The property, in one sentence a reviewer can check a diff against** (keep this verbatim — it is the
+whole point of P112):
+
+> Every renderer-reachable write to `settings::Settings` funnels through
+> `commands::ui_settings::apply_patch`, whose input type `UiSettingsPatch` has **no field able to
+> carry a path**, and whose two `String` fields are never stored — they are replaced by a
+> `&'static str` catalog literal via `coerce_tool_id`.
+
+**Three NON-TYPE facts it also rests on, each silently breakable by a refactor:**
+- **(a) `src-tauri/capabilities/default.json` grants NO `fs:` permission** (only `core:default`,
+  `dialog:allow-open`, `updater:default`, `process:default`). **Adding any `fs:` write permission
+  scoped to the app config dir would defeat P112 entirely without touching a single line of Rust.**
+  That is the cheapest way to lose this property and it would not show up in any Rust review.
+- **(b)** `ui_settings_of` is the only outbound mapper for these fields, and `tool_scan` /
+  `DetectedTool.detail` — the one DTO *designed* to carry a browsed path outbound — **has no
+  `#[tauri::command]` wrapper yet**, so the path does not leave the backend at all today.
+- **(c)** `catalog::find` is an exact `e.id == id` with **no trim, case-fold or prefix match**, so
+  there is no normalisation step that could echo a caller substring into the stored value.
+
+**A framing correction worth keeping:** the implementer cited the **absence** of
+`deny_unknown_fields` as *protective*. It is **neutral** for security — with or without it, no field
+exists to write. What the absence actually buys is **availability**: an injected key cannot make
+`set_ui_settings` return `Err` and wedge the settings writer's merge-and-requeue loop, so it cannot
+spoil the legitimate keys riding in the same patch.
+
+**The single most load-bearing artifact in the increment** is the exhaustive 36-field destructure with
+**no `..`** — a new field on the patch type becomes a **compile error**, which is what blocks a
+future `#[serde(flatten)]` catch-all.
+
+**Trust boundary, stated once so nobody later reads it as a gap:** a **hand-edited `settings.json`**
+carrying `customEditorPath` **is honoured**, deliberately and in scope. The property is scoped to *a
+**renderer-written** program path is unrepresentable*; someone who can edit `settings.json` can
+equally replace the binary it names.
+
+### 🐞 LOW — my AMEND-6 "detection is provably unmoved" argument is FALSE (verified by me)
+
+I wrote that the new `unc_share` arm "requires two leading separators, which makes `is_unc` true", so
+`locally_absolute = !is_unc && is_absolute_for` stays `false`. **The two predicates disagree on
+separator HOMOGENEITY**, and I checked the source myself:
+- `is_unc` (`custom.rs:100-106`) matches **only** `(`\\`)` or `(`//`)` — both the same character.
+- the new `unc_share` arm (`custom.rs:174-177`) matches `(Some('\' | '/'), Some('\' | '/'), Some(c))` — **any mix**.
+
+So for `\/server\share\Code.exe`: `is_unc` → **false**, `is_absolute_for(Windows)` → **true** via the
+new arm, therefore `locally_absolute` → **true**, where it was `false` at HEAD. **Detection moved.**
+Win32 normalises `/` to `\` before classifying a prefix, so both mixed spellings are genuine UNC.
+
+Impact is bounded and **outside the stated threat model** — it needs control of `PATH`, an HKCU
+`App Paths` default, or a `WinFolder` env var, i.e. local code execution already. The consequence is
+an **unbudgeted SMB stat**: `SCAN_REG_BUDGET` bounds *registry* time only, so a blackholed host
+stalls the scan for the full TCP/SMB timeout on exactly the `WinFolder`/`AppPaths` rungs where this
+check was the thing preventing the stat.
+
+**It is worth fixing anyway because the falsified claim is load-bearing for the next change** —
+`custom.rs:96-99` and `detect.rs:192-199` both tell a future reader that `is_unc` is what keeps
+detection refusing shares, and that is now false for two input shapes. The test meant to pin it
+(`custom_tests.rs:95-110`) exercises only the homogeneous forms, so it passes while the invariant is
+broken. **Fix at the right layer:** broaden `is_unc` to accept heterogeneous separators, as
+`is_device_prefix` already does and as Win32 classifies. **Do NOT tighten `unc_share`** — accepting
+mixed separators there is correct, since a dialog can legitimately return either spelling.
+
+### ⚠ TWO FORWARD REQUIREMENTS FOR SUB-INC 3 — do not discover these late
+
+1. **`pick_external_tool` must call `validate_custom_program` inside `spawn_blocking`.** Now that
+   AMEND-6 accepts shares, `path.is_file()` / `is_mac_bundle` can block on a disconnected SMB host
+   for the full timeout, and a synchronous call **would freeze the Tauri command loop**. There is no
+   call site yet, so there is nothing to fix — only something to get right the first time.
+2. **Observability capture is a privacy decision waiting to happen.** `obs/record.rs:207` has an
+   optional raw-payload capture and **`setUiSettings`/`getUiSettings` are both already in the
+   captured-command list** (`obs/metrics_cmds.rs:130,209`). No tool path can ride either payload
+   today. The moment `pick_external_tool` returns a browsed path and `tool_scan` returns
+   `DetectedTool.detail`, those become commands whose payload contains a **filesystem path written to
+   a log file on disk under dev mode.** Decide then whether they stay in the capture set — this is
+   the same class P91's home-masking work existed to handle.
+
 ### 🚨 DECOMPOSITION ERROR (mine) — P112's DTO change is split across two sub-increments
 
 **P112 sub-inc 2 is implemented and under review** (bonsai-core 1114, bonsai 543, workspace nextest
