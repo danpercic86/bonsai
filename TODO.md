@@ -121,23 +121,45 @@ bookkeeping complaint — and it is the direct consequence of my batching.
 routed; review the fix against a small diff. The nine files above should get a targeted second pass
 before this branch is considered done.
 
-# ⚠ THE P112 BRIDGE IS IMPLEMENTED — the merge block lifts when it COMMITS, not now
+# ✅ MERGE BLOCK LIFTED — full 8-step gate GREEN at `dcff54b`, 454.0s, exit 0
 
-**The window is closed in the working tree, not yet in history.** `rg -n "terminalCommand|editorCommand"
-src/ e2e/` → **0 hits** across 21 files, `SettingsExternalToolsSection.tsx` deleted, and the Rust
-`P112_KEYS_IN_TRANSIT` exemption + its forcing test are deleted too — **the cross-boundary oracle is
-TOTAL again and it passed first time**, confirming Rust's `terminalTool`/`editorTool` match the
-TypeScript defaults key-for-key.
+**2026-09-14. The first gate run since the bridge, and therefore the first that measures the
+application rather than the mock.** All 8 steps, zero FAIL lines:
 
-**These two halves MUST land in ONE commit.** At HEAD the defaults JSON still carries the legacy keys,
-so committing the Rust deletion alone leaves the parity test failing. That is the same lesson that
-caused the problem: **a DTO change lands both halves together or not at all** — and the fix for the
-decomposition error has to be atomic for exactly the reason the error happened.
+| step | time | result |
+|---|---|---|
+| `cargo nextest` | 165.6s | **2564 passed, 10 skipped, 0 leaky** |
+| `cargo test --doc` | 3.5s | pass |
+| `cargo clippy` | 15.3s | pass |
+| eslint | 12.9s | pass |
+| file-size ratchet | 0.66s | pass |
+| vitest | 56.4s | **2906 passed, 260 files** |
+| tsc + vite build | 13.8s | pass |
+| playwright e2e | 185.9s | **185 passed, 1 skipped** |
 
-**Current step:** the combined TypeScript increment (P113 A1/A2/A3/A5 + the bridge) is **under
-review**; the Rust exemption deletion is staged alongside it. On approval, both commit together and
-the merge block lifts. **Only then is a full 8-step gate worth running** — before the bridge, every
-frontend tier measured the mock rather than the app.
+Against the `b53618a` baseline (461.9s): Rust **2467 → 2564** (+97), vitest **2848 → 2906** (+58),
+e2e unchanged at 185, and the whole gate **7.9s FASTER** despite 155 more tests.
+
+**Be precise about what this green does and does not establish.**
+- It **does** establish that the cross-language DTO is consistent again: the parity oracle is total,
+  with no exemption, and it passed first time.
+- It **does not** establish that the native app is correct. **P112 deleted the External-tools UI
+  rows**, so Settings → General now has two groups where it had three. That is a **USER CHECKPOINT**
+  — the orchestrator cannot confirm the native window, and must not self-confirm it.
+- The e2e tier ran in **dev-server** mode (the `playwright.config.ts` default), so the new DEV-only
+  toast guard **existed** for this run. Under `E2E_BUNDLE=1` it is compiled out by Vite's static
+  replacement of `import.meta.env.DEV`, so a bundle-mode run is **not** protected by it.
+- **0 leaky this run**, where the earlier rust-tier run reported 1
+  (`external_spawn::detached_spawn_ignores_nonzero_exit`). Leakiness there is **intermittent**, which
+  fits a detached child's timing rather than a defect.
+
+**Next unit of work: P112 sub-increment 3** — `pick_external_tool` + the native Browse dialog + the
+§7 deletions. Two forward requirements are already recorded and must not be rediscovered: the browse
+validation has to run **inside `spawn_blocking`** (it can now stat a disconnected SMB share and would
+freeze the command loop), and `setUiSettings`/`getUiSettings` are **already in the observability
+capture list**, so returning a browsed path makes a filesystem path something dev mode writes to
+disk. Then sub-inc 4, the picker UI — which **must** land `ui-reference.md`'s `--warn` recipe
+dependency and restore the General subtitle clause.
 
 Branch `feat/post-p91-rulings` is UNPUSHED and **stays that way — ruling #25, do not raise it again.**
 
