@@ -665,9 +665,43 @@ control/bidi stripped, truncated) and is never renderer-supplied.
 >   the user names one exact file. The network cost is paid once, knowingly.
 >
 > **What this changes in code:** `custom::is_absolute_for` and the UNC arm of the 5.4 validation must
-> accept `\\server\share\...` and `//host/share/...`. `looks_absolute` is **unchanged** -- do not "unify"
-> the two predicates on the grounds that they now disagree; they disagree *on purpose*, and the
-> disagreement IS the ruling.
+> accept `\\server\share\...` and `//host/share/...`. Do not "unify" the two predicates on the
+> grounds that they now disagree; they disagree *on purpose*, and the disagreement IS the ruling.
+>
+> ### AMEND-7 (orchestrator, 2026-09-14) — the clause above claimed the detection predicate was
+> "unchanged". That was FALSE.
+>
+> **A `reviewer` and a `security-auditor` found this independently, and I verified it myself.** The
+> claim rested on "anything the new `unc_share` arm admits also makes `is_unc` true". It did not:
+> `is_unc` matched only **homogeneous** separator pairs (`\\` or `//`), while `unc_share`
+> matches **any mix**. So `\/server\share\Code.exe` made `is_unc` false and
+> `is_absolute_for` true, so detection newly admitted a share path it had refused — an **unbudgeted
+> SMB stat** on exactly the `WinFolder`/`AppPaths` rungs where that check was the thing preventing
+> one. Win32 treats `/` and `\` interchangeably when classifying a path prefix, so both mixed
+> spellings are genuine UNC.
+>
+> **The invariant this ruling's asymmetry actually rests on, stated so a diff can be checked against it:**
+>
+> > **`unc_share(v)` ⇒ `is_unc(v)`.** Detection is `!is_unc && is_absolute_for`; browse is
+> > `!is_device_prefix && is_absolute_for`. The asymmetry is sound **only** while every value the
+> > share arm admits is also seen as UNC by `is_unc`.
+>
+> `is_unc` is therefore now `(Some('\' | '/'), Some('\' | '/'))` — matching what `is_device_prefix`
+> already did, and what Win32 does. **This is NOT the forbidden re-unification:** `browsable_root`
+> never consults `is_unc`, so the two call sites still diverge exactly as ruled. Pinned by all four
+> separator pairs in `custom_tests.rs` and both mixed spellings in `detect_tests.rs`, and both new
+> cases were verified to **fail before the widening and pass after** — necessary evidence, because
+> the pre-existing homogeneous-only cases passed while the invariant was broken.
+>
+> **Accepted consequence:** `is_unc` is OS-agnostic, so on unix `/\opt/bin/x` is now a detection
+> refusal where it was a candidate. Left OS-agnostic deliberately — it matches `is_device_prefix`
+> (`//?/...` is already refused on unix), no unix ladder or realistic `PATH` entry produces that
+> spelling, and an `os` parameter would add a third predicate variant for no benefit.
+>
+> **Still outstanding:** `external_cmd.rs:150` carries an **identical homogeneous-only `is_unc`**.
+> It is unreachable from the app today (`commands/external.rs` reads the legacy fields, which
+> `load_from` now always clears) but reachable from `bonsai-core`'s API and tests. §7 moves those
+> four helpers into `tools/mod.rs`, so **sub-inc 3 widens it there rather than patching it twice.**
 >
 > **Still refused on the browse path:** `\\?\` and `\\.\` device prefixes (not shares -- device
 > namespaces, and nothing a file dialog returns), plus every other rule in the table above, including

@@ -169,7 +169,10 @@ fn concurrent_updates_of_disjoint_fields_all_survive() {
                     update(&file, |s| match writer {
                         0 => s.pane_widths.sidebar = SIDEBAR_MIN + (i % 10),
                         1 => s.mcp_token = Some(format!("token-{i}")),
-                        2 => s.editor_command = format!("editor-{i}"),
+                        // P112: `editor_command` no longer persists
+                        // (`skip_serializing`), so the payload moved to the
+                        // id key it was replaced by.
+                        2 => s.editor_tool = format!("editor-{i}"),
                         _ => s.active_repo = Some(format!("repo-{i}")),
                     })
                     .expect("update settings");
@@ -185,7 +188,7 @@ fn concurrent_updates_of_disjoint_fields_all_survive() {
     let loaded = load_from(&file);
     assert_eq!(loaded.pane_widths.sidebar, SIDEBAR_MIN + (last % 10));
     assert_eq!(loaded.mcp_token.as_deref(), Some(format!("token-{last}").as_str()));
-    assert_eq!(loaded.editor_command, format!("editor-{last}"));
+    assert_eq!(loaded.editor_tool, format!("editor-{last}"));
     assert_eq!(loaded.active_repo.as_deref(), Some(format!("repo-{last}").as_str()));
     assert!(!any_tmp_left(dir.path()));
 }

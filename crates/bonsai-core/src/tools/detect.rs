@@ -195,8 +195,16 @@ fn trim_quotes(value: &str) -> &str {
 /// ([`SCAN_REG_BUDGET`]) for every rung on the machine, and a picker that comes
 /// up empty on a slow VPN is worse than one that omits a share install. A
 /// single shared predicate would make that divergence unrepresentable — so the
-/// decision lives at this call site. Today both sides still refuse UNC; the
-/// split is what lets the browse side change alone.
+/// decision lives at this call site. The browse side has since taken the
+/// relaxation ([`super::custom::browsable_root`] accepts shares); this side
+/// still refuses them, via [`super::custom::is_unc`].
+///
+/// **What keeps the relaxation out of here is one invariant, not the split
+/// itself:** `is_unc` must match every separator pair
+/// [`super::custom::is_absolute_for`]'s share arm admits, mixed spellings
+/// included. It did not until 2026-09-14 — `is_unc` took `\\`/`//` only while
+/// the share arm took any mix — so `\/server\share\Code.exe` was a hit here.
+/// Read both predicates together before touching either.
 ///
 /// **Which rungs this actually spares network I/O on:** `WinFolder` and
 /// `AppPaths` only — there the check precedes the stat. (`UnixFile` stats

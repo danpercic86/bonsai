@@ -14,7 +14,10 @@ use std::path::{Path, PathBuf};
 use crate::external::TargetOs;
 
 use super::catalog::Recipe;
-use super::custom::{display_label, synthesize_recipe, validate_custom_program, CustomKindShape};
+use super::custom::{
+    browsable_root, display_label, is_unc, synthesize_recipe, validate_custom_program,
+    CustomKindShape,
+};
 use super::ToolKind;
 
 const OSES: [TargetOs; 3] = [TargetOs::Windows, TargetOs::MacOs, TargetOs::Linux];
@@ -61,16 +64,65 @@ fn an_absolute_path_for_the_wrong_os_is_refused() {
 }
 
 #[test]
-fn unc_and_extended_length_roots_are_refused() {
+fn device_namespace_prefixes_are_refused_on_every_os() {
+    // Not shares — device namespaces, and nothing a file dialog returns
+    // (AMEND-6). `\\?\UNC\…` is the form `canonicalize` produces for a share;
+    // it is refused because nothing here canonicalizes, so a stored path only
+    // carries that shape if it was hand-written.
     for value in [
-        r"\\server\share\payload.exe",
-        "//host/share/payload",
         r"\\?\C:\tools\payload.exe",
+        r"\\.\C:\tools\payload.exe",
+        "//?/C:/tools/payload.exe",
+        "//./C:/tools/payload.exe",
+        r"\\?\UNC\server\share\payload.exe",
     ] {
         for os in OSES {
             assert!(refused(Path::new(value), os), "{value:?} must be refused");
         }
     }
+}
+
+/// AMEND-6 (user ruling #26): a UNC share is ACCEPTED by the browse path and
+/// still REFUSED by detection. The two can no longer share one table.
+///
+/// The accept half is asserted on `browsable_root` — the seam
+/// [`validate_custom_program`] consults — and not end-to-end, because no
+/// reachable share exists on a test host and the remaining rules (existence,
+/// `.exe`, exec bit) would refuse it for unrelated reasons. Same host-bound
+/// limitation, and same reason, as the `cfg`-split accept cases below
+/// (AMEND-5 item 6).
+#[test]
+fn a_unc_share_root_is_browsable_but_never_a_detection_hit() {
+    // Every separator pair Win32 accepts in a path prefix, not just the two
+    // homogeneous ones: the mixed spellings are exactly where the relaxation
+    // leaked into detection on 2026-09-14 (`is_absolute_for`'s share arm took
+    // any mix, `is_unc` matched only `\\`/`//`, so `\/server\share\x.exe` became
+    // a detection hit).
+    for value in [
+        r"\\server\share\payload.exe",
+        "//host/share/payload",
+        r"\/server\share\payload.exe",
+        r"/\server\share\payload.exe",
+    ] {
+        assert!(
+            browsable_root(TargetOs::Windows, value),
+            "{value:?} must be browsable on Windows"
+        );
+        // Detection's predicate keeps refusing it. This is the implication the
+        // divergence rests on — everything `is_absolute_for`'s share arm admits,
+        // `is_unc` matches — so detection's `!is_unc && is_absolute_for` cannot
+        // inherit the browse relaxation. If a later refactor "unifies" the two,
+        // this fails loudly — as does
+        // `detect_tests::a_unc_or_drive_relative_candidate_is_never_a_hit`.
+        assert!(
+            is_unc(value),
+            "{value:?} must still read as UNC for detection"
+        );
+    }
+    // Unix was never the moving half: `//host/share` starts with `/`.
+    assert!(browsable_root(TargetOs::Linux, "//host/share/payload"));
+    // …and the relaxation is scoped to shares, not to every double separator.
+    assert!(!browsable_root(TargetOs::Windows, r"\\?\C:\tools\payload.exe"));
 }
 
 #[test]

@@ -1,8 +1,11 @@
 //! T2 Area 1 — `set_ui_settings_patch` partial-update semantics, part 2:
-//! AI enable/consent, onboarding-seen, auto-check-updates, and external
-//! commands patches each mutate independently, leaving every other field
-//! untouched. Split out of `tests_ui_settings_patch.rs` (same contract) to
-//! keep both files under the file-size limit.
+//! AI enable/consent, onboarding-seen and auto-check-updates patches each
+//! mutate independently, leaving every other field untouched. Split out of
+//! `tests_ui_settings_patch.rs` (same contract) to keep both files under the
+//! file-size limit.
+//!
+//! The external-tool keys moved to `tests_ui_settings_external_tools.rs` when
+//! P112 replaced the free-text commands with coerced ids.
 
 use super::*;
 
@@ -153,81 +156,6 @@ fn set_ui_settings_patch_auto_check_updates_is_partial() {
         },
     );
     assert!(!s.auto_check_updates);
-}
-
-/// P49: `terminal_command`/`editor_command` patch independently — a `Some`
-/// overwrites, a `None` (including an empty/unrelated patch) leaves the
-/// stored value untouched, and `Some("")` explicitly resets to auto-detect.
-#[test]
-fn set_ui_settings_patch_external_commands_is_partial() {
-    let mut s = settings::Settings::default();
-    assert_eq!(s.terminal_command, "");
-    assert_eq!(s.editor_command, "");
-
-    // Only `terminal_command` changes; the editor + unrelated fields stay.
-    apply_patch(
-        &mut s,
-        UiSettingsPatch {
-            terminal_command: Some("wt".to_string()),
-            ..Default::default()
-        },
-    );
-    assert_eq!(s.terminal_command, "wt");
-    assert_eq!(s.editor_command, "");
-    assert_eq!(s.theme, ThemeChoice::default());
-
-    // Only `editor_command` changes; the terminal value is preserved.
-    apply_patch(
-        &mut s,
-        UiSettingsPatch {
-            editor_command: Some("code".to_string()),
-            ..Default::default()
-        },
-    );
-    assert_eq!(s.terminal_command, "wt");
-    assert_eq!(s.editor_command, "code");
-
-    // An unrelated patch does NOT clear either command.
-    apply_patch(
-        &mut s,
-        UiSettingsPatch {
-            theme: Some(ThemeChoice::Light),
-            ..Default::default()
-        },
-    );
-    assert_eq!(s.terminal_command, "wt");
-    assert_eq!(s.editor_command, "code");
-
-    // An empty patch is equally non-destructive.
-    apply_patch(&mut s, UiSettingsPatch::default());
-    assert_eq!(s.terminal_command, "wt");
-    assert_eq!(s.editor_command, "code");
-
-    // `Some("")` explicitly resets a command back to auto-detect.
-    apply_patch(
-        &mut s,
-        UiSettingsPatch {
-            terminal_command: Some(String::new()),
-            ..Default::default()
-        },
-    );
-    assert_eq!(s.terminal_command, "");
-    assert_eq!(s.editor_command, "code");
-
-    // 2026-09-11 (audit MEDIUM-2): `apply_patch` deliberately does NOT validate
-    // the shape — a value the LAUNCHER will refuse still persists verbatim. The
-    // settings writer merges every pending key into ONE patch and re-queues it
-    // on failure, so rejecting one key here would wedge every later settings
-    // write; the refusal belongs at the consumption point
-    // (`external_cmd::validate_command_setting`), where it names the setting.
-    apply_patch(
-        &mut s,
-        UiSettingsPatch {
-            editor_command: Some("powershell -c calc".to_string()),
-            ..Default::default()
-        },
-    );
-    assert_eq!(s.editor_command, "powershell -c calc", "stored as typed, refused at launch");
 }
 
 /// Spec-004: `graphFoldLinear` patches independently (camelCase on the wire)

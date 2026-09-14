@@ -69,6 +69,9 @@ mod tests_ui_settings_patch;
 mod tests_ui_settings_patch_flags;
 
 #[cfg(test)]
+mod tests_ui_settings_external_tools;
+
+#[cfg(test)]
 mod tests_ai_consent_gate;
 
 #[cfg(test)]

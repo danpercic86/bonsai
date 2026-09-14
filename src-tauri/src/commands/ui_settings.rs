@@ -2,6 +2,8 @@
 
 use super::shared::*;
 
+use bonsai_core::tools::{self, ToolKind};
+
 /// Combined UI settings surfaced to the frontend (P2 contract §2.2).
 ///
 /// NOT `Copy` since P44 added the `profiles` `Vec` — clone the Vec into the
@@ -52,11 +54,15 @@ pub struct UiSettings {
     pub auto_check_updates: bool,
     /// P44: named identity profiles (global).
     pub profiles: Vec<IdentityProfile>,
-    /// P49: terminal launch command template (`{path}` placeholder). Empty ⇒
-    /// per-OS auto-detect.
-    pub terminal_command: String,
-    /// P49: editor launch command template. Empty ⇒ auto-detect VS Code.
-    pub editor_command: String,
+    /// P112 §5.1: the selected terminal — `""` (auto ladder), a catalog id, or
+    /// the pseudo-id `"custom"`. **There is deliberately no `customTerminalPath`
+    /// / `customEditorPath` here or on [`UiSettingsPatch`]:** the browsed path
+    /// travels outbound only, once, as `DetectedTool.detail`, so a
+    /// renderer-written program path is unrepresentable rather than rejected
+    /// (§5.4 — and `set_ui_settings` has no field that could carry one).
+    pub terminal_tool: String,
+    /// P112 §5.1: the selected editor; same rules as [`Self::terminal_tool`].
+    pub editor_tool: String,
     // ---- P68 §8.3: streaming AI-run knobs. Each patches independently; see
     // `settings::Settings` for the per-field semantics and the two LOCKED
     // defaults (`aiHardCapSecs = 0` unbounded, `aiMaxBudgetUsd = 0.0` no cap).
@@ -130,10 +136,12 @@ pub struct UiSettingsPatch {
     /// P44: identity profiles — whole-array replace (like `pane_widths`); the
     /// frontend sends the entire list when any profile changes.
     pub profiles: Option<Vec<IdentityProfile>>,
-    /// P49: terminal launch command template; patches independently.
-    pub terminal_command: Option<String>,
-    /// P49: editor launch command template; patches independently.
-    pub editor_command: Option<String>,
+    /// P112 §5.1: the selected terminal id; patches independently and is
+    /// COERCED on write (§5.2) — anything that is not a catalog id, or
+    /// `"custom"` without a stored browsed path, becomes `""`.
+    pub terminal_tool: Option<String>,
+    /// P112 §5.1: the selected editor id; same coercion.
+    pub editor_tool: Option<String>,
     /// P68 §8.3: the ten streaming AI-run knobs, each patching independently of
     /// `graph` / `listView` / `panelDensity` and clamped on write by
     /// `clamp_ai_settings`.
@@ -240,11 +248,19 @@ pub(crate) fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     if let Some(profiles) = patch.profiles {
         s.profiles = profiles;
     }
-    if let Some(terminal_command) = patch.terminal_command {
-        s.terminal_command = terminal_command;
+    // P112 §5.2 — write-time COERCION, not validation: the settings writer
+    // merges pending keys into one patch and re-queues on failure, so a
+    // rejection here would wedge every later settings write. A pure catalog
+    // lookup cannot fail, so "the renderer wrote garbage" degrades to "nothing
+    // is selected" (⇒ the auto ladder). `"custom"` selects only a path the user
+    // already browsed to, which is why the stored path decides.
+    if let Some(v) = patch.terminal_tool {
+        let has = !s.custom_terminal_path.is_empty();
+        s.terminal_tool = tools::coerce_tool_id(&v, ToolKind::Terminal, has);
     }
-    if let Some(editor_command) = patch.editor_command {
-        s.editor_command = editor_command;
+    if let Some(v) = patch.editor_tool {
+        let has = !s.custom_editor_path.is_empty();
+        s.editor_tool = tools::coerce_tool_id(&v, ToolKind::Editor, has);
     }
     // P68 §8.3. Assigned raw, then clamped ONCE at the end (mirrors
     // `clamp_pane_widths` on write, but for ten top-level scalars): the clamp is
@@ -322,8 +338,8 @@ pub(crate) fn ui_settings_of(s: &settings::Settings) -> UiSettings {
         onboarding_seen: s.onboarding_seen,
         auto_check_updates: s.auto_check_updates,
         profiles: s.profiles.clone(),
-        terminal_command: s.terminal_command.clone(),
-        editor_command: s.editor_command.clone(),
+        terminal_tool: s.terminal_tool.clone(),
+        editor_tool: s.editor_tool.clone(),
         ai_idle_timeout_secs: s.ai_idle_timeout_secs,
         ai_hard_cap_secs: s.ai_hard_cap_secs,
         ai_max_turns: s.ai_max_turns,

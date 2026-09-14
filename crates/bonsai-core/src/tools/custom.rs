@@ -89,8 +89,20 @@ fn is_disallowed_char(c: char) -> bool {
     c.is_control() || bidi
 }
 
-/// A UNC / double-slash root (`\\server\share`, `//host/share`) — including the
-/// `\\?\` and `\\.\` device prefixes, which share the shape.
+/// A UNC / double-slash root (`\\server\share`, `//host/share`, and the mixed
+/// spellings `\/server\share` / `/\server\share`) — including the `\\?\` and
+/// `\\.\` device prefixes, which share the shape.
+///
+/// **Every separator pair, homogeneous or mixed**, because Win32 treats `/` and
+/// `\` interchangeably when it classifies a path prefix, and because this
+/// predicate must cover everything [`is_absolute_for`]'s share arm admits — see
+/// the invariant on that function. It matched only the homogeneous pairs until
+/// 2026-09-14, which let a mixed-separator share through DETECTION.
+///
+/// Deliberately OS-agnostic, exactly like [`is_device_prefix`]: a unix path
+/// starting `/\` now reads as UNC too. A directory literally named `\opt` is
+/// not something the unix ladders or a `PATH` entry produce, and keeping this a
+/// one-line shape test is worth more than that case.
 ///
 /// **Shape only: this says nothing about whether such a path is refused.** That
 /// is each caller's decision, and the two callers deliberately disagree — see
@@ -99,10 +111,39 @@ fn is_disallowed_char(c: char) -> bool {
 /// accept shares, detection keeps refusing them.
 pub(super) fn is_unc(value: &str) -> bool {
     let mut cs = value.chars();
+    matches!((cs.next(), cs.next()), (Some('\\' | '/'), Some('\\' | '/')))
+}
+
+/// A Windows **device namespace** prefix (`\\?\`, `\\.\`, and the
+/// forward-slash spellings Win32 also accepts).
+///
+/// These share [`is_unc`]'s double-separator shape but are not shares: they are
+/// device namespaces, and nothing a file dialog returns. AMEND-6 (user ruling
+/// #26) relaxes the browse path's UNC refusal and **keeps this one** — hence
+/// the split into two predicates.
+///
+/// Note `\\?\UNC\server\share\…` (the form `fs::canonicalize` produces for a
+/// share) is refused here too: nothing in this module canonicalizes, so a
+/// stored path only ever has that shape if it was written that way, and the
+/// device namespace bypasses Win32 path normalization.
+pub(super) fn is_device_prefix(value: &str) -> bool {
+    let mut cs = value.chars();
     matches!(
-        (cs.next(), cs.next()),
-        (Some('\\'), Some('\\')) | (Some('/'), Some('/'))
+        (cs.next(), cs.next(), cs.next(), cs.next()),
+        (Some('\\' | '/'), Some('\\' | '/'), Some('?' | '.'), Some('\\' | '/'))
     )
+}
+
+/// The root shapes the **browse path** accepts (P112 §5.4) — the single seam
+/// [`validate_custom_program`] consults, so the AMEND-6 accept-case is
+/// assertable without a reachable network share.
+///
+/// Absolute for the target OS (including a UNC share, per ruling #26) and not a
+/// device namespace. Detection deliberately answers this question differently
+/// ([`super::detect`]'s `locally_absolute`, which adds `!is_unc`); that
+/// divergence IS the ruling, so do not fold the two together.
+pub(super) fn browsable_root(os: TargetOs, value: &str) -> bool {
+    !is_device_prefix(value) && is_absolute_for(os, value)
 }
 
 /// Absolute for the **target** OS — the one predicate genuinely SHARED with
@@ -119,19 +160,42 @@ pub(super) fn is_unc(value: &str) -> bool {
 /// process cwd. **That drive-relative rule is what both callers want, and it is
 /// why this predicate is shared.**
 ///
-/// It deliberately does **not** answer the UNC question. A UNC root has no
-/// drive letter, so it is not absolute here *today*, and AMEND-6 (user ruling
-/// #26) will change that for the browse path — at which point [`is_unc`] at
-/// detection's call site is what keeps detection refusing shares. Keeping the
-/// two decisions separate is the whole point; do not fold `is_unc` back in.
+/// It deliberately does **not** answer the *refusal* question for UNC. Per
+/// AMEND-6 (user ruling #26) a `\\server\share\…` root IS absolute here — the
+/// browse path accepts shares — while [`is_unc`] at detection's call site is
+/// what keeps **detection** refusing them. Keeping the two decisions separate
+/// is the whole point; do not fold `is_unc` back in here.
+///
+/// **That only holds under one invariant: `unc_share ⇒ is_unc`** — every
+/// separator pair the share arm below admits, [`is_unc`] must match, mixed
+/// spellings included. It did not hold when the arm first landed (`is_unc` took
+/// `\\` and `//` only), so `\/server\share\Code.exe` passed detection's
+/// `!is_unc && is_absolute_for`. Widen [`is_unc`] alongside any widening here;
+/// `custom_tests::a_unc_share_root_is_browsable_but_never_a_detection_hit`
+/// and `detect_tests::a_unc_or_drive_relative_candidate_is_never_a_hit` pin it.
+///
+/// On unix `//host/share/…` was already absolute (it starts with `/`), so the
+/// Windows arm is the only one the ruling moves.
 pub(super) fn is_absolute_for(os: TargetOs, value: &str) -> bool {
     match os {
         TargetOs::Windows => {
             let mut cs = value.chars();
-            matches!(
-                (cs.next(), cs.next(), cs.next()),
+            let head = (cs.next(), cs.next(), cs.next());
+            let drive = matches!(
+                head,
                 (Some(c), Some(':'), Some('/' | '\\')) if c.is_ascii_alphabetic()
-            )
+            );
+            // A UNC SHARE root: two separators (in ANY mix — `is_unc` must
+            // match all four pairs, see above) then a NON-SEPARATOR character.
+            // That is all it checks: `\\server` with no share, and `\\?`, pass
+            // here too — harmless, since `validate_custom_program`'s `is_file()`
+            // refuses them. Device prefixes share this shape and are sorted out
+            // by [`is_device_prefix`] at the one call site that cares.
+            let unc_share = matches!(
+                head,
+                (Some('\\' | '/'), Some('\\' | '/'), Some(c)) if c != '\\' && c != '/'
+            );
+            drive || unc_share
         }
         TargetOs::MacOs | TargetOs::Linux => value.starts_with('/'),
     }
@@ -173,14 +237,14 @@ pub fn validate_custom_program(path: &Path, os: TargetOs) -> Result<CustomKindSh
     if value.chars().any(is_disallowed_char) {
         return Err(refuse());
     }
-    // THIS module's stance on UNC, deliberately separate from the identical
-    // stance detection takes at its own call site (`detect::locally_absolute`).
+    // THIS module's stance on roots, deliberately separate from the stricter
+    // one detection takes at its own call site (`detect::locally_absolute`).
     // AMEND-6 (user ruling #26, `docs/contracts/P112-external-tool-detection.md`)
-    // relaxes THIS arm to accept `\\server\share\…` — a browse is a deliberate
-    // one-time act, so the network cost is paid knowingly — while detection,
-    // which has one 1500 ms budget for the whole machine, keeps refusing it.
-    // The device prefixes `\\?\` / `\\.\` stay refused here even then.
-    if is_unc(&value) || !is_absolute_for(os, &value) {
+    // ACCEPTS `\\server\share\…` here — a browse is a deliberate one-time act,
+    // so the network cost is paid knowingly — while detection, which has one
+    // 1500 ms budget for the whole machine, keeps refusing it. The device
+    // prefixes `\\?\` / `\\.\` stay refused on both paths.
+    if !browsable_root(os, &value) {
         return Err(refuse());
     }
     // The bundle branch first: a bundle is a DIRECTORY, which the `is_file`

@@ -211,31 +211,39 @@ fn profiles_roundtrip_and_backcompat() {
     assert_eq!(loaded.recent_repos.len(), 1);
 }
 
-/// An old `settings.json` written before P49 (no `terminalCommand`/
-/// `editorCommand` keys) loads both as `""` and preserves the existing
-/// fields — the additive-field back-compat guarantee for the P49 settings.
-/// Also asserts a round-trip through the documented camelCase keys.
+/// P112 §5.1: the four external-tool keys round-trip through their documented
+/// camelCase names, and a file written before them loads all four as `""` —
+/// the additive-field back-compat guarantee, which is why `SETTINGS_VERSION`
+/// stays 1. The legacy `terminalCommand`/`editorCommand` migration is
+/// `settings::external_tools`' own test.
 #[test]
-fn external_commands_roundtrip_and_backcompat() {
+fn external_tool_settings_roundtrip_and_backcompat() {
     let dir = tempfile::TempDir::new().expect("create temp dir");
     let file = settings_path(&dir);
 
-    // Round-trip non-default values + camelCase wire keys.
+    // Round-trip non-default values + camelCase wire keys. The browsed paths
+    // are written here as `pick_external_tool` would write them.
     let s = Settings {
-        terminal_command: "wt -d {path}".to_string(),
-        editor_command: "code {path}".to_string(),
+        terminal_tool: "windows-terminal".to_string(),
+        editor_tool: "custom".to_string(),
+        custom_terminal_path: r"C:\Portable\Term.exe".to_string(),
+        custom_editor_path: r"C:\Portable\Editor.exe".to_string(),
         ..Default::default()
     };
     save_to(&file, &s).expect("save settings");
     let loaded = load_from(&file);
     assert_eq!(loaded, s);
-    assert_eq!(loaded.terminal_command, "wt -d {path}");
-    assert_eq!(loaded.editor_command, "code {path}");
     let raw = std::fs::read_to_string(&file).expect("read settings.json");
-    assert!(raw.contains("\"terminalCommand\""));
-    assert!(raw.contains("\"editorCommand\""));
+    for key in [
+        "\"terminalTool\"",
+        "\"editorTool\"",
+        "\"customTerminalPath\"",
+        "\"customEditorPath\"",
+    ] {
+        assert!(raw.contains(key), "{key} missing from the file");
+    }
 
-    // Back-compat: a pre-P49 file without the keys loads both as "" and
+    // Back-compat: a file without any of them loads all four as "" and
     // preserves existing fields.
     let legacy = r#"{
             "version": 1,
@@ -244,10 +252,12 @@ fn external_commands_roundtrip_and_backcompat() {
             "paneWidths": { "sidebar": 300, "rightPanel": 400 },
             "listView": "flat"
         }"#;
-    std::fs::write(&file, legacy).expect("write pre-P49 settings.json");
+    std::fs::write(&file, legacy).expect("write a pre-P112 settings.json");
     let loaded = load_from(&file);
-    assert_eq!(loaded.terminal_command, "");
-    assert_eq!(loaded.editor_command, "");
+    assert_eq!(loaded.terminal_tool, "");
+    assert_eq!(loaded.editor_tool, "");
+    assert_eq!(loaded.custom_terminal_path, "");
+    assert_eq!(loaded.custom_editor_path, "");
     assert_eq!(loaded.theme, ThemeChoice::Light);
     assert_eq!(loaded.list_view, ListView::Flat);
     assert_eq!(loaded.recent_repos.len(), 1);

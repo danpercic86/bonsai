@@ -20,6 +20,7 @@
 //! | `catalog_table` | the static candidate table (data only) |
 //! | [`detect`] | [`ToolEnv`], the probe ladders, the host prober |
 //! | [`custom`] | the browsed path: [`BrowsedProgram`], validation, label, recipe |
+//! | `settings_ids` | the two PURE settings fns: [`coerce_tool_id`], [`legacy_tool_id`] (plus [`legacy_tool_stem`], diagnostics only) |
 //! | this file | the DTOs, the process-wide scan cache, [`tool_scan`], [`picked`] |
 //!
 //! Detection is **lazy and explicit**: nothing scans at boot, the scan is
@@ -42,6 +43,7 @@ pub mod catalog;
 mod catalog_table;
 pub mod custom;
 pub mod detect;
+mod settings_ids;
 
 #[cfg(test)]
 mod fake;
@@ -56,10 +58,13 @@ mod detect_tests;
 mod no_spawn_tests;
 #[cfg(test)]
 mod scan_tests;
+#[cfg(test)]
+mod settings_ids_tests;
 
 pub use catalog::{Recipe, ToolEntry, CUSTOM_ID};
 pub use custom::{synthesize_recipe, validate_custom_program, BrowsedProgram, CustomKindShape};
 pub use detect::{scan_for, HostToolEnv, ToolEnv};
+pub use settings_ids::{coerce_tool_id, legacy_tool_id, legacy_tool_stem};
 
 /// Which of the two configurable tool slots. The file manager is deliberately
 /// **not** configurable.

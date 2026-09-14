@@ -337,8 +337,18 @@ fn a_unc_or_drive_relative_candidate_is_never_a_hit() {
         // AMEND-6 (ruling #26) keeps this refusal for DETECTION while allowing
         // UNC via Browse: if the browse relaxation ever leaks into detection
         // through a shared predicate, this case fails loudly.
+        //
+        // ALL FOUR separator pairs, because the first version of this case
+        // covered only the two homogeneous ones and therefore passed while the
+        // invariant was already broken (2026-09-14): `custom::is_absolute_for`'s
+        // share arm accepted any mix, `custom::is_unc` matched only `\\` and
+        // `//`, so `\/server\share\Code.exe` WAS a detection hit. Win32 treats
+        // the two separators interchangeably when classifying a path prefix, so
+        // the mixed spellings name the same share.
         r"\\server\share\Code.exe",
         "//host/share/Code.exe",
+        r"\/server\share\Code.exe",
+        r"/\server\share\Code.exe",
         // Drive-RELATIVE on Windows, so it would resolve against the process
         // cwd — the same class of bug as an empty PATH component.
         r"\Windows\Code.exe",

@@ -102,6 +102,13 @@ async fn launch_inner(
         let runner = SpawnRunner;
         match action {
             Action::Reveal => external::reveal_in_file_manager(&runner, os, p),
+            // P112 INTERIM (sub-increment 2 of 4): `terminal_command` /
+            // `editor_command` are now migration-only fields that
+            // `settings::load_from` clears (§5.3), so both reads below yield
+            // `""` ⇒ the per-OS auto ladder. The launch rewrite that replaces
+            // them with `tools::picked(&s.terminal_tool, …)` is sub-increment 3;
+            // until it lands a previously configured tool falls back to
+            // auto-detect rather than to anything user-supplied.
             Action::Terminal => {
                 let program = settings_file
                     .map(|f| settings::load_from(&f).terminal_command)

@@ -12,12 +12,14 @@ use std::sync::Mutex;
 use bonsai_core::error::AppError;
 
 mod clamp;
+mod external_tools;
 mod forge_accounts;
 mod forge_hosts;
 mod identity;
 mod prefs;
 
 pub use clamp::*;
+pub use external_tools::*;
 pub use forge_accounts::*;
 pub use forge_hosts::*;
 pub use identity::*;
@@ -188,17 +190,26 @@ pub struct Settings {
     /// Additive `#[serde(default)]` (via the container-level `default`) ⇒ a
     /// pre-existing settings.json without this key loads `[]`. NO version bump.
     pub hooks_ack_repos: Vec<String>,
-    /// P49: terminal launch PROGRAM — a bare name (`wt`) or an absolute path to
-    /// an existing executable, validated at the launch site by
-    /// `bonsai_core::external_cmd::validate_command_setting` (audit MEDIUM-2:
-    /// this value is renderer-settable, so it may carry neither arguments nor
-    /// shell syntax, and the `{path}` placeholder is gone with them). Empty ⇒
-    /// per-OS auto-detect. Additive `#[serde(default)]` ⇒ a pre-P49 file loads
-    /// `""` — as does a pre-2026-09-11 file whose template is now refused at
-    /// launch, with a message naming the setting.
+    // P112 §5.1 / §5.4 — the external-tool selection. The coercion rule, the
+    // migration and the "unrepresentable, not rejected" rationale all live in
+    // `settings/external_tools.rs`.
+    /// Selected terminal: `""` ⇒ auto ladder, a catalog id, or the pseudo-id
+    /// `"custom"`. Renderer-writable, but only ever as a LOOKUP KEY.
+    pub terminal_tool: String,
+    /// Selected editor; same rules as [`Self::terminal_tool`].
+    pub editor_tool: String,
+    /// The browsed terminal program (`""` = none). Written ONLY by
+    /// `pick_external_tool`, from a path a native dialog the BACKEND opened
+    /// returned; absent from `UiSettings` *and* `UiSettingsPatch`.
+    pub custom_terminal_path: String,
+    /// The browsed editor program; same rules as [`Self::custom_terminal_path`].
+    pub custom_editor_path: String,
+    /// LEGACY (P49 … 2026-09-11): P112 §5.3 migration input only, never written
+    /// again — `skip_serializing` is what makes the migration idempotent.
+    #[serde(default, skip_serializing)]
     pub terminal_command: String,
-    /// P49: editor launch PROGRAM. Same shape rules as [`Self::terminal_command`];
-    /// empty ⇒ auto-detect the VS Code family. Additive `#[serde(default)]`.
+    /// LEGACY (P49 … 2026-09-11): see [`Self::terminal_command`].
+    #[serde(default, skip_serializing)]
     pub editor_command: String,
     // ---- P68 §8.3: streaming AI-run knobs. All additive `#[serde(default)]`
     // (via the container-level `default`), all clamped by `clamp_ai_settings`, NO
@@ -284,6 +295,10 @@ impl Default for Settings {
             forge_host_defaults: Vec::new(),
             repo_forge_overrides: Vec::new(),
             hooks_ack_repos: Vec::new(),
+            terminal_tool: String::new(),
+            editor_tool: String::new(),
+            custom_terminal_path: String::new(),
+            custom_editor_path: String::new(),
             terminal_command: String::new(),
             editor_command: String::new(),
             ai_idle_timeout_secs: AI_IDLE_TIMEOUT_DEFAULT,
@@ -322,6 +337,9 @@ pub fn load_from(file: &Path) -> Settings {
     // shape; the write is deferred to the next `update`/`update_if` (never
     // write-amplify a pure read).
     let _ = migrate_forge_hosts_to_accounts(&mut s);
+    // P112 §5.3: one-shot, pure/in-memory migration of the deleted free-text
+    // `terminalCommand` / `editorCommand` (see `settings/external_tools.rs`).
+    migrate_external_tools(&mut s);
     s
 }
 
