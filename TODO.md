@@ -916,6 +916,77 @@ sub-inc 4 must carry the recipe itself.
   real risk. But the comments at `DevCategory.tsx:111-114` and `:119-120` that *assert* toast
   behaviour are being corrected in place.
 
+### 🆕 2026-09-14 — P112 follow-ups IMPLEMENTED (in review): 7 items + the shipped resolver fix
+
+All seven routed items landed. `cargo test -p bonsai-core --lib` **1100 passed, 0 failed, 4 ignored**
+(1088 + 12 new: 9 `procutil`, 3 `tools`); `h_ai` **57**; `h_misc` **51**; `clippy -D warnings` clean;
+`check --workspace --all-targets` clean; size ratchet OK with `gitbin.rs` held **net-neutral at
+exactly 500 lines**. Under review by `reviewer` + `security-auditor`.
+
+**`looks_absolute` is DELETED.** `executable_hit` now calls one predicate,
+`custom::is_local_absolute(os, value)` = `!is_unc && is_absolute_for` — which settles the conflict
+where the old predicate took **no `os`** and accepted a leading `/` while its own doc said it refused
+that shape as drive-relative. **Two reviews disagreed and the auditor was right.** Note AMEND-6 now
+makes the browse path diverge again, deliberately.
+
+**THE LAUNCH SURFACE CHANGED, and that is the thing to watch.** With PATHEXT-first resolution,
+`vscode`'s provenance flips **`Registry` → `Path`** and its program becomes `...\bin\code.CMD`
+instead of `Code.exe` — **so the app now launches batch files where it previously launched a PE.**
+This routes through std's case-insensitive batch detection, i.e. the **mitigated CVE-2024-24576 /
+"BatBadBut"** path, where std applies cmd.exe quoting and errors on args it cannot escape. The guard
+was deliberately **not** tightened to `.exe`-only because the Windows `idea` row has **only** a
+`Rung::OnPath` and JetBrains ships `idea.cmd` — tightening would delete a catalog row. Audit in
+flight on exactly this; the interesting input is **a crafted filename inside a cloned repository**,
+not `PATH`, because that is the only attacker-influenced argv source.
+
+**Group C did NOT move AI resolution** — measured with a standalone probe against the real host PATH:
+`claude` resolves to `...\.local\bin\claude.EXE` under **both** orders, `git` unchanged. Only `code`
+(the fix) and `pnpm` (nothing spawns it) change. Stat counts equal (4375 vs 4376), so the reorder is
+free. Bonus: `gitbin`'s Windows `resolve_on_path` delegates to `procutil`, so **Windows git
+resolution now inherits the empty-component / `is_absolute` guards its unix branch already had.**
+
+### 🆕 MEASURED, LEFT UNFIXED — a cold first scan can spend the registry budget before using it
+
+`SCAN_REG_BUDGET`'s clock starts at `HostToolEnv::new()`, **before any filesystem work**, and the
+scan is dominated by the PATH walk, not the registry: **55 directories × 11 `PATHEXT` entries
+≈ 4400 stats, measured at 2.1 s cold / 0.45 s warm, against a 1500 ms budget.** So on the first scan
+after a cold boot the budget can be fully spent before the first `AppPaths` rung runs.
+
+**I verified the safety argument and it holds, with a sharp limit.** All three `AppPaths` rows do have
+`WinFolder` siblings — `Code.exe` (LOCALAPPDATA + ProgramFiles), `sublime_text.exe` (ProgramFiles),
+`notepad++.exe` (ProgramFiles + ProgramFiles(x86)). **But `WinFolder` only covers DEFAULT install
+locations, which means an exhausted budget degrades precisely the case `AppPaths` uniquely exists to
+serve:** a tool installed somewhere non-standard is silently not offered. Browse is the workaround
+(and per ruling #26 now accepts UNC). Fix is its own change — start the deadline at the first
+registry call. The `SCAN_REG_BUDGET` doc was corrected; "a few tens of milliseconds" was wrong.
+
+This also makes the scan itself a **UX** concern for sub-inc 4: 2.1 s cold is a visible wait in a
+picker, and §3's cache/refresh design has to absorb it.
+
+### 🆕 `BrowsedProgram` is a PARTIAL control — recorded so nobody reads it as stronger
+
+B1 asked for a newtype constructible only inside the settings module. **That is not expressible
+here:** `settings` lives in the `bonsai` (src-tauri) crate and `tools` in `bonsai-core`, and Rust has
+no cross-crate module privacy (a sealed trait would also block src-tauri). So
+`BrowsedProgram::from_settings_field` is `pub`, with **no `From` / `FromStr` / `Deserialize`** and
+that prohibition documented on the type. **Delivered property: a request-body `&str` no longer
+type-checks into `tool_scan` / `picked`. It does NOT prove origin.** Both `reviewer` and
+`security-auditor` were asked independently whether it earns its keep; if either says ceremony,
+delete it rather than keep a control that reads stronger than it is.
+
+### 🆕 Two failures observed during the follow-up pass, neither caused by it
+
+- **`watcher::tests::git_internals_filtered`** — reported as a timing flake under `-p bonsai --lib`
+  load (530 passed / 1 failed) that **passes alone**. Matters independently: **the gate runs the whole
+  workspace**, so a load-sensitive flake there is a gate flake. Reviewer adjudicating.
+- **`health::tests_sections::perf_ceiling_on_20k_fixture`** — `#[ignore]`d, so it does not gate, but
+  **2067 ms against a 2000 ms budget**. Possible drift worth filing.
+
+**Contract deltas owed to the architect** on `P112-external-tool-detection.md`: the §2 signatures now
+take `BrowsedProgram`; the §4 example becomes
+`tools::picked(&s.terminal_tool, ToolKind::Terminal, BrowsedProgram::from_settings_field(&s.custom_terminal_path))`;
+AMEND-5 items 1, 2 and 7 are now reflected in code; and the `.cmd`-hit consequence needs stating.
+
 ### 🆕 NEW 2026-09-14 — "Open in editor" is broken on Windows, and it is MEASURED
 
 Uncovered by P112 sub-inc 1's ladder work; **not a P112 bug — it is in shipped code.** Routed to
