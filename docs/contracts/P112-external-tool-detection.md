@@ -623,12 +623,42 @@ patch-time rejection would.
 | `is_file()` **or** macOS `is_bundle()` ⇒ `CustomKindShape` | the `.app` case is precisely what `is_file()`-only got wrong |
 | **Windows: extension MUST be `.exe`** (case-insensitive) | **DEC-1, and this is the enforcement half** — see below |
 | unix: at least one execute bit (file form) | the meaningful gate on unix; a non-executable pick otherwise fails at spawn with an opaque error |
-| reject UNC / `\\?\` / `//host/share` | house rule (`is_unc`, `git::submodule_abs_path`): a remote share is not a local tool |
+| ~~reject UNC / `//host/share`~~ **-- SUPERSEDED by ruling #26, see AMEND-6** / still reject `\\?\` and `\\.\` device prefixes | was: house rule (`is_unc`, `git::submodule_abs_path`), a remote share is not a local tool. **UNC is now ACCEPTED on the browse path only** -- the device-prefix refusal stands. |
 | reject control + bidi characters in the path **and** in the derived label | the one genuine spoofing surface here: a bidi override in a filename makes the picker row read as something it is not |
 | length ≤ 512 (`MAX_LEN`) | a longer string is not an install path |
 
 `label` is derived by the **backend** (macOS: bundle name minus `.app`; else the file stem;
 control/bidi stripped, truncated) and is never renderer-supplied.
+
+> ### AMEND-6 (user ruling #26, 2026-09-14) -- UNC is allowed here, and ONLY here
+>
+> The reviewer raised this as an OQ rather than settling it: refusing UNC in **both** detection and
+> Browse meant a tool installed on a network share was **neither detectable nor selectable, with no
+> workaround** -- plausible on a corporate-managed machine, which is what this project is developed
+> on. **The user ruled: allow UNC via Browse only.**
+>
+> The asymmetry is deliberate and each half stands on its own reason:
+> * **Detection keeps refusing UNC** (`tools::detect::looks_absolute`). A scan has **one 1500 ms
+>   budget for every rung on the machine**; stat-ing a share inside it can hang or go over the wire,
+>   and a picker that comes up empty on a slow VPN is worse than one that omits a share install.
+> * **Browse accepts it.** A pick through the native dialog is a deliberate, one-time act in which
+>   the user names one exact file. The network cost is paid once, knowingly.
+>
+> **What this changes in code:** `custom::is_absolute_for` and the UNC arm of the 5.4 validation must
+> accept `\\server\share\...` and `//host/share/...`. `looks_absolute` is **unchanged** -- do not "unify"
+> the two predicates on the grounds that they now disagree; they disagree *on purpose*, and the
+> disagreement IS the ruling.
+>
+> **Still refused on the browse path:** `\\?\` and `\\.\` device prefixes (not shares -- device
+> namespaces, and nothing a file dialog returns), plus every other rule in the table above, including
+> the Windows `.exe` requirement. One prior finding bears directly on this: an earlier UNC probe
+> established that `canonicalize` **succeeds** on UNC and returns the `\\?\UNC\...` form, so any
+> prefix comparison added here must account for that form rather than assuming a share path stays in
+> `\\server\share` shape.
+>
+> **AC to add:** the hostile-selection table (AC5/AC16) currently lists `"\\server\share\x.exe"` among the
+> **refusals**. That row must **flip to accepted** for the browse path while remaining a refusal for
+> detection -- so the two can no longer share one table and must be asserted separately.
 
 **DEC-1, recorded as a decision with its rationale — and corrected on one point.** The Windows dialog
 filters to `*.exe` only, excluding `.cmd`/`.bat`: Rust's `Command` routes those through `cmd.exe`
