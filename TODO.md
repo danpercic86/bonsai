@@ -298,6 +298,7 @@ Same authority as the 23 before them. Both were asked with evidence in hand, not
 |---|---|---|
 | 24 | Settings toasts render behind Settings' own `.dialog-overlay` — scope of the fix | **SWEEP EVERY CALL SITE** (asked as "all 17"; the true figure is **10** — see the correction below). Not the delete outcome alone (which is what I recommended, on the grounds that it was the highest-stakes one and would build the recipe cheaply). The user chose the full surface. So: every `pushToast` reachable from Settings moves to an inline note, bringing the surface into line with `ui-reference.md:2377`'s standing rule instead of leaving 16 known violations behind a fixed one. |
 | 25 | The 30 unpushed commits on `feat/post-p91-rulings` | **DO NOT PUSH.** Stays local. **Do not raise this again** — it has now been asked and answered, and re-raising it is noise. |
+| 26 | UNC paths for external tools — refused by **both** detection and Browse, so a share-installed tool was unusable with no workaround | **ALLOW UNC VIA BROWSE ONLY.** Detection keeps refusing it — stat-ing a share inside the 1500 ms budgeted scan can hang or go over the wire. An explicit pick through the native dialog is a deliberate one-time act naming an exact file, so it is allowed. **This overrides contract line 577**, which mandates UNC refusal on the browse path; `custom::is_absolute_for`/`is_unc` must be amended for sub-inc 2/3. `looks_absolute` (detection) keeps refusing UNC. |
 
 **Scope facts**, so the next session does not re-derive them:
 - **CORRECTION.** The question was put to the user as "17 call sites". **The real figure is 10
@@ -305,9 +306,10 @@ Same authority as the 23 before them. Both were asked with evidence in hand, not
   declarations and `[pushToast]` dependency-array entries. The ruling is unaffected (a sweep is a
   sweep) but the increment is materially smaller than the user was told when deciding. The
   exhaustive list:
-  - `src/components/settings/categories/DevCategory.tsx` — `:96` (log-delete outcome, the measured
-    one), `:115` (export success), `:118` (export failure), `:149` (delete outcome tone+text),
-    `:152` (delete thrown path)
+  - `src/components/settings/categories/DevCategory.tsx` — `:96` (**reveal/"open logs folder"
+    failure** — I mislabelled this as the delete outcome when briefing; `ui-designer` corrected it),
+    `:115` (export success), `:118` (export failure), `:149` (**the delete outcome — this is the one
+    I measured as occluded**), `:152` (delete thrown path)
   - `src/components/settings/SettingsAccountsSection.tsx` — `:57` (token page), `:79` (default
     account), `:97` (remove host), `:138` (added login), `:149` (connected)
   Verified exhaustive by `grep -rn "pushToast(" src/components/settings/ src/components/Settings*.tsx`
