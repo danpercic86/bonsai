@@ -232,10 +232,14 @@
   color: var(--text-2);
 }
 
+/* D3 (2026-09-11): warning, not danger. This line states a precondition the user
+   can still satisfy — danger stays reserved for destructive/irreversible actions.
+   Measured on `.dialog-card`'s `--bg-1`: 8.38:1 dark / 6.65:1 light, above P108's
+   >=4.5:1 bar and ABOVE the `--danger-strong` it replaces (7.62 / 6.01). */
 .op-worktree-warning {
   margin: 0;
   font-size: 12px;
-  color: var(--danger-strong);
+  color: var(--warning-strong);
   overflow-wrap: anywhere;
 }
 

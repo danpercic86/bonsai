@@ -48,6 +48,11 @@ export function DevCategory() {
   // The delete dialog carries the info snapshot taken WHEN IT OPENED, so the count
   // the user consents to is the count that gets deleted (§8.5.4).
   const [deleteInfo, setDeleteInfo] = useState<LogSessionInfo | null>(null);
+  // §F6: openness is its OWN flag rather than `deleteInfo !== null`. The delete row
+  // is no longer gated on logs existing, so a null session info is a legitimate
+  // state — the usage counts are deletable whether or not any log file exists —
+  // and keying `open` off the info would turn that into a silently dead click.
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [announce, setAnnounce] = useState('');
 
   const mounted = useRef(true);
@@ -121,10 +126,16 @@ export function DevCategory() {
   }, [pushToast, refresh]);
 
   const openDelete = useCallback(async () => {
-    // Re-read on open (§8.5.4), not the last poll. The Delete button is only
-    // enabled while logs exist, so `info` is non-null here as a fallback.
+    // Re-read on open (§8.5.4), not the last poll, so the count consented to is
+    // the count deleted. The flag is set AFTER the read so the dialog never shows
+    // a stale count first. Falling back to the last good poll beats discarding it.
+    // `fresh ?? info` may still be null (every read failed, including the one on
+    // mount) — the dialog gets that null AS null and renders its §6.8 R3
+    // unknown-count copy. It must NOT be collapsed to 0 here or there: "0 files"
+    // would name a smaller target than the command destroys.
     const fresh = await refresh();
     setDeleteInfo(fresh ?? info);
+    setDeleteOpen(true);
   }, [refresh, info]);
 
   const runDelete = useCallback(async () => {
@@ -139,11 +150,16 @@ export function DevCategory() {
       setAnnounce(msg);
     } catch (e) {
       pushToast('error', deleteErrorText(errorMessage(e)), 'dev-delete');
-      setAnnounce('No log files were deleted.');
+      // §6.8 R5: the action's scope is logs AND usage counts, so the failure
+      // announcement may not name only logs. Accurate for every reachable error:
+      // the Dev-ON branch's only in-thread failure is the pre-purge roll, so a
+      // rejected `logsDeleteAll` means nothing was removed (see `obs_delete.rs`).
+      setAnnounce('Nothing was deleted.');
       void refresh();
     } finally {
       if (mounted.current) {
         setBusy((b) => ({ ...b, delete: false }));
+        setDeleteOpen(false);
         setDeleteInfo(null);
       }
     }
@@ -187,12 +203,15 @@ export function DevCategory() {
         onCancel={() => setExportConfirm(false)}
       />
       <DeleteLogsConfirmDialog
-        open={deleteInfo !== null}
+        open={deleteOpen}
         info={deleteInfo}
         devEnabled={dev.enabled}
         busy={busy.delete}
         onConfirm={() => void runDelete()}
-        onCancel={() => setDeleteInfo(null)}
+        onCancel={() => {
+          setDeleteOpen(false);
+          setDeleteInfo(null);
+        }}
       />
 
       <p className="sr-only" role="status" aria-live="polite">

@@ -188,3 +188,84 @@ fn write_failed_is_a_bool_and_carries_no_error_text() {
         );
     }
 }
+
+// --------------------------------------------------- §F6 delete-result merge
+
+/// §F6 §8 items 9 + 10, at the level the merge can be driven without a
+/// `tauri::State`: the metrics half is folded into `LogsDeleteResult` honestly.
+///
+/// The Dev-ON and Dev-OFF branches differ only in how the LOG half is produced
+/// (`roll_and_purge` vs `purge_scope`); both reach this same merge with the same
+/// `MetricsClearCounts`, which is why one table covers both.
+#[test]
+fn metrics_counts_fold_into_the_delete_result_without_hiding_either_half() {
+    use super::obs_delete::{merge_metrics_counts, LogsDeleteResult};
+    use crate::obs::MetricsClearCounts;
+
+    let base = || LogsDeleteResult {
+        deleted_files: 4,
+        deleted_bytes: 1_000,
+        failed_files: 0,
+        active_file: None,
+        rolled: false,
+        deleted_exports: Some(1),
+        deleted_metrics: 0,
+        metrics_cleared: false,
+    };
+
+    // (a) A normal delete: two metrics files, counted BOTH in the breakdown and
+    // in the totals — like export zips, so the UI never has to sum them itself.
+    let mut r = base();
+    merge_metrics_counts(
+        &mut r,
+        Some(MetricsClearCounts {
+            deleted_files: 2,
+            deleted_bytes: 512,
+            failed_files: 0,
+            dir_removed: true,
+        }),
+    );
+    assert_eq!(r.deleted_metrics, 2);
+    assert_eq!(r.deleted_files, 6, "metrics files are inside deleted_files");
+    assert_eq!(r.deleted_bytes, 1_512);
+    assert!(r.metrics_cleared);
+
+    // (b) §8 item 10 — a launch younger than the first 60 s flush: nothing on
+    // disk, aggregate very much live and now cleared. `deletedMetrics: 0` must
+    // NOT be read as failure; this is the case the copy's claim rests on.
+    let mut r = base();
+    merge_metrics_counts(
+        &mut r,
+        Some(MetricsClearCounts {
+            dir_removed: true,
+            ..MetricsClearCounts::default()
+        }),
+    );
+    assert_eq!(r.deleted_metrics, 0);
+    assert!(r.metrics_cleared, "0 files deleted is still a full success");
+
+    // (c) Something in the folder survived (a subdirectory, a locked file): the
+    // folder is still there, so "Bonsai removes that whole folder" is false and
+    // the flag must say so.
+    let mut r = base();
+    merge_metrics_counts(
+        &mut r,
+        Some(MetricsClearCounts {
+            deleted_files: 1,
+            deleted_bytes: 10,
+            failed_files: 1,
+            dir_removed: false,
+        }),
+    );
+    assert!(!r.metrics_cleared);
+    assert_eq!(r.failed_files, 1, "the failure is reported, not swallowed");
+
+    // (d) The clear itself failed: the log-purge counts we already earned must
+    // survive, and the command must not fail as a whole.
+    let mut r = base();
+    merge_metrics_counts(&mut r, None);
+    assert_eq!(r.deleted_files, 4, "log counts kept");
+    assert_eq!(r.deleted_metrics, 0);
+    assert!(!r.metrics_cleared);
+    assert_eq!(r.failed_files, 1);
+}

@@ -306,6 +306,7 @@ export function RepoWorkspace({
     remote: tagSyncRemote,
     checkedAt: tagSyncCheckedAt,
     refetch: refetchTagSync,
+    afterAutoFetch,
     clear: clearTagSync,
   } = useTagSync(repoId, remotes);
   // P23d: blame + file-history center-pane overlays. Each holds its own
@@ -1042,9 +1043,8 @@ export function RepoWorkspace({
     forgeSignals.refresh('graph');
   }, [graph, forgeSignals.refresh]);
 
-  // P30 D11 / P30 §6: background-job status readout + its 30 s ticker
-  // (extracted to useJobStatus.ts). Auto-fetch itself runs in the Rust scheduler.
-  const { jobStatus, jobNow } = useJobStatus(repoId, pushToast);
+  // P30 D11/§6: job readout + 30 s ticker (useJobStatus.ts). P77: `afterAutoFetch`.
+  const { jobStatus, jobNow } = useJobStatus(repoId, pushToast, afterAutoFetch);
 
   // Manual refresh (button + Ctrl+R/F5). P58c: also drop the signature-verify
   // cache (keyring / allowedSigners may have changed — OQ8) and re-read the

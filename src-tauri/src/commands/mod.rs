@@ -45,6 +45,7 @@ mod forge;
 mod forge_accounts;
 mod git_env;
 mod obs;
+mod obs_delete;
 
 #[cfg(test)]
 mod tests_support;
@@ -150,3 +151,4 @@ pub use forge::*;
 pub use forge_accounts::*;
 pub use git_env::*;
 pub use obs::*;
+pub use obs_delete::*;

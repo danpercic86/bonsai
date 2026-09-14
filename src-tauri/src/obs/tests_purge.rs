@@ -89,8 +89,17 @@ fn purge_off_removes_every_in_scope_file_and_nothing_else() {
     // (g)+(h): both zips counted as exports.
     assert_eq!(c.deleted_exports, 2);
 
-    // (e) survivors.
-    assert!(metrics.join("usage.json").exists(), "metrics/ untouched");
+    // (e) survivors. NOTE (§F6): `logs_delete_all` DOES clear usage counts now —
+    // but through `MetricsState::clear`, on the command's own blocking task.
+    // `purge_scope` itself is still logs+exports only, and that separation is what
+    // keeps the metrics delete out of the sink writer thread. The command-level
+    // scope is covered by `tests_metrics_clear.rs`; inverting the assertion HERE
+    // would instead require `purge_scope` to reach into `metrics/`, which §4.3
+    // explicitly rejects.
+    assert!(
+        metrics.join("usage.json").exists(),
+        "purge_scope alone leaves metrics/ — the metrics half is MetricsState::clear"
+    );
     assert!(root.path().join("settings.json").exists(), "settings.json untouched");
     assert!(logs.join("notes.txt").exists(), "a non-scope file in logs/ survives");
     // Every in-scope file is gone.

@@ -22,7 +22,10 @@
  *     `opacity` is a group property, so dimming the fieldset would drag the very
  *     note that explains the state down with it. Hue never carries the state, and
  *     the switch knob POSITION still reads on-vs-off while disabled.
- *   * copy is unchanged: the §5.4 rewording is still pending the A3 sign-off.
+ *   * copy is unchanged, and now permanently: A3 was signed 2026-09-11 and the
+ *     SHIPPED string won — ui-designer withdrew its own rewording on finding the
+ *     same sentence in `SettingsAiSection.tsx` and `SettingsDevCaptureSection.tsx`
+ *     (a pattern, not a string). Change all three together or none.
  *
  * DENSITY: one geometry in both `cozy` and `compact` (UI §5.1 / D10) — do not add
  * a density variant to these rows.
@@ -43,7 +46,9 @@ import { AI_BULK_MAX_BYTES_MAX, AI_BULK_MAX_BYTES_MIN } from '../settings/ranges
 const BULK_KB_MIN = AI_BULK_MAX_BYTES_MIN / 1000;
 const BULK_KB_MAX = AI_BULK_MAX_BYTES_MAX / 1000;
 
-/** §5.4 copy, FROZEN — the recommended rewording is still pending A3 sign-off. */
+/** §5.4 copy, FROZEN — A3 signed 2026-09-11 and this SHIPPED string is the signed
+ *  copy (the proposed rewording was withdrawn; the same sentence appears in
+ *  `SettingsAiSection.tsx` and `SettingsDevCaptureSection.tsx`). */
 const GATE_NOTE = 'Turn on “Enable AI features” above to change these.';
 
 const ACCESS = 'ai.repository-access';

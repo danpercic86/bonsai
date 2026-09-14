@@ -4,7 +4,7 @@
 // Extracted verbatim from RepoWorkspace so the container only wires it; this
 // block renders status + toasts only and must NOT double-refresh (auto-fetch
 // itself runs in the Rust scheduler).
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ipc } from '../../ipc';
 import type { JobStatus, Unsubscribe } from '../../ipc';
 import type { PushToast } from '../../ToastContext';
@@ -14,11 +14,27 @@ export interface UseJobStatus {
   jobNow: number;
 }
 
-export function useJobStatus(repoId: string, pushToast: PushToast): UseJobStatus {
+/**
+ * @param onAutoFetched P77 — fired after every SUCCESSFUL `autoFetch` run, so a
+ *   check that needs the network can ride a cycle the user already opted into
+ *   instead of adding one (today: `useTagSync.afterAutoFetch`). Deliberately not
+ *   gated on `updatedRefs > 0`: a tag deleted on the remote changes a tag's
+ *   classification while updating no ref at all. Held in a ref so a fresh closure
+ *   never re-subscribes the listener.
+ */
+export function useJobStatus(
+  repoId: string,
+  pushToast: PushToast,
+  onAutoFetched?: () => void,
+): UseJobStatus {
   // P30 D11: background-job status readout (fed by get_job_status on mount +
   // live job-status-changed events); jobNow re-renders the relative label.
   const [jobStatus, setJobStatus] = useState<JobStatus[]>([]);
   const [jobNow, setJobNow] = useState(() => Date.now());
+  // Latest-callback mirror: keeping it out of the effect's deps is what stops a
+  // re-render from tearing down and re-establishing the event subscription.
+  const onAutoFetchedRef = useRef(onAutoFetched);
+  onAutoFetchedRef.current = onAutoFetched;
 
   // P30 §6: the P11e frontend auto-fetch timer is GONE — auto-fetch now runs
   // in the Rust scheduler for ALL open repos (scheduler.rs); data refresh
@@ -70,6 +86,10 @@ export function useJobStatus(repoId: string, pushToast: PushToast): UseJobStatus
           p.updatedRefs > 0
         ) {
           pushToast('info', `Fetched ${p.updatedRefs} ref${p.updatedRefs === 1 ? '' : 's'}`);
+        }
+        // P77: unconditional on `updatedRefs` (see the prop doc).
+        if (p.job === 'autoFetch' && p.outcome === 'success') {
+          onAutoFetchedRef.current?.();
         }
       });
       if (cancelled) {

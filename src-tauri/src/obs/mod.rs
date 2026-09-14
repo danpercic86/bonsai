@@ -24,6 +24,7 @@ mod metrics_cmds;
 pub mod metrics_file;
 mod metrics_keys;
 mod metrics_map;
+pub mod metrics_purge;
 pub mod phase;
 pub mod raw_args;
 pub mod record;
@@ -75,6 +76,7 @@ use std::sync::{Arc, Mutex};
 use bonsai_core::error::AppError;
 
 pub use metrics::MetricsState;
+pub use metrics_purge::{ClearMode, MetricsClearCounts};
 pub use record::{LogLevel, LogRecord, RedactionMode};
 pub use sink::Sink;
 

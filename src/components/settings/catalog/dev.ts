@@ -2,7 +2,7 @@
  * P91 §13 — Developer (Dev-mode / observability) category rows.
  *
  * Groups exactly as rendered: `Dev mode` / `What is captured` /
- * `What a log file contains` / `Log files`.
+ * `What Bonsai records` / `Log files`.
  *
  * Two deliberate deviations from §13, forced by the enforced DOM↔catalog guard
  * (`settingsCatalog.coverage.test.tsx`), which the contract's "label = accessible
@@ -12,8 +12,11 @@
  *     `label` is the BUTTON text (a button row names itself), and the visible row
  *     title is the `rowLabel` prop at the call site. So `dev.logs` is labelled
  *     `Show in folder` (row title `Log files`) and `dev.delete-logs` is labelled
- *     `Delete logs…` (row title `Delete all log files`). The lost search
- *     vocabulary (`export`, `session`, `delete all log files`) lives in keywords.
+ *     `Delete all…` (row title `Delete logs and usage counts`). The lost search
+ *     vocabulary (`export`, `session`, and the row title's own words) lives in
+ *     keywords. NOT `delete all log files`: §6's AC7 retired that phrase from
+ *     every one of its five sites, so putting it back here would make search
+ *     match copy the app no longer shows.
  *
  *  2. `dev.session-info` and `dev.privacy-note` are control-LESS `group` rows
  *     (a live readout and a prose block); the guard's "a group contains form
@@ -93,9 +96,9 @@ export const DEV_ENTRIES: readonly SettingsIndexEntry[] = [
   {
     id: 'dev.privacy-note',
     category: 'dev',
-    group: 'What a log file contains',
-    label: 'What a log file contains',
-    keywords: 'privacy contents redact anonymous network upload',
+    group: 'What Bonsai records',
+    label: 'What Bonsai records',
+    keywords: 'privacy contents redact anonymous network upload usage counts metrics retention 90 days',
     control: 'group',
   },
   {
@@ -110,8 +113,9 @@ export const DEV_ENTRIES: readonly SettingsIndexEntry[] = [
     id: 'dev.delete-logs',
     category: 'dev',
     group: 'Log files',
-    label: 'Delete logs…',
-    keywords: 'delete remove clear purge erase wipe clean logs disk space privacy free',
+    label: 'Delete all…',
+    keywords:
+      'delete remove clear purge erase wipe clean logs usage counts metrics disk space privacy free',
     control: 'button',
   },
 ];

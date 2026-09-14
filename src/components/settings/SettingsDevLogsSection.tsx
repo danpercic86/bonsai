@@ -15,18 +15,27 @@ import { SettingsRow } from './SettingsRow';
 
 const NUM = new Intl.NumberFormat();
 
+/** §6.8 R6 — the delete row's hint, wired as the danger button's accessible
+ *  description. A literal because this row exists exactly once; a repeating row
+ *  would have to interpolate its instance (see `settingsRowHelpId`). */
+const DELETE_HINT_ID = 'dev-delete-logs-hint';
+
 export interface DevLogsBusy {
   reveal: boolean;
   export: boolean;
   delete: boolean;
 }
 
+/** §F6 §6.4 — three branches, because the delete now clears the usage counts too
+ *  and the no-logs branch is a REACHABLE, ACTIONABLE state rather than a dead end.
+ *  It used to read 'No log files to delete.', which after §F6 is both false and
+ *  the reason the row would look dead to the user who most needs it. */
 function deleteNote(hasLogs: boolean, enabled: boolean, count: number, size: string): string {
-  if (!hasLogs) return 'No log files to delete.';
+  if (!hasLogs) return "No log files yet. Removes Bonsai's usage counts.";
   const files = `${NUM.format(count)} log file${count === 1 ? '' : 's'} (${size})`;
   return enabled
-    ? `Removes all ${files}, including the one being recorded now. Recording continues in a new file.`
-    : `Removes all ${files} from this computer.`;
+    ? `Removes all ${files} and Bonsai's usage counts, including the log being recorded now. Recording continues in a new file.`
+    : `Removes all ${files} and Bonsai's usage counts from this computer.`;
 }
 
 export function SettingsDevLogsSection({
@@ -100,22 +109,41 @@ export function SettingsDevLogsSection({
         </div>
       </SettingsRow>
 
+      {/* §F6 §6.4 — the delete row is ALWAYS ENABLED, unlike the two rows above.
+          It used to be gated on `hasLogs`, which left the user who never turned
+          Dev mode on — zero log files, up to 90 days of usage counts — looking at
+          a permanently disabled button: exactly the user for whom deletability
+          was granted. `metrics.rs` bumps `sessions` at init on EVERY launch, so by
+          the time anyone can see this row there is always something to clear;
+          there is no reachable "nothing to delete" state. `anyBusy` still gates it
+          during an in-flight operation, and stays `aria-disabled` (not `disabled`)
+          so focus survives the operation's own completion. */}
       <SettingsRow
         id="dev.delete-logs"
-        rowLabel="Delete all log files"
-        hint={<p className="settings-row-note">{deleteText}</p>}
+        rowLabel="Delete logs and usage counts"
+        hint={
+          <p className="settings-row-note" id={DELETE_HINT_ID}>
+            {deleteText}
+          </p>
+        }
       >
         <button
           type="button"
           className="btn-danger"
-          aria-disabled={!hasLogs || anyBusy}
+          aria-disabled={anyBusy}
           aria-busy={busy.delete}
-          title={hasLogs ? undefined : 'No logs yet.'}
+          /* §6.8 R6 — `SettingsRow` renders `hint` as a bare node and wires no
+             `aria-describedby`, and the row title is a <span>, not a label, so
+             this button's whole accessible name was `Delete all…`: "all" of WHAT
+             reached sighted users only, by proximity. Pointing at the hint is
+             additive, changes nothing visually, and leaves the accessible NAME
+             (which the DOM↔catalog guard asserts) untouched. */
+          aria-describedby={DELETE_HINT_ID}
           onClick={() => {
-            if (hasLogs && !anyBusy) onRequestDelete();
+            if (!anyBusy) onRequestDelete();
           }}
         >
-          Delete logs…
+          Delete all…
         </button>
       </SettingsRow>
     </SettingsGroup>

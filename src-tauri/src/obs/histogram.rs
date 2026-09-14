@@ -124,7 +124,7 @@ impl Histogram {
         Some(self.max_ms as u32)
     }
 
-    /// Folds `other` into `self` (§8.1 400-day → `lifetime` roll-up). Buckets and
+    /// Folds `other` into `self` (§8.1 / §F6 90-day → `lifetime` roll-up). Buckets and
     /// aggregates add; `max_ms` takes the larger. DERIVED percentile fields are
     /// deliberately NOT merged — they are snapshot-only and always recomputed.
     pub fn merge(&mut self, other: &Histogram) {

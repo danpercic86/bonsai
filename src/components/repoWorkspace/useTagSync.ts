@@ -21,6 +21,15 @@ export interface UseTagSync {
   /** Run a reconciliation. `force` (manual refresh / focus rescan) bypasses the
    *  cache but is a no-op until the Tags section has been opened once. */
   refetch: (opts?: { force?: boolean }) => Promise<void>;
+  /** P77 — the auto-fetch trigger, as a stable zero-arg callback. It is
+   *  `refetch({ force: true })`: `force` so the ~10 s cache guard cannot swallow a
+   *  check that a just-completed network cycle made worth re-running, and still a
+   *  no-op while the state is `idle` (the Tags section has never been opened), so
+   *  it adds NO network call of its own — it only rides one the user opted into.
+   *
+   *  A local compare would not do: a fetched tag and a local-only tag both land in
+   *  `refs/tags/*`, so classifying them needs the `ls-remote` this runs. */
+  afterAutoFetch: () => void;
   /** Reset to the pristine (no-check) state on repo switch / close. */
   clear: () => void;
 }
@@ -82,6 +91,10 @@ export function useTagSync(repoId: string, remotes: RemoteInfo[]): UseTagSync {
     [repoId, remoteCount],
   );
 
+  const afterAutoFetch = useCallback(() => {
+    void refetch({ force: true });
+  }, [refetch]);
+
   const clear = useCallback(() => {
     reqId.current += 1;
     lastFetch.current = 0;
@@ -94,5 +107,5 @@ export function useTagSync(repoId: string, remotes: RemoteInfo[]): UseTagSync {
   // fall back to the resolved default so the offline line is never nameless.
   const remote = report?.remote ?? defaultRemote;
 
-  return { report, state, remote, checkedAt, refetch, clear };
+  return { report, state, remote, checkedAt, refetch, afterAutoFetch, clear };
 }

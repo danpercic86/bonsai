@@ -117,13 +117,36 @@ describe('deleteResultToast (§16.4)', () => {
     failedFiles: 0,
     activeFile: null,
     rolled: false,
+    deletedMetrics: 0,
+    metricsCleared: true,
   };
 
   it('rolled:false, no exports', () => {
     const t = deleteResultToast(base);
     expect(t.tone).toBe('success');
-    expect(t.text).toMatch(/^Deleted 4 log files\. .* freed\.$/);
+    expect(t.text).toMatch(/^Deleted 4 log files\. .* freed\. Usage counts cleared\.$/);
     expect(t.text).not.toContain('Still recording');
+  });
+
+  // §F6: `metricsCleared` is the ONLY justification for the usage-count clause.
+  // `deletedMetrics === 0` is a legitimate success (a launch younger than the
+  // first flush has nothing on disk yet), so it must NOT weaken the claim — and
+  // `deletedMetrics > 0` must not be double-counted as log files.
+  it('claims the usage counts cleared even when no metrics FILE was deleted', () => {
+    const t = deleteResultToast({ ...base, deletedMetrics: 0, metricsCleared: true });
+    expect(t.text).toContain('Usage counts cleared.');
+    expect(t.text).toMatch(/^Deleted 4 log files\./);
+  });
+
+  it('does not count the metrics files as log files', () => {
+    const t = deleteResultToast({ ...base, deletedFiles: 6, deletedMetrics: 2 });
+    expect(t.text).toMatch(/^Deleted 4 log files\./);
+  });
+
+  it('says so plainly when the usage counts were NOT cleared', () => {
+    const t = deleteResultToast({ ...base, deletedMetrics: 0, metricsCleared: false });
+    expect(t.text).toContain('Usage counts were not cleared.');
+    expect(t.announce).toContain('Usage counts were not cleared.');
   });
 
   it('rolled:true names the "Still recording" clause', () => {
@@ -136,11 +159,60 @@ describe('deleteResultToast (§16.4)', () => {
     expect(t.text).toMatch(/^Deleted 4 log files and 1 export\. /);
   });
 
+  // §6.8 R5 — the zero-log outcome. "Deleted 0 log files" reads as a bug in the
+  // exact state §F6 made this row serve, and the mock's hard-coded counts are
+  // what kept this branch out of the harness. Two rows, because a saved export
+  // zip outlives the logs it came from: zero logs WITH exports is reachable.
+  it('leads with the usage counts when no log file was deleted', () => {
+    const t = deleteResultToast({ ...base, deletedFiles: 1, deletedMetrics: 1 });
+    expect(t.tone).toBe('success');
+    expect(t.text).toMatch(/^Usage counts cleared\. .* freed\.$/);
+    expect(t.text).not.toContain('0 log files');
+    expect(t.announce).toBe('Usage counts cleared.');
+  });
+
+  it('still names the exports when no log file was deleted', () => {
+    const t = deleteResultToast({
+      ...base,
+      deletedFiles: 3,
+      deletedExports: 2,
+      deletedMetrics: 1,
+    });
+    expect(t.text).toMatch(/^Deleted 2 exports\. .* freed\. Usage counts cleared\.$/);
+    expect(t.text).not.toContain('0 log files');
+    expect(t.announce).toBe('Usage counts cleared.');
+  });
+
+  // The lead is driven by `metricsCleared`, never hard-coded: an unreadable (but
+  // still present) `metrics/` clears the aggregate in memory, deletes no file and
+  // fails none, so this reaches the success branch with `metricsCleared: false`.
+  it('does not claim a clear that did not happen in the zero-log branch', () => {
+    const t = deleteResultToast({
+      ...base,
+      deletedFiles: 0,
+      deletedBytes: 0,
+      deletedMetrics: 0,
+      metricsCleared: false,
+    });
+    expect(t.text).toMatch(/^Usage counts were not cleared\./);
+    expect(t.announce).toBe('Usage counts were not cleared.');
+  });
+
   it('partial failure is a danger toast', () => {
-    const t = deleteResultToast({ ...base, deletedFiles: 4, failedFiles: 1 });
+    const t = deleteResultToast({
+      ...base,
+      deletedFiles: 4,
+      failedFiles: 1,
+      metricsCleared: false,
+    });
     expect(t.tone).toBe('error');
     expect(t.text).toContain('Deleted 4 of 5 log files.');
     expect(t.text).toContain('could not be deleted');
+    // §6.8 R5 NIT — an error says what to do next, and a retry is what actually
+    // clears the counts. Partial-failure path ONLY: the total-failure path maps
+    // to `deleteErrorText`, whose branches already name a cause.
+    expect(t.text).toContain('Usage counts were not cleared. Try again.');
+    expect(t.announce).toContain('Usage counts were not cleared. Try again.');
   });
 });
 
@@ -151,6 +223,11 @@ describe('mapped error copy (never raw OS text)', () => {
     );
     expect(deleteErrorText('the folder is no longer there')).toBe(
       'The logs folder is no longer there.',
+    );
+    // §6.8 R5 — the fallback names the action's FULL scope. It told the zero-log
+    // user nothing about the counts they actually asked to clear.
+    expect(deleteErrorText('os error 1392')).toBe(
+      "Couldn't delete the logs and usage counts.",
     );
   });
   it('export disk-full / permission', () => {

@@ -15,7 +15,9 @@ use bonsai_core::error::AppError;
 
 use super::metrics::{MetricsFile, METRICS_SCHEMA_VERSION};
 
-fn bak_path(path: &Path) -> std::path::PathBuf {
+/// `<path>.bak` — the rotated previous good primary. Public because §F6's clear
+/// must be able to REMOVE it: deleting `usage.json` alone is undone by `load`.
+pub fn bak_path(path: &Path) -> std::path::PathBuf {
     let mut s = path.as_os_str().to_os_string();
     s.push(".bak");
     std::path::PathBuf::from(s)

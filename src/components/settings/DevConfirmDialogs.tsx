@@ -97,7 +97,14 @@ export function ExportConfirmDialog({
         </p>
       )}
       <p>Open the file and read it before sending it to anyone.</p>
-      <p>Exports you saved elsewhere are not removed by &ldquo;Delete all log files&rdquo;.</p>
+      {/* The quoted label is part of §6.2's byte-identical pair — it must name the
+          control that exists, or this dialog points at one that does not. The rest
+          of §4's export copy is unchanged: usage counts are not in an export, so
+          neither of its content statements became false. */}
+      <p>
+        Exports you saved elsewhere are not removed by &ldquo;Delete logs and usage
+        counts&rdquo;.
+      </p>
     </ConfirmDialog>
   );
 }
@@ -118,20 +125,50 @@ export function DeleteLogsConfirmDialog({
   onConfirm(): void;
   onCancel(): void;
 }) {
-  const n = info?.totalFiles ?? 0;
+  // §6.8 R3: `null` means NOT KNOWN (the `logSessionInfo` read failed), which is a
+  // different state from a known zero and MUST NOT collapse into it — `?? 0` here
+  // is what made a failed read promise "usage counts only" and then delete every
+  // log file on disk.
+  const n = info === null ? null : info.totalFiles;
   const size = formatBytes(info?.totalBytes ?? 0);
   const exportFiles = info?.exportFiles ?? 0;
   return (
     <ConfirmDialog
       open={open}
-      title="Delete all log files?"
-      confirmLabel="Delete logs"
+      title="Delete logs and usage counts?"
+      confirmLabel="Delete all"
       confirmVariant="danger"
       busy={busy}
       onConfirm={onConfirm}
       onCancel={onCancel}
     >
-      <p>{`Delete ${NUM.format(n)} log files (${size})? This cannot be undone.`}</p>
+      {/* §F6 §6.4 + §6.8 R3 — THREE lead lines, not two:
+            • n > 0    — the count is known and nonzero;
+            • n === 0  — known zero: the row is always enabled now, so this is a
+                         REACHABLE state and must not promise "0 log files";
+            • n === null — NOT KNOWN (the count read failed). It states the scope
+                         at its WIDEST, which is the only safe direction for a
+                         destructive confirm: reusing the `n === 0` line here
+                         would name a smaller target than the command destroys.
+          The `n > 0` line pluralises `log file` off the same count as the row
+          hint 8px above it (§6.8 R4) — `Delete 1 log files` was the bug. */}
+      <p>
+        {n === null
+          ? "Delete all log files and clear Bonsai's usage counts? Bonsai could not count them first. This cannot be undone."
+          : n === 0
+            ? "Clear Bonsai's usage counts? This cannot be undone."
+            : `Delete ${NUM.format(n)} log file${n === 1 ? '' : 's'} (${size}) and clear Bonsai's usage counts? This cannot be undone.`}
+      </p>
+      {/* Names the exact target, per the destructive-action rule: a confirmation
+          that names a smaller target than it destroys is the defect §F6 fixes. The
+          FOLDER, never `usage.json` — deleting that file alone is undone by its
+          `.bak`. There is no undo and none is offered: unlike logs, usage counts
+          are not exported, so nothing recovers them from another surface. */}
+      <p>
+        Usage counts are how often Bonsai&apos;s own actions ran. They live in a{' '}
+        <span className="mono">metrics</span> folder beside your log files, and Bonsai removes
+        that whole folder.
+      </p>
       {exportFiles > 0 && <p>{`This includes ${archives(exportFiles)}.`}</p>}
       {devEnabled && (
         <p>
@@ -140,7 +177,7 @@ export function DeleteLogsConfirmDialog({
         </p>
       )}
       <p>Exports you saved elsewhere are not removed.</p>
-      <p>Deleting logs does not change any of your repositories.</p>
+      <p>Deleting these does not change any of your repositories.</p>
     </ConfirmDialog>
   );
 }

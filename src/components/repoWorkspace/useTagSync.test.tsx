@@ -172,3 +172,42 @@ describe('useTagSync lifecycle', () => {
     expect(result.current.checkedAt).toBeNull();
   });
 });
+
+/** P77 — the auto-fetch trigger. The ruling is "no repo-open network call and no
+ *  new network policy", so this rides the cycle the user already enabled; these
+ *  two tests are what keep it from quietly becoming either of the things the
+ *  ruling forbids. */
+describe('useTagSync afterAutoFetch', () => {
+  it('re-checks even inside the ~10s cache window (a fetch just changed the answer)', async () => {
+    const spy = vi.spyOn(mockIpc, 'listTagSync').mockResolvedValue(report());
+    const { result } = renderHook(() => useTagSync(REPO, ORIGIN));
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // An UNforced refetch inside the window is (correctly) swallowed …
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // … but the auto-fetch trigger must not be: it forces.
+    await act(async () => {
+      result.current.afterAutoFetch();
+    });
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays silent until the Tags section has been opened once — no repo-open call', async () => {
+    const spy = vi.spyOn(mockIpc, 'listTagSync').mockResolvedValue(report());
+    const { result } = renderHook(() => useTagSync(REPO, ORIGIN));
+    expect(result.current.state).toBe('idle');
+
+    await act(async () => {
+      result.current.afterAutoFetch();
+    });
+    expect(spy).not.toHaveBeenCalled();
+    expect(result.current.state).toBe('idle');
+  });
+});

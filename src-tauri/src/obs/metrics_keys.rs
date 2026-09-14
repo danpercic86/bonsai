@@ -2,12 +2,19 @@
 //! string may become a key in `usage.json`.
 //!
 //! ONE concern, and it is a privacy concern, not a formatting one. `usage.json`
-//! is the durable file that §8 promises carries **no user content**: it is kept
-//! forever, it is not covered by `logs_delete_all`, and it has no redaction pass
-//! of its own. A path, branch name or commit message that reached a key would
-//! therefore be permanent, un-deletable repo content. These predicates are the
-//! only thing standing between an IPC-derived string and that file, so they live
-//! apart from the aggregation logic where they cannot be lost in a refactor.
+//! is the durable file that §8 promises carries **no user content**: its
+//! `lifetime` totals are never aged out, and it has no redaction pass of its own.
+//! A path, branch name or commit message that reached a key would therefore be
+//! written verbatim and survive until the user chose to delete. These predicates
+//! are the only thing standing between an IPC-derived string and that file, so
+//! they live apart from the aggregation logic where they cannot be lost in a
+//! refactor.
+//!
+//! §F6 (2026-09-11) made the file deletable through `logs_delete_all` and capped
+//! the per-day profile at 90 days. **That weakens nothing here.** Deletability is
+//! a remedy the user has to invoke; these guards stop the bad key from ever being
+//! written, and they keep their full force — "un-deletable" was one reason for
+//! them, never the only one.
 //!
 //! Shape, not content: `cmd.<name>` accepts bare snake_case identifiers,
 //! `<domain>.<action>` counter keys accept the same plus dots, and error codes

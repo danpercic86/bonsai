@@ -155,6 +155,18 @@ export interface LogsDeleteResult {
   rolled: boolean;
   /** §6.2 — how many of `deletedFiles` were export zips. */
   deletedExports?: number;
+  /** §F6 — usage-statistics files removed from the `metrics` folder
+   *  (`usage.json`, `.bak`, `.tmp`). ALSO counted in `deletedFiles`/
+   *  `deletedBytes`, like export zips. */
+  deletedMetrics: number;
+  /** §F6 — the in-memory aggregate was cleared AND no usage file remains.
+   *
+   *  **True even when `deletedMetrics === 0`**: on a launch younger than the
+   *  first 60 s flush there is nothing on disk yet while the aggregate is very
+   *  much live. The "usage counts cleared" copy is justified by THIS flag, never
+   *  by the file count. Required, not optional — an absent flag would fall back
+   *  to a misleading default. */
+  metricsCleared: boolean;
 }
 
 /**
@@ -191,8 +203,10 @@ export interface DayBucket {
   totals: MetricTotals;
 }
 
-/** P91 §8 — the durable metrics root returned by `metricsSnapshot()`. Retains up
- *  to 400 day buckets; older days fold into `lifetime`. */
+/** P91 §8 / §F6 — the durable metrics root returned by `metricsSnapshot()`.
+ *  Retains up to 90 day buckets AND no bucket older than 90 calendar days; days
+ *  outside the window fold into `lifetime`, which is a lifetime figure the window
+ *  never ages out. */
 export interface MetricsSnapshot {
   schema: number;
   firstSeen: string;

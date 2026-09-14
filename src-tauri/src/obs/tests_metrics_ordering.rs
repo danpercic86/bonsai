@@ -38,8 +38,10 @@ fn day() -> String {
 /// The failure the revision stamp exists to stop: a flush snapshots the
 /// pre-reset file, `metrics_reset` runs to completion (emptying memory AND
 /// disk), and the flush then commits its stale bytes — silently restoring
-/// everything the user just asked to be deleted. `usage.json` is durable and
-/// outside the `logs_delete_all` scope, so nothing else would clear it.
+/// everything the user just asked to be deleted. `usage.json` is durable, so the
+/// resurrection is durable too. Since §F6 the same stamp fences
+/// `MetricsState::clear`; `tests_metrics_clear.rs` is this test's mirror for the
+/// delete path.
 #[test]
 fn an_in_flight_flush_cannot_undo_a_reset() {
     let path = scratch("reset-undo");
@@ -51,7 +53,9 @@ fn an_in_flight_flush_cannot_undo_a_reset() {
     // has not committed yet when the reset runs end to end.
     let resetter = Arc::clone(&store);
     arm_after_snapshot_hook(Box::new(move || {
-        resetter.reset(T0 + 10).expect("reset");
+        resetter
+            .reset(&PerfCounters::default(), T0 + 10)
+            .expect("reset");
     }));
     store.flush(&PerfCounters::default(), T0).expect("flush");
 
@@ -75,7 +79,9 @@ fn a_dropped_stale_write_does_not_block_later_saves() {
     store.bump_counter("commit.create", 3, &day());
     let resetter = Arc::clone(&store);
     arm_after_snapshot_hook(Box::new(move || {
-        resetter.reset(T0 + 10).expect("reset");
+        resetter
+            .reset(&PerfCounters::default(), T0 + 10)
+            .expect("reset");
     }));
     store.flush(&PerfCounters::default(), T0).expect("flush");
 

@@ -97,26 +97,33 @@ describe('DevCategory — delete wiring', () => {
       activeFile: 'new.jsonl',
       rolled: true,
       deletedExports: 0,
+      deletedMetrics: 0,
+      metricsCleared: false,
     };
     const del = vi.spyOn(mockIpc, 'logsDeleteAll').mockResolvedValue(partial);
     const push = vi.fn();
     renderDev(push);
 
     // Wait for the mount poll to enable the (logs-exist) Delete button.
-    const deleteBtn = await screen.findByRole('button', { name: 'Delete logs…' });
+    const deleteBtn = await screen.findByRole('button', { name: 'Delete all…' });
     await waitFor(() => expect(deleteBtn).toHaveAttribute('aria-disabled', 'false'));
 
     // Opening re-reads session info (§8.5.4), so the dialog count is fresh.
     const callsBeforeOpen = info.mock.calls.length;
     fireEvent.click(deleteBtn);
     await waitFor(() => expect(info.mock.calls.length).toBeGreaterThan(callsBeforeOpen));
-    const dialog = await screen.findByRole('dialog', { name: 'Delete all log files?' });
-    expect(dialog).toHaveTextContent(/Delete 5 log files/);
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Delete logs and usage counts?',
+    });
+    expect(dialog).toHaveTextContent(/Delete 5 log files .* and clear Bonsai's usage counts/);
+    // §F6 §6.4: the confirmation names the exact destructive target — the FOLDER,
+    // because deleting `usage.json` alone is undone by its `.bak` on next load.
+    expect(dialog).toHaveTextContent(/removes that whole folder/);
 
     // Delete is not invoked until confirm.
     expect(del).not.toHaveBeenCalled();
     const callsBeforeDelete = info.mock.calls.length;
-    fireEvent.click(screen.getByRole('button', { name: 'Delete logs' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete all' }));
 
     await waitFor(() =>
       expect(push).toHaveBeenCalledWith(
@@ -130,12 +137,32 @@ describe('DevCategory — delete wiring', () => {
     expect(info.mock.calls.length).toBeGreaterThan(callsBeforeDelete);
   });
 
+  /** §6.8 R6 — the danger button's accessible name is just `Delete all…`; the
+   *  row title is a <span>, not a label, and `SettingsRow` wires no
+   *  `aria-describedby` for `hint`. Without this, a screen-reader user
+   *  navigating by button hears "Delete all…, button" for a data-destroying
+   *  control and "all" of WHAT reaches sighted users only, by proximity. */
+  it('points the danger button at its hint as an accessible description', async () => {
+    vi.spyOn(mockIpc, 'logSessionInfo').mockResolvedValue(sessionInfo());
+    renderDev(vi.fn());
+
+    const deleteBtn = await screen.findByRole('button', { name: 'Delete all…' });
+    const id = deleteBtn.getAttribute('aria-describedby');
+    expect(id, 'the button must carry a description idref').toBeTruthy();
+    // The idref must RESOLVE — a dangling one is worse than none at all.
+    const hint = id === null ? null : document.getElementById(id);
+    expect(hint).not.toBeNull();
+    expect(hint).toHaveTextContent(/Removes all .* and Bonsai's usage counts/);
+    // The accessible NAME is untouched, so the DOM↔catalog guard stays green.
+    expect(deleteBtn).toHaveAccessibleName('Delete all…');
+  });
+
   it('does not invoke delete when the confirm dialog is cancelled', async () => {
     vi.spyOn(mockIpc, 'logSessionInfo').mockResolvedValue(sessionInfo());
     const del = vi.spyOn(mockIpc, 'logsDeleteAll');
     renderDev(vi.fn());
 
-    const deleteBtn = await screen.findByRole('button', { name: 'Delete logs…' });
+    const deleteBtn = await screen.findByRole('button', { name: 'Delete all…' });
     await waitFor(() => expect(deleteBtn).toHaveAttribute('aria-disabled', 'false'));
     fireEvent.click(deleteBtn);
     const cancel = await screen.findByRole('button', { name: 'Cancel' });
@@ -143,5 +170,89 @@ describe('DevCategory — delete wiring', () => {
       fireEvent.click(cancel);
     });
     expect(del).not.toHaveBeenCalled();
+  });
+});
+
+/** §F6 §6.4 — the delete row is no longer gated on logs existing, so the
+ *  no-logs path has to actually WORK: the dialog opens, it says what it will
+ *  clear, and confirming still calls the command. A container that keyed the
+ *  dialog's `open` off a non-null session info would make this a dead click. */
+describe('DevCategory — delete with no log files (§F6)', () => {
+  it('opens the dialog on its n === 0 copy and still deletes', async () => {
+    vi.spyOn(mockIpc, 'logSessionInfo').mockResolvedValue({
+      ...sessionInfo(),
+      files: [],
+      totalFiles: 0,
+      totalBytes: 0,
+      exportFiles: 0,
+      exportBytes: 0,
+    });
+    const del = vi.spyOn(mockIpc, 'logsDeleteAll').mockResolvedValue({
+      deletedFiles: 1,
+      deletedBytes: 2_048,
+      failedFiles: 0,
+      activeFile: null,
+      rolled: false,
+      deletedExports: 0,
+      deletedMetrics: 1,
+      metricsCleared: true,
+    });
+    const push = vi.fn();
+    renderDev(push);
+
+    const deleteBtn = await screen.findByRole('button', { name: 'Delete all…' });
+    // Never gated on logs: it is enabled with zero of them.
+    await waitFor(() => expect(deleteBtn).toHaveAttribute('aria-disabled', 'false'));
+    fireEvent.click(deleteBtn);
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Delete logs and usage counts?',
+    });
+    expect(dialog).toHaveTextContent("Clear Bonsai's usage counts? This cannot be undone.");
+    expect(dialog).not.toHaveTextContent(/0 log files/);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete all' }));
+    });
+    expect(del).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** §6.8 R3 — a FAILED count read is not a count of zero. Every `logSessionInfo`
+ *  read on the page rejects (including the one on mount), so the container has
+ *  nothing to fall back on and hands the dialog `null`. Before the fix `?? 0`
+ *  collapsed that into the known-zero branch, so the dialog promised to clear
+ *  usage counts only and then deleted however many log files were on disk — a
+ *  confirmation naming a smaller target than it destroys, which is the exact
+ *  defect §6.4 exists to prevent. `refresh` swallows the rejection by design, so
+ *  the page stays usable and the delete must still be reachable. */
+describe('DevCategory — delete when the count read fails (§6.8 R3)', () => {
+  it('states the widest scope instead of the known-zero copy, and still deletes', async () => {
+    vi.spyOn(mockIpc, 'logSessionInfo').mockRejectedValue(new Error('logs dir unreadable'));
+    const del = vi.spyOn(mockIpc, 'logsDeleteAll');
+    renderDev(vi.fn());
+
+    const deleteBtn = await screen.findByRole('button', { name: 'Delete all…' });
+    await waitFor(() => expect(deleteBtn).toHaveAttribute('aria-disabled', 'false'));
+    await act(async () => {
+      fireEvent.click(deleteBtn);
+    });
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Delete logs and usage counts?',
+    });
+    expect(dialog).toHaveTextContent(
+      "Delete all log files and clear Bonsai's usage counts? Bonsai could not count them first. This cannot be undone.",
+    );
+    // The regression itself: the known-zero lead line must NOT appear.
+    expect(dialog).not.toHaveTextContent("Clear Bonsai's usage counts? This cannot be undone.");
+    // ...and no fabricated count in either direction.
+    expect(dialog).not.toHaveTextContent(/Delete 0 log file/);
+
+    // R3: the dialog stays actionable rather than dying silently.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete all' }));
+    });
+    expect(del).toHaveBeenCalledTimes(1);
   });
 });

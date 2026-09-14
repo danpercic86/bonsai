@@ -24,3 +24,30 @@ slow-timeout = { period = "120s" }
 fail-fast = false
 retries = 1
 slow-timeout = { period = "120s", terminate-after = 3 }
+
+# ---------------------------------------------------------------- test groups
+#
+# `h_ai` (crates/bonsai-core/tests/h_ai.rs) is the consolidated AI-CLI harness:
+# 57 tests, every one of which spawns the `claude_stub.cmd` / `.sh` fixture, and
+# several of which hold that child alive for tens of seconds on purpose
+# (`stream_slow` sleeps ~30 s, `stream_hang_stdin` ~60 s). Run in parallel on
+# Windows that is 57 concurrent `cmd.exe` + `ping` process trees; measured
+# 2026-09-11 it fails or STALLS, while `--test-threads=1` passes 57/57 in 130 s.
+#
+# `max-threads = 1` serializes this binary's tests against EACH OTHER only —
+# every other test binary in the workspace keeps running in parallel alongside
+# it, so the cost is bounded by the 130 s serial run, under the workspace's own
+# 181 s. Overrides are declared per profile and are NOT inherited from
+# `default`, so the same rule is repeated for `ci` (the profile CI passes with
+# `--profile ci`; `scripts/gate.mjs` and a bare `cargo nextest run` use
+# `default`). Verify with `cargo nextest show-config test-groups [--profile ci]`.
+[test-groups.h-ai-stub]
+max-threads = 1
+
+[[profile.default.overrides]]
+filter = 'binary(h_ai)'
+test-group = 'h-ai-stub'
+
+[[profile.ci.overrides]]
+filter = 'binary(h_ai)'
+test-group = 'h-ai-stub'

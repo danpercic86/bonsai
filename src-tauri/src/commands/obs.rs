@@ -1,8 +1,8 @@
 //! P91 §6 — the observability commands (increment 1 subset): `log_append`,
 //! `log_session_info`, `log_reveal_dir`, `log_export_session`.
 //!
-//! `logs_delete_all` (§6.1) and the metrics commands (§8) belong to later
-//! increments and are deliberately absent.
+//! …plus the metrics commands (§8). `logs_delete_all` (§6.1 / §F6) is the one
+//! command here that destroys anything, so it lives in `obs_delete.rs`.
 //!
 //! Every one of these is on the §2.3 instrumentation EXCLUSION list — logging
 //! about logging self-amplifies — which is why nothing here mints a record.
@@ -71,75 +71,6 @@ pub struct LogSessionInfo {
     pub export_bytes: Option<u64>,
 }
 
-/// §6.1 — the honest result of "delete all log files".
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LogsDeleteResult {
-    /// Files actually removed (log parts AND export zips — see `deleted_exports`).
-    pub deleted_files: u32,
-    /// Bytes reclaimed (sizes summed, each measured immediately before removal).
-    pub deleted_bytes: u64,
-    /// Files that could not be removed (locked, permission denied, ...).
-    pub failed_files: u32,
-    /// Present only when Dev mode was ON: the fresh, empty file logging continues
-    /// into. NAME only, never a path.
-    pub active_file: Option<String>,
-    /// True when the writer was rolled to a new file as part of this operation.
-    pub rolled: bool,
-    /// §6.2 — how many of `deleted_files` were export zips. Additive.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deleted_exports: Option<u32>,
-}
-
-/// §6.1 — "Delete all log files" (roll-then-purge).
-///
-/// Dev mode ON: sends `RollAndPurge` to the writer thread, which rolls to a fresh
-/// file (header `afterPurge: true`) then deletes every other in-scope file — so
-/// logging continues with no lost record. Dev mode OFF: no writer exists, so the
-/// in-scope files are deleted directly. Either way the scan/delete runs on
-/// `spawn_blocking`, so the UI never blocks.
-///
-/// On the §2.3 instrumentation exclusion list — deleting logs writes no record
-/// into the surviving file.
-#[tauri::command]
-pub async fn logs_delete_all(
-    app: tauri::AppHandle,
-    obs_state: tauri::State<'_, ObsState>,
-) -> Result<LogsDeleteResult, AppError> {
-    let dir = obs::logs_dir(&app)?;
-    let exports = obs::exports_dir(&app)?;
-    if let Some(sink) = obs_state.sink() {
-        let exports_for_purge = exports.clone();
-        let reply = tauri::async_runtime::spawn_blocking(move || {
-            sink.roll_and_purge(exports_for_purge)
-        })
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))??;
-        Ok(LogsDeleteResult {
-            deleted_files: reply.deleted_files,
-            deleted_bytes: reply.deleted_bytes,
-            failed_files: reply.failed_files,
-            active_file: Some(reply.active_file),
-            rolled: true,
-            deleted_exports: Some(reply.deleted_exports),
-        })
-    } else {
-        let counts = tauri::async_runtime::spawn_blocking(move || {
-            writer::purge_scope(&dir, &exports, None)
-        })
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?;
-        Ok(LogsDeleteResult {
-            deleted_files: counts.deleted_files,
-            deleted_bytes: counts.deleted_bytes,
-            failed_files: counts.failed_files,
-            active_file: None,
-            rolled: false,
-            deleted_exports: Some(counts.deleted_exports),
-        })
-    }
-}
-
 /// Appends a batch of frontend records (§6 "Frontend → file").
 ///
 /// A no-op when Dev mode is off: the frontend's own gate should have prevented
@@ -199,15 +130,26 @@ pub async fn metrics_snapshot(
 ///
 /// **Headless by design:** this command exists but appears in NO settings catalog
 /// row — there is no UI affordance for it in P91 (a Statistics page is future
-/// work). Blocking (writes the file), so it runs on the blocking pool.
+/// work), and §F6 deliberately did NOT add one: `logs_delete_all` is the user's
+/// door, and a "clear usage statistics" control belongs on the Statistics page,
+/// next to the data. Blocking (writes the file), so it runs on the blocking pool.
+///
+/// §F6 — takes `AppState` for the PERF SNAPSHOT: `reset` re-baselines
+/// `perf_baseline` to the current counters, because `PerfState` is
+/// process-lifetime and zeroing the baseline resurrects every pre-reset count at
+/// the next fold.
 #[tauri::command]
 pub async fn metrics_reset(
+    app_state: tauri::State<'_, AppState>,
     metrics: tauri::State<'_, Arc<MetricsState>>,
 ) -> Result<(), AppError> {
+    let perf: Arc<PerfState> = app_state.perf.clone();
     let metrics = Arc::clone(&metrics);
-    tauri::async_runtime::spawn_blocking(move || metrics.reset(writer::now_secs()))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    tauri::async_runtime::spawn_blocking(move || {
+        metrics.reset(&perf.snapshot(), writer::now_secs())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// §6 — current session summary + the totals the delete-confirm copy needs.

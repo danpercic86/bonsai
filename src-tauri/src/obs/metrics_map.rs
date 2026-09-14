@@ -2,11 +2,11 @@
 //!
 //! The key predicates in `metrics_keys.rs` answer "may this string be a key?".
 //! This module answers the second, independent question: "how MANY keys may
-//! there be?". Both are needed. `usage.json` is durable, uncovered by
-//! `logs_delete_all` and unredacted, and its maps grow from `log_append`, whose
-//! records come straight from the webview — so a shape-valid but unbounded key
-//! stream (audit F3) would still grow the file without limit across 400 day
-//! buckets.
+//! there be?". Both are needed. `usage.json` is durable and unredacted, and its
+//! maps grow from `log_append`, whose records come straight from the webview — so
+//! a shape-valid but unbounded key stream (audit F3) would still grow the file
+//! without limit across the retained day buckets, and without limit in `lifetime`,
+//! which the §F6 window never ages out.
 //!
 //! Past [`MAX_KEYS_PER_MAP`] a map stops minting keys and folds every further
 //! observation into the single [`OVERFLOW_KEY`] bucket, so the count is never

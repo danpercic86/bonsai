@@ -167,11 +167,13 @@ describe('dev-mode privacy consent copy', () => {
 
   it('keeps the placeholder ordinals in a mono span', () => {
     const panel = render(<SettingsDevPrivacySection rawNames={false} />);
+    // ¶7 (§F6) adds exactly ONE more `.mono` span, and it is the folder name.
     expect(Array.from(panel.container.querySelectorAll('.mono'), (el) => el.textContent)).toEqual([
       'ref#3',
       'path#7',
       'remote#1',
       'repo#1',
+      'metrics',
     ]);
     panel.unmount();
     cleanup();
@@ -191,10 +193,36 @@ describe('dev-mode privacy consent copy', () => {
     expect(panel).not.toMatch(/impossible|guaranteed|never can be/i);
   });
 
-  it('omits the usage-count disclosure — §6 is a pending user decision', () => {
+  // §F6 (user ruling 2026-09-11) REVERSED the premise of the test that stood
+  // here: the panel used to be asserted NOT to mention the usage count, because
+  // §6 was a pending decision. It is now ruled and the disclosure is mandatory,
+  // so the assertion is inverted rather than deleted — that inversion is the
+  // clearest signal in the suite that the scope changed deliberately.
+  it('discloses the usage count, in two sentences (§6.2, signed verbatim)', () => {
     const panel = panelProse(false);
-    expect(panel).not.toContain('usage count');
-    expect(panel).not.toContain('metrics');
+    expect(panel).toContain('Bonsai also keeps a small usage count.');
+    expect(panel).toContain('whether or not Dev mode is on');
+    // The window, and the clause that is true only because `lifetime` survives it.
+    expect(panel).toContain('The day-by-day detail is kept for 90 days, and a running total');
+    // The FOLDER, never the file: deleting `usage.json` alone is undone by `.bak`.
+    expect(panel).toContain('folder beside your log files');
+    expect(panel).not.toContain('usage.json');
+    // The quoted label must name the control that exists (§6.2's byte-identical
+    // pair with the row label in `SettingsDevLogsSection.tsx`).
+    expect(panel).toContain('“Delete logs and usage counts” below clears all of it.');
+  });
+
+  // The trap §6.1.1 exists to stop: durations are Dev-mode ONLY
+  // (`metrics.rs:148-152`). A single sentence claiming always-on counts AND
+  // always-on timings would be an overclaim in the app's only privacy surface.
+  it('never claims the durations are always-on', () => {
+    const panel = panelProse(false);
+    const always = panel.slice(
+      panel.indexOf('From the first time you open it'),
+      panel.indexOf('With Dev mode on it also records'),
+    );
+    expect(always).not.toMatch(/how long/);
+    expect(panel).toContain('With Dev mode on it also records how long its own actions took.');
   });
 
   it('is poll-independent: only the "Right now:" note varies (§8.4 stickiness)', () => {

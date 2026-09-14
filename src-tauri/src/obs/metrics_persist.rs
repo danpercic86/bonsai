@@ -13,8 +13,10 @@
 //! versus the 60 s flush timer, so the observable failure was **a reset silently
 //! undone on disk** by an in-flight flush holding a pre-reset snapshot — and both
 //! paths then cleared `dirty`, so nothing rewrote the emptied file until the next
-//! counter bump. `usage.json` is durable, is NOT in the `logs_delete_all` scope
-//! (§8), and `metrics_reset` is the user's only way to clear it.
+//! counter bump. `usage.json` is durable, so a silently-undone clear is durable
+//! too. Since §F6 the same stamp is reused as a FENCE by
+//! [`MetricsState::clear`], which is the one door both `metrics_reset` and the
+//! metrics half of `logs_delete_all` go through.
 //!
 //! **Fix: a revision stamp, not a wider lock.** Every accepted mutation bumps
 //! `Inner::rev` (`MetricsState::mark_dirty`). A saver stamps the `rev` its
@@ -27,7 +29,7 @@
 //!   `SAVE_LOCK` → state mutex, adding a second lock order to a module that
 //!   already has a non-reentrant re-entry hazard (`fold_perf` holds the state
 //!   mutex across its whole loop, which is why `bump_validated` takes
-//!   already-locked totals). It would also clone a 400-day `MetricsFile` while
+//!   already-locked totals). It would also clone a whole-window `MetricsFile` while
 //!   holding the IO lock, and it makes the failing interleaving reproducible only
 //!   by racing threads.
 //! * **Document the residual staleness.** Rejected on the merits above: a doc
@@ -42,7 +44,8 @@ use std::sync::atomic::Ordering;
 
 use bonsai_core::error::AppError;
 
-use super::{metrics_file, MetricTotals, MetricsFile, MetricsState, METRICS_SCHEMA_VERSION};
+use crate::obs::metrics_purge::ClearMode;
+use super::{metrics_file, MetricsFile, MetricsState};
 use crate::obs::writer;
 use crate::perf::PerfCounters;
 
@@ -65,23 +68,19 @@ impl MetricsState {
         self.persist()
     }
 
-    /// `metrics_reset()` — clears every aggregate to a fresh file and persists.
-    /// Headless: exposed as a command but never surfaced in a settings catalog.
-    pub fn reset(&self, now_secs: i64) -> Result<(), AppError> {
-        {
-            let mut g = self.lock();
-            g.file = MetricsFile {
-                schema: METRICS_SCHEMA_VERSION,
-                first_seen: writer::utc_date(now_secs),
-                sessions: 0,
-                days: Vec::new(),
-                lifetime: MetricTotals::default(),
-            };
-            g.perf_baseline = PerfCounters::default();
-            g.last_wall_secs = now_secs;
-            Self::mark_dirty(&mut g);
-        }
-        self.persist()
+    /// `metrics_reset()` — clears every aggregate to a fresh EMPTY file in place.
+    /// Headless: exposed as a command but never surfaced in a settings catalog
+    /// (§F6 §5 — when a Statistics page ships, a reset belongs THERE).
+    ///
+    /// Delegates to [`MetricsState::clear`] so the in-memory reset, the
+    /// `commit_rev` fence, the `.bak` removal and the perf re-baseline have
+    /// exactly ONE implementation shared with `logs_delete_all`. `perf` must be
+    /// the current `PerfState::snapshot()`: the old body passed
+    /// `PerfCounters::default()`, which re-added every pre-reset repo open at the
+    /// next 60 s fold (§F6 §4.2, flag F6-B).
+    pub fn reset(&self, perf: &PerfCounters, now_secs: i64) -> Result<(), AppError> {
+        self.clear(perf, now_secs, ClearMode::ResetInPlace)?;
+        Ok(())
     }
 
     /// Snapshot → commit, the ONE door to `usage.json`.
@@ -94,17 +93,25 @@ impl MetricsState {
     ///   picked up by the next flush, rather than being silently dropped.
     ///
     /// A failed commit leaves `dirty` set, so the next flush retries.
+    ///
+    /// §F6 §3.4: `bak_stale` is captured WITH the snapshot and acted on inside
+    /// `SAVE_LOCK`, after a successful commit — `save_locked` has just rotated the
+    /// pre-window primary into `usage.json.bak`, and leaving it there lets `load`
+    /// restore a 400-day profile the user was told is 90 days. Cost: the
+    /// crash-recovery copy is absent for one flush interval after a migration.
+    /// Accepted — the only thing that copy could restore is the file the
+    /// migration exists to discard.
     fn persist(&self) -> Result<(), AppError> {
-        let snapshot: Option<(PathBuf, MetricsFile, u64)> = {
+        let snapshot: Option<(PathBuf, MetricsFile, u64, bool)> = {
             let g = self.lock();
             match (&g.path, g.dirty) {
                 // Not initialised (no config dir), or nothing changed — either way
                 // there is nothing to write.
                 (None, _) | (_, false) => None,
-                (Some(path), true) => Some((path.clone(), g.file.clone(), g.rev)),
+                (Some(path), true) => Some((path.clone(), g.file.clone(), g.rev, g.bak_stale)),
             }
         };
-        let Some((path, file, rev)) = snapshot else {
+        let Some((path, file, rev, bak_stale)) = snapshot else {
             return Ok(());
         };
         after_snapshot_hook();
@@ -121,9 +128,18 @@ impl MetricsState {
             }
             guard.commit(&path, &file)?;
             self.commit_rev.store(rev, Ordering::Release);
+            if bak_stale {
+                let _ = std::fs::remove_file(metrics_file::bak_path(&path));
+            }
         }
 
         let mut g = self.lock();
+        // Cleared unconditionally on a committed write: the pre-window `.bak` is
+        // gone for good, and a `rev` bump between snapshot and commit must not
+        // leave the flag armed for a second, pointless removal.
+        if bak_stale {
+            g.bak_stale = false;
+        }
         if g.rev == rev {
             g.dirty = false;
         }

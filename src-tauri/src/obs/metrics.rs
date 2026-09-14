@@ -5,8 +5,9 @@
 //! 1. *No key is user-derived.* Every metric key comes from the fixed allow-list
 //!    below (`<domain>.<action>`), or from a command name validated to be a bare
 //!    code identifier. Repo content — paths, refs, messages — can never become a
-//!    key, so metrics need no redaction and are NOT in the `logs_delete_all`
-//!    scope (§8).
+//!    key, so metrics need no redaction pass. They ARE in the
+//!    `logs_delete_all` scope since §F6 — deletability is a remedy, not a reason
+//!    to relax the key guard that stops a user-derived key being written at all.
 //! 2. *No network sink.* Nothing here reaches an HTTP client; a test asserts the
 //!    whole `obs/` tree names no HTTP-client crate at all.
 //!
@@ -37,7 +38,13 @@ use super::metrics_map;
 pub const METRICS_SCHEMA_VERSION: u32 = 1;
 
 /// Daily buckets kept in full before the oldest folds into `lifetime` (§8).
-pub const RETAIN_DAYS: usize = 400;
+///
+/// §F6 (user ruling 2026-09-11): 400 → **90**, and enforced by calendar AGE
+/// (`metrics_clear::prune_days`), not by bucket count — the app is not used every
+/// day, so 90 buckets can span years while the signed privacy copy says
+/// "90 days". This is the single home for the window; no other module may
+/// hard-code one.
+pub const RETAIN_DAYS: usize = 90;
 
 /// The persisted metrics root (§8). `camelCase` on the wire.
 ///
@@ -51,9 +58,11 @@ pub struct MetricsFile {
     pub first_seen: String,
     /// App launches that have folded metrics (bumped once per launch at init).
     pub sessions: u64,
-    /// Retained daily buckets, oldest first. Length ≤ [`RETAIN_DAYS`].
+    /// Retained daily buckets, oldest first. Length ≤ [`RETAIN_DAYS`], and no
+    /// bucket is older than [`RETAIN_DAYS`] calendar days (§F6 §3.2).
     pub days: Vec<DayBucket>,
-    /// Everything older than [`RETAIN_DAYS`], folded together.
+    /// Everything older than [`RETAIN_DAYS`], folded together. A LIFETIME figure:
+    /// the window never ages it out (§F6 §3.5); only a clear removes it.
     pub lifetime: MetricTotals,
 }
 
@@ -82,11 +91,11 @@ pub struct MetricTotals {
 }
 
 impl MetricTotals {
-    /// Folds `other` into `self` — used for the 400-day → `lifetime` roll-up.
+    /// Folds `other` into `self` — used for the 90-day → `lifetime` roll-up.
     ///
     /// Goes through `metrics_map` like every other writer: `lifetime` accumulates
-    /// 400 buckets' key sets, so it is the map most able to grow past the
-    /// cardinality cap (audit F3).
+    /// every folded bucket's key set without bound, so it is the map most able to
+    /// grow past the cardinality cap (audit F3).
     fn merge(&mut self, other: &MetricTotals) {
         for (k, v) in &other.counters {
             metrics_map::bump(&mut self.counters, k, *v);
@@ -143,6 +152,13 @@ struct Inner {
     rev: u64,
     /// Epoch secs of the last `session_ms` attribution, for wall-time deltas.
     last_wall_secs: i64,
+    /// §F6 §3.4 — in-memory ONLY, never serialized. Set when `prune_days` folded
+    /// at least one bucket at load; cleared by the first `persist()` that commits.
+    /// While true, `usage.json.bak` may still hold PRE-window data: `save_locked`
+    /// rotates the good primary aside before committing, so the migration's own
+    /// save is what moves a 400-day file into `.bak`, where `load` would recover
+    /// it — silently restoring a profile the user was told is 90 days.
+    bak_stale: bool,
 }
 
 /// Managed observability-metrics state (§8). Always present — unlike the Dev-mode
@@ -174,6 +190,7 @@ impl Default for MetricsState {
                 dirty: false,
                 rev: 0,
                 last_wall_secs: 0,
+                bak_stale: false,
             }),
         }
     }
@@ -200,19 +217,13 @@ impl MetricsState {
     /// pool. `now_secs` fixes the launch date deterministically for tests.
     pub fn init(&self, dir: PathBuf, now_secs: i64) {
         let path = dir.join("usage.json");
-        let mut file = metrics_file::load(&path);
-        if file.schema == 0 {
-            file.schema = METRICS_SCHEMA_VERSION;
-        }
-        if file.first_seen.is_empty() {
-            file.first_seen = writer::utc_date(now_secs);
-        }
-        file.sessions = file.sessions.saturating_add(1);
+        let (file, bak_stale) = metrics_clear::load_pruned(&path, now_secs);
         let mut g = self.lock();
         g.path = Some(path);
         g.file = file;
         g.perf_baseline = PerfCounters::default();
         g.last_wall_secs = now_secs;
+        g.bak_stale = bak_stale;
         Self::mark_dirty(&mut g);
     }
 
@@ -225,19 +236,13 @@ impl MetricsState {
             let _ = std::fs::create_dir_all(dir);
         }
         // `init` appends `usage.json`; here `path` IS the file, so seed directly.
-        let mut file = metrics_file::load(&path);
-        if file.schema == 0 {
-            file.schema = METRICS_SCHEMA_VERSION;
-        }
-        if file.first_seen.is_empty() {
-            file.first_seen = writer::utc_date(now_secs);
-        }
-        file.sessions = file.sessions.saturating_add(1);
+        let (file, bak_stale) = metrics_clear::load_pruned(&path, now_secs);
         {
             let mut g = state.lock();
             g.path = Some(path);
             g.file = file;
             g.last_wall_secs = now_secs;
+            g.bak_stale = bak_stale;
             Self::mark_dirty(&mut g);
         }
         state
@@ -245,8 +250,12 @@ impl MetricsState {
 
     // ---------------------------------------------------------- observation
 
-    /// Returns today's day bucket, creating it (and folding the oldest into
-    /// `lifetime` past [`RETAIN_DAYS`]) on a date change.
+    /// Returns today's day bucket, creating it (and folding everything outside
+    /// the [`RETAIN_DAYS`] window into `lifetime`) on a date change.
+    ///
+    /// §F6 §3.3 — this is the SECOND retention trigger. `init` prunes at load and
+    /// is the migration, but a long-running session never re-hits it, so a session
+    /// running across midnight would otherwise keep buckets past the window.
     ///
     /// **Append-only clock assumption:** `today` is expected to be monotone
     /// non-decreasing across a session (it comes from the wall clock). Only the
@@ -256,8 +265,13 @@ impl MetricsState {
     /// contract addresses.
     fn totals_for<'a>(inner: &'a mut Inner, today: &str) -> &'a mut MetricTotals {
         if inner.file.days.last().map(|d| d.date.as_str()) != Some(today) {
-            // A new day started. Enforce retention BEFORE pushing so the vec never
-            // exceeds RETAIN_DAYS: fold the oldest into `lifetime`.
+            // A new day started. Enforce retention BEFORE pushing, AGE first: fold
+            // every bucket outside the calendar window into `lifetime`.
+            metrics_clear::prune_days_for(&mut inner.file, today);
+            // BACKSTOP ONLY (§F6 §3.3). After an age prune the length is
+            // <= RETAIN_DAYS - 1 whenever today's bucket is absent, so this is
+            // inert in every healthy case; it survives for a clock regression or a
+            // hand-edited file, where it still bounds the vec.
             while inner.file.days.len() >= RETAIN_DAYS {
                 let oldest = inner.file.days.remove(0);
                 let lifetime = &mut inner.file.lifetime;
@@ -289,8 +303,10 @@ impl MetricsState {
     /// `[profile.release]` override, so an assert would vanish from the shipped
     /// binary and let a key carrying a path separator, whitespace or an uppercase
     /// letter — i.e. a branch name, a path or a ref — be persisted verbatim into
-    /// `usage.json`, a file that carries NO user content by construction, is not
-    /// covered by `logs_delete_all` and has no redaction pass (§8, decision 25).
+    /// `usage.json`, a file that carries NO user content by construction and has
+    /// no redaction pass (§8, decision 25). It IS deletable since §F6, which does
+    /// not weaken this guard at all: a bad key would still be written unredacted
+    /// and would still survive until the user chose to delete.
     /// A rejected key DROPS the observation, silently and in every profile —
     /// identical to `observe_ipc_result`'s two guards; metrics never fail the app.
     /// Returns true iff the observation was recorded, so callers only mark the
@@ -459,6 +475,10 @@ fn derive_totals(totals: &mut MetricTotals) {
         *h = h.clone().with_derived_percentiles();
     }
 }
+
+/// §F6 — the 90-day window and the user-driven clear.
+#[path = "metrics_clear.rs"]
+mod metrics_clear;
 
 /// §8 persistence — `flush`/`reset` and the snapshot-ordering rule they share.
 #[path = "metrics_persist.rs"]
