@@ -2432,7 +2432,14 @@ toast raised from the Settings surface is an inline note. **15** call sites swep
   region fires on a text *change*, so setting it to the identical string twice (export twice, retry
   the same failure) announces **once**. The start/finish pair are separate commits, so `'' → text` is
   a real change every time. Asserting the final text does not catch this — the bug is an absent
-  change.
+  change; observe the mutation sequence.
+  **Clear it UNCONDITIONALLY, and never guard that clear on which control is reporting.** A
+  last-announced-**key** guard looks like a refinement (it stops a concurrent action truncating
+  another row's utterance) and is measurably worse: two different rows raising byte-identical text —
+  e.g. both MCP register rows when `claude` is not on PATH — leave the text unchanged, so the second
+  event is **silent**, and a key ref never expires, where the truncation window it avoids is about
+  one utterance. Key identity is not a proxy for text identity. If a clear is ever skipped, the test
+  is **text identity**: skip only where the next write provably differs from what is displayed.
 - **An inline note is not a toast and must not imitate one.** No ✕, no timer, no motion, no
   auto-scroll. It clears when **any operation reporting into that slot begins** (not when a confirm
   dialog opens), and on unmount. Its meaning is *"the result of the last time you pressed this"* —
@@ -2484,6 +2491,10 @@ toast raised from the Settings surface is an inline note. **15** call sites swep
   fix is a scroll correction — which is permitted **only** when measured-not-assumed, `block:
   'nearest'` with `behavior: 'auto'` (instant, so `prefers-reduced-motion` needs no branch), and only
   while focus is still inside the row that owns the slot. A bug report must say which mode failed.
+  **`scrollIntoView` alone is not enough:** it settles with a sub-pixel residual (measured 0.171875px
+  past the clip), and at DPR 1 the scroll offset snaps to whole pixels, so assigning the fractional
+  deficit reads back unchanged. Follow it with `scrollTop += Math.ceil(bottom − clipBottom)`. Also
+  correct at DPR > 1 — it over-scrolls by under a pixel.
 
 ## 13. Icon system (SVG chrome)
 

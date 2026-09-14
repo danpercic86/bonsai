@@ -413,21 +413,107 @@ the sanctioned "not actionable by voice" trim, P91 §6.11.1); 3 = `The log was n
 
 The section has **no** live region today. Add exactly one: an always-mounted
 `<p className="sr-only" role="status" aria-live="polite">` holding the newest outcome text. The host
-notes and the section note are description-only. The strings already name their host/login, so one
-announcer serves N hosts without ambiguity.
+notes and the section note are description-only.
+
+**CORRECTED 2026-09-14 — this paragraph used to claim "the strings already name their host/login, so
+one announcer serves N hosts without ambiguity". That premise is false against the tree.** Two of the
+five do not name either: `Could not open the token page: ${errorMessage(e)}`
+(`SettingsAccountsSection.tsx:111`) and `Could not set the default account: ${errorMessage(e)}`
+(`:134`). With one announcer and N host groups, those two announce a failure **without saying which
+host it belongs to** — and only to the user who cannot see which group the note sits in. A sighted
+user reads the answer off the placement; an AT user gets nothing. **Placement is not an accessible
+carrier of meaning**, which is the a11y analogue of the house rule that colour never carries meaning
+alone, and it is the same defect class as P91 §6.8 R5: a message that under-specifies its scope to
+exactly the user who cannot recover it from context.
+
+**RULING — AMENDMENT A5: add the host to both strings. Recommended, needs the orchestrator's call**
+
+> **A5 — APPROVED (orchestrator, 2026-09-14). Ship both strings; the documented-ambiguity
+> alternative stays rejected.** I verified the two factual preconditions against source before
+> approving, since this session has repeatedly found copy that outran its mechanics:
+> * **`setDefault` always has the host** — `SettingsAccountsSection.tsx:130` is
+>   `(host: string, accountId: string)`, non-optional. So the unconditional form is correct there.
+> * **The token-page path genuinely can lack one** — `:104` is `const slot = host ?? ADD_SLOT`, so the
+>   `host === null` fallback to the current string is required, not defensive.
+>
+> The deciding argument is the designer's and it generalises: **placement is not an accessible carrier
+> of meaning.** A sighted user reads which host failed off the note's position in its group; with one
+> announcer serving N groups, a screen-reader user gets a failure with no subject. That is the same
+> defect class as P91 §6.8 R5 — a message that under-names what it refers to — and the a11y analogue
+> of the rule that colour may not be the sole carrier.
+>
+> Changing the **visible** note text too is correct, not collateral: it keeps the string
+> **channel-independent**, which is the property every placement decision in this contract has leaned
+> on, and mild redundancy against the group title costs nothing.
+>
+> **Unchanged by this approval:** both strings keep their raw `errorMessage(e)` tail. That is
+> `P113-F1-accounts-error-copy`'s job and is still deferred — A5 adds a subject, it does not map the
+> cause.
+(these are P80-era strings, not signed P91 copy, but the flag-don't-rewrite rule applies to both):
+
+| Site | Now | Proposed |
+|---|---|---|
+| `:134` set default | `Could not set the default account: {raw}` | **`Could not set the default account for {host}: {raw}`** — `setDefault` always has `host`, so this is unconditional |
+| `:111` token page | `Could not open the token page: {raw}` | **`Could not open the token page for {host}: {raw}`**, falling back to the current string when `host` is `null` (the global add form, before a host is chosen) |
+
+This changes the **visible** note text too, which is correct rather than incidental: naming the host
+is mildly redundant against the group title the note sits under, and harmless there, while it keeps
+the string **channel-independent** — the property every placement decision in this contract has
+relied on. A string that only works in one of its two channels is the thing we have been avoiding
+throughout.
+
+*Alternative, rejected:* document that the announcement cannot identify the row and argue it is
+acceptable. It is not — it is two string edits away from being unambiguous, and accepting known
+ambiguity for the AT user while the sighted user gets the answer free is the wrong side of this
+project's a11y line.
 
 Same `begin()` reset applies: the section announcer is cleared at operation start, so repeating an
 outcome for the same host announces twice rather than once.
 
-**Known behaviour, recorded 2026-09-14: `begin(key)` clears the announcer GLOBALLY while clearing only
-that key's note.** This is contract-conformant — there is exactly *one* announcement per section, so
-"clear the section's announcement" is the only thing `begin` can mean — and on the **Dev** page it is
-harmless, because `anyBusy` gates every operation. **Accounts has no global busy gate**, so starting
-an action on host B can blank a just-written, possibly still-being-spoken utterance about host A.
-The window is short and the visible per-host notes are unaffected, so this does not block.
-**Cheap refinement, SHOULD-FIX for phase 2:** have `begin(key)` clear the announcer only when the
-pending announcement belongs to the **same** key (track the last announced key; ~3 lines). That keeps
-one announcement per section while making a concurrent action on another host non-destructive.
+**`begin(key)` clears the announcer GLOBALLY while clearing only that key's note — and that is the
+specified behaviour.** There is exactly *one* announcement per section, so "clear the section's
+announcement" is the only thing `begin` can mean.
+
+**WITHDRAWN 2026-09-14 — the key-scoped refinement this paragraph previously proposed was wrong, and
+it contradicted §8.1.** I suggested clearing the announcer only when the pending announcement belonged
+to the **same** key, to stop a concurrent action on host B truncating an utterance about host A.
+Measured in the harness (`?mcpFail=register`, `MutationObserver` on the section announcer, both
+register rows raising byte-identical `Could not register: Claude Code CLI not found: program not
+found`):
+
+| Event | Announcer mutations |
+|---|---|
+| global row fails | `['', T]` |
+| repository row fails — **different key, identical text** | **`['', T]` — the second event is silent** |
+
+§8.1 declares that exact outcome a MUST violation ("the second outcome is **silent**"), so the
+refinement reintroduced the bug this component exists to prevent, one axis over. It is also **worse
+than what it replaced**: the global clear's truncation window is roughly one utterance, whereas a
+last-announced-key ref never expires, so a note announced an hour ago would silence a different row
+carrying the same text. The realistic trigger is the single likeliest MCP failure there is — no
+`claude` on PATH fails both register rows with identical text.
+
+**The rule, stated as an invariant so the two paragraphs cannot disagree again:**
+
+> **Every reported outcome must produce a text CHANGE in the section announcer — whatever its key, and
+> whether or not the previous announcement carried the same string.** A live region fires on change,
+> not on assignment, so the announcer must be cleared in a commit strictly *before* the one that
+> writes the outcome text whenever the two would otherwise be equal.
+
+Consequences, binding:
+
+- The outcome text is **not known at operation start**, so `begin(key)` cannot decide by comparing
+  future text and therefore **clears unconditionally**.
+- Any guard that skips a clear must key on **TEXT identity** — it may skip only where it can prove the
+  next write differs from what is displayed — **never on key identity**. Key identity is not a proxy
+  for text identity, which is precisely what the measurement above shows.
+- `AC7` (one write per event) and `AC15` (a repeat announces twice) **provably never enter that
+  branch**: both arrive with the announcer already at `''` from `begin`, so the incoming text always
+  differs from what is displayed.
+- **The accepted cost, explicitly:** unconditional clearing can truncate an in-flight utterance about
+  another key on Accounts, which has no global busy gate (Dev is `anyBusy`-gated and unaffected). That
+  is a bounded, roughly one-utterance window, and it is **strictly preferable to silence**, which is
+  unbounded and permanent. §8.1's MUST wins. Covered by AC17.
 
 - **Baseline, measured for AC6:** the pane already contains `role="alert"` elements that are
   **conditionally rendered** — the list-error `.error-banner` (`SettingsAccountsSection.tsx:109`) and
@@ -522,6 +608,18 @@ explicitly because the channel being replaced *had* motion:
   2. `block: 'nearest'`, **`behavior: 'auto'`** — instant. Never `'smooth'`. An instant scroll
      correction is not animation; it is the same class of thing as a caret-following scroll, so there
      is still **nothing to gate behind `prefers-reduced-motion`** and no media-query branch.
+     **AMENDED 2026-09-14, on a reproduced measurement: `scrollIntoView` alone does NOT satisfy
+     AC2b, so the call is not the whole step.** Two agents measured the same residual at different
+     viewports: the correction settles with the note's bottom **0.171875 px** below the clip, and
+     `scrollTop += 0.171875` **reads back unchanged** because at DPR 1 the scroll offset snaps to
+     whole pixels — a sub-pixel deficit is simply unreachable. The prescribed step is therefore
+     `scrollIntoView(...)` **followed by a ceil correction**: measure
+     `deficit = noteRect.bottom - paneClientRect.bottom` and, while `deficit > 0`, apply
+     `pane.scrollTop += Math.ceil(deficit)`. **`Math.ceil` is load-bearing, not defensive** — without
+     it the four-edge test in AC2b cannot be met by following this contract, which is a defect in the
+     contract rather than in the implementation. Ceiling to a whole pixel is also correct at DPR > 1,
+     where fractional offsets are representable: it over-scrolls by under 1 px, which is invisible and
+     cheaper than DPR-aware rounding.
   3. **Only when focus is inside the row that owns the slot** (`document.activeElement`). The user
      standing on the control gets the correction; a user who navigated elsewhere during the async
      operation is never yanked. `ConfirmDialog` restores focus to `Delete all…`, so the common path
@@ -579,6 +677,11 @@ row 1's text reused.
   delivery-surface contract. **This increment renders them verbatim**, with
   `overflow-wrap: anywhere` so a space-free token cannot overflow. Recommend a follow-up
   `P113-F1-accounts-error-copy`.
+- **A5 (SHOULD-FIX, recommended — added 2026-09-14).** Rows 6 and 7 name **no host**, which makes the
+  section's single announcement ambiguous about which group failed. Proposed strings, reasoning and
+  the rejected alternative are in §8.2. If accepted, §12.1's table rows 6 and 7 change accordingly;
+  this is the one place in the contract where the channel change does force a string change, and it
+  forces it for an a11y reason rather than a cosmetic one.
 - **A2 (NIT).** Row 8's `Could not remove {host}` now renders in a dialog titled
   `Remove {login}?` — the host is slightly redundant against the dialog title. Truthful; keep.
 - **A3 (NIT).** `DevToast`, `deleteResultToast`, `devDeleteToastRows.test.ts` and the
@@ -781,6 +884,11 @@ DOM proved nothing here.
 11. **Row geometry unchanged when idle, in both densities.** `.settings-row` height for `dev.logs`
     and `dev.delete-logs` is identical before and after the change with no outcome showing, and
     identical between `cozy` and `compact`. Measured via `getBoundingClientRect`.
+    **Partly discharged 2026-09-14:** the four MCP rows have a **measured** idle note height of 0, so
+    the "an idle note costs nothing" half is evidence rather than inference for those rows. **Still
+    owed: the cozy/compact comparison**, for every slot. It is the half that guards
+    `settings-primitives.css:14-16`'s deliberate one-geometry-in-both-densities decision, and no
+    amount of idle-height measurement substitutes for it.
 12. **Lifetime.** Pressing the action again clears the slot **before** the new result arrives (the
     note's text is `''` during the in-flight window); cancelling the delete confirm dialog leaves the
     previous outcome intact; reopening the Remove dialog after a failure shows **no** error.
@@ -811,6 +919,13 @@ DOM proved nothing here.
     AC16 unpassable against a correct implementation. The meaningful half — the announcer's `''`, on
     which one-event-one-utterance actually depends — is the assertion above. My error, not the
     implementer's.
+17. **Two DIFFERENT keys raising BYTE-IDENTICAL text both announce.** Added 2026-09-14; this is the
+    criterion the withdrawn key-scoped refinement would have failed (§8.2). With `?mcpFail=register`,
+    fail the global register row and then the repository register row — identical strings, different
+    slots. A `MutationObserver` on the section announcer must record **`['', T, '', T]`**. **`['', T]`
+    is a failure**, and it is the exact trace the refinement produced. Assert the mutation sequence,
+    never the final text: the defect is an absent change, so a final-value assertion passes against
+    the bug. The same shape applies to the Accounts host slots (two hosts, one identical error).
 
 ---
 
@@ -1045,11 +1160,34 @@ This is also the first worked example of AC1 doing its job: these two call sites
 for**, not swept. "Reachable from Settings" is the test, and the answer changes when the UI changes —
 which is precisely what a directory search can never notice.
 
+### 17.3b Two checks that earned their keep
+
+Recorded because both were cheap to write and each caught something a plausible alternative would
+have missed — they are the parts of this contract worth copying into the next one.
+
+- **AC1's reachability enumeration was independently re-run and reproduced: 233 call sites,
+  classification intact.** Two of its judgements were non-obvious and correct: `AiAssetsPanel` is a
+  **sibling** overlay rather than a child of `SettingsPanel`, so its toasts are fine; and
+  `SettingsExternalToolsSection` receives **no** launcher callbacks, so it raises none. A directory
+  search would have mis-classified both — one as in scope, one as out — which is the whole argument of
+  §17.2 in two concrete instances.
+- **§9's "compose, never replace" rule is load-bearing, not stylistic.** `SettingsSwitchRow.tsx:46`
+  passes `describedBy ?? settingsRowHelpId(id)`, so a supplied value **replaces** the help id rather
+  than adding to it. A switch row that wired only the outcome id would have silently dropped its own
+  help text from the accessible description — a regression with no visual symptom whatsoever. The
+  composed form was confirmed in the harness with all three ids resolving. Any future row wiring an
+  outcome note through `SettingsSwitchRow` must pass the **composed** string.
+
 ### 17.4 Follow-ups this leaves open
 
 - **A4** (the save-failure copy) — needs the orchestrator's call.
 - **R4's `begin()` for rows 9/10** — SHOULD-FIX; TODO line if deferred.
-- **Key-scoped announcer clearing** (§8.2) — SHOULD-FIX for phase 2, ~3 lines.
+- ~~**Key-scoped announcer clearing** (§8.2)~~ — **WITHDRAWN 2026-09-14**, measured to reintroduce
+  §8.1's silence across keys. Superseded by the text-identity invariant in §8.2 and by **AC17**. Do
+  not re-propose it: a last-announced-**key** ref is not a proxy for text identity, and unlike the
+  global clear it never expires.
+- **A5** (the host in the two Accounts strings, §8.2) — needs the orchestrator's call.
+- **AC11's cozy/compact half** — still owed for every slot.
 - **`useExternalTools.ts:22, :34`** — re-evaluate when P112-4 lands (§17.3a).
 - **The swallowed `forge_remove_account_inner` errors** — backend defect, filed separately.
 - **A1** (raw `errorMessage(e)` in the four Accounts strings) — unchanged, still recommended.
