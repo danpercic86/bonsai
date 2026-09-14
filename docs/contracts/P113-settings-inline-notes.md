@@ -419,6 +419,16 @@ announcer serves N hosts without ambiguity.
 Same `begin()` reset applies: the section announcer is cleared at operation start, so repeating an
 outcome for the same host announces twice rather than once.
 
+**Known behaviour, recorded 2026-09-14: `begin(key)` clears the announcer GLOBALLY while clearing only
+that key's note.** This is contract-conformant — there is exactly *one* announcement per section, so
+"clear the section's announcement" is the only thing `begin` can mean — and on the **Dev** page it is
+harmless, because `anyBusy` gates every operation. **Accounts has no global busy gate**, so starting
+an action on host B can blank a just-written, possibly still-being-spoken utterance about host A.
+The window is short and the visible per-host notes are unaffected, so this does not block.
+**Cheap refinement, SHOULD-FIX for phase 2:** have `begin(key)` clear the announcer only when the
+pending announcement belongs to the **same** key (track the last announced key; ~3 lines). That keeps
+one announcement per section while making a concurrent action on another host non-destructive.
+
 - **Baseline, measured for AC6:** the pane already contains `role="alert"` elements that are
   **conditionally rendered** — the list-error `.error-banner` (`SettingsAccountsSection.tsx:109`) and
   the add form's own error banner (`SettingsAccountAddForm.tsx:200`, which can appear twice: the
@@ -720,14 +730,21 @@ DOM proved nothing here.
 2. **The note is the hit-test target, and is fully visible, and the two failures are distinguished.**
    **AMENDED 2026-09-14 (ruling R1)** — the original conflated occlusion with scroll clipping.
    For each slot, with `el = document.querySelector('[data-outcome-note="{slot}"]')`:
+   **Both are measured at the scroll position the action itself leaves the pane in** — i.e. trigger
+   the action, let focus restore and the re-render settle, and measure *there*, **without scrolling
+   first**. **A pass obtained after scrolling to the end of the pane is not a pass**: as first
+   written this criterion named no scroll position and was therefore literally satisfiable at max
+   scroll, where the note is fully visible anyway and nothing is being tested. (Corrected
+   2026-09-14.)
    - **2a — not occluded (the failure this contract exists to fix).** At a point **1px inside `el`'s
      top-left corner**, `document.elementFromPoint` returns `el` or a descendant — **never**
-     `.dialog-overlay` or `.toast-stack`. This holds at any scroll position, because a z-index
-     occlusion does not care where you have scrolled.
-   - **2b — not clipped (the failure R1 found).** After the §10.3 adjustment settles, `el`'s rect is
-     **fully inside** the scroll container's client rect on all four edges, and
-     `elementFromPoint` at `el`'s **centre** returns `el` or a descendant. Report the four edge
-     numbers.
+     `.dialog-overlay` or `.toast-stack`. Scroll-independent by derivation (§17.1 R1), so it must
+     also hold at max scroll; asserting it at both positions is what demonstrates the independence.
+   - **2b — not clipped (the failure R1 found).** At the action's own scroll position, after the
+     §10.3 adjustment settles, `el`'s rect is **fully inside** the scroll container's client rect on
+     all four edges, and `elementFromPoint` at `el`'s **centre** returns `el` or a descendant. Report
+     the four edge numbers **and** the `scrollTop`/`scrollHeight` they were taken at, so the next
+     reader can tell a real pass from a max-scroll one.
    - A failure of 2a and a failure of 2b are different defects with different fixes; a report must
      say which. Run both for row 4 (the last element on the Dev page, which is where 2b bites) and one
      Accounts host note.
@@ -786,17 +803,21 @@ DOM proved nothing here.
     failure, contains a `.dialog-error` with `role="alert"` and the mapped text, and — by AC2a's
     method — that element is the hit-test target at its own top-left corner. The section announcer is
     **not** set for this outcome: its text stays `''`.
-    **CORRECTED 2026-09-14 (ruling R5):** the original trailing clause "AC6's count for Accounts stays
-    at 1" was **wrong, and contradicted §8.2's own design** — the dialog's `role="alert"` makes the
-    count **2** while the dialog is shown, and 1 after it closes. The meaningful half is the
-    announcer's `''`, which is what one-event-one-utterance actually depends on. My error, not the
+    **The parenthetical "(AC6's count for Accounts stays at 1)" is STRUCK, 2026-09-14 (ruling R5) —
+    not reworded.** It was not imprecise, it was **self-contradictory**: §8.2 already states the count
+    "rises by one per visible banner", and `ConfirmDialog` renders **inline, with no portal**, so the
+    dialog's `role="alert"` is inside the section container by construction. A count of **2** while
+    the dialog is shown is *entailed by this contract's own design*, and asserting 1 would have made
+    AC16 unpassable against a correct implementation. The meaningful half — the announcer's `''`, on
+    which one-event-one-utterance actually depends — is the assertion above. My error, not the
     implementer's.
 
 ---
 
 ## 16. Implementation status
 
-Implemented 2026-09-14 and under review in the working tree. The implementation raised five conflicts
+**Phase 1 approved with no MUST-FIX and committed as `0c86376`** (2026-09-14); phase 2 — sites 11-15
+(§17.3) and the flagged follow-ups (§17.4) — is being routed. The implementation raised five conflicts
 against this contract and the sweep was found to be **10 of 15** call sites; both are settled in §17,
 which is the authoritative amendment record. Where §17 and an earlier section disagree, §17 wins —
 though the earlier sections have been corrected in place, so there should be nothing left to
@@ -824,7 +845,41 @@ version of the complaint that started this whole contract. My blanket ban on `sc
 written for the Accounts surface and I over-generalised it; keeping a rule I wrote over the outcome it
 was written to protect would be the wrong trade. §10.3 now carries the four conditions, and AC2 is
 split into **2a (occlusion, measured at the top-left corner, scroll-independent)** and **2b
-(visibility, measured after the adjustment)**. A future regression report must say which one failed.
+(visibility, measured at the action's own scroll position)**. A future regression report must say
+which one failed.
+
+**The distinction is derivable from CSS, not only measurable — and that is worth more than the
+measurement.** `.settings-pane` is `overflow-y: auto` inside `.dialog-card.settings-card`, which is
+`overflow: hidden`. Nothing below that clip is **painted at all**, so `elementFromPoint` there
+*necessarily* returns the next painted thing — the overlay. It could not return anything else, for
+any element, in any correct browser. Contrast §1.1: the toast's **entire box lay inside the viewport,
+painted, on top of the card**, and was still un-hit-testable at every point including its ✕. Those
+are categorically different faults — one is "this pixel is outside the scrollport", the other is
+"this pixel belongs to something stacked above". AC2a/2b can therefore be **reasoned about** and
+reviewed on a diff, not only reproduced in a harness. That is why they are two criteria and not one.
+
+**Mechanism, for the record.** `.settings-row-control { grid-row: 1 / -1; align-items: center }`
+(`settings-primitives.css:49-55`) centres the button across both grid rows of the grown row, while the
+help slot on row 2 extends *below* it. Focus restore scrolls the **button** into view and is satisfied
+while the note's tail is still past the clip.
+
+**The layout alternative — considered, rejected, and not a near miss.** The one §10.3-compatible fix
+without script is to make `dev.delete-logs` `stacked`, so the help slot precedes the control and
+scrolling the button into view necessarily brings the note with it. It has real merit: zero JS, and it
+would make the two Dev rows consistent with each other (`dev.logs` is already stacked). **I am keeping
+the scroll correction, and AC11 stands unrelaxed.** Three reasons:
+1. **It fixes one instance; the scroll correction fixes the class.** Any slot that is the *last
+   element of a pane* has this shape, and one already is: the section slot in the `accounts.add` row
+   is the last thing in the Accounts pane. The layout route would have to be re-argued per row, and
+   re-checked every time a pane's row order changes.
+2. **It trades a permanent cost for an occasional one.** Stacking changes idle geometry for every
+   user at all times — and moves a *destructive* control out of the right-hand control column into a
+   stretched, left-aligned slot — to fix a state that exists only after an action, only on the last
+   row.
+3. **AC11 is the stronger guarantee.** It pins the promise that an idle note costs nothing, in both
+   densities. Relaxing that to avoid an instant, measured, focus-gated scroll correction is the wrong
+   direction: §10.3 exists to prevent animation contending with the render budget and jumps under the
+   pointer, and the correction as conditioned is neither.
 
 **R2 — the flex `gap` (§4.1). RULING: accept, and generalise.** My `margin: 0` rule was insufficient;
 an always-mounted flex child earns the container's 8px `gap` at zero height. Their
@@ -976,10 +1031,26 @@ This is not a row outcome and must not be forced into one:
   `setUiSettings`, so this call site, the highest-traffic Settings toast in the app, has **never been
   seen rendered by anyone**. That is its own small finding.
 
+### 17.3a Inventory — reachable later, not today
+
+`src/hooks/useExternalTools.ts:22` and `:34` raise toasts for external-tool Browse/launch failures.
+**Out of scope today:** they are reachable only from repo UI, where a toast is correct and visible.
+**In scope the moment P112 sub-increment 4 lands**, because it puts an external-tool picker *inside*
+Settings, and a failure raised from there hits the same scrim as everything in §6. The P112 UI
+contract already rules **"no toast for Browse errors"** for exactly this reason; this entry exists so
+the two contracts cannot drift apart on it — if P112-4 ships a toast from that picker, both contracts
+are violated, not one.
+
+This is also the first worked example of AC1 doing its job: these two call sites are **accounted
+for**, not swept. "Reachable from Settings" is the test, and the answer changes when the UI changes —
+which is precisely what a directory search can never notice.
+
 ### 17.4 Follow-ups this leaves open
 
 - **A4** (the save-failure copy) — needs the orchestrator's call.
 - **R4's `begin()` for rows 9/10** — SHOULD-FIX; TODO line if deferred.
+- **Key-scoped announcer clearing** (§8.2) — SHOULD-FIX for phase 2, ~3 lines.
+- **`useExternalTools.ts:22, :34`** — re-evaluate when P112-4 lands (§17.3a).
 - **The swallowed `forge_remove_account_inner` errors** — backend defect, filed separately.
 - **A1** (raw `errorMessage(e)` in the four Accounts strings) — unchanged, still recommended.
 - `AC1`'s enumeration should be re-run once, by hand, at review time: it is the only check that would

@@ -2472,10 +2472,15 @@ toast raised from the Settings surface is an inline note. **15** call sites swep
   account group (`display: flex; gap: 8px`) the idle note needed `:empty { margin-top: -8px }` on top
   of `margin: 0` to leave the group's height unchanged. Measure the idle container, not just the
   element.
-- **Two different failure modes, two different checks.** *Occluded* (a z-index above it) is
-  scroll-independent: test `elementFromPoint` **1px inside the top-left corner**. *Clipped* (scrolled
-  past its own container's edge) is not: test that the rect is fully inside the scroll container's
-  client rect. The second is what a note appended to the **last row of a page** hits, and its only
+- **Two different failure modes, two different checks — and the difference is derivable, not just
+  measurable.** `.settings-pane` is `overflow-y: auto` inside a card that is `overflow: hidden`, so
+  anything past that clip is **not painted** and `elementFromPoint` there *necessarily* returns the
+  next painted thing; no correct browser could answer otherwise. An occlusion is the opposite case —
+  fully painted, inside the viewport, and still not the hit target. *Occluded* is therefore
+  scroll-independent: test `elementFromPoint` **1px inside the top-left corner**. *Clipped* is not:
+  test that the rect is fully inside the scroll container's client rect, **at the scroll position the
+  action itself leaves behind** — a check that names no scroll position is satisfiable at max scroll,
+  where nothing is being tested. The second is what a note appended to the **last row of a page** hits, and its only
   fix is a scroll correction — which is permitted **only** when measured-not-assumed, `block:
   'nearest'` with `behavior: 'auto'` (instant, so `prefers-reduced-motion` needs no branch), and only
   while focus is still inside the row that owns the slot. A bug report must say which mode failed.
