@@ -312,8 +312,35 @@ Same authority as the 23 before them. Both were asked with evidence in hand, not
     I measured as occluded**), `:152` (delete thrown path)
   - `src/components/settings/SettingsAccountsSection.tsx` — `:57` (token page), `:79` (default
     account), `:97` (remove host), `:138` (added login), `:149` (connected)
-  Verified exhaustive by `grep -rn "pushToast(" src/components/settings/ src/components/Settings*.tsx`
-  minus declarations and dep arrays; **no other file on the Settings surface raises a toast.**
+  **⚠ THAT LIST IS INCOMPLETE AND MY "VERIFIED EXHAUSTIVE" CLAIM WAS WRONG. The real count is 15.**
+  I searched by **directory** (`grep -rn "pushToast(" src/components/settings/ src/components/Settings*.tsx`)
+  when the right question is **reachability**. Hooks that take `pushToast` as a **parameter** and are
+  wired from `App.tsx` raise Settings toasts from outside those directories and are invisible to that
+  grep. The five I missed — found by the P113 implementer, then verified by me:
+  - `src/hooks/useMcpControls.ts` — `:69` (start/stop MCP server), `:80` / `:82` (register with Claude
+    Code), `:103` (allow-write). All **Settings rows**; wired at `App.tsx:208`.
+  - **`src/hooks/useUiSettings.ts:287`** — `Could not save settings: {e}`, raised on **EVERY failed
+    settings write**, wired at `App.tsx:112`. **This is the highest-traffic Settings toast in the
+    application** — every toggle, radio and field goes through that patch path — and it has been
+    rendering behind the scrim like all the others. Throttled by `if (streak === 0)`, not that it
+    helps visibility.
+
+  **Not in scope (checked):** `useExternalTools.ts:22/28/34` are triggered from the repo UI, not
+  Settings — though P112 sub-inc 4's picker could make them Settings-reachable, so re-check then.
+  `useAppCommands.ts` and `useRepoTabs.ts` are not Settings-reachable.
+
+  **Ruling #24 said "sweep every call site", so these are in scope by the ruling's own terms** — the
+  work is simply not finished. P113 as contracted and implemented covers **10 of 15**. `ui-designer`
+  has been asked to place the remaining five; `useUiSettings:287` is the hard one, being a *global*
+  save failure with no obvious row to attach to.
+
+  **The lint guard cannot see either hook**, because the call sites live outside
+  `src/components/settings/`. If the guard is what keeps this from regressing, it needs a different
+  mechanism — flagged to `ui-designer` and to the reviewer.
+
+  **Method note, since I have now given three different counts for this sweep (17, then 10, now 15):**
+  a grep scoped to a directory answers "where are the calls in these files", not "what can a user
+  trigger from this screen". The second question spans the call graph. Count by reachability.
 - **The `--warn` note recipe is NOT built.** `ui-designer` called the fix "pure reuse of an existing
   signed recipe"; that is true of the *design* and false of the *code*. `.settings-row-note` is
   widely used with its rule at `src/styles/settings-primitives.css:180`, but
