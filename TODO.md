@@ -365,6 +365,47 @@ host. Original review: archive Part 66.
 
 ---
 
+### ✅ e2e bundle-vs-dev — MEASURED 2026-09-14 (user ruling #9: measure and report, do NOT flip)
+
+**The blocker is resolved.** The board held this decision because "the figures are 162 s dev server
+vs 122 s bundle, and **it is not established that the 122 s includes the bundle build step**. If it
+does not, flipping could make the default gate *slower* — the opposite of the purpose."
+
+| Run | Wall | Result |
+|---|---|---|
+| `E2E_BUNDLE=1`, **truly cold** (`dist-mock` removed) | **102 s** | 185 passed, exit 0 |
+| `E2E_BUNDLE=1`, warm (`dist-mock` present) | **103 s** | 185 passed, exit 0 |
+| Dev server — today's full gate e2e step (`ba406ba`) | **191.4 s** | 185 passed |
+
+**The build IS inside the number, and cold-vs-warm is a 1-second difference** (102 vs 103 s) because
+`vite build` is not incremental — it rebuilds either way. So the feared failure mode (bundle looking
+fast only by reusing an artifact someone else paid for) **does not exist**.
+
+**Bundle is ~89 s faster per gate run, roughly a 47% cut on the e2e leg.**
+
+**Why the two old figures were never comparable** — worth recording, because it is the real reason
+the question stayed open. The bundle path builds to **`dist-mock`** with `--mode mock`, and
+`scripts/e2e-server.mjs:13-16` states plainly that the gate's `tsc + vite build` artifact is **NOT
+reusable**: a plain `pnpm build` is REAL mode and boots against the Tauri IPC. They are different
+artifacts in different directories. (Method note: my first attempt cleared `dist`, which is the
+wrong directory — the run was warm, not cold. The build still ran, proven by vite's reporter output
+appearing under `[WebServer]` inside the timed window, but it was not the cold measurement the
+ruling asked for. Corrected by removing `dist-mock` and re-running.)
+
+**NOT FLIPPED, per the ruling.** `playwright.config.ts` and `gate.mjs` are untouched; bundle mode
+stays opt-in via `E2E_BUNDLE=1`. The decision now has its number and is the user's to make. The
+fidelity argument recorded earlier still stands independently: P103 was a real product bug that
+**only** the bundle check exposed, because `import.meta.env.DEV` code is absent from a production
+bundle.
+
+**One known bundle-mode divergence, unchanged and still on the board:**
+`e2e/24-settings-shell.spec.ts:238` ("Esc dismisses the menu and hands global shortcuts back") fails
+3/3 in bundle mode against 1/3 in dev — reproducible on a built bundle, merely flaky on the dev
+server. Mechanism never identified. It did **not** fail in either run above (185/185 both times), so
+its status is unchanged rather than resolved.
+
+---
+
 ### ✅ FULL 8-STEP GATE GREEN UNDER happy-dom — 2026-09-14, `b53618a`
 
 `GATE_EXIT=0`, **461.9s total**, zero FAIL lines. Per step: nextest 170.2s (**2467 passed**, 9
