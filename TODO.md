@@ -290,6 +290,33 @@ The RESUME block said "30 commits ahead of `5c2dcd2`". Measured:
 
 ---
 
+## 🆕 THIRD ROUND OF USER RULINGS — 2026-09-14 (two, from the harness measurement)
+
+Same authority as the 23 before them. Both were asked with evidence in hand, not speculatively.
+
+| # | Item | Ruling |
+|---|---|---|
+| 24 | Settings toasts render behind Settings' own `.dialog-overlay` — scope of the fix | **SWEEP ALL 17 CALL SITES.** Not the delete outcome alone (which is what I recommended, on the grounds that it was the highest-stakes one and would build the recipe cheaply). The user chose the full surface. So: every `pushToast` reachable from Settings moves to an inline note, bringing the surface into line with `ui-reference.md:2377`'s standing rule instead of leaving 16 known violations behind a fixed one. |
+| 25 | The 30 unpushed commits on `feat/post-p91-rulings` | **DO NOT PUSH.** Stays local. **Do not raise this again** — it has now been asked and answered, and re-raising it is noise. |
+
+**Scope facts established before ruling #24 was asked**, so the next session does not re-derive them:
+- **17 `pushToast` call sites** are reachable from Settings, across at least
+  `src/components/settings/categories/DevCategory.tsx` (`:96`, `:115`, `:118`, `:149`, `:152`) and
+  `src/components/settings/SettingsAccountsSection.tsx` (`:57`, `:79`, `:97`, `:138`, `:149`).
+- **The `--warn` note recipe is NOT built.** `ui-designer` called the fix "pure reuse of an existing
+  signed recipe"; that is true of the *design* and false of the *code*. `.settings-row-note` is
+  widely used with its rule at `src/styles/settings-primitives.css:180`, but
+  `.settings-row-note--warn` has **zero users and no CSS rule anywhere in `src/`**. The recipe must
+  be written before it can be reused — 12% `--warning` tint, `inset 3px 0 0 var(--warning)`,
+  **`--text-1` ink** (the `--text-1` is what passes AA in light).
+- Two riders from `ui-reference.md`: the note sits **beside** the row's state note, not instead of
+  it, with `aria-describedby` composing both ids and the element permanently present with empty text
+  when idle (`:empty` collapses its chrome; it must **not** be `display: none`, which costs the
+  announcement). And **count live regions per section, not per element** (`:2386`) — if the note
+  goes live, the `DevCategory` announcer must not also fire, or AT queues one sentence per note.
+
+---
+
 ## 🆕 SECOND ROUND OF USER RULINGS — 2026-09-11 (four more, from the review findings)
 
 These came out of the reviews of the first increment, not from the original 17. Same authority.
