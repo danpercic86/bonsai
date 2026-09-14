@@ -2440,6 +2440,16 @@ toast raised from the Settings surface is an inline note. **15** call sites swep
   event is **silent**, and a key ref never expires, where the truncation window it avoids is about
   one utterance. Key identity is not a proxy for text identity. If a clear is ever skipped, the test
   is **text identity**: skip only where the next write provably differs from what is displayed.
+  **And the "what is displayed" side of that test must be a record of what was WRITTEN, not a belief
+  about the DOM.** Keep a ref of the last text the reporting function wrote and **do not reset it when
+  you clear** — the announcer only becomes non-empty via that function, so a non-empty announcer
+  showing `X` implies `ref === X`, which turns `ref !== next` into a *proof* rather than a guess. Reset
+  it on clear and the proof collapses at the one shape that matters: a clear and a write in the **same
+  synchronous block** are coalesced into one render, the region never blanks, and the dedup check —
+  now believing the display is empty — skips the flush that was the last remaining mechanism. Measured
+  result: **zero mutation records** and stale text. Fix this in the hook, never with `flushSync` at the
+  caller: a hook whose correctness depends on how each caller schedules its two calls is a convention,
+  not a guard.
 - **An inline note is not a toast and must not imitate one.** No ✕, no timer, no motion, no
   auto-scroll. It clears when **any operation reporting into that slot begins** (not when a confirm
   dialog opens), and on unmount. Its meaning is *"the result of the last time you pressed this"* —

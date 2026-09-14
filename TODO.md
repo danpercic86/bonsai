@@ -70,6 +70,38 @@ instruction. Curator-verified 2026-09-14: `dev` = `origin/dev` = `8b88efd`, and
 `git rev-list --count cb70f4a..8b88efd` = **165** — the ledger's "164" was measured before `8b88efd`
 (the jbcontext commit of ruling #2) existed. Both were true when measured.
 
+### ✅ The "`ui-reference.md` §1.3 rows 32-33" citation — RESOLVED, and it was wrong
+
+`ui-designer` refused to act on it and **asked for the anchor instead of guessing**, which was
+correct: had it guessed, it would have edited a canonical row inventory on a bad reference. I traced
+it rather than handing the question back.
+
+**Those rows live in `docs/contracts/archive/P69-settings-ui.md:148-149`** — an **archived** contract,
+not `ui-reference.md`, which has no numbered table with those rows at all. The misleading trail is
+the test's own comment at `src/components/settings/settingsCatalogRows.test.ts:130`: *"#32/#33 are UI
+§1.3's Terminal command / Editor command"* — that `§1.3` is **P69's**, not the canonical reference's.
+
+**Resolution: nothing to amend in `ui-reference.md`, and the archive stays as written.** Archived
+contracts are the historical record; rewriting one to match today's code destroys the reason it was
+archived. The only real fix is the **test comment**, which should name
+`docs/contracts/archive/P69-settings-ui.md §1.3` explicitly so the next reader does not chase
+`ui-reference.md` the way I sent an agent to.
+
+**The lesson is one I already have a rule for and broke anyway:** I passed an implementer's citation
+to another agent **unverified**, and it was wrong. Same shape as the phantom board claims early in
+this session. Verify a citation before delegating on it — especially a `file §section` pair, where the
+section number can be right for a *different* file.
+
+### 📝 RULED by `ui-designer`: fix the false General subtitle NOW, restore it with the picker
+
+`src/components/settings/settingsCatalog.ts:42-43` still promises "…and the external tools Bonsai
+launches" on a page that no longer contains those controls. Ruling: **correct it now and restore the
+clause in the increment that lands the picker** — a subtitle naming a control its page does not
+contain is exactly the drift the catalog guard exists to prevent, and "true again soon" is no defence
+to the user looking at it this week. Two one-line edits with an obvious owner for the second.
+`ui-designer` cannot make it (`src/**`), so it needs a `senior-dev` line — **queued behind the running
+gate**, since editing the tree mid-gate would invalidate the run.
+
 ### 🚨 PROCESS FAILURE (mine) — I let one review diff grow to 41 modified + 13 new files
 
 `CLAUDE.md` says **"commit each approved sub-increment so review diffs stay small and resume points

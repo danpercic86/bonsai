@@ -507,13 +507,38 @@ Consequences, binding:
 - Any guard that skips a clear must key on **TEXT identity** — it may skip only where it can prove the
   next write differs from what is displayed — **never on key identity**. Key identity is not a proxy
   for text identity, which is precisely what the measurement above shows.
-- `AC7` (one write per event) and `AC15` (a repeat announces twice) **provably never enter that
-  branch**: both arrive with the announcer already at `''` from `begin`, so the incoming text always
-  differs from what is displayed.
+- **`begin` clears the announcer but MUST NOT reset the text ref.** Added 2026-09-14 (§17.5); this is
+  the load-bearing half of the rule and the previous wording left it unsaid. The ref means *"the text
+  of the last utterance `report` wrote"* — **not** "what I believe is on screen". The soundness
+  argument is short and holds at every call-site shape: the announcer only ever becomes non-empty via
+  `report`, and `report` records what it wrote; therefore a non-empty announcer displaying `X`
+  implies `ref === X`, and so `ref !== next` **proves** the next write differs from what is on screen.
+  That is exactly the proof obligation the invariant above imposes, discharged once in the hook
+  instead of per call site. Reset the ref in `begin` and the proof collapses: `report` then believes
+  the display is already `''` and skips the only flush that could have forced the change.
+- **CORRECTED 2026-09-14 — the claim that `AC7`/`AC15` "provably never enter" `report`'s dedup branch
+  was FALSE**, and an implementation that followed it violated the invariant above at one call-site
+  shape. `AC15` **does** enter the branch wherever `begin` and `report` land in the **same
+  synchronous block**, and entering it there is **harmless** — it is a no-op when the text differs and
+  a real flush when it does not, which is the whole point. `AC7` is a single event and is unaffected
+  either way. The branch is not an edge case to be reasoned away: it is the **primary** mechanism for
+  **rows 9/10**, which have no `begin` at all (R4 deferred) and rely on the flush alone.
 - **The accepted cost, explicitly:** unconditional clearing can truncate an in-flight utterance about
   another key on Accounts, which has no global busy gate (Dev is `anyBusy`-gated and unaffected). That
   is a bounded, roughly one-utterance window, and it is **strictly preferable to silence**, which is
   unbounded and permanent. §8.1's MUST wins. Covered by AC17.
+- **A same-commit `begin`/`report` pair is a LEGITIMATE shape the rule must survive — not a call-site
+  bug.** `SettingsAccountsSection.tsx:226-229` calls `begin(host)` and `report(ADD_SLOT, …)` in one
+  synchronous block; React coalesces the `''` and the text into a single render, so the announcer
+  never blanks. Every other pair in the sweep is separated by an `await` or a `.then`
+  (`SettingsAccountsSection.tsx:81/:93`, `:120/:124`, `useMcpControls.ts:92/:101-102`, `:123/:146`,
+  `DevCategory.tsx:108/:124/:166`), so the blast radius was exactly one site — which is precisely why
+  it is the shape worth designing for rather than patching.
+  *Rejected alternative:* `flushSync` (or an artificial `await`) at that caller. It would work and it
+  is the wrong fix — it reinstates the per-call-site discipline `useOutcomeNotes` exists to remove,
+  and the next same-commit caller would have to rediscover it. **A hook whose correctness depends on
+  how its two functions are scheduled by each caller is not a guard, it is a convention.** The
+  don't-reset-the-ref form needs no caller cooperation at all.
 
 - **Baseline, measured for AC6:** the pane already contains `role="alert"` elements that are
   **conditionally rendered** — the list-error `.error-banner` (`SettingsAccountsSection.tsx:109`) and
@@ -907,6 +932,13 @@ DOM proved nothing here.
     start — the five Dev outcomes and the four MCP outcomes (§17.3). Rows 9/10 are covered by the
     form-open `begin()` of §17.1-R4; if the orchestrator defers that, AC15 excludes rows 9/10 and the
     limitation is recorded in TODO instead.
+    **Second amendment, same date (§17.5): AC15 must ALSO be run at a same-commit call site**, where
+    `begin` and `report` land in one synchronous block and React coalesces them — re-connecting the
+    **same login to the same host** (`SettingsAccountsSection.tsx:226-229`) is the reachable case. The
+    `'' → text` transition is **not** guaranteed by `begin` there; it comes from `report`'s dedup
+    flush. Required trace: at least two mutation records, containing a transition to `''` and then
+    back to `T`. **Zero mutation records is the failure**, and it is what the tree produced before the
+    ref fix. Do not prescribe the scheduling mechanism in the test — assert the sequence.
 16. **The dialog case.** With `?forgeRemoveFail=1`: the Remove dialog is still open after the
     failure, contains a `.dialog-error` with `role="alert"` and the mapped text, and — by AC2a's
     method — that element is the hit-test target at its own top-left corner. The section announcer is
@@ -931,8 +963,9 @@ DOM proved nothing here.
 
 ## 16. Implementation status
 
-**Phase 1 approved with no MUST-FIX and committed as `0c86376`** (2026-09-14); phase 2 — sites 11-15
-(§17.3) and the flagged follow-ups (§17.4) — is being routed. The implementation raised five conflicts
+**Phase 1 approved with no MUST-FIX and committed as `0c86376`; the sweep committed as `dcff54b`**
+(both 2026-09-14). Open items are in **§17.7**; the announcer-ref correction that came out of the
+sweep is §17.5. The implementation raised five conflicts
 against this contract and the sweep was found to be **10 of 15** call sites; both are settled in §17,
 which is the authoritative amendment record. Where §17 and an earlier section disagree, §17 wins —
 though the earlier sections have been corrected in place, so there should be nothing left to
@@ -1178,7 +1211,57 @@ have missed — they are the parts of this contract worth copying into the next 
   composed form was confirmed in the harness with all three ids resolving. Any future row wiring an
   outcome note through `SettingsSwitchRow` must pass the **composed** string.
 
-### 17.4 Follow-ups this leaves open
+### 17.5 The announcer ref — how a "provably never" claim was disproved by deleting a guard
+
+Found by removing the key-scoped guard and watching a test go red; committed with the sweep at
+`dcff54b`. Recorded because the *method* generalises: a claim that a branch is unreachable is a claim
+about **every** call-site shape, and the cheapest way to test one is to delete the code that was
+hiding it.
+
+The claim at §8.2 — that `AC7`/`AC15` "provably never enter" the dedup branch — was true of every
+`begin`/`report` pair separated by an `await`, which was all of them but one. At
+`SettingsAccountsSection.tsx:226-229` the pair is **one synchronous block**: React coalesces the `''`
+and the text into a single render, so the announcer never blanks, and because `begin` *also* reset the
+text ref, `report` concluded the display was already `''` and skipped the flush that was the only
+remaining mechanism. Re-connecting the same login to the same host produced **zero** mutation records
+with the announcer still reading the old text — real §8.1 silence, in the channel this contract exists
+to build.
+
+**Two lessons, both now binding above:**
+
+1. **The ref must record what was written, not what is believed to be on screen.** Those two coincide
+   at every shape *except* the one that matters, and the first is provable while the second is a
+   guess. §8.2 carries the soundness argument.
+2. **"Provably never" is a claim about all shapes, and I made it about the shapes I had looked at.**
+   The same error, one layer up, as counting call sites by directory (§17.2) and reading `innerText`
+   (§1.1): a check applied to the cases that came to mind, reported as a property of the whole.
+
+### 17.6 Two adjacent copy items, routed here and still open
+
+Neither is caused by this contract; both are Settings-surface copy, which is mine.
+
+1. **`settingsCatalog.ts:42-43`'s General subtitle still promises "…and the external tools Bonsai
+   launches".** That is **false on the page today** — the external-tools text rows are deleted — and
+   becomes true again when P112 sub-increment 4 lands the picker. **RULING: correct it now, and
+   restore the clause in the same increment that lands the picker.** A subtitle that names a control
+   its page does not contain is exactly the drift the catalog coverage guard exists to prevent, and
+   "it will be true again soon" is not a defence to the user looking at it this week. It is one
+   clause; deleting and restoring it is two one-line edits, and the restoration has an obvious owner.
+   The cheaper alternative — leave it and let sub-inc 4 make it honest — is a defensible orchestrator
+   call, but it ships a false sentence in the meantime and my recommendation is against it.
+   **I cannot make this edit: `settingsCatalog.ts` is `src/**`.** It needs a `senior-dev` line.
+2. **`ui-reference.md` "§1.3 rows 32-33" — THE REFERENCE DOES NOT RESOLVE, and I have not guessed.**
+   `ui-reference.md` §1 ("Layout geometry") has no subsections and the file contains **no** numbered
+   table with rows 32-33 (searched: `^### 1.3`, `^| 3`, `| 32 |`, `| 33 |`, and
+   `external|externalTools|terminalCommand|editorCommand` — the only external-tools material in the
+   file is **§12.13**, which describes the P112 *pickers*, i.e. forward spec for sub-inc 4, not
+   deleted controls). Either the row numbers belong to a different document (`P112-ui.md` and the
+   archived `P69-settings-ui.md` both carry external-tools inventories) or to
+   `settingsCatalogRows.test.ts`'s own list. **Needs the file and the anchor**; I will not edit a
+   canonical inventory on a reference I cannot verify, because a wrong edit to the row inventory is
+   worse than a stale one.
+
+### 17.7 Follow-ups this leaves open
 
 - **A4** (the save-failure copy) — needs the orchestrator's call.
 - **R4's `begin()` for rows 9/10** — SHOULD-FIX; TODO line if deferred.
@@ -1187,7 +1270,11 @@ have missed — they are the parts of this contract worth copying into the next 
   not re-propose it: a last-announced-**key** ref is not a proxy for text identity, and unlike the
   global clear it never expires.
 - **A5** (the host in the two Accounts strings, §8.2) — needs the orchestrator's call.
-- **AC11's cozy/compact half** — still owed for every slot.
+- **AC11's cozy/compact half** — still owed for every slot. The idle-height half is now discharged
+  for the four MCP notes (measured 0) **and** re-confirmed 2026-09-14; density is the only part left.
+- **The General subtitle's external-tools clause** (§17.6 item 1) — needs a `senior-dev` line; I
+  cannot edit `src/**`.
+- **`ui-reference.md` "§1.3 rows 32-33"** (§17.6 item 2) — **blocked on a resolvable reference.**
 - **`useExternalTools.ts:22, :34`** — re-evaluate when P112-4 lands (§17.3a).
 - **The swallowed `forge_remove_account_inner` errors** — backend defect, filed separately.
 - **A1** (raw `errorMessage(e)` in the four Accounts strings) — unchanged, still recommended.
