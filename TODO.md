@@ -365,6 +365,34 @@ host. Original review: archive Part 66.
 
 ---
 
+### ✅ FULL 8-STEP GATE GREEN UNDER happy-dom — 2026-09-14, `b53618a`
+
+`GATE_EXIT=0`, **461.9s total**, zero FAIL lines. Per step: nextest 170.2s (**2467 passed**, 9
+skipped) · doctests 3.4s · clippy 19.4s · eslint 13.2s · size ratchet 0.7s · **vitest 52.1s
+(2848 passed, 253 files)** · tsc+build 11.4s · **e2e 191.4s (185 passed)**.
+
+**This verifies the user's 2026-09-11 ruling** ("keep happy-dom, fix the tests" — not revert, not a
+blanket `testTimeout` raise). Be precise about what it proves:
+
+- happy-dom was **0/2** in the full gate before the fixes and is **1/1** after. That is a meaningful
+  flip, **not** a guarantee.
+- **Only 2 of the 5 originally-failing tests were changed.** The other three were deliberately left
+  alone: two are fully synchronous and one is already macrotask-flushed, so **no test edit can
+  immunise them against a wall-clock check** — vitest 4's `withTimeout` tests elapsed time **on
+  completion**, so a stalled machine fails a test that passed every assertion.
+- The measured tail inflation in the gate's own condition (rust tier → vitest) was **1.3-2.8×**, and
+  three tests already cross 5000 ms — green only because they carry explicit `20_000`/`30_000`
+  budgets. That fragility is unchanged by this run.
+
+**The speed prize is bigger than estimated:** gate vitest is **52.1s under happy-dom vs 86.4s under
+jsdom** — a **34.3s** saving per gate run, against the 22s figure recorded on 2026-09-11 (that
+earlier happy-dom number, 64.4s, was itself measured on a run that failed).
+
+**The `testTimeout` / gate-reorder question the user dismissed 2026-09-11 stays dismissed.** Do not
+re-raise it unprompted; this green is the reason it may not need raising at all.
+
+---
+
 ## Durable lessons — the rules
 
 The reusable rules. They are on the board, not in the archive, because every one was learned by a
