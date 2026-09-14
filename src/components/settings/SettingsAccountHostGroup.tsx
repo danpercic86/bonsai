@@ -9,6 +9,7 @@ import type { ForgeAccount, ForgeKind } from '../../ipc';
 import { ForgeProviderBadge } from '../ForgeProviderBadge';
 import { SettingsAccountAddForm } from './SettingsAccountAddForm';
 import { SettingsAccountCard } from './SettingsAccountCard';
+import { SettingsOutcomeNote, type SettingsOutcome } from './SettingsOutcomeNote';
 
 export interface SettingsAccountHostGroupProps {
   host: string;
@@ -19,9 +20,15 @@ export interface SettingsAccountHostGroupProps {
   onRequestRemove(account: ForgeAccount): void;
   /** Refetch the list after a change (token replace / add). */
   onChanged(): void;
+  /** P113 §6.2: the SECTION binds the host into this closure, so the signature
+   *  here (and in the card / add form) is deliberately unchanged. */
   onOpenUrl(url: string): void;
-  /** Success toast after an add-another (`Added {login} to {host}.`). */
+  /** Reports an add-another success (`Added {login} to {host}.`). */
   onAdded(host: string, login: string): void;
+  /** P113 §6.2 — this host's newest action outcome (default-set / token-page /
+   *  add-another), rendered directly under the group head. One note per host,
+   *  newest wins; N failing hosts show N notes, each naming its own host. */
+  outcome: SettingsOutcome | null;
 }
 
 export function SettingsAccountHostGroup({
@@ -33,10 +40,12 @@ export function SettingsAccountHostGroup({
   onChanged,
   onOpenUrl,
   onAdded,
+  outcome,
 }: SettingsAccountHostGroupProps) {
   const [addOpen, setAddOpen] = useState(false);
   const titleId = useId();
   const noteId = useId();
+  const outcomeId = useId();
 
   const isOnlyOnHost = accounts.length === 1;
   // OD-4 nudge: ≥2 CONNECTED accounts and none is the host default.
@@ -52,6 +61,12 @@ export function SettingsAccountHostGroup({
         </span>
       </div>
 
+      {/* P113 §6.2 — the group's one message zone, above the OD-4 nudge. The
+          nudge is NOT hidden while an outcome shows: they are different facts,
+          and the nudge is untinted --text-2 prose, so there is no amber-on-amber
+          adjacency. `slot` is the host, which is what the harness hit-tests. */}
+      <SettingsOutcomeNote slot={host} id={outcomeId} outcome={outcome} />
+
       {showNudge && (
         <p className="settings-account-group-note" id={noteId} role="note">
           {`Pick a default account for ${host}. Repositories with no pinned account will use it.`}
@@ -61,7 +76,10 @@ export function SettingsAccountHostGroup({
       <div
         role="radiogroup"
         aria-label={`Default account for ${host}`}
-        aria-describedby={showNudge ? noteId : undefined}
+        /* P113 §9: composed, never replaced. The outcome id is unconditional
+           (the element is always mounted, and an id resolving to an empty
+           element reads as nothing); the nudge id stays conditional. */
+        aria-describedby={showNudge ? `${noteId} ${outcomeId}` : outcomeId}
       >
         {accounts.map((a) => (
           <SettingsAccountCard
@@ -91,6 +109,7 @@ export function SettingsAccountHostGroup({
         <button
           type="button"
           className="btn-secondary settings-toggle-btn"
+          aria-describedby={outcomeId}
           onClick={() => setAddOpen(true)}
         >
           {`Add another account to ${host}`}

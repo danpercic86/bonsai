@@ -24,7 +24,8 @@ const HOST_PLACEHOLDER: Partial<Record<ForgeKind, string>> = {
 export interface SettingsAccountAddFormProps {
   /** Collapse the form (Cancel or after a successful add). */
   onCancel(): void;
-  /** A token was validated + stored for `host` (login for the success toast). */
+  /** A token was validated + stored for `host`. P113: `login` names the account
+   *  in the caller's inline outcome note — there is no toast on this surface. */
   onSuccess(host: string, login: string): void;
   onOpenUrl(url: string): void;
   /** P80 §3.5: adding-another to a known host — the host field renders as

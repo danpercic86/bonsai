@@ -108,6 +108,14 @@
   overflow-wrap: anywhere;
 }
 
+/* P113 §5 — the Accounts Remove failure renders its `.dialog-error` ALWAYS
+   (empty while idle), because an alert mounted in the same tick as its text is
+   not reliably announced. Safe on a 13-consumer shared rule: every other call
+   site renders the element conditionally, so it is never empty there. */
+.dialog-error:empty {
+  margin: 0;
+}
+
 /* ---------- P59a: git-hook rejection (HookOutputDialog) ---------- */
 .hook-output {
   display: flex;

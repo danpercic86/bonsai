@@ -138,6 +138,38 @@ export default tseslint.config(
   },
 
   // ---------------------------------------------------------------------------
+  // P113: the Settings surface has no toasts.
+  //
+  // Settings renders its card INSIDE `.dialog-overlay` (z-index 100) while
+  // `.toast-stack` is 90, so a toast raised here is not merely dim — measured,
+  // `document.elementFromPoint` at the toast's own centre returns the overlay,
+  // and its ✕ dismiss button cannot be clicked anywhere on its box. Ten call
+  // sites were each written by someone with no way to see that; this rule is
+  // what stops the eleventh. Outcomes go inline via `SettingsOutcomeNote` +
+  // `useOutcomeNotes` (ui-reference §12.14).
+  //
+  // `patterns` rather than `paths`: a literal specifier list has to enumerate
+  // every relative depth in use and is defeated by a new subdirectory.
+  // ---------------------------------------------------------------------------
+  {
+    files: ['src/components/settings/**/*.{ts,tsx}', 'src/components/Settings*.tsx'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/ToastContext'],
+              message:
+                'Settings renders inside .dialog-overlay, so a toast raised here is invisible and unclickable. Use SettingsOutcomeNote (ui-reference §12.14).',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  // ---------------------------------------------------------------------------
   // Playwright specs are not React: the fixture signature `async ({ page },
   // use) => { await use(...) }` makes the react-hooks heuristics think `use` is
   // the React `use()` hook called outside a component. Turn those off here.

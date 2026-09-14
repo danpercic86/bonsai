@@ -11,6 +11,7 @@
  * deterministic across harness reloads.
  */
 import type {
+  AppError,
   Histogram,
   IpcApi,
   LogRecord,
@@ -251,6 +252,20 @@ export const obsHandlers = {
 
   async logRevealDir(): Promise<void> {
     await delay(30);
+    // P113 §14: `?obsRevealFail=1` — this handler ALWAYS resolved, so the reveal
+    // failure (outcome sweep row 1) was unreachable in a browser. The message
+    // mirrors `bonsai_core::external::launch_first` VERBATIM
+    // (`could not launch {what} ({prog}): {e}`) for the Windows rung of
+    // `reveal_in_file_manager`, which is what `log_reveal_dir` delegates to.
+    // The frontend maps it to a fixed sentence and never shows this text, so the
+    // fidelity that matters here is the REJECTION, not the wording.
+    if (query('obsRevealFail') === '1') {
+      const err: AppError = {
+        kind: 'externalToolFailed',
+        message: 'could not launch file manager (explorer): The system cannot find the file specified. (os error 2)',
+      };
+      throw err;
+    }
     // No OS file manager in a browser; the harness only proves the wiring.
     console.info(`[mock] reveal logs folder: ${MOCK_DIR}`);
   },

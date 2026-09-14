@@ -176,7 +176,11 @@
 /* A second sentence in the row's help cell, under the catalog help line: the
    stateful AI-run hints and the repository-access disclosure, whose wording
    tracks the live value and so cannot live in the (static) catalog. Same
-   typography as `.settings-row-help` by design — it is help, not a footnote. */
+   typography as `.settings-row-help` by design — it is help, not a footnote.
+
+   P113 §4: the `--warn` / `--result` ACTION-OUTCOME modifiers live in
+   settings-outcome-note.css, imported immediately after this file. They share
+   this rule's specificity, so that order is what lets them override it. */
 .settings-row-note {
   margin: 2px 0 0;
   max-width: 56ch;

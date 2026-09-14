@@ -1,18 +1,23 @@
 /**
  * P91 §12 row-7 — the DevCategory INTEGRATION path the pure-function tests miss:
  * mock `logSessionInfo` → 2s poll → status card, and `logsDeleteAll` result →
- * confirm → toast + announce + re-poll. Driven through the real SettingsPanel
- * (so the real SettingsContext + confirm dialog are in the loop) with `mockIpc`
- * spies standing in for the query-param harness scenarios (`?obsTruncated=1`,
- * `?obsDeleteFail=1`) that jsdom cannot set.
+ * confirm → INLINE OUTCOME NOTE + announce + re-poll. Driven through the real
+ * SettingsPanel (so the real SettingsContext + confirm dialog are in the loop)
+ * with `mockIpc` spies standing in for the query-param harness scenarios
+ * (`?obsTruncated=1`, `?obsDeleteFail=1`) that jsdom cannot set.
+ *
+ * P113: the outcome is no longer a toast. Settings renders inside
+ * `.dialog-overlay`, so a toast raised here is unclickable — this suite asserts
+ * the `[data-outcome-note]` slot and the page's single live region instead, and
+ * provides no ToastContext at all (the lint guard forbids importing it here).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { SettingsPanel } from '../SettingsPanel';
 import { MINIMAL } from './coverageFixtures';
-import { ToastContext, type PushToast } from '../../ToastContext';
 import { mockIpc } from '../../ipc/mock';
+import { deleteResultToast } from './devLogMessages';
 import type { LogSessionInfo, LogsDeleteResult } from '../../ipc';
 
 const DEV_ON = {
@@ -45,9 +50,19 @@ function sessionInfo(over: Partial<LogSessionInfo> = {}): LogSessionInfo {
   };
 }
 
-function renderDev(push: PushToast, over: Partial<React.ComponentProps<typeof SettingsPanel>> = {}) {
+/** The always-mounted outcome slot for a row (P113 §6.1). Present even when
+ *  idle, with empty text — so a null here is a wiring failure, not "no outcome
+ *  yet". */
+function outcomeNote(slot: string): HTMLElement {
+  const el = document.querySelector<HTMLElement>(`[data-outcome-note="${slot}"]`);
+  expect(el, `the ${slot} outcome slot must be mounted at all times`).not.toBeNull();
+  if (el === null) throw new Error('unreachable');
+  return el;
+}
+
+function renderDev(over: Partial<React.ComponentProps<typeof SettingsPanel>> = {}) {
   return render(
-    <ToastContext.Provider value={push}>
+    <>
       <SettingsPanel
         open
         initialCategory="dev"
@@ -70,7 +85,7 @@ function renderDev(push: PushToast, over: Partial<React.ComponentProps<typeof Se
         dev={DEV_ON}
         {...over}
       />
-    </ToastContext.Provider>,
+    </>,
   );
 }
 
@@ -82,13 +97,13 @@ afterEach(() => {
 describe('DevCategory — poll wiring', () => {
   it('flows a truncated session (droppedParts>0) from the mock into the status card', async () => {
     vi.spyOn(mockIpc, 'logSessionInfo').mockResolvedValue(sessionInfo({ droppedParts: 3 }));
-    renderDev(vi.fn());
+    renderDev();
     expect(await screen.findByText(/reached its size limit/)).toBeInTheDocument();
   });
 });
 
 describe('DevCategory — delete wiring', () => {
-  it('confirm-gates delete, then surfaces the partial-failure toast and re-polls', async () => {
+  it('confirm-gates delete, then surfaces the partial-failure NOTE and re-polls', async () => {
     const info = vi.spyOn(mockIpc, 'logSessionInfo').mockResolvedValue(sessionInfo());
     const partial: LogsDeleteResult = {
       deletedFiles: 4,
@@ -101,8 +116,11 @@ describe('DevCategory — delete wiring', () => {
       metricsCleared: false,
     };
     const del = vi.spyOn(mockIpc, 'logsDeleteAll').mockResolvedValue(partial);
-    const push = vi.fn();
-    renderDev(push);
+    renderDev();
+
+    // P113 §10.1: the slot is mounted and EMPTY before anything happens, which
+    // is what makes its later text a real change a live region can announce.
+    expect(outcomeNote('dev.delete-logs')).toHaveTextContent('');
 
     // Wait for the mount poll to enable the (logs-exist) Delete button.
     const deleteBtn = await screen.findByRole('button', { name: 'Delete all…' });
@@ -127,18 +145,28 @@ describe('DevCategory — delete wiring', () => {
 
     // §6.10 R10: `logParts` = 4 - 0 exports - 0 metrics = 4, and the failure is
     // reported as a file rather than as an invented fifth log file.
+    const expected = deleteResultToast(partial);
     await waitFor(() =>
-      expect(push).toHaveBeenCalledWith(
-        'error',
-        expect.stringContaining('Deleted 4 log files.'),
-        'dev-delete',
-      ),
+      expect(outcomeNote('dev.delete-logs')).toHaveTextContent('Deleted 4 log files.'),
     );
-    expect(push).toHaveBeenCalledWith(
-      'error',
-      expect.stringContaining('1 file could not be deleted'),
-      'dev-delete',
+    const note = outcomeNote('dev.delete-logs');
+    expect(note).toHaveTextContent('1 file could not be deleted');
+    // P113 §3.1.2: `tone` is computed at RUNTIME, so the SAME slot carries both
+    // outcomes of one key press — this result is the error recipe.
+    expect(note).toHaveClass('settings-row-note', 'settings-row-note--warn');
+    // §10.1: description-only. No `aria-live`, no `role` — the page's ONE live
+    // region (§8.1) is what speaks, and it says exactly what the note says.
+    expect(note).not.toHaveAttribute('aria-live');
+    expect(note).not.toHaveAttribute('role');
+    expect(note.textContent).toBe(expected.text);
+    // The page's own announcer, not the shell's search-status region (which is
+    // part of SettingsSearchBar, above every category).
+    const live = document.querySelector(
+      '[role="status"][aria-live="polite"]:not(.settings-search-status)',
     );
+    expect(live?.textContent).toBe(expected.announce);
+    // P113 AC1/AC3: no toast is raised from the Settings surface at all.
+    expect(document.querySelectorAll('.toast')).toHaveLength(0);
     expect(del).toHaveBeenCalledTimes(1);
     // §8.5.5: re-polled after the outcome so the row/card never go stale.
     expect(info.mock.calls.length).toBeGreaterThan(callsBeforeDelete);
@@ -149,17 +177,19 @@ describe('DevCategory — delete wiring', () => {
    *  `aria-describedby` for `hint`. Without this, a screen-reader user
    *  navigating by button hears "Delete all…, button" for a data-destroying
    *  control and "all" of WHAT reaches sighted users only, by proximity. */
-  it('points the danger button at its hint as an accessible description', async () => {
+  it('points the danger button at its hint AND its outcome slot', async () => {
     vi.spyOn(mockIpc, 'logSessionInfo').mockResolvedValue(sessionInfo());
-    renderDev(vi.fn());
+    renderDev();
 
     const deleteBtn = await screen.findByRole('button', { name: 'Delete all…' });
-    const id = deleteBtn.getAttribute('aria-describedby');
-    expect(id, 'the button must carry a description idref').toBeTruthy();
-    // The idref must RESOLVE — a dangling one is worse than none at all.
-    const hint = id === null ? null : document.getElementById(id);
-    expect(hint).not.toBeNull();
-    expect(hint).toHaveTextContent(/Removes all .* and Bonsai's usage counts/);
+    // P113 §9: COMPOSED, never replaced — both ids present, both resolving. A
+    // dangling idref is worse than none at all, and a single-id attribute would
+    // mean the outcome sweep silently dropped the row's own hint.
+    const ids = (deleteBtn.getAttribute('aria-describedby') ?? '').split(' ').filter((s) => s !== '');
+    expect(ids).toEqual(['dev-delete-logs-hint', 'dev-delete-logs-outcome']);
+    const resolved = ids.map((id) => document.getElementById(id));
+    expect(resolved.every((el) => el !== null)).toBe(true);
+    expect(resolved[0]).toHaveTextContent(/Removes all .* and Bonsai's usage counts/);
     // The accessible NAME is untouched, so the DOM↔catalog guard stays green.
     expect(deleteBtn).toHaveAccessibleName('Delete all…');
   });
@@ -167,7 +197,7 @@ describe('DevCategory — delete wiring', () => {
   it('does not invoke delete when the confirm dialog is cancelled', async () => {
     vi.spyOn(mockIpc, 'logSessionInfo').mockResolvedValue(sessionInfo());
     const del = vi.spyOn(mockIpc, 'logsDeleteAll');
-    renderDev(vi.fn());
+    renderDev();
 
     const deleteBtn = await screen.findByRole('button', { name: 'Delete all…' });
     await waitFor(() => expect(deleteBtn).toHaveAttribute('aria-disabled', 'false'));
@@ -204,8 +234,7 @@ describe('DevCategory — delete with no log files (§F6)', () => {
       deletedMetrics: 1,
       metricsCleared: true,
     });
-    const push = vi.fn();
-    renderDev(push);
+    renderDev();
 
     const deleteBtn = await screen.findByRole('button', { name: 'Delete all…' });
     // Never gated on logs: it is enabled with zero of them.
@@ -243,7 +272,7 @@ describe('DevCategory — delete when the count read fails (§6.8 R3, §6.10 R8)
   it('states the widest scope instead of the known-zero copy, and still deletes', async () => {
     vi.spyOn(mockIpc, 'logSessionInfo').mockRejectedValue(new Error('logs dir unreadable'));
     const del = vi.spyOn(mockIpc, 'logsDeleteAll');
-    renderDev(vi.fn());
+    renderDev();
 
     const deleteBtn = await screen.findByRole('button', { name: 'Delete all…' });
     await waitFor(() => expect(deleteBtn).toHaveAttribute('aria-disabled', 'false'));
@@ -251,8 +280,8 @@ describe('DevCategory — delete when the count read fails (§6.8 R3, §6.10 R8)
     // §6.10 R8a — the understating copy R3 removed from the dialog had been
     // relocated verbatim into this button's accessible description by §6.8 R6's
     // `aria-describedby`. An unknown count is not "No log files yet".
-    const hintId = deleteBtn.getAttribute('aria-describedby');
-    const hint = hintId === null ? null : document.getElementById(hintId);
+    const hint = document.getElementById('dev-delete-logs-hint');
+    expect(deleteBtn.getAttribute('aria-describedby')).toContain('dev-delete-logs-hint');
     expect(hint).toHaveTextContent(
       "Bonsai could not count the log files. Removes all of them and Bonsai's usage counts, including the log being recorded now. Recording continues in a new file.",
     );

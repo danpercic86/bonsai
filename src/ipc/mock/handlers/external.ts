@@ -10,7 +10,7 @@
 // owns the rule, and the IPC surface is unchanged by it. A harness case that
 // needs the refusal toast uses the `#fail` sentinel.
 import type { AppError, IpcApi } from '../../types';
-import { delay } from '../repoState';
+import { delay, query } from '../repoState';
 
 /** A path containing this substring makes every external action reject, so the
  *  harness can drive the error-toast path (mirrors the `?remote=` failure
@@ -50,6 +50,22 @@ export const externalHandlers = {
   // replicate `validate_web_url` (Rust owns that rule; there is no launcher
   // here); extend the sentinel triggers instead if a harness case needs it.
   async openUrl(url: string): Promise<void> {
+    // P113 §14: `?openUrlFail=1` makes EVERY `openUrl` reject. The `#fail`
+    // sentinel above cannot reach the Accounts token-page link, because that URL
+    // is BUILT BY THE APP from the host — nothing in the query string can inject
+    // the sentinel into it — so the outcome sweep's row 6 was unreachable.
+    // The message mirrors `bonsai_core::external::launch_first` VERBATIM
+    // (`could not launch {what} ({prog}): {e}`), the shape `open_url` produces
+    // when no rung of the browser ladder launches. The frontend appends it raw
+    // (P113 §12.2 A1), so this string is what the note actually renders.
+    if (query('openUrlFail') === '1') {
+      await delay(120);
+      const err: AppError = {
+        kind: 'externalToolFailed',
+        message: 'could not launch browser (rundll32): The system cannot find the file specified. (os error 2)',
+      };
+      throw err;
+    }
     await simulate(url, 'browser');
     window.open(url, '_blank', 'noopener,noreferrer');
   },

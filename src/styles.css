@@ -14,6 +14,9 @@
 @import './styles/onboarding.css';
 @import './styles/settings-shell.css';
 @import './styles/settings-primitives.css';
+/* P113 §4: the outcome-note modifiers. MUST stay directly after the primitives —
+   same specificity as `.settings-row-note`, so source order is what makes them win. */
+@import './styles/settings-outcome-note.css';
 @import './styles/settings-dev.css';
 @import './styles/settings-legacy-sections.css';
 @import './styles/graph-banners.css';

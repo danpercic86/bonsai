@@ -429,12 +429,45 @@ export const forgeHandlers = {
   async forgeRemoveAccount(accountId: string): Promise<void> {
     await delay(120);
     offGuard();
+    // P113 §14: `?forgeRemoveFail=1|long` — the remove failure (outcome sweep
+    // row 8) had NO reachable trigger, and it is the one outcome whose dialog
+    // deliberately stays open.
+    //
+    // FIDELITY NOTE, verified against `commands/forge_accounts.rs:280-310`: the
+    // real `forge_remove_account_inner` swallows BOTH substantive failures
+    // (`let _ = delete_token(...)`, `let _ = settings::update(...)`), so its only
+    // reachable rejections are `settings::settings_file`'s
+    // `cannot resolve app config dir: {e}` and `task join error: {e}`. The former
+    // is mirrored verbatim here — an invented keychain refusal would be fiction.
+    // `long` keeps the same message SHAPE and supplies a pathological `{e}`: a
+    // ~300-char space-free Windows path, which is what `overflow-wrap: anywhere`
+    // on the note/dialog error exists to contain.
+    const removeFail = urlParam('forgeRemoveFail');
+    if (removeFail === '1' || removeFail === 'long') {
+      const cause =
+        removeFail === 'long'
+          ? `\\\\?\\UNC\\corp-file-cluster-07.ad.internal.example.com\\redirected-profiles$\\${'very-long-segment-'.repeat(12)}AppData\\Roaming\\com.bonsai.app\\settings.json`
+          : 'unknown path';
+      const err: AppError = {
+        kind: 'other',
+        message: `cannot resolve app config dir: ${cause}`,
+      };
+      throw err;
+    }
     accountStore.removeAccountById(accountId);
   },
 
   async forgeSetHostDefault(host: string, accountId: string): Promise<void> {
     await delay(80);
     offGuard();
+    // P113 §14: `?forgeDefaultFail=1` — the refusal below is the command's ONLY
+    // reachable error (`commands/forge_accounts.rs:339`), but reaching it from
+    // the UI needs an off-host account, which the radiogroup cannot produce. Same
+    // message, verbatim, so the note renders what the backend would send.
+    if (urlParam('forgeDefaultFail') === '1') {
+      const err: AppError = { kind: 'other', message: 'account is not on the given host' };
+      throw err;
+    }
     if (!accountStore.accounts.some((a) => a.host === host && a.accountId === accountId)) {
       const err: AppError = { kind: 'other', message: 'account is not on the given host' };
       throw err;

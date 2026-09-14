@@ -1,0 +1,66 @@
+/* Bonsai — Settings OUTCOME notes (P113 §4, ui-reference §12.14).
+   The Settings card renders inside `.dialog-overlay` (z-index 100) and
+   `.toast-stack` is 90, so a toast raised from Settings is not merely dimmed —
+   `elementFromPoint` at its own centre returns the overlay, and its ✕ cannot be
+   clicked. Every Settings action outcome is therefore an inline note.
+
+   IMPORT ORDER IS LOAD-BEARING: these modifiers share `.settings-row-note`'s
+   (0,1,0) specificity, so they only win by coming LATER in the cascade. This
+   file must stay immediately after settings-primitives.css in src/styles.css.
+   It is a separate file rather than a tail on settings-primitives.css because
+   that file is at 468 lines and the 500-line ratchet has no baseline entry for
+   it (P113 §5 assumed 401 — stale). */
+
+/* §4.1 — an action outcome that FAILED, in a row's help slot or an account
+   group. The §10.2 bar recipe (`.settings-row--sensitive`, `.dev-warning-bar`)
+   plus its own 12% tint. --text-1, NOT --warning: --warning as 12px text is
+   3.5:1 in light. --warning, NOT --danger: the operation did not happen, so
+   nothing was lost. Meaning is carried by the words and the bar; hue is third,
+   never alone. Measured over --bg-0: text 12.03:1 dark / 14.16:1 light; bar
+   6.46/4.17 against its own tint and 7.92/4.87 against --bg-0. */
+.settings-row-note--warn {
+  margin: 4px 0 0;
+  padding: 6px 8px 6px 12px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  box-shadow: inset 3px 0 0 var(--warning);
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+
+/* §4.2 — an action outcome that SUCCEEDED. --text-1 is the whole recipe: it is
+   the line the user came for, one step brighter than the --text-2 state note
+   beside it, and it must not read as an alert. No tint, no bar, no glyph.
+   (14.74:1 dark / 16.52:1 light on --bg-0.) */
+.settings-row-note--result {
+  margin: 4px 0 0;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+
+/* The §12.3.4 shape: the element is PERMANENTLY PRESENT with empty text,
+   because a live region (or an `aria-describedby` target) mounted in the same
+   tick as its text is not reliably announced. `:empty` collapses the chrome to
+   a rendered height of 0; `display: none` would cost the announcement and is
+   forbidden here. */
+.settings-row-note--warn:empty,
+.settings-row-note--result:empty {
+  margin: 0;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* `.settings-account-group` is `display: flex; flex-direction: column;
+   gap: 8px` (settings-legacy-sections.css:287), so the note must not add a top
+   margin of its own — and, while idle, must not consume a GAP either: a flex
+   item earns its gap at zero height. The negative margin cancels exactly that
+   8px, which is why `display: none` is not needed to keep the idle group's
+   geometry unchanged. */
+.settings-account-group > .settings-row-note {
+  margin: 0;
+}
+
+.settings-account-group > .settings-row-note:empty {
+  margin-top: -8px;
+}
