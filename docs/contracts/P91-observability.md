@@ -792,7 +792,14 @@ Other rules:
 - **Purge scope — exactly these, and nothing else:**
   `<app_config_dir>/logs/*.jsonl`, `<app_config_dir>/logs/*.jsonl.tmp`,
   `<app_config_dir>/logs/*.zip` (stray/legacy exports), and `<app_config_dir>/exports/*.zip`.
-  The command never touches `metrics/`, `settings.json`, or anything outside those two directories.
+  **SUPERSEDED 2026-09-11 (F6 user ruling — `P91-F6-usage-retention.md`).** This previously read
+  "The command never touches `metrics/`, `settings.json`, or anything outside those two
+  directories." The `metrics/` clause is now **FALSE**: `logs_delete_all` deletes every file in the
+  `metrics` folder, then the folder, **and** resets the in-memory `MetricsState` — the two halves are
+  inseparable, because clearing only the file lets the next flush write the deleted bytes back.
+  `settings.json` and everything else outside those directories are still never touched.
+  (This was a **third** unlisted gap, after `:44` and the `SAVE_LOCK` paragraph — F6 §2's pointer
+  list did not catch any of the three. A later reader should not assume that list is exhaustive.)
   **SUPERSEDED — see docs/contracts/P91-F6-usage-retention.md §4.2/§4.3.** Scope adds
   `<app_config_dir>/metrics/`. `settings.json` and everything else stay out.
 - `logs_delete_all` is on the IPC-instrumentation exclusion list (§2.3) — deleting logs must not

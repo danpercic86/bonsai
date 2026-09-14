@@ -104,8 +104,13 @@ Not named in the brief, but this is the dialog shown at the moment the user crea
 will mail. It carries the same two content statements with the same two gaps, and leaving it stale
 would put two different "never" lists in one flow. In scope for AC12.
 
-Structure, `dev-warning-bar`, glyph, labels and the trailing two lines are **unchanged**. Replace only
-the two content statements:
+Structure, `dev-warning-bar`, glyph and labels are **unchanged**. Replace only the two content
+statements.
+
+> **Corrected 2026-09-14 (§6.8 R1).** The trailing two lines were specced as unchanged. The second of
+> them **quotes the delete control**, so §6.2's byte-identical-pair rule reaches it: it now reads
+> `Exports you saved elsewhere are not removed by “Delete logs and usage counts”.` This dialog is
+> therefore **not** "unchanged" — see §6.8 R1.
 
 **raw branch (replaces `:84-87`, keeps the `dev-warning-bar` + `⚠` glyph):**
 
@@ -159,7 +164,7 @@ the credential vocabulary, and that is what the sentence says.
 ## 6. `usage.json` disclosure — **RULED 2026-09-11. Implement all of §6.**
 
 Audit finding F6. **The user rejected options A, B and C as specced** (they are kept, struck, in
-§6.8 so nobody re-proposes one) and chose a fourth shape:
+§6.9 so nobody re-proposes one) and chose a fourth shape:
 
 | | Ruling |
 |---|---|
@@ -281,7 +286,7 @@ with its scope. Four copy changes, one behavioural change, no new control, no ne
 | `SettingsDevLogsSection.tsx:118` button | `Delete logs…` | `Delete all…` |
 | `DevConfirmDialogs.tsx:127` dialog title | `Delete all log files?` | `Delete logs and usage counts?` |
 | `DevConfirmDialogs.tsx:128` confirm label | `Delete logs` | `Delete all` |
-| `catalog/dev.ts:110` row (`dev.delete-logs`) | label mirrors the row title | must mirror the **new** row label; search matches on it |
+| `catalog/dev.ts:110` row (`dev.delete-logs`) | label mirrors the row title | ~~must mirror the **new** row label~~ — **corrected 2026-09-14 (§6.8 R2): the label is the BUTTON text `Delete all…`.** The DOM↔catalog guard asserts `getByRole('button', { name: entry.label })` (`settingsCatalog.coverage.test.tsx:324`), so a catalog label that is not the button's accessible name would fail the guard and would make search match text the user cannot reach. This follows the documented `dev.logs` / `about.welcome-tour` precedent. The row-title vocabulary lives in `keywords` instead |
 
 `confirmVariant="danger"` and `btn-danger` are **unchanged** — the action still loses data
 irreversibly, and this is precisely the case the danger hue is reserved for (see the D3 ruling in
@@ -343,9 +348,13 @@ smaller target than it destroys is the defect this milestone is fixing.
 There is **no undo**, so the dialog says so plainly and does not offer one. Nothing here is
 recoverable from another surface: unlike logs, usage counts are not exported.
 
-`ExportConfirmDialog` (§4) is **unchanged**. Usage counts are not in an export, so neither of its two
-content statements becomes false; adding "and usage counts are not included" would be noise in the
+`ExportConfirmDialog` (§4) is **unchanged** *in its two content statements*. Usage counts are not in
+an export, so neither becomes false; adding "and usage counts are not included" would be noise in the
 one dialog whose job is to describe the file being created.
+
+> **Corrected 2026-09-14 (§6.8 R1).** "Unchanged" was too broad. Its **trailing line quotes the
+> delete control**, and §6.2's byte-identical-pair rule governs every user-facing quote of that
+> control, not just the ones in the privacy panel. The quoted label updates with the row label.
 
 ### 6.5 The group heading — `What a log file contains` → `What Bonsai records`
 
@@ -412,7 +421,114 @@ destructive control on the page instead of two, no second confirm dialog, and no
 on a surface that still cannot display what it destroys. §10's actual principle survives intact. When
 the Statistics page ships, a reset belongs **there**, next to the data — not here.
 
-### 6.8 Superseded — the three options as originally specced (kept so none is re-proposed)
+### 6.8 Design review 2026-09-14 — rulings and the copy §6 still owes
+
+Reviewed against the shipped working tree and verified in the harness (`pnpm dev:mock`, port 1420,
+both themes). §6's copy landed **verbatim** — ¶6, ¶7, the row label, the hint's three branches, the
+dialog title/confirm label and the `metrics`-folder paragraph all match. Five things the
+implementation surfaced that the contract had not.
+
+**R1 — `ExportConfirmDialog`'s quoted label: RATIFIED.** §6.2's byte-identical-pair rule is the
+higher-order constraint and §4/§6.4's "unchanged" was written before I noticed that dialog quotes the
+control. A dialog that points at `"Delete all log files"` would name a control that no longer exists,
+which is the §6 defect in miniature. Both sites corrected above; AC7 rewritten to five sites.
+
+**R2 — `catalog/dev.ts` label = the BUTTON text: RATIFIED.** The guard
+(`settingsCatalog.coverage.test.tsx:324`) asserts the catalog label IS the control's accessible name,
+so search can only match text the user can reach. `dev.logs` and `about.welcome-tour` are the
+precedent. The row-title vocabulary is preserved in `keywords` (`delete … logs usage counts metrics`),
+so AC11's two searches still pass. **NIT:** `catalog/dev.ts:16`'s header comment claims
+`delete all log files` is among the lost vocabulary living in keywords — it is not there, and per
+AC7 it must not be. Strike that phrase from the comment.
+
+**R3 — the dead click is fixed, but its replacement understates scope. MUST-FIX.** `deleteOpen` as
+its own flag is right and the defect the implementer found was real. But `openDelete` routes a
+**failed read** into the `n === 0` branch (`DevCategory.tsx:134`, `fresh ?? info`, both null when the
+IPC read fails and no poll ever succeeded). The dialog then says *"Clear Bonsai's usage counts?"* and
+proceeds to delete however many log files exist. That is verbatim the defect §6.4 exists to prevent:
+**a confirmation that names a smaller target than it destroys.** `info === null` (unknown) and
+`info.totalFiles === 0` (known zero) are different states and must read differently.
+
+**Reachability, stated honestly:** this needs *every* `logSessionInfo` read on the page to fail,
+including the one on mount, so it is rare. It is ranked MUST-FIX anyway because the rule it breaks is
+categorical — a destructive confirm may never understate its scope — not because it is frequent.
+
+**The fix is in the dialog, not in `openDelete`.** `fresh ?? info` is correct as written: falling back
+to the last good poll is better than discarding it. What must change is `DeleteLogsConfirmDialog`
+collapsing `info === null` to `0` via `info?.totalFiles ?? 0`.
+
+Three lead lines, replacing two. `DeleteLogsConfirmDialog` takes the count as
+`number | null` (null = not known) rather than collapsing it to `0`:
+
+| State | Lead line |
+|---|---|
+| `n > 0` | `Delete {N} log file{s} ({size}) and clear Bonsai's usage counts? This cannot be undone.` |
+| `n === 0` | `Clear Bonsai's usage counts? This cannot be undone.` |
+| **`n === null`** | `Delete all log files and clear Bonsai's usage counts? Bonsai could not count them first. This cannot be undone.` |
+
+The null line states the scope at its **widest**, which is the only safe direction for a destructive
+confirm, and the dialog stays open and actionable rather than dying silently.
+
+**R4 — `Delete 1 log files`. SHOULD-FIX, and the bad string is mine.** §6.4's signed `n > 0` lead line
+hard-codes `log files`. `n === 1` is now a common state (it is what the harness shows the moment Dev
+mode is switched on), and the row hint 8px above it pluralises the **same count** correctly via
+`deleteNote`'s `log file${count === 1 ? '' : 's'}`. Use that same form in the dialog — see the `{s}`
+in R3's table. Observed in the harness as
+`Delete 1 log files (0 B) and clear Bonsai's usage counts? This cannot be undone.`
+
+**R5 — the outcome copy, now that the scope is wider.** Three strings, none of which §6.4 specced.
+
+- **Ratified as written:** ` Usage counts cleared.` / ` Usage counts were not cleared.`
+  (`devLogMessages.ts:27-29`). Driving the clause off `metricsCleared` and never off `deletedMetrics`
+  is correct and the reasoning in that comment should stay.
+- **SHOULD-FIX — `logParts === 0` has no branch.** With zero log files the real backend yields
+  `Deleted 0 log files. … Usage counts cleared.` — "0 log files" reads as a bug in the exact state
+  the ruling exists for. Branch it on `logParts === 0`:
+
+  | `exports` | Toast | Announcement |
+  |---|---|---|
+  | `0` | `Usage counts cleared. {freed} freed.` | `Usage counts cleared.` |
+  | `> 0` | `Deleted {N} export{s}. {freed} freed. Usage counts cleared.` | `Usage counts cleared.` |
+
+  The second row matters: zero logs **with** saved export zips is reachable (exports outlive the logs
+  they came from), and a branch that assumed no exports would drop them from the outcome copy.
+- **SHOULD-FIX — total-failure copy names only logs.** `deleteErrorText`'s fallback
+  (`"Couldn't delete the log files."`) and `DevCategory.tsx:150`'s announce
+  (`'No log files were deleted.'`) both describe a scope narrower than the action's, and tell the
+  zero-log user nothing about the thing they asked for. Widen to `Couldn't delete the logs and usage
+  counts.` and `Nothing was deleted.` respectively. The permission and folder-missing branches stay
+  as they are — both are true statements about a real cause.
+- **NIT — the partial-failure toast offers no next step for the counts.** It ends `Usage counts were
+  not cleared.` with no remedy, against the house rule that an error says what to do next. Append
+  `Try again.` to that clause in the `failedFiles > 0` path only.
+
+**R6 — the destructive button's accessible name. SHOULD-FIX.** `SettingsRow` renders `hint` as a bare
+node (`SettingsRow.tsx:158`) and wires **no** `aria-describedby`; the row title is a `<span>`, not a
+label. Verified in the harness: the button's accessible name is `Delete all…` and `aria-describedby`
+is `null`. A screen-reader user navigating by button hears *"Delete all…, button"* for a
+data-destroying control — "all" of **what** is carried only by sighted proximity. The label shortened
+from `Delete logs…` to `Delete all…` in this very change, so this got worse here, not merely stayed
+bad. Fix at the call site, not in `SettingsRow`: give the hint `<p>` an id and point the button's
+`aria-describedby` at it. Shape only — `deleteText` is the existing local in
+`SettingsDevLogsSection`, and the id must be interpolated per row if this pattern is ever reused:
+
+```
+<p className="settings-row-note" id="dev-delete-logs-hint">{deleteText}</p>
+<button … aria-describedby="dev-delete-logs-hint">Delete all…</button>
+```
+
+This is additive, changes nothing visually, needs no token, and keeps the catalog guard green (the
+guard reads the accessible **name**, which `aria-describedby` does not touch).
+
+**R7 — harness fidelity gap (fixture, §6.6 flag 5). MUST-FIX for the mock.**
+`mock/handlers/obs.ts:205` returns `deletedFiles: 5, deletedExports: 1` unconditionally. In the
+zero-log state the harness therefore shows **`Deleted 3 log files and 1 export. 1.2 MiB freed.`** to a
+user who had none — the harness actively contradicts the copy it exists to verify, and it hides R5's
+`logParts === 0` branch from view. Derive the result from the fixture's own log state: with
+`totalFiles === 0`, return `deletedFiles: 1` (the metrics file), `deletedExports: 0`,
+`deletedBytes` small. Same for the `?obsDeleteFail=1` path, which today claims `3 of 4`.
+
+### 6.9 Superseded — the three options as originally specced (kept so none is re-proposed)
 
 - ~~**Option A — disclose, no button.** My 2026-09-03 recommendation. Its copy ended "To clear it,
   delete the `metrics` folder next to your log files" — hand-deletion as the only remedy. Superseded:
@@ -546,10 +662,20 @@ No USER CHECKPOINT item is introduced: every surface here is reachable in the br
 6. **Copy.** ¶7 matches §6.2 verbatim and sits between ¶6 and the "plain text" paragraph; ¶6 matches
    §6.3 verbatim; the group heading is `What Bonsai records` in **both** `SettingsDevPrivacySection.tsx`
    and `catalog/dev.ts` (`group` *and* `label`). The panel is 8 `<p>` plus the `Right now:` note.
-7. **Label pair — count by SITE, not by number.** `Delete logs and usage counts` must appear at each
-   of these four sites and nowhere else: ¶7 of `SettingsDevPrivacySection.tsx`, the
-   `SettingsDevLogsSection.tsx` row label, `catalog/dev.ts`'s `dev.delete-logs` label, and — with a
-   `?` — the `DevConfirmDialogs.tsx` dialog title. **Do not turn this into a raw-match total:** the
+7. **Label pair — count by SITE, not by number. REWRITTEN 2026-09-14 (§6.8 R1+R2); the original
+   four-site list was wrong twice.** `Delete logs and usage counts` must appear at each of these
+   **five** sites and nowhere else:
+
+   | # | Site | Form |
+   |---|---|---|
+   | 1 | `SettingsDevPrivacySection.tsx` **¶6** | `&ldquo;…&rdquo;` (§6.3 puts it here — the original AC omitted it) |
+   | 2 | `SettingsDevPrivacySection.tsx` **¶7** | `&ldquo;…&rdquo;` |
+   | 3 | `SettingsDevLogsSection.tsx` `rowLabel` prop | bare |
+   | 4 | `DevConfirmDialogs.tsx` `DeleteLogsConfirmDialog` title | with a `?` |
+   | 5 | `DevConfirmDialogs.tsx` `ExportConfirmDialog` trailing line | `&ldquo;…&rdquo;` (§6.8 R1) |
+
+   **`catalog/dev.ts` is NOT one of them** (§6.8 R2): its `dev.delete-logs` label is the button text
+   `Delete all…`, as the DOM↔catalog guard requires. **Do not turn this into a raw-match total:** the
    board's grep-counting rule applies, and an implementer chasing a number would "fix" it by deleting
    the catalog entry, which silently removes the row from settings search. `Delete all log files`
    must appear **nowhere** in `src/`; `usage.json` must appear in **no** user-facing copy.

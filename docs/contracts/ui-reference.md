@@ -348,6 +348,13 @@ palette means one consistent thing.
 |---|---|---|---|
 | `src/styles/dialogs.css:238` | `.op-worktree-warning` | `color: var(--danger-strong)` | `color: var(--warning-strong)` |
 
+**APPLIED — verified 2026-09-14** at `src/styles/dialogs.css:242`, carrying the measurement rationale
+as a comment. Design review confirmed the repaint is the **only** hue change in that file: every
+remaining `--danger-strong` site there (`.dialog-error:107`, `.hook-output-heading:120`,
+`.branch-name-suggest-error:280`) is error text, which is the hue's correct use, and no site was
+converted to a hardcoded hex. `--warning-strong` resolves in both themes (`#e3b341` dark /
+`#7a4f01` light, `tokens-and-base.css:66`/`:168`), confirmed live in the harness.
+
 **P108's contrast bar is held, not regressed.** The surface is `.dialog-card` = `--bg-1`; P108 raised
 this site off `--danger` (**4.41** dark / **4.60** light) onto `--danger-strong` because the bar for
 12px/400 read text is **≥4.5:1**. Measured for the replacement, `--warning-strong` on `--bg-1`
