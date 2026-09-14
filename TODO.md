@@ -943,6 +943,26 @@ sub-inc 4 must carry the recipe itself.
   real risk. But the comments at `DevCategory.tsx:111-114` and `:119-120` that *assert* toast
   behaviour are being corrected in place.
 
+### ✅ RUST GATE TIER GREEN at `e9ed93d` — 2026-09-14, 386.0s, exit 0
+
+`pnpm gate --rust`, all 3 steps: nextest **312.9s — 2542 tests run, 2542 passed (1 leaky), 10
+skipped** · doctests 4.9s · clippy 68.2s. Against the 2026-09-14 full-gate baseline of **2467** Rust
+tests, that is **+75**, consistent with `tools/` (59 + the follow-up additions) and `procutil` (10).
+
+Two things this settles:
+- **`watcher::tests::git_internals_filtered` PASSED** (3.850s) in a full workspace run under gate
+  load — the condition I had wrongly called "a gate flake". It has now failed once, in one agent's
+  run, and passed in two independent full runs since. **Not a flake on the evidence available.**
+- The **one "leaky"** test is `bonsai-core::h_misc external_spawn::detached_spawn_ignores_nonzero_exit`
+  — a test whose entire purpose is to spawn a **detached** process and not wait for it. nextest flags
+  a test as leaky when a child outlives it holding handles, so this is **definitional, not a defect**.
+  Worth knowing it sits in the external-spawn area P112 is rewriting; if it ever stops being leaky,
+  that is the signal something changed.
+
+**Still unproven at HEAD: the FULL 8-step gate.** The last green was 461.9s at `b53618a`, which
+predates every change today. The frontend tiers (vitest, tsc+build, eslint, e2e) have not run against
+the P113 work, which is still uncommitted and under review.
+
 ### 🚨 NEW 2026-09-14 — "Remove account" reports success even when the token was NOT deleted
 
 Found by the P113 implementer while tracing which of row 8's error strings are actually reachable;
