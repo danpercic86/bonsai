@@ -1076,6 +1076,54 @@ routine** — and a DTO change must land its Rust and TypeScript halves in the s
 JSON and mock). It **cannot** run concurrently with P113 phase 2 — both touch `App.tsx` and
 `useUiSettings.ts`.
 
+### ✅ P112 SUB-INC 2 COMMITTED `a2eb091` — MUST-FIX fixed, AMEND-7 written, all gates green
+
+`bonsai-core --lib` **1115** · `bonsai --lib` **543** · `h_ai` **57** · `h_misc` **51** ·
+`nextest --workspace` **2565 passed, 10 skipped** · `clippy --workspace --all-targets -D warnings`
+exit 0 · doctests with `RUSTDOCFLAGS=-D warnings` exit 0.
+
+**The MUST-FIX came with the evidence that mattered:** the two new mixed-separator cases were run
+**before** the `is_unc` widening and **FAILED**, then passed after. That ordering was necessary, not
+ceremonial — the pre-existing test that *promised* to catch a leak of the browse relaxation into
+detection covered only the homogeneous spellings, so it **passed the whole time the invariant was
+broken**. AMEND-7 now records the implication the ruling rests on (`unc_share(v) ⇒ is_unc(v)`) rather
+than asserting a predicate is untouched.
+
+### 📌 TWO DURABLE CONSTRAINTS discovered in the fix pass — keep these
+
+1. **`tracing` DOES NOT EXIST in this workspace.** My brief said "`settings.rs` has zero `tracing::`
+   calls, so there is nothing to piggyback on" — that understated it: **no crate depends on
+   `tracing` at all**, so there is no facade to add a call to. The project's actual non-fatal
+   diagnostic facade is `eprintln!("bonsai: …")` (as in `commands::repo`, `lib.rs`,
+   `commands::ui_settings`). Use that, and do not write `tracing::` into a brief again.
+2. **The settings-load path CANNOT use the observability sink — a bootstrapping constraint.** The
+   P91 `obs` sink is **configured from the very settings** that `load_from` is in the middle of
+   reading, so it cannot be running yet when migration code executes. Any diagnostic inside
+   `load_from` has to be `eprintln!`. This is a real ordering constraint, not a preference, and it
+   will bite anyone who tries to route settings-layer diagnostics through `obs`.
+
+### ⚙ Three smaller items from the same pass
+
+- **`legacy_tool_stem` is a new `pub`** in `bonsai-core`, which makes `settings_ids.rs`'s module-doc
+  claim ("both functions return … never a caller-supplied substring") **literally false**. Amended
+  with an explicit **diagnostics-only, never-stored** carve-out rather than leaving a second false
+  doc claim in a file whose first one was just fixed. Worth a reviewer's eye.
+- **`is_unc` is OS-agnostic**, so on unix `/\opt/bin/x` is now a detection refusal where it was a
+  candidate. **My ruling: leave it.** It matches `is_device_prefix` (`//?/…` is already refused on
+  unix), no unix ladder or realistic `PATH` entry produces that spelling, and an `os` parameter would
+  add a third predicate variant for no benefit. Documented at the function.
+- **`external_cmd.rs:150` carries an IDENTICAL homogeneous-only `is_unc`.** Unreachable from the app
+  today (`commands/external.rs` reads the legacy fields, which `load_from` now always clears) but
+  reachable from `bonsai-core`'s API and tests. §7 moves those four helpers into `tools/mod.rs`, so
+  **sub-inc 3 widens it there rather than patching it twice.**
+
+### ⚠ `cargo fmt --check` IS NOT A GATE STEP, and it is 2290 hunks dirty at baseline
+
+Measured this pass. `gate.mjs` does not run it, and files nobody touched (e.g. `ai/bin_resolve.rs`)
+are dirty. **Do not read `cargo fmt` output on a diff as a regression** — it will show pre-existing
+lines in any file you happen to open. Also: `h_ai` / `h_misc` are **`bonsai-core`** test targets, not
+`bonsai` (`cargo test -p bonsai --test h_ai` errors); my brief had that wrong.
+
 ### 🔧 P113 PHASE 2 IMPLEMENTED (in review) — AC1 says zero, and it was earned
 
 **AC1's full accounting**, the check that has never been run in this form and whose absence lost five
