@@ -943,6 +943,61 @@ sub-inc 4 must carry the recipe itself.
   real risk. But the comments at `DevCategory.tsx:111-114` and `:119-120` that *assert* toast
   behaviour are being corrected in place.
 
+### ✅ P113 PHASE 1 COMMITTED `0c86376` — approved, no MUST-FIX. Phase 2 in flight.
+
+Ten call sites moved from toasts to inline notes; `SettingsOutcomeNote.tsx`, `useOutcomeNotes.ts`,
+`settings-outcome-note.css`. tsc clean, eslint 0 errors, vitest **640/640 across 49 files**, size
+ratchet OK, `elementFromPoint` evidence per note.
+
+**The review verified rather than assumed, and two results are worth keeping:**
+- **The "clipped by scroll, not occluded by z-index" distinction is provable from CSS alone** —
+  `.settings-pane` is `overflow-y: auto` inside `.dialog-card.settings-card` (`overflow: hidden`), so
+  nothing below that clip is painted and `elementFromPoint` there **necessarily** returns the next
+  painted thing. Categorically different from the original defect, where the toast's *entire* box lay
+  inside the viewport, on top of the card, un-hit-testable at every point including its ✕.
+- **No string changed** — `devLogMessages.ts`, `dev.test.tsx` and `devDeleteToastRows.test.ts` are
+  **absent from the diff**, which is AC10's own test. The sweep moved messages without rewriting them.
+
+**Three review follow-ups, all routed into phase 2:** a stale host note **resurrects** when a removed
+host is re-added (the hook prunes only via `begin`, and the remove path never calls it); rows 9/10
+still emit byte-identical announcements so **the second is silent** — the designer called the fix
+impossible without a forbidden prop change and the reviewer showed `flushSync(() => begin(key))` does
+it with no prop change at all; and the `scrollIntoView` relaxation.
+
+**NITs filed:** `begin(key)` clears the announcer **globally** while clearing one key's note —
+contract-conformant, but Accounts has no busy gate, so an action on host B can blank a just-written
+utterance for host A. Mock path citations in `forge.ts:438,459` are off (`:340`, and the path needs
+`src-tauri/`). `?forgeRemoveFail=long` omits §14's 60-char host half.
+
+### 🔧 P113 PHASE 2 — the five missed sites, the guard redesign, the approved banner
+
+- **MCP four** → row slots, `REGISTER` **scope-keyed** (two register rows would otherwise share one
+  key). After the sweep `useMcpControls` has no `pushToast` caller: **the parameter is deleted**, so
+  the hook cannot regress into one.
+- **`useUiSettings:287` → banner when Settings is open, toast when it is not.** The hook serves the
+  whole app, so density and sidebar writes fire it with Settings **closed**, where the toast is
+  already right. **This is the one call site in the sweep where `pushToast` must survive.** The
+  distinction that licenses it: routing by *where the user is looking* is legitimate; routing by
+  *what the backend returned* is not — the same rule that settled one-component-two-tones.
+- **The banner is a rendering of state that already exists.** `useUiSettings` already keeps a failure
+  streak and already fires one toast per streak, not per retry. Strictly better than the toast, which
+  fired once and vanished while the condition persisted. (The streak is a `ref`; needs a state
+  mirror.) Retry button calls `armSettingsSave(0)` — the backoff is 300/600/1200 ms then **stops**,
+  after which the pending patch sits unsent.
+- **A4 copy APPROVED**, verified clause-by-clause against `useUiSettings.ts:265-295` before approval.
+- **The guard is redesigned producer-side.** A path lint is **import-graph-based and structurally
+  cannot** see `pushToast` passed as a *parameter*; widening the glob achieves nothing, since the
+  hooks never import the toast context. Replaced by a DEV-only assertion inside `pushToast` that
+  fires when the Settings surface is mounted — one mechanism covering all five missed sites **and**
+  §13.3's background-toast case, which the contract concedes no lint can catch. **AC1 rewritten to
+  enumerate every `pushToast(` in `src/` and account for each; it has never been run in that form,
+  which is why five sites went missing.**
+- **`?settingsSaveFail=1` added** — nothing in the mock rejects `setUiSettings` today, so the app's
+  highest-traffic Settings toast **has never been seen rendered by anyone**.
+
+**One more site for when P112-4 lands:** `useExternalTools.ts:22/:34` are repo-UI only today, but
+sub-inc 4 puts a tool picker **in** Settings, and a Browse failure raised there hits the same scrim.
+
 ### ✅ RUST GATE TIER GREEN at `e9ed93d` — 2026-09-14, 386.0s, exit 0
 
 `pnpm gate --rust`, all 3 steps: nextest **312.9s — 2542 tests run, 2542 passed (1 leaky), 10
