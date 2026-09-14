@@ -687,10 +687,10 @@ introduced, and both themes and both `panelDensity` values are unaffected. Every
 |---|---|
 | §6.11.1 **R12** — announcement parity | **Unconditional.** Implements against the fields that ship today |
 | §6.11.2 **R13a/b/c** — three adjacent result-copy fixes | **Unconditional.** Same |
-| §6.11.3 — the signed string table for today's fields | **Unconditional.** This is what the app must say now |
+| §6.11.3 — the signed string table for today's fields | **Unconditional.** This is what the app must say now — **amended 2026-09-14 (A-T2):** T2 carries `{rolled?}`, plus one missing resolved row |
 | §6.11.4 **R14** — per-category failure copy | **CONDITIONAL on `failedLogs`/`failedExports` shipping in `LogsDeleteResult`.** Until they do, §6.10 R10's generic copy is the live spec and §6.11.4 describes nothing that exists |
 | §6.11.5 — harness states | Split: the R12/R13 states are needed now, the R14 states only if R14 ships |
-| §6.11.6 — delivery surface | **Flagged MUST-FIX, deliberately not specced.** Needs an orchestrator call and its own increment |
+| §6.11.6 — delivery surface | **RESOLVED 2026-09-14 — superseded by `docs/contracts/P113-settings-inline-notes.md`.** The orchestrator call was made (user ruling #24): all ten Settings-surface toasts become inline notes, not just this one. §6.11.6 stays readable, with its two errata marked in place |
 
 §6.11.4 is written ahead of its fields **so the Rust/TS/IPC/mock change and the copy land in one
 increment**, not two. It is not a description of shipped behaviour and must not be read as one.
@@ -731,8 +731,10 @@ Four reasons, in order of weight:
    actionable sentence in the whole message, and `Try again.` is the remedy.
 3. **Structural enforcement beats a test.** `announce: text` cannot drift. Three rounds (R5, R9, R10)
    each fixed one of these strings and left its twin; one string ends the class permanently.
-4. **§6.11.6.** On this surface the toast is dimmed and partly clipped. The live region is the only
-   channel that delivers the message intact, so it must carry all of it.
+4. **§6.11.6.** On this surface the toast is **unreachable**, not merely dimmed and partly clipped
+   (corrected 2026-09-14 — see §6.11.6's measurement note). The live region was the only channel that
+   delivered the message intact, so it must carry all of it. Still true after P113 moves the message
+   inline: the note and the announcement are written from one call, from one string.
 
 `DevToast.announce` **stays on the interface** — the export path's divergence is legitimate under
 reason 2, and the field is shared. Only `deleteResultToast` collapses. The `rolled` announcement's
@@ -778,7 +780,7 @@ Three templates, exhaustive. `{L}` = `logParts`, `{E}` = `exports`, `{F}` = `fai
 | # | When | `text` — and `announce`, identical |
 |---|---|---|
 | T1 | something was deleted (`L > 0 \|\| E > 0`) | `{deleted} {freed?}{failure?}{usage}{rolled?}` |
-| T2 | nothing deleted, nothing failed | `{usage}{ freed?}` |
+| T2 | nothing deleted, nothing failed | `{usage}{ freed?}{rolled?}` |
 | T3 | nothing deleted, something failed | `{failure-lead}{usage}{rolled?}` |
 
 Every optional clause carries its own single leading space, so the templates above are read as
@@ -794,7 +796,14 @@ Clauses:
 - `{failure?}` — ` {F} file{s} could not be deleted — {it/they} may be open in another program.`
   (`it` iff `F === 1`). `{failure-lead}` is the same sentence without the leading space.
 - `{usage}` — ` Usage counts cleared.` / ` Usage counts were not cleared. Try again.` (R13a).
-- `{rolled?}` — ` Still recording — Bonsai started a new log file.` when `rolled` (R13c: both branches).
+- `{rolled?}` — ` Still recording — Bonsai started a new log file.` when `rolled` (R13c).
+  **AMENDED 2026-09-14 (A-T2): all THREE templates, not two.** T2 as first signed omitted the clause,
+  which was wrong twice over: the shipped code already appended it after the `logParts === 0` branch
+  (`devLogMessages.ts:116`, `${usage.trimStart()}${freed}${rolled}`), and omitting it would have
+  regressed R13c's own complaint — the roll is true whenever `rolled` is set, and a Dev-ON user whose
+  delete removed nothing but the usage counts is precisely the user most likely to conclude logging
+  has stopped. The implementer appended it to all three and flagged it as their one interpretive
+  call; the removed-hunk receipt confirms it. **The code is right; this table was wrong.**
 
 Resolved rows, verbatim, for every state the harness and the tests reach:
 
@@ -803,6 +812,7 @@ Resolved rows, verbatim, for every state the harness and the tests reach:
 | Dev ON, 1 log file, counts cleared | `Deleted 1 log file. 5.1 KiB freed. Usage counts cleared. Still recording — Bonsai started a new log file.` | success |
 | Dev ON, 4 log files + 2 exports | `Deleted 4 log files and 2 exports. 3.4 MiB freed. Usage counts cleared. Still recording — Bonsai started a new log file.` | success |
 | Dev OFF, no logs, counts cleared, bytes on disk | `Usage counts cleared. 4.0 KiB freed.` | success |
+| **Dev ON**, no logs, counts cleared, bytes on disk — `?obsLogFiles=0` (**added 2026-09-14, A-T2**) | `Usage counts cleared. 4.0 KiB freed. Still recording — Bonsai started a new log file.` | success |
 | Dev OFF, no logs, counts cleared, **nothing on disk yet** | `Usage counts cleared.` | success |
 | no logs, 2 exports removed | `Deleted 2 exports. 1.2 MiB freed. Usage counts cleared.` | success |
 | unreadable `metrics/`, nothing else to do | `Usage counts were not cleared. Try again.` | **error** (R13a) |
@@ -812,6 +822,13 @@ Resolved rows, verbatim, for every state the harness and the tests reach:
 
 The last two are R10's rows 1 and 3 with R13 applied; the generic noun `file` stays until R14's fields
 exist. **Nothing here contains a path or a file name** — `activeFile` is never interpolated into copy.
+
+**A-T2, second half:** the Dev-ON T2 row above was **missing** when this table was signed, so its
+claim to cover "every state the harness and the tests reach" was false by exactly one row — the one
+`?obsLogFiles=0` with Dev mode ON produces, asserted at
+`src/ipc/mock/obsDeleteCounts.test.ts:203-205`. It is the row the omitted `{rolled?}` would have got
+wrong, which is why the two halves of this amendment are one finding: a template gap and a coverage
+gap at the same state. With the row added the claim holds.
 
 #### 6.11.4 R14 — per-category failure copy. CONDITIONAL on `failedLogs`/`failedExports`
 
@@ -969,13 +986,30 @@ the harness:
 toast.* The dimming alone violates it; the clipping is the aggravating case, not the whole finding. The
 delete and export toasts predate that ruling.
 
+**MEASURED 2026-09-14 — it is worse than this subsection reported, and the correction matters for how
+anyone verifies this surface.** `document.elementFromPoint` at the toast's **own centre** returns
+`dialog-overlay <DIV>` (`onTopIsToast: false`), so the toast is **not the hit-test target anywhere on
+its box: it is unclickable and its ✕ dismiss button cannot be reached at any width.** The 172 px
+horizontal overlap derived above was confirmed exactly. Everything this subsection says about dimming
+and clipping stands; "dimmed and partly clipped" simply understated it, and the reason it understated
+it is the same reason two reviews missed the whole thing — geometry was inferred, not measured.
+**Verification of this surface must use `elementFromPoint`/bounding boxes; `innerText` is blind to
+stacking.**
+
 **Why two harness reviews and two code reviews missed it:** §6.10's observations were read from
 `innerText` (line 674-675, and correctly — for copy the text node is stronger evidence than pixels),
 and `innerText` is blind to stacking. On top of that, on the likeliest developer monitor the toast is
 fully on screen and merely dim, so a screenshot would have looked plausible too.
 
-**Recommended fix, reuse only:** the delete outcome lands in the delete row's note slot — the signed
-P107 `.settings-row-note--warn` recipe (12% `--warning` tint, `inset 3px 0 0 var(--warning)`, `--text-1`
+**Recommended fix, ~~reuse only~~ — CORRECTED 2026-09-14: this was true of the design and false of
+the code.** `.settings-row-note` exists and is widely used (`settings-primitives.css:180`), but
+**`.settings-row-note--warn` has zero users and no CSS rule anywhere in `src/`** — naming it "the
+signed P107 recipe" made a rule that had only ever been *written down* sound like a rule that had been
+*implemented*. It is built for the first time in `P113-settings-inline-notes.md` §4, with measured
+ratios. The recommendation below is otherwise unchanged, and P113 supersedes it in full (the user
+ruled on 2026-09-14 to sweep all ten call sites on this surface, not just this one). The shape of it:
+the delete outcome lands in the delete row's note slot — the `.settings-row-note--warn` recipe (12%
+`--warning` tint, `inset 3px 0 0 var(--warning)`, `--text-1`
 ink) for the error tone, plain `.settings-row-note` for success — sitting *beside* the row's state note
 per §12.2, with the button's `aria-describedby` composing both ids (R6's id is already there). **Every
 string in §6.11 is channel-independent**: the copy does not change, only its home. One constraint from
@@ -997,6 +1031,10 @@ orchestrator's call and its own increment.**
 | §6.10 R10's three-row failure table and its `file` noun | **CONDITIONALLY SUPERSEDED by §6.11.4** — R10 stays the live spec until `failedLogs`/`failedExports` ship |
 | §6.8 R5's NIT (*"Append `Try again.` … in the `failedFiles > 0` path only"*) | **AMENDED by §6.11.2 R13a** — it attaches wherever `metricsCleared` is false. R5 did not consider the success-shaped path, which `metrics_purge.rs:52-57` makes reachable |
 | §6.8 R5's `logParts === 0` **Toast** column | **AMENDED by §6.11.2 R13b** — the freed clause is omitted when `deletedBytes === 0`, and when the usage clause is the not-cleared form |
+| §6.11.3's **T2 template** (`{usage}{ freed?}`) and its resolved-row table | **AMENDED 2026-09-14 (A-T2)** — T2 carries `{rolled?}` too, and the Dev-ON `?obsLogFiles=0` row was missing. Found by the code review of the implementation: **the code was right and this table wrong.** Receipt: `devLogMessages.ts:116`, `obsDeleteCounts.test.ts:203-205` |
+| §6.11.8's **AC5** (*"can produce no string containing `log file`"*) | **REWORDED 2026-09-14 (A-AC5)** — unsatisfiable as signed: Dev ON ⇒ `rolled` ⇒ `…started a new log file.`, which R13c requires. Now scoped to a **counted** log file, `/\d+ log file/`. Reasoning: `obsDeleteCounts.test.ts:198-202` |
+| §6.11.6's *"the toast is dimmed and partly clipped"* (and reason 4 of §6.11.1) | **CORRECTED 2026-09-14** — measured unclickable; `elementFromPoint` at the toast's centre returns `dialog-overlay`. The 172 px figure was exact |
+| §6.11.6's *"Recommended fix, **reuse only**"* | **CORRECTED 2026-09-14** — `.settings-row-note--warn` had zero users and no CSS rule; it is written for the first time in `P113-settings-inline-notes.md` §4. **SUPERSEDED in full by P113**, which sweeps all ten call sites on this surface per user ruling #24 |
 
 **Not** superseded, and unchanged: §6.4 in full; §6.10 R8, R9 and R11; the `{usage}` clause wording;
 `deleteErrorText` and `Nothing was deleted.` (the thrown path).
@@ -1051,9 +1089,19 @@ comment says the failing file is the metrics one, which under R14 yields *no fai
 3. No string contains `0 B freed`, and no failure sentence is followed by a freed clause.
 4. With `?obsMetricsUnreadable=1` the harness shows an **error**-toned `Usage counts were not cleared.
    Try again.` and the same text in the live region.
-5. A user with **no log files on disk** (`totalFiles === 0` — which is not the same as Dev mode off,
-   since logs outlive the toggle) can produce no string containing `log file`, with and without a
-   forced failure.
+5. **REWORDED 2026-09-14 (A-AC5) — as first signed this criterion was unsatisfiable.** A user with
+   **no log files on disk** (`totalFiles === 0` — which is not the same as Dev mode off, since logs
+   outlive the toggle) can produce no string naming a **counted** log file — i.e. no match for
+   `/\d+ log file/` — with and without a forced failure.
+   *Why the original wording could never pass:* it forbade the substring `log file` outright and
+   explicitly included the Dev-ON case, but Dev ON ⇒ `rolled` ⇒ ` Still recording — Bonsai started a
+   new log file.`, which R13c **requires**. The two clauses contradicted each other, and no
+   implementation could satisfy both. The defect this criterion exists to catch is a *false
+   statement* — a count of log files deleted from a user who had none (§6.10 R10's
+   `Deleted 0 of 1 log files.`) — and `Bonsai started a new log file.` is not that: it is true, names
+   no count, and is about a file being **created**. The implementation tests `/\d+ log file/` and is
+   correct; the reasoning is already written into `src/ipc/mock/obsDeleteCounts.test.ts:198-202`.
+   **The code is right; this criterion was wrong.**
 6. *(R14 only)* The failure sentence names the true category, is absent for a metrics-only failure, and
    `failedFiles` is read by no string.
 

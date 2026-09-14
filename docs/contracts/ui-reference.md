@@ -2374,20 +2374,10 @@ ids; the label and subtitle come from the backend and are display-only.
   loaded yet shows an empty field — which reads as "unset", the opposite of the truth. Pass a
   `placeholder` for the loading window (`Looking for installed tools…`). Never synthesise a
   "loading…" *option*: it would be selectable and would patch a junk value.
-- **A Settings-surface error is inline, never a toast.** `.toast-stack` is `z-index: 90` and
-  `.dialog-overlay` is 100 (§10.2), so a toast raised from inside Settings renders *behind* the
-  card. Put it in the row's help slot as `.settings-row-note--warn` using the signed P107 recipe
-  (12% `--warning` tint, `inset 3px 0 0 var(--warning)`, **`--text-1` ink** — the `--text-1` is
-  what passes AA in light). It sits **beside** the row's state note, not instead of it (§12.2's
-  "note plus conditional caveat"), the control's `aria-describedby` composes both ids, and the
-  element is permanently present with empty text when idle — the §12.3.4 shape, because a live
-  region mounted in the same tick as its text is not announced. `:empty` collapses its padding and
-  chrome; it must **not** be `display: none`, which costs the announcement.
-- **Count the live regions per section, not per element.** When one IPC result changes several
-  notes in the same tick, only **one** of them may be live, or AT queues one sentence per note for
-  a single event. Make the refresh/status row's note the live one and leave the per-row notes
-  description-only — they are announced on focus via `describedBy`, which is when a user asking
-  about that row wants them.
+- **The picker's Browse errors are inline, never a toast** — use `SettingsOutcomeNote` in the row's
+  help slot. The rule, the recipe and the live-region arithmetic now live in **§12.14**, which is
+  where the two bullets that used to sit here were moved: they are cross-section rules, not picker
+  rules.
 - **A backend-opened native dialog uses the `Export session…` idiom** (§12.11,
   `SettingsDevLogsSection.tsx:88-99`): `aria-disabled` + `aria-busy`, **never `disabled`**, and the
   visible label does **not** change. `aria-disabled` is what keeps the button focusable, so focus is
@@ -2402,6 +2392,64 @@ ids; the label and subtitle come from the backend and are display-only.
   the button text), which buys search coverage and an announced name that a bare button under the
   group would not have. Report **what was found** in its note, not a wall-clock time — the app has
   no time formatter and the user who just pressed the button already knows when.
+
+### 12.14 Outcome notes — the Settings surface has no toasts (P113, SIGNED 2026-09-14)
+
+Full contract: `docs/contracts/P113-settings-inline-notes.md`. User ruling #24, 2026-09-14: every
+toast raised from the Settings surface is an inline note. All 10 call sites swept.
+
+- **A toast raised from Settings is unclickable, not merely dim.** `.toast-stack` is `z-index: 90`,
+  `.dialog-overlay` is 100 with `rgba(0,0,0,0.45)` (§10.2), and Settings renders *inside* that
+  overlay. Measured at 1280×720: `document.elementFromPoint` at the toast's own centre returns
+  **`dialog-overlay`**, so **the ✕ cannot be reached at any width**; horizontal overlap with the
+  880px card is 172 of the toast's 360px. Verification of this surface must use
+  `elementFromPoint`/bounding boxes — `innerText` is blind to stacking and is what hid this through
+  two harness reviews.
+- **One component, two tones — `SettingsOutcomeNote`** (`src/components/settings/`). Success
+  outcomes are inline too, **not** left as toasts: `deleteResultToast` computes tone at runtime, so
+  routing by tone would put one button's result in two different places on screen.
+  - **Error:** `.settings-row-note--warn` — 12% `--warning` tint, `inset 3px 0 0 var(--warning)`,
+    `padding: 6px 8px 6px 12px`, `border-radius: 4px`, **`--text-1` ink**, `overflow-wrap: anywhere`.
+    `--warning` not `--danger` (the operation did not happen; nothing was lost — the §12.3.4 rule).
+    `--text-1` on the 12% tint over `--bg-0` (`.settings-pane`'s background): **12.03:1** dark /
+    **14.16:1** light. Bar vs its own tint **6.46 / 4.17**, vs `--bg-0` **7.92 / 4.87** (§2).
+  - **Success:** `.settings-row-note--result` — `--text-1` only. No tint, no bar, no glyph; it must
+    not read as an alert. **14.74:1** dark / **16.52:1** light on `--bg-0`.
+  - The note sits **beside** the row's state note, never instead of it (§12.2's "note plus
+    conditional caveat"), and the control's `aria-describedby` **composes** both ids, state note
+    first. The element is permanently present with empty text when idle — the §12.3.4 shape, because
+    a live region (or describedby target) mounted in the same tick as its text is not announced.
+    `:empty` collapses margin/padding/tint/bar; it must **not** be `display: none`, which costs the
+    announcement.
+- **Count the live regions per section, not per element.** When one IPC result changes several
+  notes in the same tick, only **one** of them may be live, or AT queues one sentence per note for
+  a single event. Every `SettingsOutcomeNote` is description-only: no `aria-live`, no `role`. One
+  always-mounted `sr-only role="status" aria-live="polite"` announcer per section carries the newest
+  outcome, written from the **same** call that writes the note so the two cannot drift or double-fire
+  (`deleteResultToast` returns `announce` byte-identical to `text`, so a live note would say it
+  twice). **Clear the announcer to `''` when the operation starts, not only on completion:** a live
+  region fires on a text *change*, so setting it to the identical string twice (export twice, retry
+  the same failure) announces **once**. The start/finish pair are separate commits, so `'' → text` is
+  a real change every time. Asserting the final text does not catch this — the bug is an absent
+  change.
+- **An inline note is not a toast and must not imitate one.** No ✕, no timer, no motion, no
+  auto-scroll. It clears when **any operation reporting into that slot begins** (not when a confirm
+  dialog opens), and on unmount. Its meaning is *"the result of the last time you pressed this"* —
+  hence it lives in the slot of the control that produced it, the copy is past-tense outcome, and
+  there are no timestamps.
+- **When the failure path leaves a dialog open, the error belongs in the dialog** — a permanently
+  rendered `.dialog-error` (`--danger-strong`, **7.62:1** dark / **6.01:1** light on `--bg-1`) with
+  `role="alert"`, and the section announcer stays silent for that outcome so one event yields one
+  utterance. This is not an exception: it is inline, not a toast. Precedent: `confirmRemove` in
+  `SettingsAccountsSection` keeps the Remove dialog open on failure for in-place retry.
+- **Standing state vs action outcome — the two warn shapes are not interchangeable.** A standing
+  state that must be noticed on arrival is a **bordered banner** (`.forge-reauth-banner`,
+  `.error-banner`). The result of an action the user just took is a **barred note**
+  (`.settings-row-note--warn`). Same 12% tint, different grammar; do not pick at random.
+- **A lint block keeps the channel closed.** `eslint.config.js` restricts importing `ToastContext`
+  from `src/components/settings/**` and `src/components/Settings*.tsx` (use the `patterns` form so a
+  new directory depth cannot defeat it). Still open, recorded, not fixed: a toast raised by a
+  **background** event while Settings is open is equally invisible, and no lint rule can catch it.
 
 ## 13. Icon system (SVG chrome)
 
