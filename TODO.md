@@ -102,9 +102,35 @@ Three contract facts verified against the tree before briefing (they have drifte
 2. ~~**F6 — `usage.json` 90-day window + deletable** (ruling #3)~~ — **DONE 2026-09-14**,
    `d46c98e` + `b53618a`. Both reviews approved; 2 MUST-FIX from the design review fixed (the confirm
    dialog understating its scope, and the mock inventing counts), then the harness caught the failure
-   toast fabricating log files. Residue: `LogsDeleteResult` has no per-category failure counts
-   (architect), and the failure announcement keeps the exports clause where the success one drops it
-   (one word, next `ui-designer` touch).
+   toast fabricating log files. **Both copy residues are now RULED** — `ui-designer`
+   §6.11 of `P91-privacy-copy-ui.md` (R12-R14), 2026-09-14. The one-word question was answered by
+   generalising it: `announce` becomes **byte-identical to `text`**, because each of R5/R9/R10 had
+   fixed one twin and left the other, and an announcement that drops a count of files actually
+   removed understates the blast radius to the one user who cannot read the toast. The per-category
+   counts need **two** fields, not the three the architect filed — `failedMetrics` drives no string,
+   since `metricsCleared` is the usage clause's only correct driver and a count never could be
+   (`merge_metrics_counts` adds a **sentinel 1** on a failed clear, and `metrics_purge.rs:63-65`
+   counts a *subdirectory* as a failure).
+
+   **Three further defects the review found in shipped F6 code, all verified by me against source
+   before routing** (in flight now, TS-only):
+   - **R13a, unconditional MUST-FIX — a green toast that reports a failure.** `metricsCleared ===
+     false` with `failedFiles === 0` is reachable (`metrics_purge.rs:52-57`: a **present but
+     unreadable** `metrics/` yields `dir_removed: false` with `failed_files` at its default 0,
+     passed straight through by `obs_delete.rs:171`), and the success branch returns
+     `tone: 'success'`. The **text** is correct — the branch deliberately leads with `usageLead` and
+     says so in a comment — which is exactly why two code reviews passed it. Only the tone
+     contradicts the words, and `Try again.` never attaches on that path.
+   - **R13b** — `Usage counts cleared. 0 B freed.` reachable on a pre-first-flush success.
+   - **R13c** — the failure branch returns before the `rolled` suffix, so Dev ON + a locked log file
+     never hears that recording continues.
+
+   **The mock could not render any of this, which is why the harness never caught it.**
+   `src/ipc/mock/handlers/obs.ts:174/:202` hard-code `exportFiles: 0` and `:218` concedes it in a
+   comment; `:216` gives at most **one** log file. So the partial-failure row and **every**
+   export-bearing string — including §6.10 8b's confirm-dialog archive line — have never once been
+   rendered. New seams specced and in flight: `?obsLogFiles=N`, `?obsExports=N`,
+   `?obsMetricsUnreadable=1`, `?obsDeleteFail=logs|exports|all|partial|throw`.
 3. ~~**P77 — trigger `list_tag_sync` on auto-fetch completion** (ruling #11)~~ — **DONE 2026-09-14**, `d46c98e`. Rides the existing 5-min cycle; no repo-open call. No `useJobStatus` test file exists at all (pre-existing gap) — the receiving end is covered.
 4. ~~**The e2e cold-timing MEASUREMENT** (ruling #9)~~ — **DONE 2026-09-14**, `6a6f284`. **102 s cold bundle vs 191.4 s dev**, build included, cold-vs-warm 1 s. Not flipped. The decision now has its number and remains the user's.
 5. ~~**The UNC / `\\wsl$` `canonicalize` check** on `216ca45` — ship-blocker.~~ **CLEARED 2026-09-14** by a real UNC probe; `\\wsl$` and OneDrive placeholders remain untested — see the section below.
@@ -698,6 +724,45 @@ archive Part 44; the milestone entry is archive Part 54.6.
 
 Condensed to one line per item on 2026-09-03 and again 2026-09-14; pre-condensation text is archive
 Part 50 and **Part 69**. Nothing here was closed by the curator.
+
+### 🆕 NEW 2026-09-14 — every Settings toast renders behind Settings' own scrim (§6.11.6)
+
+**Found by `ui-designer`, verified by me against source. This is not an F6 item** — it is the whole
+Settings surface, and it is a MUST-FIX whose *scope* is a user decision, so it is parked here rather
+than routed.
+
+`SettingsPanel.tsx:1` states it plainly: Settings is *"the Settings overlay. `.dialog-overlay`
+backdrop"*. `.dialog-overlay` is `z-index: 100` (`dialogs.css:14`); `.toast-stack` is **`z-index: 90`**
+(`toasts-and-overlays.css:11`, whose own comment reads "below `.dialog-overlay` (100)"). So every
+toast raised from inside Settings renders **under the 45% scrim**, and is **clipped** by the 880px
+card where they overlap vertically — measured by the designer at 172px of 360 at 1280×800; at
+1920×1080 a short toast clears the card and is merely dimmed.
+
+**`ui-reference.md:2377` already rules this**: *"A Settings-surface error is inline, never a toast"*,
+with the signed P107 `.settings-row-note--warn` recipe (12% `--warning` tint,
+`inset 3px 0 0 var(--warning)`, **`--text-1` ink** — the `--text-1` is what passes AA in light). So
+the fix is pure reuse of an existing signed recipe, not new design. Two riders: if that note goes
+live the `DevCategory` announcer must **not** also fire (`ui-reference.md:2386`, one live region per
+section per tick), and the confirm dialog itself is fine — toast push and dialog close land in the
+same synchronous continuation, one React commit.
+
+**Why neither the harness nor two code reviews caught it:** every harness pass on this UI, mine
+included, asserted via `innerText` / `get_page_text`. **Text extraction is blind to z-index
+stacking** — it proves a string exists in the DOM, never that a human can see it. Any future claim
+that something is *visible* needs computed style or bounding boxes.
+
+**The decision the user owes:** fix only the F6 delete outcome, or sweep every toast Settings
+raises. §6.11's copy is channel-independent, so the strings shipping now are correct either way and
+nothing is blocked on the answer.
+
+### 🆕 NEW 2026-09-14 — per-category failure counts need a `purge_scope` split, not just a struct field
+
+§6.11.4's precise failure copy is **conditional** on `failedLogs` / `failedExports` existing (two
+fields, not the architect's three — see the F6 entry above). The non-obvious part:
+`src-tauri/src/obs/sink.rs:60-67`'s `PurgeCounts`/`PurgeReply` carry **one** `failed_files` across
+log parts *and* export zips, so the attribution has to be split **inside `writer::purge_scope`** —
+the IPC struct is the last place it surfaces, not where the information is lost. Until it ships,
+§6.10 R10's three-row table stays the live spec. Architect's call on the `purge_scope` signature.
 
 ### ✅ Closed 2026-09-11 by orchestrator verification (user assented) — one line each, Part 64
 
