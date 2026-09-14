@@ -15,7 +15,6 @@
 //! Each test skips (passes with a note) if `git` is not on PATH.
 
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
 
 use bonsai_core::ai::RunOpts;
 use bonsai_core::error::AppError;
@@ -35,13 +34,6 @@ macro_rules! require_git {
             return;
         }
     };
-}
-
-/// Serialize env-mutating tests: `BONSAI_CLAUDE_BIN` / `BONSAI_STUB_MODE` are
-/// process-global and the stub inherits them, so parallel tests would race.
-fn env_lock() -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 fn stub_path() -> std::path::PathBuf {
@@ -88,7 +80,7 @@ fn staged_repo() -> tempfile::TempDir {
 #[test]
 fn generate_returns_stub_body_and_writes_nothing() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_stub_mode("success");
 
     let dir = staged_repo();
@@ -128,7 +120,7 @@ fn generate_returns_stub_body_and_writes_nothing() {
 #[test]
 fn empty_staged_index_maps_to_nothing_to_commit_no_cli_call() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     // Point at a mode that WOULD blow up loudly if it ran, to prove no CLI call:
     // `nonzero` exits 1 with stderr → would surface as AiFailed, not
     // NothingToCommit. Getting NothingToCommit proves the guard fired first.
@@ -154,7 +146,7 @@ fn empty_staged_index_maps_to_nothing_to_commit_no_cli_call() {
 #[test]
 fn payload_contains_staged_added_and_removed_lines() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = init_repo();
     let d = dir.path();

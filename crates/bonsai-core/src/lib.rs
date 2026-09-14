@@ -17,6 +17,9 @@ pub mod health;
 pub mod procutil;
 #[cfg(test)]
 pub mod testutil;
+/// Detection of the external terminals/editors actually installed, replacing
+/// user-supplied launch command templates (P112).
+pub mod tools;
 /// Windows PATH rehydration backstop for an installer-inherited environment (P71 R2).
 pub mod winenv;
 /// Pure text half of [`winenv`]: reg.exe parsing, `%VAR%` expansion, the merge.

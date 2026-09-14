@@ -15,7 +15,6 @@
 //! Each test skips (passes with a note) if `git` is not on PATH.
 
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
 
 use bonsai_core::ai::RunOpts;
 use bonsai_core::error::AppError;
@@ -35,11 +34,6 @@ macro_rules! require_git {
             return;
         }
     };
-}
-
-fn env_lock() -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 fn stub_path() -> std::path::PathBuf {
@@ -76,7 +70,7 @@ fn repo_with_change() -> (tempfile::TempDir, String) {
 #[test]
 fn commit_target_explain_and_review_both_return_stub_body() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_stub_mode("success");
 
     let (dir, head) = repo_with_change();
@@ -100,7 +94,7 @@ fn commit_target_explain_and_review_both_return_stub_body() {
 #[test]
 fn workdir_file_and_staged_targets_build_nonempty_payload() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = init_repo();
     let d = dir.path();
@@ -165,7 +159,7 @@ fn workdir_file_and_staged_targets_build_nonempty_payload() {
 #[test]
 fn worktree_target_reviews_and_empty_fails() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = init_repo();
     let d = dir.path();
@@ -218,7 +212,7 @@ fn worktree_target_reviews_and_empty_fails() {
 #[test]
 fn branch_target_reviews_via_stub() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = init_repo();
     let d = dir.path();
@@ -279,7 +273,7 @@ fn branch_target_reviews_via_stub() {
 #[test]
 fn branch_bad_ref_maps_to_git() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_stub_mode("nonzero"); // would surface loudly if a CLI call slipped through
 
     let dir = init_repo();
@@ -306,7 +300,7 @@ fn branch_bad_ref_maps_to_git() {
 #[test]
 fn clean_workdir_file_maps_to_ai_failed_no_cli_call() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     // A mode that would blow up loudly if it ran; getting the precise
     // "no changes to analyze" message proves the guard fired BEFORE any CLI call.
     set_stub_mode("nonzero");
@@ -338,7 +332,7 @@ fn clean_workdir_file_maps_to_ai_failed_no_cli_call() {
 #[test]
 fn bad_oid_maps_to_git() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_stub_mode("success");
 
     let (dir, _head) = repo_with_change();
@@ -384,7 +378,7 @@ fn bad_oid_maps_to_git() {
 #[test]
 fn escape_path_is_rejected_before_any_cli_call() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     // `nonzero` would surface loudly as AiFailed if the CLI ran; a path-rejection
     // error instead proves the guard fires before any subprocess spawn.
     set_stub_mode("nonzero");

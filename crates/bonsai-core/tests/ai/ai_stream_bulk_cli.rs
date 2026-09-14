@@ -27,7 +27,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::channel;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -51,13 +51,6 @@ macro_rules! require_git {
             return;
         }
     };
-}
-
-/// Serialize env-mutating tests: `BONSAI_CLAUDE_BIN` / `BONSAI_ECHO_MODE` are
-/// process-global and the helper inherits them.
-fn env_lock() -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// The `claude_echo` helper binary. Cargo builds every `[[bin]]` of the package
@@ -185,7 +178,7 @@ fn paths(list: &[&str]) -> Vec<String> {
 #[test]
 fn bulk_payload_with_a_mid_run_question_completes_and_attributes_every_path() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_echo("bulk_ask");
 
     let files = ["i18n/de.json", "i18n/en.json", "i18n/fr.json"];
@@ -293,7 +286,7 @@ fn bulk_payload_with_a_mid_run_question_completes_and_attributes_every_path() {
 #[test]
 fn cancel_works_while_a_bulk_payload_is_in_flight() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_echo("bulk_ask");
 
     let files = ["i18n/de.json", "i18n/en.json"];
@@ -360,7 +353,7 @@ fn cancel_works_while_a_bulk_payload_is_in_flight() {
 #[test]
 fn a_stale_reply_never_answers_the_next_batchs_question() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_echo("bulk_ask");
 
     let files = ["i18n/de.json", "i18n/en.json"];
@@ -446,7 +439,7 @@ fn a_stale_reply_never_answers_the_next_batchs_question() {
 #[test]
 fn a_missing_result_block_fails_only_its_own_path() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_echo("bulk_missing");
 
     let files = ["i18n/de.json", "i18n/en.json", "i18n/fr.json"];
@@ -479,7 +472,7 @@ fn a_missing_result_block_fails_only_its_own_path() {
 #[test]
 fn an_oversized_request_is_split_into_sequential_batches_under_one_run_id() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     // No question here: each batch is its own child, and the point is the split.
     set_echo("bulk");
 

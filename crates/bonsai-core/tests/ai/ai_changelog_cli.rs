@@ -13,7 +13,6 @@
 //! skips (passes with a note) if `git` is not on PATH.
 
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
 
 use bonsai_core::ai::RunOpts;
 use bonsai_core::git::ai_changelog::{generate_changelog, AiChangelog, ChangelogRange};
@@ -32,11 +31,6 @@ macro_rules! require_git {
             return;
         }
     };
-}
-
-fn env_lock() -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 fn stub_path() -> std::path::PathBuf {
@@ -122,7 +116,7 @@ fn payload_short7s(payload: &str) -> Vec<String> {
 #[test]
 fn between_refs_tag_range_matches_git_log_oracle() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = tagged_linear_repo();
     let d = dir.path();
@@ -156,7 +150,7 @@ fn between_refs_tag_range_matches_git_log_oracle() {
 #[test]
 fn since_last_tag_maps_and_matches_git_log_oracle() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = tagged_linear_repo();
     let d = dir.path();
@@ -186,7 +180,7 @@ fn since_last_tag_maps_and_matches_git_log_oracle() {
 #[test]
 fn changelog_returns_stub_body_with_commits_and_diffstat() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = tagged_linear_repo();
     let d = dir.path();

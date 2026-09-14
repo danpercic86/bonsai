@@ -17,7 +17,6 @@
 //! Index build + retrieval + diff re-fetch are pure git2 (no `git` CLI), so these
 //! tests do not depend on `git` being on PATH.
 
-use std::sync::{Mutex, MutexGuard};
 
 use bonsai_core::ai::RunOpts;
 use bonsai_core::error::AppError;
@@ -28,13 +27,6 @@ use crate::common;
 const STUB_MODE_ENV: &str = "BONSAI_STUB_MODE";
 const CLAUDE_BIN_ENV: &str = "BONSAI_CLAUDE_BIN";
 const STDIN_DUMP_ENV: &str = "BONSAI_STUB_STDIN_DUMP";
-
-/// Serialize env-mutating tests: `BONSAI_CLAUDE_BIN` / `BONSAI_STUB_MODE` are
-/// process-global and the stub inherits them, so parallel tests would race.
-fn env_lock() -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 /// git2-init a `main`-headed scratch repo with pinned identity + autocrlf off.
 fn init_scratch() -> (tempfile::TempDir, git2::Repository) {
@@ -131,7 +123,7 @@ fn fixture_shared_term_index() -> (tempfile::TempDir, tempfile::TempDir) {
 /// and fail this assertion.
 #[test]
 fn answer_history_top_k_zero_retrieves_default_depth_not_one() {
-    let _g = env_lock();
+    let _g = common::env_lock();
     let (dir, idx) = fixture_shared_term_index();
 
     // Default (`:success`) stub path — we assert on the RETRIEVED set, not stdin.
@@ -166,7 +158,7 @@ fn answer_history_top_k_zero_retrieves_default_depth_not_one() {
 /// `HistoryAnswer` with the retrieved set + the parsed cost.
 #[test]
 fn answer_history_grounds_stdin_and_returns_retrieved() {
-    let _g = env_lock();
+    let _g = common::env_lock();
     let (dir, idx) = fixture_with_index();
 
     // Capture the stdin the stub receives; `dump_stdin` still emits the success
@@ -220,7 +212,7 @@ fn answer_history_grounds_stdin_and_returns_retrieved() {
 /// kind), so this test fails loudly rather than making a real `claude` call.
 #[test]
 fn answer_history_no_index_fails_before_cli() {
-    let _g = env_lock();
+    let _g = common::env_lock();
     let (dir, _repo) = init_scratch();
 
     std::env::set_var(CLAUDE_BIN_ENV, "D:/nonexistent/bonsai-claude-must-not-run.exe");

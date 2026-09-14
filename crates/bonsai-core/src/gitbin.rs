@@ -159,7 +159,17 @@ impl GitEnv for HostGitEnv {
             return None;
         }
         let mut cmd = Command::new(&reg_exe);
-        cmd.args(["query", key, "/v", value])
+        // P112: an EMPTY value name means the key's DEFAULT value, which
+        // `reg.exe` selects with `/ve` and prints as `(Default)` (verified
+        // here: `reg query HKCR\.txt /ve`). Windows App Paths keeps the
+        // program path there. A localized `reg.exe` naming it otherwise yields
+        // `None` — a miss, never a wrong hit. `/v <name>` callers are untouched.
+        let (args, parse_name): (Vec<&str>, &str) = if value.is_empty() {
+            (vec!["query", key, "/ve"], "(Default)")
+        } else {
+            (vec!["query", key, "/v", value], value)
+        };
+        cmd.args(&args)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null());
@@ -172,7 +182,7 @@ impl GitEnv for HostGitEnv {
         if !out.status.success() {
             return None;
         }
-        parse_reg_query(&String::from_utf8_lossy(&out.stdout), value)
+        parse_reg_query(&String::from_utf8_lossy(&out.stdout), parse_name)
     }
 
     #[cfg(not(windows))]
@@ -248,8 +258,9 @@ const UNIX_WELL_KNOWN: [&str; 3] = ["/usr/bin/git", "/usr/local/bin/git", "/opt/
 
 /// Join a Windows base directory and a backslash-relative suffix into ONE path,
 /// independently of the HOST separator, so the Windows ladder behaves
-/// identically under a Linux/macOS unit-test run.
-fn win_join(base: &str, suffix: &str) -> PathBuf {
+/// identically under a Linux/macOS unit-test run. `pub(crate)` because
+/// [`crate::tools::detect`]'s `WinFolder` rungs need it for the same reason.
+pub(crate) fn win_join(base: &str, suffix: &str) -> PathBuf {
     let base = base.trim_end_matches(['\\', '/']);
     PathBuf::from(format!("{base}\\{suffix}"))
 }

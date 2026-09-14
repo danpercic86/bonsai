@@ -10,7 +10,6 @@
 //! Each test skips (passes with a note) if `git` is not on PATH.
 
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
 
 use bonsai_core::ai::RunOpts;
 use bonsai_core::error::AppError;
@@ -31,11 +30,6 @@ macro_rules! require_git {
             return;
         }
     };
-}
-
-fn env_lock() -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 fn stub_path() -> std::path::PathBuf {
@@ -111,7 +105,7 @@ fn repo_with_feature() -> tempfile::TempDir {
 #[test]
 fn between_refs_commit_set_matches_git_log_oracle() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = repo_with_feature();
     let d = dir.path();
@@ -140,7 +134,7 @@ fn between_refs_commit_set_matches_git_log_oracle() {
 #[test]
 fn since_commit_matches_between_refs_oracle() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = repo_with_feature();
     let d = dir.path();
@@ -163,7 +157,7 @@ fn since_commit_matches_between_refs_oracle() {
 #[test]
 fn last_days_commit_set_matches_git_log_oracle() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = init_repo();
     let d = dir.path();
@@ -216,7 +210,7 @@ fn last_days_commit_set_matches_git_log_oracle() {
 #[test]
 fn digest_returns_stub_body_with_commits_and_diff_sections() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = repo_with_feature();
     let d = dir.path();
@@ -251,7 +245,7 @@ fn digest_returns_stub_body_with_commits_and_diff_sections() {
 #[test]
 fn empty_range_errors_before_cli_spawn() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_stub_mode("nonzero");
 
     let dir = repo_with_feature();
@@ -279,7 +273,7 @@ fn empty_range_errors_before_cli_spawn() {
 #[test]
 fn between_refs_accepts_tag_and_short_oid() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = repo_with_feature();
     let d = dir.path();
@@ -350,7 +344,7 @@ fn repo_with_merge(now: i64) -> tempfile::TempDir {
 #[test]
 fn last_days_is_first_parent_on_merge_history() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -396,7 +390,7 @@ fn last_days_is_first_parent_on_merge_history() {
 #[test]
 fn unicode_subject_appears_in_commits_meta() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = init_repo();
     let d = dir.path();
@@ -444,7 +438,7 @@ fn unicode_subject_appears_in_commits_meta() {
 #[test]
 fn digest_payload_caps_metadata_at_200_commits() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = init_repo();
     let d = dir.path();
@@ -502,7 +496,7 @@ fn digest_payload_caps_metadata_at_200_commits() {
 #[test]
 fn bad_ref_and_zero_days_error_kinds() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_stub_mode("nonzero");
 
     let dir = repo_with_feature();

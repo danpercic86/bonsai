@@ -11,6 +11,7 @@
 
 use std::path::Path;
 use std::process::Command;
+use std::sync::{Mutex, MutexGuard};
 
 /// Fixed dates for base-history CLI commits so twin repos produce identical
 /// base oids (M3 contract §6.2).
@@ -74,6 +75,23 @@ pub fn claude_stub_path() -> std::path::PathBuf {
         }
         path
     }
+}
+
+/// Serialize env-mutating tests: `BONSAI_STUB_MODE` / `BONSAI_CLAUDE_BIN` /
+/// `BONSAI_ECHO_MODE` are process-global and the stub inherits them, so
+/// parallel tests would race.
+///
+/// **There must be exactly ONE of these.** Every `tests/ai/*` module used to
+/// define its own `env_lock` over its own `static LOCK`, which is not mutual
+/// exclusion at all: twelve independent mutexes guarding one process-global
+/// resource let tests in different modules race. The nextest test-group that
+/// pins the `h_ai` binary to one thread papers over it, but
+/// `scripts/gate.mjs`'s `cargo test --workspace` fallback and a plain
+/// `cargo test` get no such serialisation — so the lock, not the runner
+/// config, is what has to be shared.
+pub fn env_lock() -> MutexGuard<'static, ()> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 pub fn have_git() -> bool {

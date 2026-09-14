@@ -15,7 +15,6 @@
 //! Each test skips (passes with a note) if `git` is not on PATH.
 
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
 
 use bonsai_core::ai::{run_claude, RunOpts, DEFAULT_MODEL};
 use bonsai_core::error::AppError;
@@ -36,13 +35,6 @@ macro_rules! require_git {
             return;
         }
     };
-}
-
-/// Serialize env-mutating tests: `BONSAI_CLAUDE_BIN` / `BONSAI_STUB_MODE` are
-/// process-global and the stub inherits them, so parallel tests would race.
-fn env_lock() -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 fn stub_path() -> std::path::PathBuf {
@@ -160,7 +152,7 @@ fn deleted_by_them_conflict() -> tempfile::TempDir {
 #[test]
 fn proposal_returns_stub_body_and_writes_nothing() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_success_stub();
 
     let dir = both_modified_conflict();
@@ -192,7 +184,7 @@ fn proposal_returns_stub_body_and_writes_nothing() {
 #[test]
 fn applying_proposal_clears_conflict_and_commit_merge_finalizes() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_success_stub();
 
     let dir = both_modified_conflict();
@@ -235,7 +227,7 @@ fn applying_proposal_clears_conflict_and_commit_merge_finalizes() {
 #[test]
 fn binary_too_large_and_deletion_kinds_short_circuit_to_ai_failed() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     // The stub is pointed at even though the guards must fire BEFORE any CLI
     // call — a proposal here would prove the guard leaked.
     set_success_stub();
@@ -270,7 +262,7 @@ fn binary_too_large_and_deletion_kinds_short_circuit_to_ai_failed() {
 #[test]
 fn non_conflicted_and_escape_paths_error() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_success_stub();
 
     let dir = both_modified_conflict();
@@ -318,7 +310,7 @@ const MARKER_BODY: &str = "<<<<<<< HEAD\nMINE\n=======\nTHEIRS\n>>>>>>> topic\n"
 #[test]
 fn leftover_markers_proposal_is_staged_verbatim_not_rejected() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_stub_mode("success_markers");
 
     let dir = both_modified_conflict();
@@ -364,7 +356,7 @@ fn leftover_markers_proposal_is_staged_verbatim_not_rejected() {
 #[test]
 fn empty_proposal_maps_to_ai_failed() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_stub_mode("empty");
 
     let dir = both_modified_conflict();
@@ -384,7 +376,7 @@ fn empty_proposal_maps_to_ai_failed() {
 #[test]
 fn whitespace_only_proposal_maps_to_ai_failed() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_stub_mode("whitespace");
 
     let dir = both_modified_conflict();
@@ -415,7 +407,7 @@ const CRLF_BODY: &str = "L1\r\nL2\r\nL3\r\n";
 #[test]
 fn crlf_proposal_is_staged_verbatim_no_normalization() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_stub_mode("success_crlf");
 
     let dir = both_modified_conflict();
@@ -462,7 +454,7 @@ fn default_opts_spawn_model_sonnet_in_argv() {
     // No git needed: the `check_model` stub inspects its OWN argv and only emits
     // the success body when `--model sonnet` is present, so this asserts the
     // ACTUAL spawned command line, not just the const.
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_stub_mode("check_model");
 
     // RunOpts::default() → model None → run_claude passes `--model sonnet`.

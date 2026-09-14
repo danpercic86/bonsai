@@ -26,7 +26,6 @@
 //! `BONSAI_STUB_MODE` env vars cannot race the lib unit tests.
 
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
 
 use bonsai_core::ai::RunOpts;
 use bonsai_core::git::ai_operation::{plan_operation, PlanOutcome, ProposedOperation, SafeOp};
@@ -37,13 +36,6 @@ use crate::common;
 const STUB_MODE_ENV: &str = "BONSAI_STUB_MODE";
 const CLAUDE_BIN_ENV: &str = "BONSAI_CLAUDE_BIN";
 const ENVELOPE_ENV: &str = "BONSAI_STUB_ENVELOPE";
-
-/// Serialize env-mutating tests: `BONSAI_CLAUDE_BIN` / `BONSAI_STUB_MODE` are
-/// process-global and the stub inherits them, so parallel tests would race.
-fn env_lock() -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 fn commit(dir: &Path, file: &str, content: &str, msg: &str) -> String {
     std::fs::write(dir.join(file), content).expect("write");
@@ -133,7 +125,7 @@ fn rich_repo() -> (tempfile::TempDir, String, String) {
 
 #[test]
 fn ai_operation_safety_each_valid_intent_resolves_end_to_end() {
-    let _g = env_lock();
+    let _g = common::env_lock();
     let (dir, a, _b) = rich_repo();
     let p = dir.path();
     let short_a: String = a.chars().take(7).collect();
@@ -242,7 +234,7 @@ fn ai_operation_safety_each_valid_intent_resolves_end_to_end() {
 
 #[test]
 fn ai_operation_safety_malformed_corpus_is_unsupported_and_writes_nothing() {
-    let _g = env_lock();
+    let _g = common::env_lock();
     let (dir, _a, _b) = rich_repo();
     let p = dir.path();
     let before = snapshot(p);
@@ -280,7 +272,7 @@ fn ai_operation_safety_malformed_corpus_is_unsupported_and_writes_nothing() {
 
 #[test]
 fn ai_operation_safety_injection_in_fields_stays_unsupported() {
-    let _g = env_lock();
+    let _g = common::env_lock();
     let (dir, _a, _b) = rich_repo();
     let p = dir.path();
     let before = snapshot(p);
@@ -334,7 +326,7 @@ fn ai_operation_safety_injection_in_fields_stays_unsupported() {
 
 #[test]
 fn ai_operation_safety_adversarial_repo_routes_through_git2() {
-    let _g = env_lock();
+    let _g = common::env_lock();
     let dir = init_repo();
     let p = dir.path();
 

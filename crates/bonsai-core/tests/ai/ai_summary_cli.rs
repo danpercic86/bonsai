@@ -17,7 +17,6 @@
 //! Each test skips (passes with a note) if `git` is not on PATH.
 
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
 
 use bonsai_core::ai::RunOpts;
 use bonsai_core::error::AppError;
@@ -37,11 +36,6 @@ macro_rules! require_git {
             return;
         }
     };
-}
-
-fn env_lock() -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 fn stub_path() -> std::path::PathBuf {
@@ -98,7 +92,7 @@ fn diverged_repo() -> tempfile::TempDir {
 #[test]
 fn diverged_range_counts_unique_commits_and_uses_merge_base() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = diverged_repo();
     let d = dir.path();
@@ -153,7 +147,7 @@ fn diverged_range_counts_unique_commits_and_uses_merge_base() {
 #[test]
 fn empty_range_target_equals_base_maps_to_ai_failed_no_cli_call() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     // `nonzero` would surface loudly as AiFailed('...something broke...') if it
     // ran; the precise "nothing to summarize" message proves no CLI call.
     set_stub_mode("nonzero");
@@ -175,7 +169,7 @@ fn empty_range_target_equals_base_maps_to_ai_failed_no_cli_call() {
 #[test]
 fn target_behind_base_has_no_unique_commits_maps_to_ai_failed() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_stub_mode("nonzero");
 
     let dir = diverged_repo();
@@ -198,7 +192,7 @@ fn target_behind_base_has_no_unique_commits_maps_to_ai_failed() {
 #[test]
 fn bad_ref_maps_to_git() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
     set_stub_mode("success");
 
     let dir = diverged_repo();
@@ -250,7 +244,7 @@ fn add_commits_git2(dir: &Path, n: usize) -> String {
 #[test]
 fn exceeding_commit_cap_appends_truncation_note() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = init_repo();
     let d = dir.path();

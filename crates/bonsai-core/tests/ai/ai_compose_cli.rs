@@ -17,7 +17,6 @@
 //! the `git` CLI), so this test does not depend on `git` being on PATH.
 
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
 
 use bonsai_core::ai::RunOpts;
 use bonsai_core::git::ai_compose::compose_commits;
@@ -28,13 +27,6 @@ use crate::common;
 const STUB_MODE_ENV: &str = "BONSAI_STUB_MODE";
 const CLAUDE_BIN_ENV: &str = "BONSAI_CLAUDE_BIN";
 const STDIN_DUMP_ENV: &str = "BONSAI_STUB_STDIN_DUMP";
-
-/// Serialize env-mutating tests: `BONSAI_CLAUDE_BIN` / `BONSAI_STUB_MODE` are
-/// process-global and the stub inherits them, so parallel tests would race.
-fn env_lock() -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 fn write(dir: &Path, name: &str, content: &str) {
     std::fs::write(dir.join(name), content).expect("write fixture file");
@@ -71,7 +63,7 @@ fn dirty_repo() -> tempfile::TempDir {
 /// all-`unassigned` apply-able partition (the referee never errors).
 #[test]
 fn ai_compose_grounding_reaches_stdin_and_returns_proposal() {
-    let _g = env_lock();
+    let _g = common::env_lock();
     let dir = dirty_repo();
     let d = dir.path();
 

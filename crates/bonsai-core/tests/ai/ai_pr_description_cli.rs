@@ -16,7 +16,6 @@
 //! a note) if `git` is not on PATH.
 
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
 
 use bonsai_core::ai::RunOpts;
 use bonsai_core::error::AppError;
@@ -35,11 +34,6 @@ macro_rules! require_git {
             return;
         }
     };
-}
-
-fn env_lock() -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 fn stub_path() -> std::path::PathBuf {
@@ -80,7 +74,7 @@ fn two_branch_repo() -> tempfile::TempDir {
 #[test]
 fn stub_reply_parses_title_and_body() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = two_branch_repo();
     let d = dir.path();
@@ -109,7 +103,7 @@ fn stub_reply_parses_title_and_body() {
 #[test]
 fn payload_carries_commits_and_diffstat() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = two_branch_repo();
     let d = dir.path();
@@ -150,7 +144,7 @@ fn payload_carries_commits_and_diffstat() {
 #[test]
 fn empty_range_fails_before_cli() {
     require_git!();
-    let _g = env_lock();
+    let _g = common::env_lock();
 
     let dir = two_branch_repo();
     let d = dir.path();

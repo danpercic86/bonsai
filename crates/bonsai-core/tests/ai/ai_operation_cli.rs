@@ -13,7 +13,6 @@
 //! Unsupported outcome, and that garbage output is `Unsupported` (not `AiFailed`).
 
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
 
 use bonsai_core::ai::RunOpts;
 use bonsai_core::error::AppError;
@@ -25,13 +24,6 @@ use crate::common;
 const STUB_MODE_ENV: &str = "BONSAI_STUB_MODE";
 const CLAUDE_BIN_ENV: &str = "BONSAI_CLAUDE_BIN";
 const ENVELOPE_ENV: &str = "BONSAI_STUB_ENVELOPE";
-
-/// Serialize env-mutating tests: `BONSAI_CLAUDE_BIN` / `BONSAI_STUB_MODE` are
-/// process-global and the stub inherits them, so parallel tests would race.
-fn env_lock() -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 fn commit(dir: &Path, file: &str, content: &str, msg: &str) -> String {
     std::fs::write(dir.join(file), content).expect("write");
@@ -78,7 +70,7 @@ fn snapshot(p: &Path) -> (Option<String>, Vec<u8>, Vec<u8>) {
 /// an Unsupported (undoLastMerge on a non-merge HEAD).
 #[test]
 fn ai_operation_plan_operation_end_to_end_writes_nothing() {
-    let _g = env_lock();
+    let _g = common::env_lock();
     let (dir, a, _b) = linear_repo();
     let d = dir.path();
     let short_a: String = a.chars().take(7).collect();
@@ -120,7 +112,7 @@ fn ai_operation_plan_operation_end_to_end_writes_nothing() {
 /// genuine CLI failure (nonzero exit → `Err(AiFailed)`).
 #[test]
 fn ai_operation_unparseable_reply_is_unsupported_not_failed() {
-    let _g = env_lock();
+    let _g = common::env_lock();
     let (dir, _a, _b) = linear_repo();
     let d = dir.path();
     let env_file = d.join(".git").join("plan_envelope.json");
