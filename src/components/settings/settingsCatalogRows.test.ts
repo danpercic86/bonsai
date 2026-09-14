@@ -127,12 +127,17 @@ const DISSOLVED_ROWS: ReadonlySet<number> = new Set([5, 25, 38, 39, 40, 43, 52, 
  * Coverage rows whose CONTROL has been removed from the product, pending a
  * replacement — they are neither covered nor phantom.
  *
- * #32/#33 are UI §1.3's "Terminal command" / "Editor command". P112 §5.1 deleted
- * the free-text program settings behind them; their replacements (`terminalTool`
- * / `editorTool`) are catalog ids, so a text box would accept values the backend
- * coerces to `''`. The rows return as ONE detected-tool picker in P112
- * sub-increment 4, at which point this set empties again and UI §1.3 needs the
- * matching edit (owned by `ui-designer`, not by this test).
+ * #32/#33 are the "Terminal command" / "Editor command" rows of
+ * `docs/contracts/archive/P69-settings-ui.md` §1.3 — the ARCHIVED coverage table
+ * whose row numbering this file pins. It stays as archived: it is the historical
+ * record, not a document edited to match today's code. (`ui-reference.md` has no
+ * numbered settings-row table, so it is not the citation for these rows.)
+ *
+ * P112 §5.1 deleted the free-text program settings behind them; their
+ * replacements (`terminalTool` / `editorTool`) are catalog ids, so a text box
+ * would accept values the backend coerces to `''`. The rows return as ONE
+ * detected-tool picker in P112 sub-increment 4 (`docs/contracts/P112-ui.md`), at
+ * which point this set empties again.
  */
 const RETIRED_ROWS: ReadonlySet<number> = new Set([32, 33]);
 

@@ -39,8 +39,9 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   {
     id: 'general',
     label: 'General',
-    subtitle:
-      'Background activity and the external tools Bonsai launches. Applies to every repository.',
+    // P112 §5.1 removed External tools; the "external tools Bonsai launches"
+    // clause returns with the detected-tool picker in P112 sub-increment 4.
+    subtitle: 'Background activity and commit defaults. Applies to every repository.',
   },
   {
     id: 'appearance',
