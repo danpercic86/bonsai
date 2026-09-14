@@ -869,6 +869,84 @@ included — proved only that a string was in the DOM. Going forward: **a claim 
 *visible* or *clickable* needs `elementFromPoint`, computed style, or bounding boxes. Text
 extraction cannot support it.**
 
+### 🆕 NEW 2026-09-14 — "Open in editor" is broken on Windows, and it is MEASURED
+
+Uncovered by P112 sub-inc 1's ladder work; **not a P112 bug — it is in shipped code.** Routed to
+`senior-dev` as Group C of the follow-up pass, recorded here because the measurement is the evidence.
+
+`external.rs`'s Windows `editor_ladder` opens with bare `spec("code", ...)`, and
+`procutil::resolve_program` (`crates/bonsai-core/src/procutil.rs:26-29`) returns `dir.join(program)`
+**before** its `PATHEXT` loop. So `"code"` resolves to VS Code's extension-less POSIX shim — a
+2073-byte file beginning `#!/usr/bin/env sh`. A standalone `rustc` probe making the exact
+`Command::new(path).spawn()` call `SpawnRunner` makes:
+
+| Program | `spawn()` |
+|---|---|
+| `bin/code` (the shim `resolve_program` returns) | **ERR `os error 193` — "%1 is not a valid Win32 application"** |
+| `bin/code.cmd` (what `PATHEXT` would have found) | OK |
+| `Code.exe` (what App Paths names) | OK |
+
+Rung #2 is bare `code-insiders`, normally absent — so the ladder fails outright. **P112 also removes
+the `editorCommand` escape hatch that currently masks this**, so the fix is not optional cleanup.
+Probe kept at `D:/Data/Temp/claude/shim-probe/shim_check.rs`.
+
+Fix routed: prefer `PATHEXT` matches over the bare name in `resolve_program`, and filter **empty**
+`PATH` components while requiring `is_absolute()` — the non-Windows branch of
+`gitbin::HostGitEnv::resolve_on_path` already does both, so this is porting a guard that exists.
+The bare-name-first branch was believed load-bearing for npm's `claude.cmd`; it is not, because the
+`PATHEXT` loop finds `claude.cmd` on its own. **Caveat carried into the brief:** `resolve_program`
+also serves `ai::resolve_bin`, so the reorder needs AI-test evidence, not just editor-test evidence.
+
+### 🆕 NEW 2026-09-14 — follow-ups both P112 reviews produced, NOT routed
+
+Ranked. None is a MUST-FIX; `reviewer` and `security-auditor` both passed the increment.
+
+1. **The house bidi/control predicate is incomplete, in three identical copies** (LOW-4, and
+   **pre-existing — the new module faithfully reused it**): `tools/custom.rs:44-48`,
+   `external_cmd.rs:142-144`, `ai/stream.rs:383-385`. The set is `char::is_control()` (Cc only) plus
+   U+200E/200F, U+202A-202E, U+2066-2069. **Omitted:** U+061C ARABIC LETTER MARK (a genuine bidi
+   control of the same family); U+200B-200D, U+2060, U+FEFF, U+00AD, U+180E (invisible ⇒ look-alike
+   paths); and **U+2028/U+2029, which are Zl/Zp — NOT `is_control()` — and render as line breaks in
+   a DOM label**, defeating the "a newline cannot appear in a program name" intent outright. Fix once
+   as a category predicate (reject Cc + Cf + Zl + Zp) applied at all three sites so they cannot
+   drift. Homoglyphs (Cyrillic `с` for `c`) are not strippable by any filter — accepted residual,
+   worth one contract sentence. ANSI escapes are already adequate (ESC is Cc, leaving inert `[31m`).
+2. **`crates/bonsai-core/src/gitbin.rs` is at EXACTLY 500 lines** — zero headroom; one added line
+   trips the ratchet, which also means **comment-only fixes there are blocked**. `refactorer`.
+3. **A second Delete click reports deleting a `usage.json` that is already gone.**
+   `src/ipc/mock/obsLogFixture.ts:194-199` returns `deletedMetrics: 1` unconditionally and the
+   fixture's `logFiles` is never consumed by the delete, so click #2 re-renders a success against an
+   emptied fixture. **Pre-existing, not a regression** (the old constants behaved identically), but it
+   is exactly the class that file's own header condemns, and §6.4 dropped the `hasLogs` gate so the
+   button stays enabled. **If fixed, it must ship with a reset export wired into
+   `obsDeleteCounts.test.ts`'s `beforeEach` beside `ringClear()`**, or the test after a
+   successful-delete test inherits the flag and goes flaky.
+4. **`procutil`/`gitbin` duplication for `refactorer`:** `custom.rs:155` `is_mac_bundle` duplicates
+   `HostToolEnv::is_bundle` (`detect.rs:110-112`), and the `mode() & 0o111` check now exists **three**
+   times (`custom.rs:160-163`, `detect.rs:120-123`, `gitbin.rs:199-202`).
+5. **Mock seam polish** (all NIT, `src/ipc/mock/obsLogFixture.ts`): flag precedence undocumented and
+   `?obsMetricsFresh=1&obsDeleteFail=1` self-contradicts (reports a held-open file that `fresh`
+   asserts is absent); `DeleteFailMode`'s `'metrics'` member is unreachable by any query value;
+   `countFlag`'s doc overstates strictness (`parseInt` makes `3abc` ⇒ 3); three exports
+   (`MOCK_USAGE_BYTES`, `MOCK_ROLLED_PART_BYTES`, `MOCK_EXPORT_ZIP_BYTES`) are module-local.
+6. **One signed string has no test:** `Deleted 1 export.` (T1 with `logParts === 0, exports === 1`).
+   The invariant loop's fixture has `logParts 3`, so it exercises ` and 1 export` instead.
+7. **Picker subtitles will show uppercase extensions** — the host scan returns `detail` values like
+   `...\wt.EXE` and `...\pwsh.EXE`, because `PATHEXT` entries are uppercase. `ui-designer` polish for
+   sub-inc 4, not a backend bug.
+
+**Two `ui-designer` contract amendments owed on `P91-privacy-copy-ui.md`** — the code is right and
+the signed text is wrong, so these are text fixes, not code fixes:
+- **§6.11.3's T2 template omits `{rolled?}`, but shipped T2 already carried the clause.** Omitting it
+  would regress R13c's own complaint. Add it, and add the row the harness now reaches
+  (`?obsLogFiles=0`, Dev ON): `Usage counts cleared. 4.0 KiB freed. Still recording — Bonsai started
+  a new log file.` — the table's claim to cover "every state the harness and the tests reach" is
+  false by exactly that row.
+- **AC5 is unsatisfiable as worded.** It says a user with `totalFiles === 0` can produce no string
+  containing `log file` and explicitly includes the Dev-ON case — but Dev ON ⇒ `rolled` ⇒ `Bonsai
+  started a new log file.`, which R13c requires. The two clauses contradict each other. Reword to
+  "no **counted** log file (`{N} log file`)", which is what the implementation asserts.
+
 ### 🆕 NEW 2026-09-14 — per-category failure counts need a `purge_scope` split, not just a struct field
 
 §6.11.4's precise failure copy is **conditional** on `failedLogs` / `failedExports` existing (two

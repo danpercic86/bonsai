@@ -356,6 +356,55 @@ struct CachedScan { at_ms: u64, found: Vec<(&'static ToolEntry, Resolution)> }
 * `picked()` normalises: for any bundle resolution it returns
   `recipe: MacOpen, program: "open", open_arg: Some(bundle)`, so `spec_from` needs no bundle branch.
 
+> ### AMEND-5 (orchestrator, 2026-09-14) — what sub-inc 1 actually built, folded back
+>
+> Recorded after `reviewer` and `security-auditor` both passed sub-increment 1 (no MUST-FIX, no
+> CRITICAL/HIGH/MEDIUM). **Every delta below makes the code STRICTER than this contract, not looser.**
+> That matters: a later reader comparing code to contract would otherwise read these as drift and
+> "fix" the wrong side. Each item names its own target so it can be applied in place later.
+>
+> 1. **§3's probe pseudocode understates the guards.** It specifies `is_file` alone; `executable_hit`
+>    additionally requires `looks_absolute` **and**, on `TargetOs::Windows`, a file extension. Both
+>    apply to `OnPath`, `AppPaths`, `WinFolder` and `UnixFile`. The extension rule is a **correctness
+>    heuristic, not a security boundary** — `CreateProcess` ignores extensions and validates the image
+>    header, so a PE without one would run, and `Path::extension()` yields `Some("")` for a
+>    trailing-dot name. It exists because a *measured* `os error 193` (see below) would otherwise put
+>    an unlaunchable tool in the picker.
+> 2. **§3's "`None` on ANY failure" for `registry_string` is false.** An existing key with **no
+>    default value** makes `reg query … /ve` exit **0** and print `(Default) REG_SZ (value not set)`,
+>    which `parse_reg_query` returns as a non-path `Some`. Verified against `HKCU\Environment` on this
+>    host. Safe today only because `looks_absolute` rejects it downstream — a distant guard. Callers
+>    must shape-check; do **not** "fix" this by matching the literal, which is localized.
+> 3. **AC13's "`detail` = the stored path"** ⇒ **"the *sanitized* stored path; verbatim iff it
+>    validates."** `sanitize_detail` and `validate_custom_program` share `is_disallowed_char`, so a
+>    validating path is byte-identical by construction — which is why the strip set is the single
+>    point of truth.
+> 4. **§7 sends four helpers to `tools/mod.rs`; they land in `tools/custom.rs`** — an extra module
+>    versus §1's map, split out because `mod.rs` was already 387 lines.
+> 5. **§1's module map** is missing `tools/catalog_table.rs` and `tools/scan_tests.rs`, and its
+>    "widen `parse_reg_query` to `pub(crate)`" line should be **dropped**: the `/ve` branch lives
+>    inside `HostGitEnv::registry_string`, so the parser stays private.
+> 6. **AC16 is host-bound on its accept cases, and this is forced, not lazy.** Every *refusal* is
+>    asserted on all three OSes, but the `.exe` accept is `cfg(windows)`-only and the bundle /
+>    exec-bit accepts `cfg(unix)`-only, because the signature requires a path that both exists on the
+>    host and is absolute *for the target OS* — no single machine satisfies both. The
+>    security-relevant half (DEC-1's `.cmd`/`.bat`/`.ps1` refusal) **is** proven on Windows, which is
+>    the gate host; what goes unasserted there is capability, not safety. A seam-injected filesystem
+>    is the only way to close it. **State this in AC16 rather than implying full coverage.**
+> 7. **The catalog has 35 rows, not 36** (contract and code agree at 35; only a code comment said 36).
+> 8. **`§4`'s auto-ladder lookup — see AMEND-4 above.** Unchanged and still binding: use `find_for`.
+>
+> **A shipped bug this increment uncovered, measured rather than argued.** `external.rs`'s Windows
+> `editor_ladder` opens with bare `spec("code", …)`, and `procutil::resolve_program` returns
+> `dir.join(program)` **before** its `PATHEXT` loop — so `"code"` resolves to
+> `…\Microsoft VS Code\bin\code`, a 2073-byte file beginning `#!/usr/bin/env sh`. A standalone
+> `rustc` probe making the exact `Command::new(path).spawn()` call `SpawnRunner` makes:
+> **`bin\code` ⇒ ERR `os error 193` "%1 is not a valid Win32 application"**, while `bin\code.cmd`
+> and `Code.exe` both spawn OK. Rung #2 is bare `code-insiders`, normally absent — so on a standard
+> Windows VS Code install **"Open in editor" fails today**. P112 is what exposed it, and P112 also
+> **removes the `editorCommand` escape hatch that currently masks it**, so the ladder fix is not
+> optional cleanup. Probe kept at `D:\Data\Temp\claude\shim-probe\shim_check.rs`.
+
 ---
 
 ## 4. Launch
