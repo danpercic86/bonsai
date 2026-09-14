@@ -116,15 +116,33 @@ P91 §6.11.6 wrongly claimed for `--warn`.
 loses the in-place retry and adds a state transition on the failure path, which is the path least
 worth complicating.
 
+**Do not over-invest in this path (noted 2026-09-14).** `forge_remove_account_inner`
+(`src-tauri/src/commands/forge_accounts.rs:280-310`) swallows both substantive failures
+(`let _ = delete_token`, `let _ = settings::update`), so the only rejections that reach the frontend
+are `cannot resolve app config dir` and a task-join error. **Row 8 is near-unreachable in the real
+app** and its harness case (`?forgeRemoveFail=1`) is mock-only. It stays specced — it is ~5 lines,
+and the dialog-stays-open behaviour it handles is real — but it earns no further design time. The
+swallowed errors are a **backend defect, filed separately**; if they are ever surfaced, this path
+becomes live with no UI change required, which is the right place for it to already exist.
+
 ---
 
 ## 4. The two recipes
 
 ### 4.1 Error tone — `.settings-row-note--warn` (new CSS, written here)
 
-Added to `src/styles/settings-primitives.css` **immediately after `.settings-row-note`**
-(currently `:180-185`; file is 401 lines → ~425, under the limit). Not a new file: the base class,
-and the only rule the modifier can lose a specificity fight to, live there.
+**CORRECTED 2026-09-14 (ruling R3): its own file, not `settings-primitives.css`.** My line count was
+stale — that file is **468** lines, not 401, so +42 breaches the 500 ratchet. The recipe goes in its
+own file, which is what the house rule says anyway ("new UI in its own file, never appended to a
+large one"). Two constraints come with that and are **load-bearing**:
+
+- **Import it AFTER `settings-primitives.css`** in `src/styles.css`'s fixed import list.
+  `.settings-row-note--warn` and `.settings-row-note` are both single-class, specificity (0,1,0), and
+  both declare `margin` and `color` — so **source order alone** decides the modifier. Imported before
+  the base, the `--warn` ink and margins silently lose and the note renders as ordinary help text.
+  That file's own header ("Cascade order is fixed by the import list — do not reorder") is the
+  precedent; this is a new dependency on it and must be commented at the import site.
+- `.settings-account-group > .settings-row-note` is (0,2,0) and wins regardless of order.
 
 ```css
 /* P113 §4.1 — an ACTION OUTCOME that failed, in a row's help slot or an account
@@ -165,11 +183,23 @@ and the only rule the modifier can lose a specificity fight to, live there.
 }
 
 /* The account group is `display: flex; gap: 8px` (settings-legacy-sections.css:287),
-   so a note that is its flex child must not add its own top margin. */
+   so a note that is its flex child must not add its own top margin — and, while
+   IDLE, must also cancel the gap the container hands every child. An
+   always-mounted zero-height flex child still earns its 8px `gap`; `margin: 0`
+   alone leaves the group 8px taller than before the note existed.
+   (AMENDED 2026-09-14, ruling R2 — measured idle gap unchanged after the fix.) */
 .settings-account-group > .settings-row-note {
   margin: 0;
 }
+.settings-account-group > .settings-row-note:empty {
+  margin-top: -8px;
+}
 ```
+
+**The general rule this is an instance of:** the always-mounted-empty shape is only inert if it is
+checked against the **parent's** layout, not just its own box. `gap`, `space-*` utilities and
+`:first-child`/`+` sibling selectors all act on an element that is present at zero height. Any future
+reuse of `SettingsOutcomeNote` in a `gap`-based flex or grid container must repeat this measurement.
 
 `overflow-wrap: anywhere` is required, not decorative: four of the strings append raw
 `errorMessage(e)`, which can be a space-free keychain/OS token (§12.2).
@@ -228,7 +258,7 @@ The rule, recorded in `ui-reference` §12.14:
 | `src/components/settings/SettingsDevLogsSection.tsx` | edit | Two `SettingsOutcomeNote`s in the two `hint` slots; two new ids; `aria-describedby` composition on three buttons. | 166 → ~185 |
 | `src/components/settings/SettingsAccountsSection.tsx` | edit | Hook; host-bound `onOpenUrl` closures; `removeError` state + the dialog's `.dialog-error`; the section slot in the `accounts.add` row. | 193 → ~240 |
 | `src/components/settings/SettingsAccountHostGroup.tsx` | edit | New `outcome` prop + one `SettingsOutcomeNote` + `aria-describedby` composition. | 101 → ~115 |
-| `src/styles/settings-primitives.css` | edit | §4's three rules, after `:185`. | 401 → ~425 |
+| `src/styles/settings-outcome-note.css` (or the implementer's chosen name) | **new** | §4's rules. **Not** appended to `settings-primitives.css` — that file is 468 lines and +42 breaches the ratchet (ruling R3). Imported **after** `settings-primitives.css`; see §4.1 for why source order is load-bearing here. | ~45 lines |
 | `src/styles/dialogs.css` | edit | `.dialog-error:empty { margin: 0 }` only. **Safe on a 13-site shared rule** because every existing `.dialog-error` call site renders the element *conditionally* — none of them is ever empty, so the new rule can only ever match the one site added here. | +3 |
 | `eslint.config.js` | edit | §13.1's guard block. | +14 |
 | `src/ipc/mock/handlers/obs.ts`, `handlers/forge.ts`, `handlers/external.ts` | edit | §14's knobs. | +~25 total |
@@ -242,7 +272,10 @@ them for free.
 
 ---
 
-## 6. Placement — all ten call sites
+## 6. Placement — call sites 1-10
+
+**Five more were found after implementation (§17.2): the sweep is 15.** Sites 11-15 and their
+placements are in §17.3; this section covers 1-10.
 
 Two slots in Dev, one per host plus one section slot in Accounts, one dialog error.
 
@@ -468,11 +501,25 @@ explicitly because the channel being replaced *had* motion:
 
 - A transition on a block that changes the height of a row inside a scrolling card animates layout,
   which is the one thing the house motion budget forbids (transform/opacity only).
-- No `scrollIntoView`: the outcome often lands in the same commit that removes a card or resets a
-  counter, and scrolling the pane under the user's pointer at that moment is a jump. The note is at
-  the top of the group, or in the row, that the user just acted in; the announcer covers the
-  non-sighted case.
-- Nothing to gate behind `prefers-reduced-motion`, because there is no motion.
+- **`scrollIntoView`: forbidden on the Accounts surface, RELAXED for the Dev row slots
+  (AMENDED 2026-09-14, ruling R1).** The original blanket ban was written for the Accounts case,
+  where the outcome lands in the same commit that removes a card and scrolling under the pointer is a
+  jump. That reasoning does not transfer to the Dev page, where the commit adds a line and removes
+  nothing — and the ban produced a worse defect than the one it prevented (see §17.1). The relaxation
+  is narrow, and all four conditions are required:
+  1. **Measured, not assumed:** adjust only when the note's rect is not fully inside the scroll
+     container's client rect.
+  2. `block: 'nearest'`, **`behavior: 'auto'`** — instant. Never `'smooth'`. An instant scroll
+     correction is not animation; it is the same class of thing as a caret-following scroll, so there
+     is still **nothing to gate behind `prefers-reduced-motion`** and no media-query branch.
+  3. **Only when focus is inside the row that owns the slot** (`document.activeElement`). The user
+     standing on the control gets the correction; a user who navigated elsewhere during the async
+     operation is never yanked. `ConfirmDialog` restores focus to `Delete all…`, so the common path
+     is covered.
+  4. **Dev slots only.** The Accounts host slots keep the ban: they sit at the *top* of their group
+     (far from the page end, rarely clipped) and their commit can remove a card.
+- Apart from that correction, there is no motion, and nothing to gate behind
+  `prefers-reduced-motion`.
 
 ---
 
@@ -535,12 +582,46 @@ row 1's text reused.
 
 ## 13. Keeping the channel closed
 
-### 13.1 The lint guard — recommended, and it belongs here
+### 13.1 The guard — REDESIGNED 2026-09-14 (§17.2). A path lint is not sufficient.
 
 The residual risk is exactly as stated: a *future* Settings feature reaches for `pushToast` and
-silently gets an invisible, unclickable message. That is not hypothetical — the ten call sites here
-were each written by someone who had no way to see the problem, and P112-4 adds a brand-new Settings
+silently gets an invisible, unclickable message. That is not hypothetical — the call sites here were
+each written by someone who had no way to see the problem, and P112-4 adds a brand-new Settings
 surface next.
+
+**But a path-scoped lint cannot express "reaches the Settings surface", and this is not a theoretical
+limitation — it is precisely how five call sites were missed (§17.2).** `useUiSettings.ts` and
+`useMcpControls.ts` receive `pushToast` **as a parameter** and are wired from `App.tsx`; they render
+Settings rows while living in `src/hooks/`. No `files:` glob can see that, because the property that
+matters is reachability, not location. So the guard is now **two parts, and the lint is the cheaper
+second one**:
+
+**(1) Dev-time reachability warning — the primary guard.** In `DEV` only, `pushToast` emits a
+`console.error` naming the message text when the Settings overlay is open:
+`pushToast called while Settings is open — this message renders behind .dialog-overlay and is
+unclickable. Use SettingsOutcomeNote (ui-reference §12.14).` It checks the condition that actually
+matters, catches a caller anywhere in the tree including one reached through three layers of props,
+and fires in the browser harness during development. It also covers §13.3's background-toast case,
+which is no longer a separate concern — it is the same mechanism.
+The `settingsOpen` signal it needs is the **same signal** §17.3 needs to route the global save
+failure, so it is wired once and serves both.
+*Limitation, stated honestly: it only fires if someone runs the path. It is a smoke alarm, not a type
+system. That is still strictly more than the lint can do.*
+
+**(2) The path lint — keep, unchanged, and stop calling it the guard.** It remains worth having for
+the naive case (a new component under `src/components/settings/` importing `ToastContext` directly),
+and it is free.
+
+**Widening its `files:` glob to the two hooks would accomplish nothing, and specifying that would be
+cargo cult:** `no-restricted-imports` restricts *imports*, and neither hook imports `ToastContext` —
+they receive `pushToast` as a **parameter**. There is no import to ban. The structural fix for those
+two is in the code, not the config:
+
+- **`useMcpControls`: delete the `pushToast` parameter.** After §17.3 it has no remaining caller, so
+  the capability is removed rather than guarded. This is the strongest available guard and it costs
+  nothing.
+- **`useUiSettings`: keeps the parameter**, because §17.3 keeps a toast for the Settings-closed
+  branch — which is correct there and must not be linted away. Its guard is (1).
 
 `eslint.config.js` is flat (`tseslint.config(...)`) with per-`files` blocks, so this is a precise,
 zero-runtime-cost addition:
@@ -584,12 +665,21 @@ overlap this sweep removes for any future Settings toast, or (b) queue backgroun
 Settings closes. **Recommendation: change nothing here**; file it as a TODO follow-up. It needs its
 own increment and its own measurement.
 
+**Updated 2026-09-14:** §13.1's dev-time reachability warning now *detects* this case — it fires on
+any `pushToast` while the overlay is open, whatever the caller — so the condition is at least
+observable during development. It still does not *fix* it, and the recommendation is unchanged.
+`useUiSettings.ts:287` turns out to be a live instance of exactly this shape (§17.3): one call site
+that is broken on one surface and correct on another.
+
 ---
 
 ## 14. Harness states and mock fixtures
 
 All ten are reachable in a plain browser (`pnpm dev`, `VITE_MOCK_IPC=1`). Existing knobs cover four;
-four new knobs are required.
+four new knobs are required. **Sites 11-15 (§17.3) need two more:** an MCP failure knob for
+`setMcpEnabled` / `registerMcpWithClaude` / `setMcpAllowWrite`, and **`?settingsSaveFail=1`** for
+`setUiSettings` — nothing in the mock currently rejects a settings write, which is why the app's
+highest-traffic Settings toast has never been seen rendered by anyone.
 
 | Case | URL |
 |---|---|
@@ -620,15 +710,27 @@ Each is independently checkable, with its verification method. **AC2 and AC3 are
 purpose:** every prior verification of this UI, including mine, read `innerText`, and a string in the
 DOM proved nothing here.
 
-1. **No `pushToast` remains on the Settings surface.**
-   `rg -l "usePushToast|pushToast" src/components/settings src/components/Settings*.tsx` → **no
-   output**. This is the check the lint rule then protects.
-2. **The note is the hit-test target and is inside the card.** In the harness, Settings open on
-   Developer, after triggering row 4: for `el = document.querySelector('[data-outcome-note="dev.delete-logs"]')`,
-   `document.elementFromPoint(cx, cy)` at the centre of `el.getBoundingClientRect()` returns `el` **or
-   a descendant of `el`**; `el`'s rect has non-zero area; and the rect is **fully inside**
-   `.settings-card`'s rect on all four edges. Report the four numbers. Repeat for one Accounts host
-   note. *(This is the AC that answers the failure mode that produced this contract.)*
+1. **No `pushToast` reaches the Settings surface — enumerated by REACHABILITY, not by directory.**
+   **REWRITTEN 2026-09-14 (§17.2): the original wording is what let five call sites through.**
+   `rg -n "pushToast\(" src/` → enumerate **every** call site in the repository, and account for each
+   one in a table: either it is swept, or it is justified as unreachable from Settings. A call site is
+   reachable if the component renders inside `SettingsPanel` **or** if the function is passed into a
+   hook/helper that any such component calls — `src/hooks/**` is explicitly in scope. Grepping two
+   directories is **not** this check.
+2. **The note is the hit-test target, and is fully visible, and the two failures are distinguished.**
+   **AMENDED 2026-09-14 (ruling R1)** — the original conflated occlusion with scroll clipping.
+   For each slot, with `el = document.querySelector('[data-outcome-note="{slot}"]')`:
+   - **2a — not occluded (the failure this contract exists to fix).** At a point **1px inside `el`'s
+     top-left corner**, `document.elementFromPoint` returns `el` or a descendant — **never**
+     `.dialog-overlay` or `.toast-stack`. This holds at any scroll position, because a z-index
+     occlusion does not care where you have scrolled.
+   - **2b — not clipped (the failure R1 found).** After the §10.3 adjustment settles, `el`'s rect is
+     **fully inside** the scroll container's client rect on all four edges, and
+     `elementFromPoint` at `el`'s **centre** returns `el` or a descendant. Report the four edge
+     numbers.
+   - A failure of 2a and a failure of 2b are different defects with different fixes; a report must
+     say which. Run both for row 4 (the last element on the Dev page, which is where 2b bites) and one
+     Accounts host note.
 3. **No toast is raised, and none is behind the overlay.** After each of the ten triggers,
    `document.querySelectorAll('.toast').length === 0`, and `.toast-stack` (if present) has
    `getBoundingClientRect().height === 0`.
@@ -676,14 +778,214 @@ DOM proved nothing here.
     on **both**, via the `'' → text` transition `begin()` guarantees. Vitest with a mutation spy —
     asserting the final text is not evidence, since the bug is an *absent* change. Regression guard
     for the pre-existing silence described in §8.1.
+    **Scope, amended 2026-09-14 (ruling R4):** applies to every slot that has an observable operation
+    start — the five Dev outcomes and the four MCP outcomes (§17.3). Rows 9/10 are covered by the
+    form-open `begin()` of §17.1-R4; if the orchestrator defers that, AC15 excludes rows 9/10 and the
+    limitation is recorded in TODO instead.
 16. **The dialog case.** With `?forgeRemoveFail=1`: the Remove dialog is still open after the
-    failure, contains a `.dialog-error` with `role="alert"` and the mapped text, and — by AC2's
-    method — that element is the hit-test target at its own centre. The section announcer is **not**
-    set for this outcome (AC6's count for Accounts stays at 1).
+    failure, contains a `.dialog-error` with `role="alert"` and the mapped text, and — by AC2a's
+    method — that element is the hit-test target at its own top-left corner. The section announcer is
+    **not** set for this outcome: its text stays `''`.
+    **CORRECTED 2026-09-14 (ruling R5):** the original trailing clause "AC6's count for Accounts stays
+    at 1" was **wrong, and contradicted §8.2's own design** — the dialog's `role="alert"` makes the
+    count **2** while the dialog is shown, and 1 after it closes. The meaningful half is the
+    announcer's `''`, which is what one-event-one-utterance actually depends on. My error, not the
+    implementer's.
 
 ---
 
-## 16. `ui-reference.md` changes made in this pass
+## 16. Implementation status
+
+Implemented 2026-09-14 and under review in the working tree. The implementation raised five conflicts
+against this contract and the sweep was found to be **10 of 15** call sites; both are settled in §17,
+which is the authoritative amendment record. Where §17 and an earlier section disagree, §17 wins —
+though the earlier sections have been corrected in place, so there should be nothing left to
+disagree about. The `ui-reference.md` edits are summarised in §18.
+
+---
+
+## 17. Amendments after implementation — 2026-09-14
+
+The implementation raised five conflicts against this contract. **Four of the five are my errors, not
+the implementer's**, and are corrected in place above; the fifth is a genuine design call. Rulings:
+
+### 17.1 The five rulings
+
+**R1 — AC2 vs §10.3 (the delete note is clipped by scroll). RULING: relax §10.3, narrowly, and split
+AC2.** The implementer is right that this is a **different failure mode** from the one this contract
+exists to fix: the note is not occluded by a z-index, it is scrolled past the clip of its own
+container. Row 4's note is the last element on the Dev page; at the scroll position a click or Tab
+produces (`scrollTop 1207/1310`) its bottom sits 43.8px below the clip, so ~20 of its 64px are
+visible and `elementFromPoint` at the **centre** falls through to the overlay.
+
+Accepting the clipped state was the other real option, and I reject it: the pathological 7-line
+outcome would show one line of seven, and "the message is there if you go and find it" is a weaker
+version of the complaint that started this whole contract. My blanket ban on `scrollIntoView` was
+written for the Accounts surface and I over-generalised it; keeping a rule I wrote over the outcome it
+was written to protect would be the wrong trade. §10.3 now carries the four conditions, and AC2 is
+split into **2a (occlusion, measured at the top-left corner, scroll-independent)** and **2b
+(visibility, measured after the adjustment)**. A future regression report must say which one failed.
+
+**R2 — the flex `gap` (§4.1). RULING: accept, and generalise.** My `margin: 0` rule was insufficient;
+an always-mounted flex child earns the container's 8px `gap` at zero height. Their
+`:empty { margin-top: -8px }` is correct and was measured. Folded into §4.1 with the general lesson:
+the always-mounted shape is only inert if checked against the **parent's** layout.
+
+**R3 — stale line count (§5). RULING: accept.** `settings-primitives.css` is 468 lines, not the 401 I
+wrote; +42 breaches the ratchet. Its own file is also what the house rule wanted. §4.1 and §5 now
+carry the **cascade-order constraint** that comes with it — the new file must be imported *after*
+`settings-primitives.css` or the modifier loses on source order at equal specificity. That constraint
+is new and easy to break silently, so it must be commented at the import site.
+
+**R4 — rows 9/10 cannot honour `begin()`. RULING: half accepted; a cheaper fix exists.** They are
+right that the *operation's* start is unobservable — `SettingsAccountAddForm` exposes only
+`onSuccess`, and prying that open is the prop change §6.2 forbids. But `begin()` does not need the
+operation's start; it needs **any** commit before the result, and the **form opening** is one:
+`onSuccess` closes the form, so a second add always reopens it.
+
+- **Row 10:** `begin('accounts')` inside the section's existing `onClick={() => setAddOpen(true)}`.
+  Zero new props.
+- **Row 9:** one new optional `onAddFormOpen(host)` callback on **`SettingsAccountHostGroup`** — not
+  on `SettingsAccountAddForm`, so the shared form component is untouched and §6.2 holds.
+
+**Priority: SHOULD-FIX, not MUST-FIX.** It is ~6 lines and closes a silent-announcement hole in the
+component built to close silent-announcement holes; the realistic trigger is a user adding two
+identities to the same host in a row, which is plausible. But it is not worth blocking the increment:
+if the orchestrator defers it, record the limitation in TODO and scope AC15 to exclude rows 9/10.
+
+**R5 — AC16 vs §8.2. RULING: accept; my error.** "AC6's count for Accounts stays at 1" contradicts
+§8.2's own design — the dialog's `role="alert"` makes it 2 while shown. AC16 now asserts the half
+that carries the meaning (the announcer's text stays `''`).
+
+### 17.2 The sweep is 15, not 10 — and *why* it was 10 matters more than the five
+
+The original list was assembled by searching **two directories**. The right question is
+**reachability**: a hook that receives `pushToast` as a parameter and is wired from `App.tsx` renders
+Settings rows while living in `src/hooks/`, and no directory search can see it. Ruling #24 said
+"sweep every call site", so these are in scope by the ruling's own terms — the work simply was not
+done.
+
+This is the same class of error as the one that produced the contract (reading `innerText` and
+concluding the toast was fine): **a check that measures the wrong property returns a confident wrong
+answer.** AC1 is rewritten to enumerate every `pushToast(` in `src/` and account for each, and §13.1's
+guard is redesigned around reachability, because a path-scoped lint has exactly the blind spot that
+caused this.
+
+### 17.3 Placement for the five missed call sites
+
+**The MCP four — ordinary row slots.**
+
+| # | Call site | What it reports | Tone | Lands in |
+|---|---|---|---|---|
+| 11 | `useMcpControls.ts:69` | could not start/stop the MCP server | error | the `ENABLED` switch row's help slot |
+| 12 | `:80` | registered with Claude Code (`{scope}`) | success | the `REGISTER[scope]` row — **keyed by scope**, since there are two register rows (`user`, `local`) |
+| 13 | `:82` | could not register | error | same scope-keyed slot |
+| 14 | `:103` | could not enable/disable write access | error | the `ALLOW_WRITE` switch row's help slot |
+
+- **State ownership.** `useMcpControls` (wired at `App.tsx:208`) owns a `useOutcomeNotes` instance and
+  returns `mcpOutcomes` + `mcpAnnounce`; `SettingsPanel` threads them to `SettingsMcpSection`, which
+  renders the three slots **and** the section's single `sr-only role="status" aria-live="polite"`
+  announcer. The live-region element must live in the section, not in the hook's caller, for the
+  per-section count to mean anything. **AI-access section live-region count: 1.**
+- **`ALLOW_WRITE`'s state note is conditional** (`mcpEnabled ? <p> : undefined`,
+  `SettingsMcpSection.tsx:131-138`) but the **outcome note must be unconditional** — the always-mounted
+  shape. The hint slot therefore takes a fragment of both, the state note keeps its conditional render,
+  and it needs a new id so `aria-describedby` can compose `{state-note-id} {outcome-id}` on the switch
+  (same treatment as `dev-logs-note`, §9).
+- All four have observable operation starts, so `begin()` applies and AC15 covers them.
+- After this, `useMcpControls` has **no** `pushToast` caller: delete the parameter (§13.1).
+
+**`useUiSettings.ts:287` — the hard one. RULING: a panel-level banner when Settings is open; the
+toast stays when it is not.**
+
+This is not a row outcome and must not be forced into one:
+
+1. **The failure is global, not per-row.** The write is of the whole snapshot. Attaching it to the
+   row the user last touched would name a smaller target than the failure covers — the same defect
+   P91 §6.8 R5 corrected in the delete copy.
+2. **It is a standing state, not a transient outcome.** After a failed write the UI shows values that
+   are not on disk, and that stays true until a write succeeds. By §4.4's own disambiguation rule,
+   standing state → **bordered banner**, not a barred note.
+3. **It outlives the category.** The user can navigate to another category, or close and reopen
+   Settings, while the condition persists; a section-scoped note would vanish while the fact remained.
+4. **It is `--danger`, not `--warning`.** Unlike every other error in this contract, work *is* at
+   risk: the change is in memory only and dies with the process. That is exactly the line §4.1 draws.
+5. **`useUiSettings` serves the whole app, not just Settings.** Density, sidebar and graph-filter
+   toggles all write settings, so this call site fires with Settings **closed**, where the toast is
+   perfectly visible and correct. This is the sharpest possible illustration of "reachability, not
+   directory": the same call site is broken on one surface and fine on another.
+
+**Spec:**
+
+- **Home.** A banner in the Settings card, above the pane content, spanning the content column so it
+  is visible from **every** category. Its own class (e.g. `.settings-save-banner`) composed with the
+  existing `.error-banner` recipe, so the `:empty` collapse is scoped to the new class and the shared
+  13-site rule is not touched (the §5/§7 argument, applied again).
+- **Channel branch.** Settings open → banner, announcer silent (the banner carries `role="alert"`).
+  Settings closed → the toast, unchanged. The branch is on the **same `settingsOpen` signal** §13.1's
+  dev-time guard needs; wire it once.
+  *This is not the tone-routing I rejected in §3.1.2.* There, the location varied by what the backend
+  returned — invisible to the user. Here it varies by **where the user is looking**, which the user
+  themselves determines and can see.
+- **Lifetime — it is a rendering of the existing failure streak.** `useUiSettings` already keeps
+  `settingsFailureStreakRef` and already fires **one toast per streak, not per retry**
+  (`:285-288`), resetting to 0 on success. The banner shows while the streak is non-zero and clears
+  on the success branch. This is strictly better than the toast it replaces: the toast fired once and
+  vanished while the condition persisted; the banner persists exactly as long as the condition does.
+  **Note for the implementer:** the streak is a `ref` and does not re-render — mirror it in state.
+- **Retry button** (`.section-action` inside the banner, the `SettingsAccountsSection.tsx:109-114`
+  shape). Recommended, separable. It has a real job: the bounded backoff is 300/600/1200 ms and then
+  stops, after which the pending patch sits unsent until the user happens to change something else.
+  Retry calls `armSettingsSave(0)`.
+- **Copy — AMENDMENT A4, flagged not applied.** The current string is
+  `Could not save settings: {raw}`. In a transient toast the raw tail was merely against house rules;
+  in a **persistent banner** it is a raw OS error sitting on screen indefinitely, and a permanent
+  banner with no next step is a dead end. Recommended replacement:
+  > **Your settings couldn't be saved. They still apply until Bonsai closes, and it will try again on
+  > your next change. If this keeps happening, check that Bonsai can write to its config folder.**
+
+  What happened / what it means / what happens next / what to do — and every clause is true of the
+  mechanics at `:278-293`. **This needs the orchestrator's call**, per the rule that a string
+  changing because its channel changed is flagged, not quietly rewritten. Fallback if declined: ship
+  the existing string in the banner and accept a permanent raw-error line.
+
+  > **A4 — APPROVED (orchestrator, 2026-09-14). Ship the replacement; the fallback is declined.**
+  > I verified every clause against `src/hooks/useUiSettings.ts:265-295` rather than accepting the
+  > claim, because this session has repeatedly found copy that misstated its own mechanics:
+  > * *"They still apply"* — **true.** The values are already live in the UI; only persistence
+  >   failed.
+  > * *"until Bonsai closes"* — **true.** Nothing else persists them, so an unsaved patch dies with
+  >   the process.
+  > * *"it will try again on your next change"* — **true, and precisely right.** `:284` puts the
+  >   patch **back** (`{ ...merged, ...pending }`, P69b defect 2) rather than dropping it, and the
+  >   comment at `:289-291` states the bounded backoff "then wait[s] for the next change or
+  >   teardown". The string describes the actual resume condition, not a hopeful one.
+  > * *"check that Bonsai can write to its config folder"* — the only user-actionable cause, and it
+  >   replaces a raw OS error that named no action at all.
+  >
+  > The **retry button is also approved** and should ship with it: without it the sentence "it will
+  > try again on your next change" is the user's *only* recovery, which makes the banner a dead end
+  > for anyone who has stopped changing settings — exactly the state a persistent failure produces.
+  >
+  > **The channel branch is approved and the distinction holds.** Routing by *where the user is
+  > looking* is legitimate; routing by *what the backend returned* is not — the same rule that
+  > settled the one-component-two-tones question in §3.1.2. Note what makes this call site unique:
+  > it is **correct as a toast** when Settings is closed, so this is the one place in the sweep where
+  > `pushToast` must survive.
+- **Harness:** needs a new knob (`?settingsSaveFail=1`) — nothing in the mock currently rejects
+  `setUiSettings`, so this call site, the highest-traffic Settings toast in the app, has **never been
+  seen rendered by anyone**. That is its own small finding.
+
+### 17.4 Follow-ups this leaves open
+
+- **A4** (the save-failure copy) — needs the orchestrator's call.
+- **R4's `begin()` for rows 9/10** — SHOULD-FIX; TODO line if deferred.
+- **The swallowed `forge_remove_account_inner` errors** — backend defect, filed separately.
+- **A1** (raw `errorMessage(e)` in the four Accounts strings) — unchanged, still recommended.
+- `AC1`'s enumeration should be re-run once, by hand, at review time: it is the only check that would
+  have caught §17.2, and it has never actually been run in the form now specified.
+
+## 18. `ui-reference.md` changes made for this contract
 
 1. **§12.13** — the two bullets at `:2377-2390` (the Settings-toast rule and the
    live-regions-per-section rule) are replaced by a one-line pointer. They were canonical
@@ -692,6 +994,11 @@ DOM proved nothing here.
 2. **New §12.14 "Outcome notes — the Settings surface has no toasts (P113, SIGNED 2026-09-14)"** —
    the measurement, the two recipes with §4.3's ratios, the tone split and its reasoning, the
    lifetime rule, the one-live-region-per-section rule (moved here intact), the dialog-stays-open
-   case, §4.4's banner-vs-note disambiguation, and the lint guard.
+   case, §4.4's banner-vs-note disambiguation, and the guard.
+3. **Amended 2026-09-14, after implementation (§17):** §12.14's guard bullet is rewritten around
+   **reachability** — a path-scoped lint cannot see a hook that receives `pushToast` as a parameter,
+   which is how five call sites were missed; the always-mounted-empty bullet gains the **parent
+   `gap`** clause from R2; and a new bullet records the global-failure case (panel banner when the
+   overlay is open, toast when it is not).
 
 No new tokens. Every value in this contract is an existing custom property.

@@ -2396,7 +2396,8 @@ ids; the label and subtitle come from the backend and are display-only.
 ### 12.14 Outcome notes — the Settings surface has no toasts (P113, SIGNED 2026-09-14)
 
 Full contract: `docs/contracts/P113-settings-inline-notes.md`. User ruling #24, 2026-09-14: every
-toast raised from the Settings surface is an inline note. All 10 call sites swept.
+toast raised from the Settings surface is an inline note. **15** call sites swept — the first count of
+10 came from a directory search and missed five (see the reachability bullet below).
 
 - **A toast raised from Settings is unclickable, not merely dim.** `.toast-stack` is `z-index: 90`,
   `.dialog-overlay` is 100 with `rgba(0,0,0,0.45)` (§10.2), and Settings renders *inside* that
@@ -2446,10 +2447,38 @@ toast raised from the Settings surface is an inline note. All 10 call sites swep
   state that must be noticed on arrival is a **bordered banner** (`.forge-reauth-banner`,
   `.error-banner`). The result of an action the user just took is a **barred note**
   (`.settings-row-note--warn`). Same 12% tint, different grammar; do not pick at random.
-- **A lint block keeps the channel closed.** `eslint.config.js` restricts importing `ToastContext`
-  from `src/components/settings/**` and `src/components/Settings*.tsx` (use the `patterns` form so a
-  new directory depth cannot defeat it). Still open, recorded, not fixed: a toast raised by a
-  **background** event while Settings is open is equally invisible, and no lint rule can catch it.
+- **The guard is REACHABILITY, not path — a lint alone is not sufficient.** The first sweep was
+  assembled by searching `src/components/settings/**` and missed **five of fifteen** call sites,
+  because `useUiSettings.ts` and `useMcpControls.ts` receive `pushToast` **as a parameter** and are
+  wired from `App.tsx` while rendering Settings rows. No `files:` glob can express that, and widening
+  one to those files accomplishes nothing — `no-restricted-imports` restricts imports, and there is
+  no import to ban. So: **(1)** a DEV-only `console.error` from `pushToast` when the Settings overlay
+  is open — it checks the condition that matters, catches a caller reached through any number of prop
+  layers, and covers the background-toast case too; **(2)** the path lint (`patterns` form) kept as
+  the cheap first line for the naive case; **(3)** where a hook no longer needs it, **delete the
+  `pushToast` parameter** — removing the capability beats guarding it. Auditing this surface means
+  enumerating every `pushToast(` in `src/` and accounting for each, never grepping a directory.
+- **A global failure is a panel banner, not a row note — and only while the overlay is open.** A
+  failed *settings write* (`useUiSettings`) is not a row outcome: it is global (the whole snapshot),
+  it is a **standing state** that persists until a write succeeds, it outlives the category the user
+  is standing in, and it risks work, so it is `--danger` where every other error here is `--warning`.
+  It gets a `.error-banner`-recipe banner in the Settings card, above the pane content, visible from
+  every category, rendered from the existing failure-streak state (one banner per streak, cleared on
+  success). **The same call site keeps its toast when Settings is closed** — density and sidebar
+  toggles write settings too, and there the toast is correct. Routing by *where the user is looking*
+  is legitimate; routing by *what the backend returned* is not (that is the tone-split rule above).
+- **Always-mounted-empty is only inert if you check the PARENT.** A zero-height always-present child
+  still earns its container's `gap`, and still matches `:first-child`/`+` sibling selectors. In the
+  account group (`display: flex; gap: 8px`) the idle note needed `:empty { margin-top: -8px }` on top
+  of `margin: 0` to leave the group's height unchanged. Measure the idle container, not just the
+  element.
+- **Two different failure modes, two different checks.** *Occluded* (a z-index above it) is
+  scroll-independent: test `elementFromPoint` **1px inside the top-left corner**. *Clipped* (scrolled
+  past its own container's edge) is not: test that the rect is fully inside the scroll container's
+  client rect. The second is what a note appended to the **last row of a page** hits, and its only
+  fix is a scroll correction — which is permitted **only** when measured-not-assumed, `block:
+  'nearest'` with `behavior: 'auto'` (instant, so `prefers-reduced-motion` needs no branch), and only
+  while focus is still inside the row that owns the slot. A bug report must say which mode failed.
 
 ## 13. Icon system (SVG chrome)
 
