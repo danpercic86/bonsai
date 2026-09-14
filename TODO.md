@@ -943,6 +943,56 @@ sub-inc 4 must carry the recipe itself.
   real risk. But the comments at `DevCategory.tsx:111-114` and `:119-120` that *assert* toast
   behaviour are being corrected in place.
 
+### 🚨 DECOMPOSITION ERROR (mine) — P112's DTO change is split across two sub-increments
+
+**P112 sub-inc 2 is implemented and under review** (bonsai-core 1114, bonsai 543, workspace nextest
+**2564 passed**, clippy/check clean). But I split the milestone **by layer** — settings shape in
+sub-inc 2, UI in sub-inc 4 — when the thing being changed is a **DTO**, which is by definition the
+contract *between* those layers. **A DTO change split across increments creates a broken interim by
+construction.** That is my planning error, not the implementer's.
+
+Concretely: `ui_settings.rs` no longer emits `terminalCommand` / `editorCommand`, and the TypeScript
+still reads them in **87 places** with **zero** references to the new `terminalTool` / `editorTool`.
+
+### 🚨 AND THE GATE CANNOT SEE IT — the most important finding of the day
+
+**The mock supplies the removed keys from its own defaults**: `src/ipc/mock/persistence.ts:387-391`,
+`src/ipc/mock/handlers/session.ts:150-151`, and `src/settings/uiSettingsDefaults.json:38-39`. Every
+frontend tier of the gate — **vitest, tsc, e2e, and the browser harness** — runs against
+`VITE_MOCK_IPC=1`. So all of them stay **green** while the **real Tauri app is broken**.
+
+This is not a mock bug. The mock is *faithfully implementing a contract the backend no longer
+honours*. The rule this project already has ("the mock must never invent results") does not cover it,
+because nothing is being invented — the mock is merely **stale**, and staleness is invisible to every
+test that consumes it.
+
+**The one guard that CAN see this is `src-tauri/src/settings_defaults_parity_tests.rs`**, which
+compares Rust `ui_settings_of(&Settings::default())` against the **TS-owned**
+`src/settings/uiSettingsDefaults.json`. It is the only cross-boundary oracle in the project — and it
+is precisely the test this increment had to **weaken** in order to land. The mitigation is sound
+(`P112_KEYS_IN_TRANSIT` names **four** keys, everything else still compared, plus
+`the_p112_key_transition_is_still_in_flight` which **fails the moment the TS oracle gains the new
+keys**, forcing the exemption's deletion) — but the shape is worth naming: **the increment that broke
+the boundary is the increment that exempted the boundary check.**
+
+**Durable rule earned:** a green gate says nothing about a Rust/TS DTO change. The frontend tiers
+consume the mock, not the backend. Only the parity oracle spans the two, so **weakening it is never
+routine** — and a DTO change must land its Rust and TypeScript halves in the same increment.
+
+**Sequenced next:** the TS bridge (drop the legacy plumbing, adopt the new keys, update the defaults
+JSON and mock). It **cannot** run concurrently with P113 phase 2 — both touch `App.tsx` and
+`useUiSettings.ts`.
+
+### ⚠ The `watcher::tests::git_internals_filtered` characterisation, third revision — now with a mechanism
+
+I have called this a gate flake, then "not a flake", and both were too confident. The full record:
+failed once under `-p bonsai --lib`; **passed** in a full `pnpm gate --rust` nextest run under load
+(2542); **failed again** under full-suite `cargo test` load while passing in isolation and under
+nextest. The consistent reading: **nextest runs each test in its own process, `cargo test` runs them
+as threads in one**, so a load- or timing-sensitive test can be reliable under the former and flaky
+under the latter. **This is not academic** — `scripts/gate.mjs:148` has a `cargo test --workspace`
+fallback. Reviewer adjudicating both the mechanism and whether that path is reachable.
+
 ### ✅ P113 PHASE 1 COMMITTED `0c86376` — approved, no MUST-FIX. Phase 2 in flight.
 
 Ten call sites moved from toasts to inline notes; `SettingsOutcomeNote.tsx`, `useOutcomeNotes.ts`,
