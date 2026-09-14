@@ -70,6 +70,25 @@ instruction. Curator-verified 2026-09-14: `dev` = `origin/dev` = `8b88efd`, and
 `git rev-list --count cb70f4a..8b88efd` = **165** — the ledger's "164" was measured before `8b88efd`
 (the jbcontext commit of ruling #2) existed. Both were true when measured.
 
+### 🚨 PROCESS FAILURE (mine) — I let one review diff grow to 41 modified + 13 new files
+
+`CLAUDE.md` says **"commit each approved sub-increment so review diffs stay small and resume points
+exist."** I did not. P113 phase 2 came back **approved with one MUST-FIX**; instead of committing the
+approved parts and reviewing only the fix, I routed the fix, then stacked the P112 bridge on top, then
+stacked A5 on top of that. By the final review `git diff HEAD` was no longer "exactly the increment" —
+**13 new files and most of the 41 modified predated the pass being reviewed.**
+
+**The cost was not hypothetical.** The reviewer had to open with a scope note and name **nine files it
+did NOT re-review**: `useMcpControls.ts`, `useToastQueue.ts`, `SettingsMcpSection.tsx`,
+`useUiSettings.ts`, `mcpOutcomeSlots.ts`, `useOutcomeScrollCorrection.ts`, `useSettingsOpenSignal.ts`,
+`useSettingsSaveFailure.ts`, `settingsToastGuard.test.tsx`. **Those carry exactly one review pass**,
+and it happened before two subsequent passes changed files around them. That is a real gap, not a
+bookkeeping complaint — and it is the direct consequence of my batching.
+
+**Fix, applied from here:** commit the moment an increment is approved, even when a MUST-FIX is
+routed; review the fix against a small diff. The nine files above should get a targeted second pass
+before this branch is considered done.
+
 # ⚠ THE P112 BRIDGE IS IMPLEMENTED — the merge block lifts when it COMMITS, not now
 
 **The window is closed in the working tree, not yet in history.** `rg -n "terminalCommand|editorCommand"
