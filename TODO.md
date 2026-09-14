@@ -70,8 +70,18 @@ instruction. Curator-verified 2026-09-14: `dev` = `origin/dev` = `8b88efd`, and
 `git rev-list --count cb70f4a..8b88efd` = **165** — the ledger's "164" was measured before `8b88efd`
 (the jbcontext commit of ruling #2) existed. Both were true when measured.
 
-**Current step: 2026-09-14 batch — `senior-dev` is implementing the two code items the 2026-09-11
-`ui-designer` pass left OWED. Both are `in-progress`; neither is done; the orchestrator confirms.**
+**Current step: NOTHING IN PROGRESS as of 2026-09-14 session end. Tree clean at `6a6f284`; branch
+`feat/post-p91-rulings` is 27 commits ahead of `dev` and UNPUSHED (single disk — the user has not
+authorised this push).**
+
+**The 2026-09-14 batch is DONE and verified: full 8-step gate GREEN under happy-dom** (461.9s, 2467
+Rust / 2848 vitest / 185 e2e, `GATE_EXIT=0`). F6, P77, `h_ai` serialisation, D3 and A3 all landed;
+the UNC ship-blocker and the e2e measurement are cleared. **D3 and A3 — the two items this line used
+to say were in progress — are DONE** (`d46c98e`).
+
+**Next unit of work: P112's first sub-increment** (catalog + probe ladders under a fake `ToolEnv`) —
+pure backend, unit-testable on one machine, no UI. Then settings shape + migration + coercion, then
+`pick_external_tool` + Browse, then the UI. Do NOT expect to finish P112 in one session.
 
 1. **D3** — `src/styles/dialogs.css:238`, `.op-worktree-warning`: `var(--danger-strong)` →
    **`var(--warning-strong)`** (ruling #7). Measured on `.dialog-card`'s `--bg-1`: **8.38:1 dark /
@@ -96,12 +106,23 @@ instruction. Curator-verified 2026-09-14: `dev` = `origin/dev` = `8b88efd`, and
 
 1. **P112 — remove user-supplied `terminalCommand` / `editorCommand`** (ruling #21) — `pending`
    (contracted): `P112-external-tool-detection.md` + `P112-tool-catalog.md` + `P112-ui.md`.
-2. **F6 — `usage.json` 90-day window + deletable** (ruling #3) — `pending` (contracted):
-   `P91-F6-usage-retention.md`. **But see the observation above** — the tree suggests it started.
-3. **P77 — trigger `list_tag_sync` on auto-fetch completion** (ruling #11). Design settled.
-4. **The e2e cold-timing MEASUREMENT** (ruling #9 — measure and report, **do NOT flip**).
+2. ~~**F6 — `usage.json` 90-day window + deletable** (ruling #3)~~ — **DONE 2026-09-14**,
+   `d46c98e` + `b53618a`. Both reviews approved; 2 MUST-FIX from the design review fixed (the confirm
+   dialog understating its scope, and the mock inventing counts), then the harness caught the failure
+   toast fabricating log files. Residue: `LogsDeleteResult` has no per-category failure counts
+   (architect), and the failure announcement keeps the exports clause where the success one drops it
+   (one word, next `ui-designer` touch).
+3. ~~**P77 — trigger `list_tag_sync` on auto-fetch completion** (ruling #11)~~ — **DONE 2026-09-14**, `d46c98e`. Rides the existing 5-min cycle; no repo-open call. No `useJobStatus` test file exists at all (pre-existing gap) — the receiving end is covered.
+4. ~~**The e2e cold-timing MEASUREMENT** (ruling #9)~~ — **DONE 2026-09-14**, `6a6f284`. **102 s cold bundle vs 191.4 s dev**, build included, cold-vs-warm 1 s. Not flipped. The decision now has its number and remains the user's.
 5. ~~**The UNC / `\\wsl$` `canonicalize` check** on `216ca45` — ship-blocker.~~ **CLEARED 2026-09-14** by a real UNC probe; `\\wsl$` and OneDrive placeholders remain untested — see the section below.
-6. **`h_ai` stub isolation** — until then run that binary with `--test-threads=1`.
+6. **`h_ai` stub isolation** — the only code item left besides P112. Serialised for now by a nextest
+   test-group (`d46c98e`, both `profile.default` and `profile.ci`; 57/57 in 45 s). **Root cause found,
+   not fixed:** twelve test modules each define their own `env_lock()` with its own `static LOCK`
+   (`tests/ai/ai_changelog_cli.rs:37`, `ai_commit_cli.rs:42`, `ai_explain_cli.rs:40`, …) — twelve
+   mutexes guarding one process-global `BONSAI_STUB_MODE`/`BONSAI_CLAUDE_BIN`. One-line fix per file:
+   delegate to a single `crate::common::env_lock`. Also note `scripts/gate.mjs:148`'s
+   `cargo test --workspace` fallback gets **no** test-group serialisation, so the nextest fix does not
+   cover it.
 
 ### Four USER ACTIONS — only the user can clear these
 
