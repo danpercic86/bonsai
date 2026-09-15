@@ -2364,6 +2364,16 @@ ids; the label and subtitle come from the backend and are display-only.
   splits on the last `/` **or** `\`. **Do not widen `splitPath`**: it serves git paths, which are
   always `/`, and loosening a shared parser to fix another subsystem's display plants a regression
   in the status tree.
+  **A backend-supplied path subtitle is rendered BYTE-IDENTICAL** (added P112 §16.9): no case
+  normalisation, no extension parsing, no transform of any kind in the renderer. Splitting for
+  truncation is the maximum the UI may know about the string. Three reasons, and the third is the one
+  that bites: the subtitle's job is to name the program that will actually be spawned, so a
+  prettified copy hides a real divergence if one ever appears; re-deriving display text from a path is
+  the same class of thing as re-deriving a *label* from it, which is forbidden; and a sanitized
+  `detail` **may already be truncated with a trailing `…`** and is therefore not reliably a
+  well-formed path. Real instance: Windows `PATHEXT` is conventionally uppercase, so a PATH
+  resolution carries `code.CMD` while the on-disk name is `code.cmd`. Both spawn. Render what the
+  backend sent and fix the spelling backend-side if it is worth fixing.
 - **"Chosen but no longer present" is a kept selection, marked — never a silent correction and
   never an error.** The selection stays stored, the option's detail line reads the **word**
   `Not installed`, the option stays **enabled** (greying the row the user is standing on reads as a
@@ -2374,6 +2384,12 @@ ids; the label and subtitle come from the backend and are display-only.
   loaded yet shows an empty field — which reads as "unset", the opposite of the truth. Pass a
   `placeholder` for the loading window (`Looking for installed tools…`). Never synthesise a
   "loading…" *option*: it would be selectable and would patch a junk value.
+  **The placeholder belongs to the COLD window only — a refresh must not blank a control that
+  already knows its own value** (added P112 §16.6). Hold the last good set and replace it only on a
+  resolve: never clear it when a refresh starts, and never on a reject. Otherwise a rescan button
+  blanks its own pickers for the length of the scan (measured: 2.1 s cold, 0.45 s warm for a PATH
+  walk), which is a regression *introduced by adding the refresh control*. The two windows need
+  separate harness seams — a first-mount delay cannot exercise the refresh case.
 - **The picker's Browse errors are inline, never a toast** — use `SettingsOutcomeNote` in the row's
   help slot. The rule, the recipe and the live-region arithmetic now live in **§12.14**, which is
   where the two bullets that used to sit here were moved: they are cross-section rules, not picker

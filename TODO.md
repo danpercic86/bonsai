@@ -147,6 +147,49 @@ Killed; port confirmed free; no other `node` process on this repo remains. Found
    the server still up, so it is a contributor at most. But it is a **concrete** mechanism where I
    previously had only "ambient load", and it is one I created.
 
+### 🚨 FOUR BAD CITATIONS IN ONE BRIEF — and one had already propagated a false claim
+
+`ui-designer` checked every reference I gave it and **four were wrong**:
+1. **"P113 §17.3a names `useExternalTools.ts:22/:28/:34`"** — it names only `:22, :34`. **My
+   enumeration was right and P113 is short by one.**
+2. **"§6.11.6"** is **P91-privacy-copy-ui**'s section, not P113's.
+3. **"`ui-reference.md` §12.13 says no toast"** — P113 §18 **moved** that rule to **§12.14**; §12.13
+   keeps only a pointer.
+4. **"P113 §17.3 does this for its ten sites"** — §17.3 covers sites **11-15**; §6 covers 1-10.
+
+**The consequence, and this is the part worth keeping:** `P112-ui.md` §11 had **inherited citation #2
+without checking it** — and the designer's own words are that this *"is exactly why the recipe had no
+CSS rule"*. A bad citation does not merely waste a search; **it propagates a false claim into a
+contract, where the next reader treats it as established.** That is the mechanism behind the
+"pure reuse of the signed P107 recipe" error, and it is now the second time that same phrase has
+needed correcting.
+
+**Rule for my own briefs: cite from the file, not from a summary.** Every `file §section` pair I have
+passed on from memory this week has been wrong at least once — the archived P69 rows, the
+`ui-reference §1.3` rows, and now these four.
+
+### ✅ `P112-ui.md` REFRESHED — §16, 17 sub-sections, and 15 passages marked SUPERSEDED
+
+Nothing rewritten silently. Two rulings worth noting beyond the list:
+
+- **It found two of its OWN P113 passages to be defects if implemented** — §9's "two live regions"
+  and §6's `<p aria-live>` for `BROWSE_ERR`. §16 supersedes both.
+- **It declined to canonise its own new mechanism.** `announceOnly` would have justified a
+  `ui-reference.md` §12.14 bullet and it deliberately did not write one: *"canonising an unapproved
+  mechanism is how that file stops being trustworthy."* I have since **approved `announceOnly`**, on
+  the condition that `useOutcomeNotes.ts:59-79`'s comment is amended to cover it.
+
+### 🚨 TWO FINDINGS NO CONTRACT HAD CAPTURED
+
+1. **`terminalTool` / `editorTool` have NO React state anywhere.** `useUiSettings.ts:196-200`
+   deliberately declines to hold them and hands the job to sub-inc 4 — a decision recorded in an
+   agent report and in my summary, but **in no contract**. It was **one forgetting away from being
+   lost**, and the milestone would have shipped a picker with nothing to bind. §16.4a is now the
+   record, and the brief asks for a test that fails if a future change drops it.
+2. **The Browse SUCCESS path blanks the input** unless the re-read settings and the refetched scan
+   commit **in one tick** — the same defect as the blank state, on the path nobody was watching
+   because it is the happy one. `refresh: false` is correct (`true` wastes 0.45 s).
+
 ### ✅ GATE GREEN at `d0e6cf0` — 457.5s, exit 0, all 8 steps, zero FAIL lines
 
 nextest 159.3s (**2556 passed, 1 leaky, 10 skipped**) · doctests 3.3s · clippy 27.7s · eslint 14.8s ·
