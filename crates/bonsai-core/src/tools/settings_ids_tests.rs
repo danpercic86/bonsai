@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use crate::external::TargetOs;
+use crate::external::{spec_from, TargetOs};
 
 use super::catalog::{self, Rung, CUSTOM_ID};
 use super::fake::FakeToolEnv;
@@ -177,10 +177,13 @@ fn a_catalog_id_survives_coercion_on_every_os_and_is_kind_scoped() {
 /// path a probe resolved, or the stored browsed path — asserted across the
 /// whole catalog on all three OSes.
 ///
-/// This is the selection half of AC6. The `LaunchSpec` half (every argv token
-/// is a catalog `&'static str`, a catalog prefix + the target dir, or the
-/// target dir) lands with the launch rewrite, which is where `spec_from`
-/// appears.
+/// Then the same selection is carried one step further, through
+/// [`spec_from`], so AC6 closes end to end: the `LaunchSpec` a fake
+/// `Resolution` finally produces names only that program, and every argv token
+/// is one of the entry's catalog `&'static str`s, a catalog prefix fused onto
+/// the target directory, or the target directory itself. There is no free-text
+/// constructor left to build a spec any other way — `program_spec` and its
+/// `template`/`PathDelivery` parameters are deleted (§7).
 #[test]
 fn a_picked_program_always_came_from_the_catalog_a_probe_or_the_browsed_path() {
     for kind in KINDS {
@@ -200,9 +203,40 @@ fn a_picked_program_always_came_from_the_catalog_a_probe_or_the_browsed_path() {
                     assert_eq!(picked.recipe, Recipe::MacOpen);
                     assert!(picked.open_arg.is_some(), "{} has no open arg", entry.id);
                 }
+                assert_launch_provenance(entry, &picked);
             }
         }
     }
+}
+
+/// The `LaunchSpec` half of AC6, for one resolved selection.
+///
+/// `program` is whatever the selection already accounted for above; what is new
+/// here is that NO argv token can be anything but a catalog literal, the
+/// resolved `open_arg`, or the target directory (possibly fused onto a catalog
+/// prefix) — and that the cwd is either the neutral one or the target.
+fn assert_launch_provenance(entry: &'static ToolEntry, picked: &super::PickedTool) {
+    let target = PathBuf::from("/tmp/target dir");
+    let d = target.display().to_string();
+    let spec = spec_from(picked, &target);
+    assert_eq!(spec.program, picked.program, "{}: the spec renames the program", entry.id);
+    let fixed: &[&str] = match picked.recipe {
+        Recipe::DirLastArg(f) | Recipe::DirJoinedArg(f, _) | Recipe::DirCwd(f) => f,
+        Recipe::MacOpen => &["-a"],
+    };
+    for arg in &spec.args {
+        let from_catalog = fixed.contains(&arg.as_str())
+            || picked.open_arg.as_deref() == Some(arg.as_str())
+            || arg == "-a";
+        let is_target = arg == &d || arg.ends_with(&d);
+        assert!(from_catalog || is_target, "{}: unaccounted argv token {arg:?}", entry.id);
+    }
+    assert!(
+        spec.cwd == crate::procutil::safe_cwd() || spec.cwd == target,
+        "{}: unaccounted cwd {:?}",
+        entry.id,
+        spec.cwd
+    );
 }
 
 // ---- AC7: migration of the legacy free-text commands -------------------------

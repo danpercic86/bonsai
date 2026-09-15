@@ -31,6 +31,7 @@ import { assetsHandlers } from './mock/handlers/assets';
 import { updateHandlers } from './mock/handlers/update';
 import { gitEnvHandlers } from './mock/handlers/gitEnv';
 import { externalHandlers } from './mock/handlers/external';
+import { toolsHandlers } from './mock/handlers/tools';
 import { forgeHandlers } from './mock/handlers/forge';
 import { obsHandlers } from './mock/handlers/obs';
 
@@ -72,6 +73,7 @@ export const mockIpc: IpcApi = {
   ...updateHandlers,
   ...gitEnvHandlers,
   ...externalHandlers,
+  ...toolsHandlers,
   ...forgeHandlers,
   ...obsHandlers,
 };

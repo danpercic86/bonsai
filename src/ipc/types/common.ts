@@ -171,3 +171,51 @@ export interface GitAvailability {
   /** Human one-liner: the diagnostic when found, the full not-found copy otherwise. */
   detail: string;
 }
+
+// ---- P112: external-tool detection (mirrors `bonsai_core::tools`) ----------
+
+/** Which of the two configurable tool slots. The file manager is deliberately
+ *  NOT configurable. */
+export type ExternalToolKind = 'terminal' | 'editor';
+
+/** Where a resolution came from. Not surfaced in the UI (DEC-2); it is the
+ *  provenance record that drives the launch-time recheck and the tests. */
+export type ExternalToolSource =
+  | 'builtIn'
+  | 'path'
+  | 'registry'
+  | 'wellKnown'
+  | 'appBundle'
+  | 'custom';
+
+/** One picker row. DISPLAY ONLY — the backend never accepts `label` / `detail` /
+ *  `source` / `present` back. */
+export interface DetectedTool {
+  /** Opaque id — a catalog id or the pseudo-id `'custom'`. The ONLY value sent
+   *  back, and only ever as a `terminalTool` / `editorTool` patch. */
+  id: string;
+  label: string;
+  kind: ExternalToolKind;
+  /** Not surfaced in the UI (DEC-2); kept for tests and provenance. */
+  source: ExternalToolSource;
+  /** Display-only: the resolved absolute path, or `'built in'`. */
+  detail: string;
+  /** `false` only for a remembered `'custom'` row whose stored path is gone
+   *  (AMEND-3) — the row is still LISTED, so the UI can explain itself. */
+  present: boolean;
+}
+
+/** One round trip's worth of picker data. */
+export interface ExternalToolScan {
+  /** Detected terminals in catalog order, then the remembered custom row. */
+  terminals: DetectedTool[];
+  editors: DetectedTool[];
+  /** `id -> label` for every catalog entry of that kind, ANY os (AMEND-1).
+   *  Without it a kept-but-undetected selection renders as the raw id — the
+   *  picker would literally read `notepadpp`. */
+  terminalLabels: Record<string, string>;
+  editorLabels: Record<string, string>;
+  /** Freshness identity the frontend compares to know a refresh landed.
+   *  NOT displayed (DEC-3) — the app has no time formatter. */
+  scannedAtMs: number;
+}

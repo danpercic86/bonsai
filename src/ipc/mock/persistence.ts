@@ -62,6 +62,45 @@ export function writeRecents(list: RecentRepo[]): void {
   }
 }
 
+// P112 §5.4 browsed-program paths (`customTerminalPath` / `customEditorPath`),
+// localStorage-backed like recents — so the harness's Browse-then-reload story
+// matches the backend, which persists them in settings.json.
+//
+// **A SEPARATE key on purpose, NOT a field on the `UiSettings` blob.** The real
+// `UiSettings` / `UiSettingsPatch` have no field able to carry a program path
+// (P112 §5.4 item 1, AC15(d)) — that unrepresentability IS the security
+// property. Putting them on the mock's settings object would make the harness
+// type-check a shape the backend forbids, which is exactly the kind of drift a
+// mock is supposed to expose rather than hide.
+const CUSTOM_TOOL_PATHS_KEY = 'bonsai.mockCustomToolPaths';
+
+/** The two stored browsed paths; `''` = none. Corrupt/missing storage degrades
+ *  to both empty, mirroring `settings::load_from`'s never-errors contract. */
+export function readCustomToolPaths(): { terminal: string; editor: string } {
+  const empty = { terminal: '', editor: '' };
+  try {
+    const raw = window.localStorage.getItem(CUSTOM_TOOL_PATHS_KEY);
+    if (raw === null) return empty;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return empty;
+    const rec = parsed as Record<string, unknown>;
+    return {
+      terminal: typeof rec.terminal === 'string' ? rec.terminal : '',
+      editor: typeof rec.editor === 'string' ? rec.editor : '',
+    };
+  } catch {
+    return empty;
+  }
+}
+
+export function writeCustomToolPaths(paths: { terminal: string; editor: string }): void {
+  try {
+    window.localStorage.setItem(CUSTOM_TOOL_PATHS_KEY, JSON.stringify(paths));
+  } catch {
+    // Best-effort, like the backend's non-fatal save.
+  }
+}
+
 // Session persistence (P3e contract §6/§8.1): localStorage-backed like recents /
 // ui-settings so reopen-all survives a harness reload.
 const SESSION_KEY = 'bonsai.mockSession';

@@ -20,7 +20,7 @@
 //! never actually arrive.
 
 /// Every `IpcApi` method name, sorted (binary search below depends on it).
-pub(super) const KNOWN_CMDS: [&str; 199] = [
+pub(super) const KNOWN_CMDS: [&str; 201] = [
     "abortMerge",
     "ackRepoHooks",
     "activateProfile",
@@ -140,6 +140,7 @@ pub(super) const KNOWN_CMDS: [&str; 199] = [
     "listBranches",
     "listConflicts",
     "listCopyCandidates",
+    "listExternalTools",
     "listProfiles",
     "listRemotes",
     "listStaleBranches",
@@ -166,6 +167,7 @@ pub(super) const KNOWN_CMDS: [&str; 199] = [
     "openInTerminal",
     "openRepo",
     "openUrl",
+    "pickExternalTool",
     "pickFolder",
     "popStash",
     "previewProfile",

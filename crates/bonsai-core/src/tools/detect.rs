@@ -53,7 +53,7 @@ use super::{Resolution, ToolKind, ToolSource};
 /// through [`HostGitEnv`], whose spawn is unbounded, and a scan runs inside
 /// `spawn_blocking` — so a wedged `reg.exe` costs one blocking thread, never the
 /// window. winenv needs its bounded wait precisely because it has no window yet.
-const SCAN_REG_BUDGET: Duration = Duration::from_millis(1_500);
+pub(super) const SCAN_REG_BUDGET: Duration = Duration::from_millis(1_500);
 
 /// Every environment interaction a probe performs, injected so all three OS
 /// ladders run in unit tests on a single machine (`FakeToolEnv`).

@@ -41,6 +41,10 @@ mod tags;
 mod ai_assets;
 mod profiles;
 mod external;
+// P112 §6: the external-tool picker surface. `tools_pick` is the testable
+// validate-then-write half of `pick_external_tool`, split from the dialog.
+mod tools;
+mod tools_pick;
 mod forge;
 mod forge_accounts;
 mod git_env;
@@ -155,3 +159,4 @@ pub use forge_accounts::*;
 pub use git_env::*;
 pub use obs::*;
 pub use obs_delete::*;
+pub use tools::*;

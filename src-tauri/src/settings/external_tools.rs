@@ -71,6 +71,34 @@ pub fn migrate_external_tools(s: &mut Settings) {
     s.editor_command.clear();
 }
 
+/// The **only** writer of `custom_terminal_path` / `custom_editor_path` and of
+/// the `"custom"` selection that names them (P112 §5.4 item 2 / AC18).
+///
+/// Both halves in ONE mutator, so the caller's single `settings::update` cycle
+/// sets both under the `SETTINGS_IO` mutex. Two cycles could leave
+/// `*_tool == "custom"` with an empty path — a state `coerce_tool_id` would then
+/// scrub on the next unrelated patch, silently reverting the user's pick.
+///
+/// `path` must already have passed `tools::validate_custom_program`: this
+/// function writes, it does not judge. Its caller (`commands::tools`) validates
+/// first and writes nothing on a refusal.
+///
+/// There is deliberately no "forget the path" counterpart. Reverting to
+/// Auto-detect is the ordinary `{ editorTool: "" }` patch, which leaves the path
+/// intact so re-selecting `"custom"` restores the tool (§5.1 reversibility).
+pub fn set_browsed_tool(s: &mut Settings, kind: ToolKind, path: &str) {
+    match kind {
+        ToolKind::Terminal => {
+            s.custom_terminal_path = path.to_string();
+            s.terminal_tool = tools::CUSTOM_ID.to_string();
+        }
+        ToolKind::Editor => {
+            s.custom_editor_path = path.to_string();
+            s.editor_tool = tools::CUSTOM_ID.to_string();
+        }
+    }
+}
+
 /// Invariant 2's data loss, made VISIBLE — one line, on the miss branch only.
 ///
 /// A user whose `editorCommand` was a bare `myed` (which worked pre-P112) gets

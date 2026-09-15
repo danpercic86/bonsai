@@ -2,9 +2,6 @@ pub mod ai;
 pub mod assets;
 pub mod error;
 pub mod external;
-/// Shape validation for the two user-configurable launch programs + the
-/// launch-neutral cwd (audit 2026-09-03 MEDIUM-2 / LOW-1).
-pub mod external_cmd;
 /// The web-URL half of external launching (P72), split from [`external`].
 pub mod external_url;
 #[doc(hidden)]

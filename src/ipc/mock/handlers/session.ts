@@ -4,6 +4,7 @@ import { clampAiRunSettings } from '../aiRunSettings';
 import { jobStatusListeners, mockMcp, repoChangedListeners, tagAutoSyncListeners } from '../events';
 import { clampAutoFetch, clampGraphPrefs, clampHealthRefresh, clampPaneWidths, readRecents, readSession, readUiSettings, writeRecents, writeSession, writeUiSettings } from '../persistence';
 import { delay, query as urlParam, requireRepo } from '../repoState';
+import { applyToolSeam } from './tools';
 import { applyMockJobTimers, completeMockJobRun, seedJobStatuses } from '../scheduler';
 import type { AppError, JobKind, JobStatus, JobStatusChangedPayload, RecentRepo, RepoChangedPayload, SessionState, TagAutoSyncEvent, UiSettings, UiSettingsPatch, Unsubscribe } from '../../types';
 
@@ -73,7 +74,10 @@ export const sessionHandlers = {
 
   async getUiSettings(): Promise<UiSettings> {
     await delay(150);
-    return readUiSettings();
+    // P112 §12: the `?tools=stale` / `?tools=custom` seams need a PERSISTED
+    // selection. `applyToolSeam` layers it under the stored blob and yields to
+    // any value the harness has since written, so a pick sticks.
+    return applyToolSeam(readUiSettings());
   },
 
   async setUiSettings(patch: UiSettingsPatch): Promise<UiSettings> {
@@ -105,7 +109,7 @@ export const sessionHandlers = {
       };
       throw err;
     }
-    const current = readUiSettings();
+    const current = applyToolSeam(readUiSettings());
     // Spec-002 (additive/optional): merge only when a value exists (patch or
     // stored blob), so a write never mints keys the Rust-pinned oracle lacks.
     const graphStyle = patch.graphStyle ?? current.graphStyle;

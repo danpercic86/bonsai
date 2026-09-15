@@ -4,12 +4,11 @@
 //! Everything here is a *self-contained* `std::process::Command` spawn — no
 //! plugin, no `open` crate (P49 D1). Two halves keep it testable on one machine:
 //!
-//! * **Pure builders** (`program_spec`, `terminal_ladder`, [`reveal_spec`],
-//!   `editor_ladder` — the first and last two are `pub(crate)`, see below)
-//!   produce [`LaunchSpec`]s from an explicit [`TargetOs`]
+//! * **Pure builders** (`spec_from`, [`terminal_ladder`], [`reveal_spec`],
+//!   [`editor_ladder`]) produce [`LaunchSpec`]s from an explicit [`TargetOs`]
 //!   param — never `cfg!` — so every OS branch runs in unit tests regardless of
 //!   the host. They never spawn and read no repo state; their only filesystem
-//!   contact is [`crate::external_cmd::safe_cwd`]'s `current_exe()` lookup for the
+//!   contact is [`safe_cwd`]'s `current_exe()` lookup for the
 //!   neutral cwd.
 //! * A [`CommandRunner`] ([`SpawnRunner`] in production) turns a `LaunchSpec`
 //!   into a real child — detached by default, or waited-on for the macOS
@@ -19,24 +18,38 @@
 //! Safety (P49 D2): a launch is always `program + [args…] + explicit cwd` —
 //! nothing is ever handed to a shell.
 //!
-//! ## The user-configured program (audit 2026-09-03 MEDIUM-2, NARROWED 2026-09-11)
+//! ## Where the program comes from (P112 §0 — the invariant)
 //!
-//! A configured `terminalCommand` / `editorCommand` is now a **program, not a
-//! command line**: [`crate::external_cmd::validate_command_setting`] admits only a bare
-//! program name or an absolute path to an existing file, so it can carry neither
-//! arguments nor shell syntax — `set_ui_settings` is an unprivileged webview
-//! command, so a parked `powershell -c …` used to be one click from execution.
+//! **Nothing here ever receives a program STRING from settings or the
+//! renderer.** A launch program is one of exactly three things:
 //!
-//! It does **not** make *renderer compromise ≠ arbitrary local execution* true,
-//! and this module doc said so wrongly for one day: an absolute path to any
-//! existing runnable file still launches — with this app's privileges, and with
-//! its console suppressed if it is a console-subsystem image — and `node <dir>`
-//! or `make` with the directory as cwd still execute repo-authored code. The
-//! three surviving routes are enumerated in the `external_cmd` module docs; the
-//! capability itself is slated for REMOVAL as its own milestone (ruled
-//! 2026-09-11). The `{path}` placeholder is GONE with the tokenizer (it needed a
-//! second argv token); the launcher delivers the directory itself, see
-//! [`PathDelivery`].
+//! 1. a `&'static str` from `crate::tools::catalog` (the auto ladders below and
+//!    every detected tool),
+//! 2. an absolute path this crate itself produced from a probe
+//!    (`crate::tools::detect`), or
+//! 3. the one path a **native dialog the backend opened** returned, stored in
+//!    `custom_terminal_path` / `custom_editor_path` — settings fields that
+//!    `UiSettingsPatch` has no field able to carry (P112 §5.4).
+//!
+//! The type that says so is [`crate::tools::PickedTool`]: it is the ONLY input
+//! these launchers accept besides `None` (⇒ the auto ladder), and it can only be
+//! built by `tools::picked` or by the auto arm of `spec_from`'s callers —
+//! **true at the type level only since 2026-09-15** (the third dated correction
+//! to a comment of this shape in this file), when its five fields became
+//! `pub(crate)`. While they were `pub`, any crate could build the literal and
+//! hand it to `terminal_ladder` / `editor_ladder` / `open_in_terminal` /
+//! `open_in_editor`, all four of which are `pub` and take
+//! `Option<&PickedTool>` — see that type's doc for why `spec_from`'s
+//! visibility was never the thing enforcing this. The
+//! former `terminalCommand` / `editorCommand` free-text settings, their shape
+//! validator (`external_cmd`), the `{path}` template and `PathDelivery` are all
+//! **deleted** — so "a renderer-written string names the program" is not
+//! rejected at runtime, it is unrepresentable.
+//!
+//! What this does NOT claim: a browsed `.exe` is still arbitrary code, and a
+//! user who selects `make` as their terminal still gets `make` with the repo as
+//! its cwd (P112 §5.4, stated rather than hidden). The property bought is
+//! provenance, not harmlessness.
 //!
 //! WHERE THE PATH COMES FROM (corrected 2026-09-03 — the old note here falsely
 //! called it "never attacker-controlled", which was load-bearing): the target is
@@ -60,11 +73,12 @@
 //! ## The child's working directory (audit LOW-1, NARROWED 2026-09-11)
 //!
 //! Every rung that already passes the target as an argv token launches from
-//! [`crate::external_cmd::safe_cwd`] (the app directory) instead of the repo, removing
+//! [`safe_cwd`] (the app directory) instead of the repo, removing
 //! the Windows DLL-search-order primitive a hostile repo root gave us. The four
 //! rungs whose *semantics* are the cwd — `powershell`, `cmd /K`,
-//! `x-terminal-emulator` and a configured terminal program — necessarily keep
-//! the repo path: "open a terminal here" has no other mechanism.
+//! `x-terminal-emulator` and any browsed terminal program (`Recipe::DirCwd`) —
+//! necessarily keep the repo path: "open a terminal here" has no other
+//! mechanism.
 //!
 //! Two corrections to how that residual was first written (2026-09-11):
 //! * only the **Windows** rungs carry the DLL-search risk. Neither the Linux
@@ -78,7 +92,9 @@
 //!   injection, which is strictly worse than a DLL-search primitive.
 
 use crate::error::AppError;
-use crate::external_cmd::{safe_cwd, validate_command_setting};
+use crate::procutil::safe_cwd;
+use crate::tools::catalog::{self, AutoVia, Recipe};
+use crate::tools::{PickedTool, ToolKind, ToolSource};
 use std::path::{Path, PathBuf};
 
 /// Which OS to build argv for. [`host`](TargetOs::host) picks the running target
@@ -199,7 +215,7 @@ use crate::procutil::resolve_program;
 // ---- pure builders (no fs, no spawn) ------------------------------------------
 
 /// Small constructor keeping the ladder tables terse. `cwd` is the child's
-/// working directory — [`crate::external_cmd::safe_cwd`] for every rung that passes the
+/// working directory — [`safe_cwd`] for every rung that passes the
 /// target as an argument, the target itself only where the directory IS the
 /// feature (audit LOW-1). `wait_for_exit` is the macOS-`open` flag documented on
 /// [`LaunchSpec::wait_for_exit`]; every other entry passes `false`.
@@ -228,99 +244,136 @@ pub(crate) fn open_spec(args: &[&str], cwd: &Path, hide_console: bool) -> Launch
     spec("open", args, cwd, hide_console, true)
 }
 
-/// How the target directory reaches a user-configured program, now that the
-/// setting is a program name and can carry no `{path}` placeholder
-/// (audit MEDIUM-2).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PathDelivery {
-    /// Appended as ONE argv token, launched from [`crate::external_cmd::safe_cwd`].
-    /// The editor case: `code`, `subl` and `notepad++.exe` all open the folder
-    /// they are HANDED — they ignore their cwd.
-    Argument,
-    /// Passed as the child's `cwd`, with NO arguments. The terminal case: a
-    /// shell opens where it is started, and `powershell <dir>` would try to RUN
-    /// the directory as a script.
-    WorkingDir,
-}
-
-/// Build the single [`LaunchSpec`] for a configured program. `None` for an
-/// empty/whitespace-only setting (⇒ the caller's auto-detect ladder).
+/// The ONE spec builder — every launch, picked or auto, goes through it, so the
+/// two paths cannot drift (P112 §4).
 ///
-/// The caller MUST have validated `program` first
-/// ([`crate::external_cmd::validate_command_setting`]) — [`open_in_terminal`] and
-/// [`open_in_editor`] do, before any ladder is built. No spawn and no tokenizing
-/// (a validated setting is exactly one token); the only filesystem contact is
-/// [`crate::external_cmd::safe_cwd`]'s `current_exe()` lookup.
+/// `hide_console` is `kind == Editor`: an editor's `.cmd` shim would flash a
+/// console window, while a terminal's window IS the feature.
 ///
-/// **Deliberately `pub(crate)`**, for the reason [`crate::external_url`]'s `url_ladder`
-/// is private: handed an UNVALIDATED string this builds a spec that launches it,
-/// so the only thing between it and an arbitrary program is that the caller
-/// validated first. A doc comment is not a sufficient guard for a primitive of
-/// that shape — [`open_in_terminal`] / [`open_in_editor`], which validate
-/// unconditionally, are the way in.
-pub(crate) fn program_spec(
-    program: &str,
-    path: &Path,
-    hide_console: bool,
-    delivery: PathDelivery,
-) -> Option<LaunchSpec> {
-    let program = program.trim();
-    if program.is_empty() {
-        return None;
+/// `(MacOpen, open_arg: None)` is unreachable by construction — `tools::picked`
+/// sets `open_arg` for every bundle resolution and the [`AutoVia::MacApp`] arm
+/// below carries the catalog `app_name` — so it is a `debug_assert!` plus a spec
+/// that simply fails to launch and falls through the ladder, NOT an `expect()`.
+/// A launch must never panic on settings-derived state.
+///
+/// **`pub(crate)` is WIDER than the contract, not narrower** (corrected
+/// 2026-09-15): P112 §4 declares `fn spec_from(…)` with no `pub` at all and §1's
+/// module table calls it "new **private** `spec_from`". It had to widen, because
+/// `tools::settings_ids_tests` imports it (`settings_ids_tests.rs:10`) for the
+/// AC6 provenance assertion, and a private fn here is unreachable from a test
+/// module under `tools`.
+///
+/// So the justification is **minimal surface**, not "AC6 says no such
+/// constructor exists": AC6 is enforced by [`PickedTool`]'s `pub(crate)` fields
+/// (see its doc), which is what actually makes a free-text `LaunchSpec`
+/// unconstructible from outside this crate — this function's visibility never
+/// did, since the four `pub` launch entry points take a `PickedTool` anyway.
+/// `open_in_terminal` / `open_in_editor` are the way in from outside the crate;
+/// `terminal_ladder` / `editor_ladder` are `pub` because the contract declares
+/// them so and they add no capability those two do not already have.
+pub(crate) fn spec_from(picked: &PickedTool, path: &Path) -> LaunchSpec {
+    let hide_console = picked.kind == ToolKind::Editor;
+    let p = path.display().to_string();
+    let safe = safe_cwd();
+    match picked.recipe {
+        Recipe::MacOpen => {
+            debug_assert!(
+                picked.open_arg.is_some(),
+                "a MacOpen selection always carries the bundle path or the catalog app_name"
+            );
+            let app = picked.open_arg.as_deref().unwrap_or_default();
+            open_spec(&["-a", app, &p], &safe, hide_console)
+        }
+        Recipe::DirLastArg(fixed) => {
+            let args: Vec<&str> = fixed
+                .iter()
+                .copied()
+                .chain(std::iter::once(p.as_str()))
+                .collect();
+            spec(&picked.program, &args, &safe, hide_console, false)
+        }
+        Recipe::DirJoinedArg(fixed, prefix) => {
+            let joined = format!("{prefix}{p}");
+            let args: Vec<&str> = fixed
+                .iter()
+                .copied()
+                .chain(std::iter::once(joined.as_str()))
+                .collect();
+            spec(&picked.program, &args, &safe, hide_console, false)
+        }
+        // The directory IS the delivery (LOW-1: these keep the repo as cwd
+        // because "open a terminal here" has no other mechanism).
+        Recipe::DirCwd(fixed) => spec(&picked.program, fixed, path, hide_console, false),
     }
-    let (args, cwd) = match delivery {
-        PathDelivery::Argument => (vec![path.display().to_string()], safe_cwd()),
-        PathDelivery::WorkingDir => (Vec::new(), path.to_path_buf()),
-    };
-    Some(LaunchSpec {
-        program: program.to_string(),
-        args,
-        cwd,
-        hide_console,
-        // A user-configured program is arbitrary (`subl`, `nvim`, a wrapper
-        // script) and may run for the whole editing session — NEVER wait on it,
-        // even when it is literally `open`.
-        wait_for_exit: false,
-    })
 }
 
-/// Ordered terminal candidates. A configured program ⇒ exactly that one spec;
-/// an empty setting ⇒ the per-OS auto ladder. All `hide_console = false` — a
+/// The per-OS auto ladder for `kind` — the `""` setting, and the silent fallback
+/// for a selection whose tool is gone (the OQ1 ruling).
+///
+/// **Never probes**: [`launch_first`]'s spawn-fail fall-through is the detector,
+/// exactly as the hardcoded ladders were, and the argv is byte-identical to them
+/// (AC9).
+///
+/// `catalog::find_for(kind, id, os)` — **not** `catalog::find` (AMEND-4). `find`
+/// resolves host-OS-first, so building the macOS ladder on a Windows host would
+/// return the Windows `vscode` row, whose `app_name` is `None`, and the macOS
+/// ladder would silently lose its two `open -a` rungs. Any caller that takes
+/// `os` as a parameter resolves the catalog by that `os`, never by the host.
+///
+/// A rung that fails to resolve is SKIPPED rather than panicking: AC8 pins
+/// totality as a catalog test, which is where a missing row must fail — not at a
+/// user's launch.
+fn auto_ladder(kind: ToolKind, os: TargetOs, path: &Path) -> Vec<LaunchSpec> {
+    catalog::auto_rungs(kind, os)
+        .iter()
+        .filter_map(|rung| {
+            let e = catalog::find_for(kind, rung.id, os)?;
+            let picked = match rung.via {
+                // `source: Path` for BOTH arms: the auto path NEVER probes, so
+                // `Path` is the "unverified name" bucket. It must NOT be
+                // `AppBundle` — `open -a "Visual Studio Code"` is an app-NAME
+                // launch with no probed bundle, and a later refactor reading this
+                // value would `is_bundle("Visual Studio Code")` and always miss.
+                AutoVia::Name => PickedTool {
+                    kind,
+                    recipe: e.recipe,
+                    program: e.program.to_string(),
+                    open_arg: None,
+                    source: ToolSource::Path,
+                },
+                AutoVia::MacApp => PickedTool {
+                    kind,
+                    recipe: Recipe::MacOpen,
+                    program: "open".to_string(),
+                    open_arg: Some(e.app_name?.to_string()),
+                    source: ToolSource::Path,
+                },
+            };
+            Some(spec_from(&picked, path))
+        })
+        .collect()
+}
+
+/// Ordered terminal candidates: the selected tool ⇒ exactly that one spec;
+/// `None` ⇒ the per-OS auto ladder. `hide_console` is always `false` — a
 /// terminal window MUST be visible.
 ///
 /// LOW-1: the rungs that pass the directory as an ARGUMENT (`wt -d`,
 /// `open -a Terminal`, `gnome-terminal --working-directory=`, `konsole
 /// --workdir`) launch from [`safe_cwd`]. `powershell`, `cmd /K` and
 /// `x-terminal-emulator` take no directory argument at all — their cwd IS where
-/// the shell opens — so they keep `path` by necessity, as does a configured
-/// program ([`PathDelivery::WorkingDir`]). Of those, only the Windows two carry
-/// a DLL-search risk, and `powershell` is the live Windows 10 default because
-/// `wt` is not installed there — see the module docs.
+/// the shell opens — so they keep `path` by necessity, as does a browsed
+/// terminal program ([`Recipe::DirCwd`]). Of those, only the Windows two carry a
+/// DLL-search risk, and `powershell` is the live Windows 10 default because `wt`
+/// is not installed there — see the module docs.
 ///
-/// `pub(crate)` for the same reason as [`program_spec`]: `program` must already
-/// be validated.
-pub(crate) fn terminal_ladder(os: TargetOs, program: &str, path: &Path) -> Vec<LaunchSpec> {
-    if let Some(parsed) = program_spec(program, path, false, PathDelivery::WorkingDir) {
-        return vec![parsed];
-    }
-    let p = path.display().to_string();
-    let safe = safe_cwd();
-    match os {
-        TargetOs::Windows => vec![
-            spec("wt", &["-d", &p], &safe, false, false),
-            spec("powershell", &[], path, false, false),
-            spec("cmd", &["/K"], path, false, false),
-        ],
-        // Terminal.app ships with macOS so this rung effectively never fails,
-        // but `open` still gets the wait flag: it is the uniform rule for every
-        // `open` launcher, and it upgrades a hypothetical failure from a silent
-        // no-op to a real error instead of leaving it invisible.
-        TargetOs::MacOs => vec![open_spec(&["-a", "Terminal", &p], &safe, false)],
-        TargetOs::Linux => vec![
-            spec("gnome-terminal", &[&format!("--working-directory={p}")], &safe, false, false),
-            spec("konsole", &["--workdir", &p], &safe, false, false),
-            spec("x-terminal-emulator", &[], path, false, false),
-        ],
+/// Safe to be `pub`, unlike the `pub(crate)` it replaces: there is no longer a
+/// `program: &str` parameter to hand an unvalidated string to. The only input is
+/// a [`PickedTool`], which carries its provenance with it.
+pub fn terminal_ladder(os: TargetOs, picked: Option<&PickedTool>, path: &Path) -> Vec<LaunchSpec> {
+    match picked {
+        Some(p) => vec![spec_from(p, path)],
+        None => auto_ladder(ToolKind::Terminal, os, path),
     }
 }
 
@@ -342,35 +395,17 @@ pub fn reveal_spec(os: TargetOs, path: &Path) -> LaunchSpec {
     }
 }
 
-/// Ordered editor candidates. A configured program ⇒ exactly that one spec; an
-/// empty setting ⇒ the per-OS VS Code auto ladder. All `hide_console = true`.
+/// Ordered editor candidates: the selected tool ⇒ exactly that one spec; `None`
+/// ⇒ the per-OS VS Code auto ladder. All `hide_console = true`.
 ///
-/// LOW-1: an editor is always HANDED the folder ([`PathDelivery::Argument`] for
-/// a configured program), never started inside it, so EVERY rung — auto and
-/// configured — launches from [`safe_cwd`].
+/// LOW-1: an editor is always HANDED the folder, never started inside it, so
+/// EVERY rung launches from [`safe_cwd`].
 ///
-/// `pub(crate)` for the same reason as [`program_spec`]: `program` must already
-/// be validated.
-pub(crate) fn editor_ladder(os: TargetOs, program: &str, path: &Path) -> Vec<LaunchSpec> {
-    if let Some(parsed) = program_spec(program, path, true, PathDelivery::Argument) {
-        return vec![parsed];
-    }
-    let p = path.display().to_string();
-    let safe = safe_cwd();
-    match os {
-        TargetOs::Windows | TargetOs::Linux => vec![
-            spec("code", &[&p], &safe, true, false),
-            spec("code-insiders", &[&p], &safe, true, false),
-        ],
-        // The two `open -a` rungs MUST wait: `open` always spawns fine and
-        // signals "Unable to find application" only through its exit code, so
-        // without the flag rung #1 would always win and a Mac without VS Code
-        // would get a silent no-op instead of falling through to `code`.
-        TargetOs::MacOs => vec![
-            open_spec(&["-a", "Visual Studio Code", &p], &safe, true),
-            open_spec(&["-a", "Visual Studio Code - Insiders", &p], &safe, true),
-            spec("code", &[&p], &safe, true, false),
-        ],
+/// `pub` for the same reason as [`terminal_ladder`].
+pub fn editor_ladder(os: TargetOs, picked: Option<&PickedTool>, path: &Path) -> Vec<LaunchSpec> {
+    match picked {
+        Some(p) => vec![spec_from(p, path)],
+        None => auto_ladder(ToolKind::Editor, os, path),
     }
 }
 
@@ -397,20 +432,24 @@ pub fn launch_first(
     }))
 }
 
-/// Launch a terminal at `path` (empty `program` ⇒ per-OS auto-detect). The
-/// caller guarantees `path` exists (the command layer does the fs precheck).
+/// Launch a terminal at `path` (`None` ⇒ per-OS auto-detect). The caller
+/// guarantees `path` exists (the command layer does the fs precheck).
 ///
-/// MEDIUM-2: the configured program is validated BEFORE the ladder is built, so
-/// a refused setting never reaches a process — the same ordering
-/// [`crate::external_url::open_url`] uses for URLs.
+/// **Validates nothing, because there is nothing left to validate** (P112 §4):
+/// **no code outside `bonsai-core` constructs a [`PickedTool`]** (its fields are
+/// `pub(crate)`), and in-crate every production literal is reached either
+/// through `tools::picked` — which revalidates the selection's target — or
+/// through this module's auto arm, from the static catalog. `PickedTool`'s own
+/// doc enumerates those sites; this comment defers to it rather than restating
+/// it loosely. The program-string grammar that used to run here is deleted along
+/// with the setting that fed it.
 pub fn open_in_terminal(
     runner: &dyn CommandRunner,
     os: TargetOs,
-    program: &str,
+    picked: Option<&PickedTool>,
     path: &Path,
 ) -> Result<(), AppError> {
-    validate_command_setting(program, "Terminal command")?;
-    launch_first(runner, &terminal_ladder(os, program, path), "terminal")
+    launch_first(runner, &terminal_ladder(os, picked, path), "terminal")
 }
 
 /// Reveal `path` (a directory) in the OS file manager.
@@ -422,17 +461,15 @@ pub fn reveal_in_file_manager(
     launch_first(runner, std::slice::from_ref(&reveal_spec(os, path)), "file manager")
 }
 
-/// Open `path` in the configured editor (empty `program` ⇒ VS Code
-/// auto-detect). Validates the configured program first — see
-/// [`open_in_terminal`].
+/// Open `path` in the selected editor (`None` ⇒ VS Code auto-detect). Validates
+/// nothing, for the reason on [`open_in_terminal`].
 pub fn open_in_editor(
     runner: &dyn CommandRunner,
     os: TargetOs,
-    program: &str,
+    picked: Option<&PickedTool>,
     path: &Path,
 ) -> Result<(), AppError> {
-    validate_command_setting(program, "Editor command")?;
-    launch_first(runner, &editor_ladder(os, program, path), "editor")
+    launch_first(runner, &editor_ladder(os, picked, path), "editor")
 }
 
 #[cfg(test)]
@@ -448,3 +485,9 @@ mod tests;
 #[cfg(test)]
 #[path = "external_spawn_tests.rs"]
 mod spawn_tests;
+
+// P112 §4: the picked/browsed launch shapes (AC6's launch half, AC17). Their own
+// file so `external_tests.rs` stays the AUTO-ladder record (AC9).
+#[cfg(test)]
+#[path = "external_picked_tests.rs"]
+mod picked_tests;

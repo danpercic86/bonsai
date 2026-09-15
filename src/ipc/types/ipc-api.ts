@@ -8,7 +8,7 @@ import type { ConfigLevelArg, ConfigView } from './config';
 import type { ConflictEntry, ConflictFile, ConflictResolution } from './conflict';
 import type { CommitDiff, CompareDiff, FileDiff, ImageDiff, ImageDiffRequest, LineSelection } from './diff';
 import type { PrDescription } from './forge';
-import type { IpcApiForge } from './ipc-api-forge'; import type { IpcApiObs } from './ipc-api-obs';
+import type { IpcApiForge } from './ipc-api-forge'; import type { IpcApiObs } from './ipc-api-obs'; import type { IpcApiTools } from './ipc-api-tools';
 import type { GraphChunk, GraphFilter, GraphLayout } from './graph';
 import type { RepoHealth } from './health';
 import type { RepoHooksDisclosure } from './hooks';
@@ -26,7 +26,7 @@ import type { SubmoduleDeinitOutcome, SubmoduleInfo, SubmoduleRemoveOutcome } fr
 import type { UpdateCheckResult, UpdateProgress } from './update';
 import type { CopyCandidate, CopyPlanEntry, CopySelection, WorktreeInfo } from './worktree';
 
-export interface IpcApi extends IpcApiForge, IpcApiObs {
+export interface IpcApi extends IpcApiForge, IpcApiObs, IpcApiTools {
   /** Open (or focus) a repo. Returns the canonical `repoId` + info. A usable
    *  repo (isRepo && !bare) creates/refreshes a keyed entry; re-opening an
    *  already-open path focuses it (same `repoId`, no reset). Rejects {@link AppError}. */
@@ -542,8 +542,8 @@ export interface IpcApi extends IpcApiForge, IpcApiObs {
   openInTerminal(path: string): Promise<void>;
   /** P49: reveal `path` in the OS file manager. Rejects AppError('externalToolFailed' | 'io'). */
   revealInFileManager(path: string): Promise<void>;
-  /** P49: open `path` in the configured editor (empty ⇒ auto-detect VS Code).
-   *  Rejects AppError('externalToolFailed' | 'io'). */
+  /** P49: open `path` in the selected editor tool (P112 `editorTool`; `''`/unknown/gone
+   *  ⇒ the per-OS auto-detect ladder). Rejects AppError('externalToolFailed' | 'io'). */
   openInEditor(path: string): Promise<void>;
   /** P72: open `url` in the user's default browser. Web URLs only — a non-http(s)
    *  scheme, a hostless URL, or a leading `-` is refused before anything spawns.

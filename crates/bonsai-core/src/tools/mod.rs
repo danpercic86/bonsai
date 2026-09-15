@@ -21,7 +21,8 @@
 //! | [`detect`] | [`ToolEnv`], the probe ladders, the host prober |
 //! | [`custom`] | the browsed path: [`BrowsedProgram`], validation, label, recipe |
 //! | `settings_ids` | the two PURE settings fns: [`coerce_tool_id`], [`legacy_tool_id`] (plus [`legacy_tool_stem`], diagnostics only) |
-//! | this file | the DTOs, the process-wide scan cache, [`tool_scan`], [`picked`] |
+//! | `scan_cache` | the process-wide probe cache + the one-probe-at-a-time rule |
+//! | this file | the DTOs, [`tool_scan`], [`picked`] |
 //!
 //! Detection is **lazy and explicit**: nothing scans at boot, the scan is
 //! cached for the process lifetime, and the only refresh is the picker's
@@ -34,8 +35,6 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::RwLock;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::external::TargetOs;
 
@@ -43,6 +42,7 @@ pub mod catalog;
 mod catalog_table;
 pub mod custom;
 pub mod detect;
+mod scan_cache;
 mod settings_ids;
 
 #[cfg(test)]
@@ -115,19 +115,39 @@ pub struct Resolution {
 /// Deliberately not `&'static ToolEntry`: a browsed tool has no catalog entry,
 /// and folding both into one shape is what stops the two launch paths from
 /// drifting.
+///
+/// **AC6's invariant, compiler-enforced since 2026-09-15: no code outside
+/// `bonsai-core` constructs a `PickedTool`.** Every field is `pub(crate)`, so
+/// the only ways to obtain one are [`picked`] — which revalidates the selection
+/// against the filesystem — and `external`'s auto arm, which reads the static
+/// catalog. The PRODUCTION literal sites are [`picked_custom`] here,
+/// `detect::resolution_to_picked` (the catalog arm of [`picked`] — missing from
+/// this list until 2026-09-15) and `external::auto_ladder`; in-crate test modules
+/// build literals freely, which is the point of keeping the type constructible
+/// at all.
+///
+/// It was NOT true while the fields were `pub`, and the gap was invisible
+/// because it sat one type away from where it was argued: `external::spec_from`
+/// is `pub(crate)` on the reasoning that a `pub` spec builder over a
+/// public-fielded `PickedTool` would be the "arbitrary program ⇒ `LaunchSpec`"
+/// primitive AC6 deletes — while `external::{terminal_ladder, editor_ladder,
+/// open_in_terminal, open_in_editor}` are all `pub` and all take
+/// `Option<&PickedTool>`, so a hand-built literal from another crate reached
+/// `launch_first` through any of the four. One door closed beside four open
+/// ones. The fields, not the builder's visibility, are what shuts them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PickedTool {
-    pub kind: ToolKind,
+    pub(crate) kind: ToolKind,
     /// The catalog entry's recipe, [`Recipe::MacOpen`] for any bundle
     /// resolution, or the synthesized recipe for a browsed tool.
-    pub recipe: Recipe,
+    pub(crate) recipe: Recipe,
     /// An absolute path, the catalog name for [`ToolSource::BuiltIn`], or
     /// `"open"` when `recipe == MacOpen`.
-    pub program: String,
+    pub(crate) program: String,
     /// The `open -a` argument. `Some` **iff** `recipe == MacOpen`: the resolved
     /// bundle PATH for a bundle, else the entry's `app_name`.
-    pub open_arg: Option<String>,
-    pub source: ToolSource,
+    pub(crate) open_arg: Option<String>,
+    pub(crate) source: ToolSource,
 }
 
 /// IPC DTO — **display only**. The backend never accepts `label` / `detail` /
@@ -171,56 +191,6 @@ pub struct ExternalToolScan {
 /// every machine of that OS by definition.
 const BUILT_IN_DETAIL: &str = "built in";
 
-/// Probe results for the host, cached for the process lifetime.
-///
-/// `RwLock<Option<_>>` rather than `OnceLock`, and poison-recovering, for the
-/// `gitbin::GIT_BIN` reason: "install the editor, press Rescan" must work
-/// without restarting the app. Only *probe* results are cached — the custom row
-/// is one stat and the label maps are static data, so both are derived per
-/// call.
-static SCAN: RwLock<Option<CachedScan>> = RwLock::new(None);
-
-struct CachedScan {
-    at_ms: u64,
-    found: Vec<(&'static ToolEntry, Resolution)>,
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
-}
-
-/// Poison-recovering read of the cache; a miss probes the host once.
-///
-/// Two threads that both miss each run a full [`probe_host`] and the last
-/// writer wins. Known and benign rather than overlooked: a probe only READS
-/// (filesystem + `reg.exe`), so it is idempotent and both callers get an
-/// equally valid row set — while holding the write lock across the probe would
-/// park every other caller behind up to [`detect::SCAN_REG_BUDGET`].
-fn cached_rows() -> (u64, Vec<(&'static ToolEntry, Resolution)>) {
-    {
-        let guard = SCAN.read().unwrap_or_else(|p| p.into_inner());
-        if let Some(cached) = guard.as_ref() {
-            return (cached.at_ms, cached.found.clone());
-        }
-    }
-    probe_host()
-}
-
-/// Probe the host and replace the cache. The ONLY place production code scans.
-fn probe_host() -> (u64, Vec<(&'static ToolEntry, Resolution)>) {
-    let found = detect::scan_for(&HostToolEnv::new(), TargetOs::host());
-    let at_ms = now_ms();
-    let mut guard = SCAN.write().unwrap_or_else(|p| p.into_inner());
-    *guard = Some(CachedScan {
-        at_ms,
-        found: found.clone(),
-    });
-    (at_ms, found)
-}
-
 /// Detected tools + the remembered browsed row + the label maps.
 ///
 /// BLOCKING (filesystem, and `reg.exe` on Windows) — call under
@@ -231,7 +201,7 @@ pub fn tool_scan(
     custom_terminal: BrowsedProgram,
     custom_editor: BrowsedProgram,
 ) -> ExternalToolScan {
-    let (at_ms, rows) = cached_rows();
+    let (at_ms, rows) = scan_cache::cached_rows();
     scan_from_rows(
         &rows,
         custom_terminal.as_str(),
@@ -243,11 +213,18 @@ pub fn tool_scan(
 
 /// [`tool_scan`] with a forced re-probe (the picker's Rescan): `scanned_at_ms`
 /// advances and a tool installed since the last scan appears.
+///
+/// Concurrent refreshes **coalesce**: the first caller probes and the others
+/// wait for its result, so N simultaneous Rescans cost one `reg.exe` sweep and
+/// not N (audit LOW-2 — see `scan_cache`). Every caller still gets the fresh
+/// rows and the fresh `scanned_at_ms`, **except** on the two paths
+/// `scan_cache::ScanCell::probe` enumerates: a leader that overruns its wait
+/// hands followers the stale rows, and a leader that panics makes them re-probe.
 pub fn refresh_tool_scan(
     custom_terminal: BrowsedProgram,
     custom_editor: BrowsedProgram,
 ) -> ExternalToolScan {
-    let (at_ms, rows) = probe_host();
+    let (at_ms, rows) = scan_cache::probe_host();
     scan_from_rows(
         &rows,
         custom_terminal.as_str(),
@@ -302,7 +279,11 @@ fn kind_rows(
         })
         .collect();
     if !custom_path.is_empty() {
-        out.push(custom_row(kind, custom_path, os));
+        // The stored path resolving is exactly `present`: a path that changed
+        // shape (lost its execute bit, gained a different extension) is reported
+        // gone rather than offered.
+        let present = custom::validate_custom_program(Path::new(custom_path), os).is_ok();
+        out.push(custom_row(kind, custom_path, present));
     }
     out
 }
@@ -324,12 +305,15 @@ fn detail_of(res: &Resolution) -> String {
     }
 }
 
-/// The remembered browsed row. `present` reports whether the stored path still
-/// validates — a path that changed shape (lost its execute bit, gained a
-/// different extension) is reported gone rather than offered.
-fn custom_row(kind: ToolKind, custom_path: &str, os: TargetOs) -> DetectedTool {
+/// The browsed row, for both of its producers: the remembered path in a scan
+/// (`present` = "the stored path still validates") and [`browsed_tool_row`]
+/// (`present = true` by construction — it just validated).
+///
+/// ONE constructor on purpose: the row the picker lists after a Browse and the
+/// row the next scan lists for the same path must be the same row, or the UI
+/// would flicker between two spellings of one tool.
+fn custom_row(kind: ToolKind, custom_path: &str, present: bool) -> DetectedTool {
     let path = Path::new(custom_path);
-    let present = custom::validate_custom_program(path, os).is_ok();
     DetectedTool {
         id: CUSTOM_ID.to_string(),
         label: custom::display_label(path),
@@ -363,7 +347,7 @@ fn custom_row(kind: ToolKind, custom_path: &str, os: TargetOs) -> DetectedTool {
 /// `setting` is renderer-writable (it is only ever a lookup key); `custom_path`
 /// is NOT, which is why it is a [`BrowsedProgram`] and not a `&str`.
 pub fn picked(setting: &str, kind: ToolKind, custom_path: BrowsedProgram) -> Option<PickedTool> {
-    let (_, rows) = cached_rows();
+    let (_, rows) = scan_cache::cached_rows();
     picked_from(
         &HostToolEnv::new(),
         TargetOs::host(),
@@ -425,6 +409,30 @@ fn picked_custom(kind: ToolKind, custom_path: &str, os: TargetOs) -> Option<Pick
             source: ToolSource::Custom,
         },
     })
+}
+
+/// Validate a path the **native dialog the backend opened** just returned and
+/// turn it into the picker row for it (P112 §5.4 / §6).
+///
+/// The command layer calls exactly this and then writes the path: keeping both
+/// the validation and the row shape in this crate is what stops the command
+/// layer from hand-building a `DetectedTool` that disagrees with the one the
+/// next [`tool_scan`] produces for the same path.
+///
+/// `Err` is the category-only refusal (`custom::refuse`) — it never echoes the
+/// path — and the caller MUST write nothing on it: not the path, and not the
+/// selection.
+///
+/// BLOCKING (existence, the bundle check, the unix execute bit) — and, since
+/// ruling #26 admits UNC on this path, potentially a full SMB timeout on a
+/// disconnected share. Call it under `spawn_blocking`.
+pub fn browsed_tool_row(
+    kind: ToolKind,
+    path: &Path,
+    os: TargetOs,
+) -> Result<DetectedTool, crate::error::AppError> {
+    custom::validate_custom_program(path, os)?;
+    Ok(custom_row(kind, &path.to_string_lossy(), true))
 }
 
 /// `id -> label` for every catalog entry of `kind`, on EVERY OS.

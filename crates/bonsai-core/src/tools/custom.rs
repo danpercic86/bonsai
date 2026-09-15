@@ -20,7 +20,8 @@ use super::catalog::Recipe;
 use super::ToolKind;
 
 /// Generous for any real install path; a longer string is not one.
-/// Same value and same reasoning as `external_cmd::MAX_LEN`.
+/// Same value and same reasoning as the `MAX_LEN` of the deleted
+/// `external_cmd` module, whose four shared helpers this file inherited (§7).
 const MAX_LEN: usize = 512;
 
 /// Cap on the derived picker label, so a 200-character filename cannot blow out
@@ -80,9 +81,9 @@ pub enum CustomKindShape {
 }
 
 /// C0/C1 controls plus the bidi overrides and isolates — the set
-/// `ai::stream::strip_control_chars` and `external_cmd` already use, for the
-/// same reason: a bidi override in a filename exists only to make a picker row
-/// read as something other than what launches.
+/// `ai::stream::strip_control_chars` uses, and the deleted `external_cmd` used,
+/// for the same reason: a bidi override in a filename exists only to make a
+/// picker row read as something other than what launches.
 fn is_disallowed_char(c: char) -> bool {
     let bidi =
         matches!(c, '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}');
@@ -201,8 +202,9 @@ pub(super) fn is_absolute_for(os: TargetOs, value: &str) -> bool {
     }
 }
 
-/// ONE refusal, category-only, in the `external_cmd::refuse` style: it names the
-/// rule and **never echoes the path**.
+/// ONE refusal, category-only, in the `refuse` style the deleted `external_cmd`
+/// established and that is this surface's house rule now: it names the rule and
+/// **never echoes the path**.
 ///
 /// The path is config- or dialog-derived: it can be arbitrarily long, carry bidi
 /// overrides, or imitate a system message, and this string can end up in a

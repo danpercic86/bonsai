@@ -144,11 +144,12 @@ const IPC_API_SOURCES = import.meta.glob('../ipc/types/ipc-api*.ts', {
 
 /** Members expected per file — a FLOOR, so the parser going blind to a
  *  declaration form shows up here rather than cancelling out silently. Counts at
- *  the time of writing: 172 / 20 / 7. */
+ *  the time of writing: 172 / 20 / 7 / 2. */
 const MEMBER_FLOORS: ReadonlyArray<readonly [string, number]> = [
   ['ipc-api.ts', 150],
   ['ipc-api-forge.ts', 15],
   ['ipc-api-obs.ts', 5],
+  ['ipc-api-tools.ts', 2],
 ];
 
 /** `name:` / `name?:` at the head of one parameter segment. */

@@ -9,7 +9,8 @@
 //! ## Why coercion and not validation
 //!
 //! Save-time *validation* was ruled out: the settings writer merges pending
-//! keys into one patch and re-queues on failure (`external_cmd.rs` module doc),
+//! keys into one patch and re-queues on failure (recorded in the deleted
+//! `external_cmd.rs` module doc, P112 §5.2),
 //! so a rejection would wedge every later settings write. Coercion cannot fail
 //! — anything that is not a catalog id becomes `""`, which means "auto ladder".
 //! A renderer can therefore write garbage as often as it likes and the only

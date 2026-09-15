@@ -1,8 +1,15 @@
 //! Small shared process-spawn helpers (no spawn logic itself — pure path
-//! resolution). Extracted from `external.rs` (P49) so the AI CLI driver
-//! (`crate::ai`) can reuse the same PATHEXT-aware resolution (audit §2.7).
+//! resolution plus the launch-neutral working directory). Extracted from
+//! `external.rs` (P49) so the AI CLI driver (`crate::ai`) can reuse the same
+//! PATHEXT-aware resolution (audit §2.7).
+//!
+//! [`safe_cwd`] moved here from `external_cmd.rs` in P112 sub-increment 3
+//! **verbatim**: §7 deletes that module (its program-string grammar is the
+//! capability P112 removes), and this was the one function in it that the
+//! launchers and [`crate::external_url`] still need. Moving it lets the module
+//! be deleted outright instead of surviving as a one-function stub.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Resolve a program name to something `Command` can spawn.
 ///
@@ -73,6 +80,44 @@ pub fn resolve_program(program: &str) -> Result<PathBuf, String> {
     Ok(PathBuf::from(program))
 }
 
+
+/// The launch-neutral working directory for every rung that already carries the
+/// target path as an argv token (audit LOW-1).
+///
+/// **Why the app directory and not a system directory:** under
+/// `SafeDllSearchMode` the current directory is searched after `System32` but
+/// BEFORE `PATH`, so a hostile repo shipping a `.dll` at its root gets a
+/// DLL-planting primitive against every child we spawn from it. The app's own
+/// directory removes that primitive without inventing a per-OS system-path table
+/// (`C:\Windows\System32` / `/usr` / `/private/var`), and an attacker who can
+/// write next to `bonsai.exe` already owns the box. It is also the one directory
+/// that is guaranteed to exist for a running process.
+///
+/// Observable behaviour is unchanged because every caller of this passes the
+/// directory explicitly as an argument. The rungs whose semantics ARE the cwd
+/// (`powershell`, `cmd /K`, `x-terminal-emulator`, and any browsed terminal
+/// program, which launches through `Recipe::DirCwd`) keep the repo path — see
+/// `external::terminal_ladder`. Of those, only the WINDOWS ones carry the
+/// DLL-search risk, and `powershell` is the live DEFAULT there rather than an
+/// edge case: `wt` ships with Windows 11 but not with stock Windows 10, so rung
+/// 2 is what a Win10 user gets.
+///
+/// Falls back to [`std::env::temp_dir`] when `current_exe()` is unavailable —
+/// deliberately NOT `"."`, which is the process cwd and, under `pnpm tauri dev`,
+/// IS the repo root, i.e. the exact primitive this function removes. The temp
+/// directory is never a repository, always exists, and keeps this from turning a
+/// working launch into a failure.
+pub fn safe_cwd() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+        .unwrap_or_else(std::env::temp_dir)
+}
+
 #[cfg(test)]
 #[path = "procutil_tests.rs"]
 mod resolve_tests;
+
+#[cfg(test)]
+#[path = "procutil_cwd_tests.rs"]
+mod cwd_tests;

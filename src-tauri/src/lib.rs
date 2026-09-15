@@ -321,6 +321,8 @@ pub fn run() {
             commands::reveal_in_file_manager,
             commands::open_in_editor,
             commands::open_url,
+            commands::list_external_tools,
+            commands::pick_external_tool,
             commands::check_git_availability,
             commands::forge_repo_context,
             commands::forge_list_prs,

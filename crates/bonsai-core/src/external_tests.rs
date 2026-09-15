@@ -3,11 +3,17 @@
 //! as a child module of `external`, so `super::*` reaches the pure builders
 //! (`spec`, `open_spec`).
 //!
-//! Covers: how a configured program receives the target directory, the
-//! per-`TargetOs` ladder tables (including the F-MAC-1 `wait_for_exit` flags and
-//! the LOW-1 cwd split), and the `launch_first` fallback logic driven by
-//! `fake::FakeRunner`, which never spawns. The web-URL half lives in
-//! `external_url_tests.rs`; the setting-shape rules in `external_cmd_tests.rs`.
+//! Covers the **auto** ladders (`picked = None`): the per-`TargetOs` tables
+//! (including the F-MAC-1 `wait_for_exit` flags and the LOW-1 cwd split) and the
+//! `launch_first` fallback logic driven by `fake::FakeRunner`, which never
+//! spawns. P112 AC9 is this file: every assertion below predates P112 and must
+//! pass with **no edit other than the new parameter**, which is what proves the
+//! catalog-driven rebuild is byte-identical to the hardcoded ladders.
+//!
+//! The picked/browsed launch shapes live in `external_picked_tests.rs`; the
+//! web-URL half in `external_url_tests.rs`. The program-string shape rules that
+//! used to live in `external_cmd_tests.rs` are GONE with the setting — see
+//! `tools/custom_tests.rs` for what replaced them.
 //!
 //! PATH hostility (audit 2026-09-03) is deliberately NOT tested here: a
 //! `.gitmodules` path can never reach a `LaunchSpec` unvalidated, because the
@@ -23,56 +29,7 @@ fn p() -> PathBuf {
     PathBuf::from("/tmp/work")
 }
 
-// ---- program_spec: how a configured program receives the directory ----
-
-#[test]
-fn program_spec_argument_delivery_hands_the_path_over_and_leaves_the_repo() {
-    // MEDIUM-2 removed `{path}`, so the LAUNCHER appends the directory — as ONE
-    // argv token, and LOW-1 keeps the child out of the repo.
-    let s = program_spec("code", &p(), true, PathDelivery::Argument).expect("built");
-    assert_eq!(s.program, "code");
-    assert_eq!(s.args, vec!["/tmp/work".to_string()]);
-    assert_eq!(s.cwd, safe_cwd());
-    assert!(s.hide_console);
-}
-
-#[test]
-fn program_spec_working_dir_delivery_passes_no_args_at_all() {
-    // A shell opens where it is STARTED; `powershell /tmp/work` would try to run
-    // the directory as a script. So the terminal rung keeps the repo cwd.
-    let s = program_spec("powershell", &p(), false, PathDelivery::WorkingDir).expect("built");
-    assert_eq!(s.program, "powershell");
-    assert!(s.args.is_empty());
-    assert_eq!(s.cwd, p());
-    assert!(!s.hide_console);
-}
-
-#[test]
-fn program_spec_path_with_spaces_stays_one_argument() {
-    let path = PathBuf::from("/tmp/my repo");
-    let s = program_spec("code", &path, true, PathDelivery::Argument).expect("built");
-    assert_eq!(s.args, vec!["/tmp/my repo".to_string()]);
-}
-
-#[test]
-fn program_spec_absolute_program_is_used_verbatim() {
-    // The portable-editor case: an absolute path with a space survives as the
-    // program, never re-split into tokens.
-    let prog = "/opt/My Editor/bin/edit";
-    let s = program_spec(prog, &p(), true, PathDelivery::Argument).expect("built");
-    assert_eq!(s.program, prog);
-    assert_eq!(s.args, vec!["/tmp/work".to_string()]);
-}
-
-#[test]
-fn program_spec_empty_or_whitespace_is_none() {
-    for delivery in [PathDelivery::Argument, PathDelivery::WorkingDir] {
-        assert!(program_spec("", &p(), false, delivery).is_none());
-        assert!(program_spec("   \t  ", &p(), false, delivery).is_none());
-    }
-}
-
-// ---- builder tables (per TargetOs, empty program = auto ladder) ----
+// ---- builder tables (per TargetOs, `picked = None` = the auto ladder) ----
 //
 // The `cwd` column is the LOW-1 fix and is asserted here deliberately: a rung
 // that passes the directory as an ARGUMENT launches from `safe_cwd()`; only the
@@ -81,7 +38,7 @@ fn program_spec_empty_or_whitespace_is_none() {
 #[test]
 fn terminal_ladder_windows_auto() {
     assert_eq!(
-        terminal_ladder(TargetOs::Windows, "", &p()),
+        terminal_ladder(TargetOs::Windows, None, &p()),
         vec![
             spec("wt", &["-d", "/tmp/work"], &safe_cwd(), false, false),
             spec("powershell", &[], &p(), false, false),
@@ -93,7 +50,7 @@ fn terminal_ladder_windows_auto() {
 #[test]
 fn terminal_ladder_macos_auto() {
     assert_eq!(
-        terminal_ladder(TargetOs::MacOs, "", &p()),
+        terminal_ladder(TargetOs::MacOs, None, &p()),
         vec![spec("open", &["-a", "Terminal", "/tmp/work"], &safe_cwd(), false, true)]
     );
 }
@@ -101,7 +58,7 @@ fn terminal_ladder_macos_auto() {
 #[test]
 fn terminal_ladder_linux_auto() {
     assert_eq!(
-        terminal_ladder(TargetOs::Linux, "", &p()),
+        terminal_ladder(TargetOs::Linux, None, &p()),
         vec![
             spec("gnome-terminal", &["--working-directory=/tmp/work"], &safe_cwd(), false, false),
             spec("konsole", &["--workdir", "/tmp/work"], &safe_cwd(), false, false),
@@ -117,7 +74,7 @@ fn terminal_ladder_linux_auto() {
 fn only_the_directory_less_terminal_rungs_keep_the_repo_as_cwd() {
     let keeps_repo: Vec<String> = [TargetOs::Windows, TargetOs::MacOs, TargetOs::Linux]
         .into_iter()
-        .flat_map(|os| terminal_ladder(os, "", &p()))
+        .flat_map(|os| terminal_ladder(os, None, &p()))
         .filter(|s| s.cwd == p())
         .map(|s| s.program)
         .collect();
@@ -125,7 +82,7 @@ fn only_the_directory_less_terminal_rungs_keep_the_repo_as_cwd() {
     // …and every one of them passes no DIRECTORY argument, so there is no
     // alternative for it (`cmd /K` has an argument — just not the path).
     for os in [TargetOs::Windows, TargetOs::MacOs, TargetOs::Linux] {
-        for s in terminal_ladder(os, "", &p()) {
+        for s in terminal_ladder(os, None, &p()) {
             let carries_dir = s.args.iter().any(|a| a.contains("/tmp/work"));
             assert_eq!(
                 s.cwd == p(),
@@ -134,45 +91,6 @@ fn only_the_directory_less_terminal_rungs_keep_the_repo_as_cwd() {
                 s.program
             );
         }
-    }
-}
-
-/// The trim in `validate_command_setting` and the trim in `program_spec` must
-/// agree: if they diverged, a value could validate as one string and launch as
-/// another. Pinned rather than assumed.
-///
-/// Scope, deliberately narrow (corrected 2026-09-11): this proves the SAME TRIM
-/// runs on both sides, i.e. both see a byte-identical string. It does NOT prove
-/// "what is validated is what executes" — Rust std's Windows `resolve_exe`
-/// appends `.exe` to a separator-carrying path with no extension, so the OS can
-/// spawn `D:\x\foo.exe` for a validated `D:\x\foo`. That gap is stated as
-/// residual route 1 in the `external_cmd` module docs; proving it would require
-/// really spawning, which no unit test here does.
-#[test]
-fn the_same_trim_runs_on_both_sides() {
-    let raw = "	code
-";
-    validate_command_setting(raw, "Editor command").expect("trimmed value is valid");
-    let s = program_spec(raw, &p(), true, PathDelivery::Argument).expect("built");
-    assert_eq!(s.program, "code");
-}
-
-#[test]
-fn terminal_ladder_configured_program_overrides_to_single_spec() {
-    // A configured program yields exactly one candidate on every OS,
-    // hide_console false (visible terminal), no args, repo cwd.
-    for os in [TargetOs::Windows, TargetOs::MacOs, TargetOs::Linux] {
-        assert_eq!(
-            terminal_ladder(os, "alacritty", &p()),
-            vec![spec(
-                "alacritty",
-                &[],
-                &p(),
-                false,
-                // A configured program is NEVER waited on, not even on macOS.
-                false
-            )]
-        );
     }
 }
 
@@ -200,14 +118,14 @@ fn editor_ladder_windows_and_linux_auto() {
         spec("code", &["/tmp/work"], &safe_cwd(), true, false),
         spec("code-insiders", &["/tmp/work"], &safe_cwd(), true, false),
     ];
-    assert_eq!(editor_ladder(TargetOs::Windows, "", &p()), expected);
-    assert_eq!(editor_ladder(TargetOs::Linux, "", &p()), expected);
+    assert_eq!(editor_ladder(TargetOs::Windows, None, &p()), expected);
+    assert_eq!(editor_ladder(TargetOs::Linux, None, &p()), expected);
 }
 
 #[test]
 fn editor_ladder_macos_auto() {
     assert_eq!(
-        editor_ladder(TargetOs::MacOs, "", &p()),
+        editor_ladder(TargetOs::MacOs, None, &p()),
         vec![
             spec("open", &["-a", "Visual Studio Code", "/tmp/work"], &safe_cwd(), true, true),
             spec(
@@ -227,7 +145,7 @@ fn editor_ladder_macos_auto() {
 /// while the plain `code` fallback stays a detached spawn.
 #[test]
 fn editor_ladder_macos_marks_open_specs_wait_for_exit() {
-    let ladder = editor_ladder(TargetOs::MacOs, "", &p());
+    let ladder = editor_ladder(TargetOs::MacOs, None, &p());
     assert_eq!(ladder.len(), 3);
     assert!(ladder[0].wait_for_exit, "open -a VS Code waits for its exit code");
     assert!(ladder[1].wait_for_exit, "open -a Insiders waits for its exit code");
@@ -240,34 +158,14 @@ fn editor_ladder_macos_marks_open_specs_wait_for_exit() {
 #[test]
 fn windows_and_linux_specs_never_wait_for_exit() {
     for os in [TargetOs::Windows, TargetOs::Linux] {
-        for s in editor_ladder(os, "", &p()) {
+        for s in editor_ladder(os, None, &p()) {
             assert!(!s.wait_for_exit, "{os:?} editor `{}` must not wait", s.program);
         }
-        for s in terminal_ladder(os, "", &p()) {
+        for s in terminal_ladder(os, None, &p()) {
             assert!(!s.wait_for_exit, "{os:?} terminal `{}` must not wait", s.program);
         }
         assert!(!reveal_spec(os, &p()).wait_for_exit, "{os:?} reveal must not wait");
     }
-}
-
-/// A configured program is arbitrary and long-lived, so it is never waited on —
-/// even on macOS, even when it is literally named `open`.
-#[test]
-fn configured_program_specs_never_wait_for_exit() {
-    for os in [TargetOs::Windows, TargetOs::MacOs, TargetOs::Linux] {
-        assert!(!editor_ladder(os, "open", &p())[0].wait_for_exit);
-        assert!(!terminal_ladder(os, "alacritty", &p())[0].wait_for_exit);
-    }
-}
-
-#[test]
-fn editor_ladder_configured_program_overrides_to_single_spec() {
-    // The editor is HANDED the folder, so a configured editor also launches
-    // from the neutral cwd (LOW-1).
-    assert_eq!(
-        editor_ladder(TargetOs::MacOs, "subl", &p()),
-        vec![spec("subl", &["/tmp/work"], &safe_cwd(), true, false)]
-    );
 }
 
 // ---- ladder fallback logic (fake::FakeRunner — NEVER spawns) ----
@@ -277,7 +175,7 @@ fn first_candidate_fails_second_succeeds_picks_second() {
     // wt unresolvable ⇒ falls through to PowerShell, which succeeds; cmd is
     // never tried.
     let runner = FakeRunner::new(&["powershell"]);
-    open_in_terminal(&runner, TargetOs::Windows, "", &p()).expect("second candidate wins");
+    open_in_terminal(&runner, TargetOs::Windows, None, &p()).expect("second candidate wins");
     assert_eq!(runner.calls(), vec!["wt", "powershell"]);
 }
 
@@ -286,7 +184,7 @@ fn all_candidates_fail_errors_naming_last_program() {
     // wt → powershell → cmd all fail: ExternalToolFailed names the LAST
     // program (cmd) and the "terminal" label.
     let runner = FakeRunner::new(&[]);
-    let err = open_in_terminal(&runner, TargetOs::Windows, "", &p())
+    let err = open_in_terminal(&runner, TargetOs::Windows, None, &p())
         .expect_err("all candidates fail");
     assert!(matches!(err, AppError::ExternalToolFailed(_)));
     let msg = err.to_string();
@@ -310,42 +208,11 @@ fn reveal_single_candidate_success_and_failure() {
     assert!(err.to_string().contains("explorer"));
 }
 
+/// `None` (the shipped default for both settings, and the silent fallback for a
+/// selection whose tool is gone) reaches the auto ladder.
 #[test]
-fn editor_program_is_the_only_candidate_tried() {
-    // A configured program short-circuits the auto ladder: only it is
-    // attempted, and on failure it is what the error names.
-    let runner = FakeRunner::new(&[]);
-    let err = open_in_editor(&runner, TargetOs::Windows, "my-editor", &p())
-        .expect_err("configured program missing");
-    assert!(matches!(err, AppError::ExternalToolFailed(_)));
-    assert!(err.to_string().contains("my-editor"));
-    assert_eq!(runner.calls(), vec!["my-editor"]);
-}
-
-/// MEDIUM-2, the load-bearing ordering: a refused setting must be rejected
-/// BEFORE a ladder exists, so NOTHING is ever handed to a runner. Asserted on
-/// both entry points, since each validates its own setting.
-#[test]
-fn a_refused_setting_reaches_no_runner() {
-    for bad in ["powershell -NoProfile -Command calc", "code & calc", "./code"] {
-        let runner = FakeRunner::new(&["powershell", "code", "wt", "cmd"]);
-        let err = open_in_editor(&runner, TargetOs::Windows, bad, &p())
-            .expect_err("the setting must be refused");
-        assert!(matches!(err, AppError::ExternalToolFailed(_)));
-        assert!(runner.calls().is_empty(), "nothing may be spawned for {bad:?}");
-
-        let runner = FakeRunner::new(&["powershell", "code", "wt", "cmd"]);
-        open_in_terminal(&runner, TargetOs::Windows, bad, &p())
-            .expect_err("the setting must be refused");
-        assert!(runner.calls().is_empty(), "nothing may be spawned for {bad:?}");
-    }
-}
-
-/// …and an EMPTY setting must still reach the auto ladder: validation must not
-/// turn "auto-detect" (the shipped default for both settings) into an error.
-#[test]
-fn an_empty_setting_still_runs_the_auto_ladder() {
+fn no_selection_still_runs_the_auto_ladder() {
     let runner = FakeRunner::new(&["code"]);
-    open_in_editor(&runner, TargetOs::Windows, "", &p()).expect("auto ladder runs");
+    open_in_editor(&runner, TargetOs::Windows, None, &p()).expect("auto ladder runs");
     assert_eq!(runner.calls(), vec!["code"]);
 }

@@ -8,7 +8,7 @@
 
 use crate::error::AppError;
 use crate::external::{launch_first, open_spec, spec, CommandRunner, LaunchSpec, TargetOs};
-use crate::external_cmd::safe_cwd;
+use crate::procutil::safe_cwd;
 
 /// Accept ONLY a plain web URL (P72), so a launcher can never be handed a
 /// protocol the OS would resolve to something else. Pure: no fs, no spawn.

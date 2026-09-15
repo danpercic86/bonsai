@@ -21,10 +21,13 @@ use super::{is_known_cmd, KNOWN_CMDS};
 /// is a smaller parse. Counts at the time of writing are 172 / 20 / 7; a file
 /// that legitimately shrinks past its floor should have the floor lowered
 /// deliberately, in the same commit that removes the commands.
-const IPC_API_FILES: [(&str, usize); 3] = [
+const IPC_API_FILES: [(&str, usize); 4] = [
     ("src/ipc/types/ipc-api.ts", 150),
     ("src/ipc/types/ipc-api-forge.ts", 15),
     ("src/ipc/types/ipc-api-obs.ts", 5),
+    // P112 §6 — the external-tool picker surface (`ipc-api.ts` is over the
+    // file-size limit and may only shrink, so new members get their own file).
+    ("src/ipc/types/ipc-api-tools.ts", 2),
 ];
 
 fn repo_root() -> PathBuf {

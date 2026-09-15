@@ -7,23 +7,20 @@
 //! `FakeRunner` captures the spec so no real app is launched; `resolve_program`
 //! hit/miss is checked directly (it resolves a path, it does not spawn).
 //!
-//! Updated 2026-09-11 (audit MEDIUM-2/LOW-1): the user setting is a PROGRAM, not
-//! a command line, so there is no template tokenizer left to fuzz — the shape
-//! rules (`external_cmd::validate_command_setting`) are what stands between a
-//! renderer-set string and a launch, and the target directory is delivered by
-//! the launcher instead of a `{path}` placeholder. The argv-assembly cases moved
-//! to `src/external_spawn_tests.rs` in the same change, because `program_spec` /
-//! `terminal_ladder` / `editor_ladder` are now `pub(crate)`: handed an
-//! unvalidated string they would build a spec that launches it, so they are not
-//! part of the crate's API. What remains here is exactly what a caller outside
-//! the crate can reach.
+//! Updated 2026-09-14 (P112 §4/§7): there is no user-supplied program STRING
+//! left at all — the launchers take `Option<&PickedTool>`, whose program is a
+//! catalog literal, a probe-derived absolute path, or the one path a native
+//! dialog the backend opened returned. The shape validator (`external_cmd`) and
+//! its module are deleted; `safe_cwd` moved to `procutil`. The argv-assembly and
+//! ladder-table cases live in `src/external_spawn_tests.rs` / `external_tests.rs`
+//! / `external_picked_tests.rs`. What remains here is exactly what a caller
+//! outside the crate can reach.
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use bonsai_core::external::{launch_first, CommandRunner, LaunchSpec, SpawnRunner};
-use bonsai_core::external_cmd::safe_cwd;
-use bonsai_core::procutil::resolve_program;
+use bonsai_core::procutil::{resolve_program, safe_cwd};
 
 /// Records every spec it is asked to run and always "succeeds" (never spawns).
 struct FakeRunner {

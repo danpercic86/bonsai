@@ -3,14 +3,22 @@
 //!
 //! House shape `X → launch_inner → spawn_blocking(core)`. The path arrives as a
 //! raw string the frontend already owns — ANY existing directory the renderer
-//! names, not necessarily the opened repo (P49 design; see the residual in
-//! `bonsai_core::external_cmd`). Terminal/editor read their launch PROGRAM from
-//! `settings.json`; reveal needs neither `AppHandle` nor state.
+//! names, not necessarily the opened repo (P49 design; P112 §8 residual 1).
+//! Terminal/editor resolve their launch tool from `settings.json` through
+//! `tools::picked`, which returns `None` (⇒ the per-OS auto ladder) for anything
+//! that is not a currently-resolvable catalog id or a still-valid browsed path;
+//! reveal needs neither `AppHandle` nor state.
 //! All git-state-free — no `repo_path`, no mutating/opActive gating.
+//!
+//! **No program STRING reaches here from settings** (P112 §0). `terminal_tool` /
+//! `editor_tool` are lookup keys into a compile-time catalog, and the one path
+//! involved (`custom_*_path`) is written only by `pick_external_tool` from a
+//! native dialog the backend opened.
 
 use super::shared::*;
 use bonsai_core::external::{self, SpawnRunner, TargetOs};
 use bonsai_core::external_url;
+use bonsai_core::tools::{self, BrowsedProgram, ToolKind};
 use std::path::PathBuf;
 
 /// Which launch to perform. Keeps `launch_inner` a single spawn_blocking body.
@@ -20,12 +28,10 @@ enum Action {
     Editor,
 }
 
-/// Open the OS terminal at `path`, using the configured `terminalCommand`
-/// program (empty ⇒ per-OS auto-detect). Rejects `externalToolFailed` when the
-/// configured program fails the shape rules (audit MEDIUM-2 —
-/// `bonsai_core::external_cmd::validate_command_setting`, checked before
-/// anything is spawned) or when no candidate launches, and `io` when `path` is
-/// not an accessible directory.
+/// Open the OS terminal at `path`, using the selected `terminalTool` (`""`, an
+/// unknown id, or a selection whose tool is gone ⇒ per-OS auto-detect — the OQ1
+/// silent fallback). Rejects `externalToolFailed` when no candidate launches,
+/// and `io` when `path` is not an accessible directory.
 #[tauri::command]
 pub async fn open_in_terminal(app: tauri::AppHandle, path: String) -> Result<(), AppError> {
     let file = settings::settings_file(&app)?;
@@ -39,9 +45,9 @@ pub async fn reveal_in_file_manager(path: String) -> Result<(), AppError> {
     launch_inner(None, Action::Reveal, path).await
 }
 
-/// Open `path` in the configured editor (empty `editorCommand` ⇒ auto-detect the
-/// VS Code family). Rejects `externalToolFailed` (invalid `editorCommand` shape,
-/// or no candidate launched) / `io`.
+/// Open `path` in the selected editor (`editorTool` empty / unknown / gone ⇒
+/// auto-detect the VS Code family). Rejects `externalToolFailed` (no candidate
+/// launched) / `io`.
 #[tauri::command]
 pub async fn open_in_editor(app: tauri::AppHandle, path: String) -> Result<(), AppError> {
     let file = settings::settings_file(&app)?;
@@ -66,14 +72,14 @@ pub async fn open_url(url: String) -> Result<(), AppError> {
 }
 
 /// spawn_blocking body shared by the three commands: (1) fs-precheck that `path`
-/// still exists (→ `AppError::Io`); (2) for Terminal/Editor load the configured
-/// PROGRAM from settings; (3) dispatch to the matching `external::` entry with
-/// a real `SpawnRunner` + the host OS.
+/// still exists (→ `AppError::Io`); (2) for Terminal/Editor resolve the SELECTED
+/// TOOL from settings through `tools::picked`; (3) dispatch to the matching
+/// `external::` entry with a real `SpawnRunner` + the host OS.
 ///
 /// **`path` is any existing directory the renderer names** — `is_dir()` is the
 /// only check, and it is NOT compared against the opened repo (unchanged P49
-/// design, recorded here because the `external_cmd` residual depends on it: the
-/// directory a configured program is pointed at is not bounded to the repo).
+/// design, recorded here because P112 §8 residual 1 depends on it: the directory
+/// the selected tool is pointed at is not bounded to the repo).
 async fn launch_inner(
     settings_file: Option<PathBuf>,
     action: Action,
@@ -102,27 +108,40 @@ async fn launch_inner(
         let runner = SpawnRunner;
         match action {
             Action::Reveal => external::reveal_in_file_manager(&runner, os, p),
-            // P112 INTERIM (sub-increment 2 of 4): `terminal_command` /
-            // `editor_command` are now migration-only fields that
-            // `settings::load_from` clears (§5.3), so both reads below yield
-            // `""` ⇒ the per-OS auto ladder. The launch rewrite that replaces
-            // them with `tools::picked(&s.terminal_tool, …)` is sub-increment 3;
-            // until it lands a previously configured tool falls back to
-            // auto-detect rather than to anything user-supplied.
+            // `picked` is BLOCKING but cheap: it reads the process-wide scan
+            // cache (populating it on first use) and rechecks the one selected
+            // row. It never re-runs the ladder — an `AppPaths` rung spawns
+            // `reg.exe`, and a launch must not.
             Action::Terminal => {
-                let program = settings_file
-                    .map(|f| settings::load_from(&f).terminal_command)
-                    .unwrap_or_default();
-                external::open_in_terminal(&runner, os, &program, p)
+                let picked = settings_file
+                    .and_then(|f| picked_tool(&f, ToolKind::Terminal));
+                external::open_in_terminal(&runner, os, picked.as_ref(), p)
             }
             Action::Editor => {
-                let program = settings_file
-                    .map(|f| settings::load_from(&f).editor_command)
-                    .unwrap_or_default();
-                external::open_in_editor(&runner, os, &program, p)
+                let picked = settings_file.and_then(|f| picked_tool(&f, ToolKind::Editor));
+                external::open_in_editor(&runner, os, picked.as_ref(), p)
             }
         }
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Read the selection for `kind` out of `settings.json` and resolve it.
+///
+/// `None` ⇒ the per-OS auto ladder, for every miss: an empty setting, an id that
+/// is not in the catalog, a wrong-kind id, `"custom"` with no stored path, and a
+/// known id whose target no longer exists. The miss is SILENT by design (the OQ1
+/// ruling: no error toast — "Open in editor" still opens something).
+///
+/// `custom_*_path` is wrapped in a [`BrowsedProgram`] rather than passed as a
+/// `&str`, so a future handler cannot source it out of a request body instead of
+/// the settings file.
+fn picked_tool(file: &std::path::Path, kind: ToolKind) -> Option<tools::PickedTool> {
+    let s = settings::load_from(file);
+    let (setting, custom) = match kind {
+        ToolKind::Terminal => (&s.terminal_tool, &s.custom_terminal_path),
+        ToolKind::Editor => (&s.editor_tool, &s.custom_editor_path),
+    };
+    tools::picked(setting, kind, BrowsedProgram::from_settings_field(custom))
 }
