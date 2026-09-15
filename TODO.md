@@ -147,6 +147,66 @@ Killed; port confirmed free; no other `node` process on this repo remains. Found
    the server still up, so it is a contributor at most. But it is a **concrete** mechanism where I
    previously had only "ambient load", and it is one I created.
 
+### ✅ P112 SUB-INC 3 COMMITTED `d0e6cf0` — 3 of 4 done. Reviewed + audited + one focused re-review.
+
+`bonsai-core --lib` **1102** · `bonsai --lib` **547** · `h_misc` **51** · `nextest --workspace`
+**2556 passed, 10 skipped** · `clippy --workspace --all-targets -D warnings` exit 0 · doctests with
+`RUSTDOCFLAGS=-D warnings` exit 0 · `npx vitest run` **261 files / 2919** · size ratchet OK.
+
+**The free-text launch path is DELETED, not guarded** — `external_cmd.rs` + its validator are gone,
+which also removed the **second copy** of the homogeneous-only `is_unc` bug. Satisfied by deletion
+rather than by keeping two copies correct.
+
+**AC6 is now compiler-enforced.** `PickedTool`'s five fields are `pub(crate)`, so the four `pub`
+launch functions can no longer be handed a hand-built literal from outside the crate. The invariant
+lives on the struct doc: *no code outside `bonsai-core` constructs a `PickedTool` literal.*
+
+### 📌 THE COALESCING FIX TOOK THREE ATTEMPTS, AND THE LESSON IS THE TEST, NOT THE CODE
+
+1. **Naive version:** N concurrent `listExternalTools(true)` calls ran N probes, because `probe_host`
+   took the write lock only **after** probing.
+2. **First fix** introduced `Lease: Drop` clearing the in-flight flag — correct for the wedge case,
+   but on the **panic** path the follower woke, saw the flag clear, and served the **dead leader's
+   predecessor's rows** with the old `at_ms`. The doc claimed "the leader's own result lands moments
+   later", which is **false when the leader never publishes**. The reviewer's words:
+   *"literally accurate and materially understating"* — the same characterisation earned by the
+   `docs(mcp):` commit that carried 222 lines into MCP tool contracts. **Third instance of that class
+   in `external.rs` alone.**
+3. **Second fix** (a generation counter) had **two holes found by the implementer reviewing its own
+   draft**: snapshotting the generation on entry to `await_leader` — **the shape I relayed** — lets the
+   leader publish in the gap after `claim()` releases the lock, so the follower re-probes for nothing
+   and eventually flakes the coalescing test; and leaving `Lease::drop` an unconditional clear makes
+   it a **TOCTOU against `claim()`**, erasing the flag of a caller that claimed between publish and
+   drop — **reopening the storm the increment exists to close.** Closed with an `armed` flag and by
+   snapshotting inside `claim()`.
+
+**Why it survived that long:** `a_panicking_probe_does_not_wedge_the_cell` had **no follower and an
+empty cache**, so it proved the wedge property and never the stale handoff that property enables. The
+new test fails with the follower running **zero** probes; the old one passes in both states. **A test
+that passes in the correct and the broken state is not coverage** — the fourth instance of that exact
+finding in this work.
+
+### ⚠ THE CI FIX IS UNVERIFIABLE FROM HERE — state this plainly, do not let a green gate imply otherwise
+
+The four host-bound tests (AMEND-8) are fixed, but **nothing available can prove it**:
+- **`pnpm gate` runs Windows only**, so it cannot execute the Linux/macOS legs.
+- **CI cannot run either — ruling #25 says do not push**, and the branch is local.
+
+**Best available evidence:** the reviewer traced the unix accept chain line by line — `browsable_root`
+→ `is_absolute_for(Linux|MacOs, …)` = `starts_with('/')` satisfied by `/tmp/…` → not a device prefix →
+bundle branch false for a regular file → `is_file` → **`has_execute_bit` reached** (hence the `0o755`
+chmod) → `require_label`. And the `#[cfg(unix)]` block uses only std `PermissionsExt`. That is
+**reasoned, not executed**, and the docstring now says so. **The first real CI run on this branch is
+the verification**, whenever a push happens.
+
+### 🐛 Pre-existing, found in passing: `cargo doc` is dirty
+
+`RUSTDOCFLAGS=-D warnings cargo doc -p bonsai-core --no-deps --document-private-items` reports **127**
+findings crate-wide (unresolved `Clock`, `super::session`, and more). **Not a gate step** — the
+doctest step is, and it is green with `-D warnings`. One lands on a line edited this pass:
+*public documentation for `PickedTool` links to private item `picked_custom`*. Pre-existing link, not
+introduced. Worth a `docs-curator` or `refactorer` sweep, not a blocker.
+
 ### 🚨 THE LOCAL GATE CANNOT SEE A CI BREAK — four tests red-line ubuntu and macOS
 
 **The most important finding of sub-inc 3's review, and the gate is structurally blind to it.**
