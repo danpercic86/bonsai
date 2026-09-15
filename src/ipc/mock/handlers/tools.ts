@@ -1,7 +1,7 @@
 // P112 §6 — external-tool picker mock (`VITE_MOCK_IPC=1`).
 //
-// Serves the ten `?tools=` seams `P112-ui.md` §12 enumerates. The payload shapes
-// mirror `bonsai_core::tools` exactly; the fixture tables live in
+// Serves the thirteen `?tools=` seams `P112-ui.md` §12 + §16.13 enumerate. The
+// payload shapes mirror `bonsai_core::tools` exactly; the fixture tables live in
 // `../../fixtures/externalTools.ts`.
 //
 // **This mock is NOT a security seam.** Rust owns the dialog,
@@ -90,6 +90,24 @@ function baseLists(): { terminals: DetectedTool[]; editors: DetectedTool[] } {
   }
 }
 
+/** `?tools=browseadopterr` (§16.4a) — armed by a CONFIRMED pick, so the very next
+ *  `listExternalTools` rejects: the Browse succeeded and was persisted, but the
+ *  re-read that would show it did not land. Rejecting one half of the caller's
+ *  `Promise.all` is enough, and it must fire ONCE — a permanently-failing list
+ *  would be `?tools=scanerr`, which is a different state. */
+let adoptFailArmed = false;
+
+/** Armed by a CONFIRMED pick and consumed by the NEXT list call, so anything
+ *  that ends the flow in between — a category switch, the end of a test, a seam
+ *  change — would otherwise leak a spurious scan failure into the next mount.
+ *  `useExternalToolScan.ts:91`'s `resetExternalToolScanCacheForTests` is the
+ *  precedent and the same reason. Called from `beforeEach`, never from product
+ *  code. (`tools.test.tsx` needs it only implicitly: it re-imports a fresh
+ *  module graph per seam, which resets this too.) */
+export function resetExternalToolMockForTests(): void {
+  adoptFailArmed = false;
+}
+
 /** Monotonic freshness identity — bumped by `refresh: true` so the frontend can
  *  see that a Rescan landed (DEC-3: never displayed). */
 let scannedAtMs = Date.UTC(2026, 8, 14, 9, 30, 0);
@@ -128,11 +146,36 @@ export function applyToolSeam(s: UiSettings): UiSettings {
   return editorTool === s.editorTool ? s : { ...s, editorTool };
 }
 
+/** The refusal `listExternalTools` rejects with. Category-only: `AppError('other')`
+ *  is what the command's contract declares (`ipc-api-tools.ts:13`), and nothing in
+ *  it is actionable, which is why the UI shows its own `SCAN_ERR` copy instead. */
+function scanFailure(): AppError {
+  return { kind: 'other', message: 'tool detection failed' };
+}
+
 export const toolsHandlers = {
   async listExternalTools(refresh: boolean): Promise<ExternalToolScan> {
-    // `?tools=slow` drives the scanning state (UI state 7); a Rescan is slower
-    // than a first read everywhere, so the delay applies to both.
-    await delay(seam() === 'slow' ? 1200 : 150);
+    // `?tools=scanerr` rejects on EVERY call, including the first — the only way
+    // to reach §16.4 R5's cold-failure state, where the Rescan row has no state
+    // note at all because `SCAN_NONE` would be a lie.
+    if (seam() === 'scanerr') {
+      await delay(150);
+      throw scanFailure();
+    }
+    // The Browse follow-up read fails once (§16.4a `BROWSE_STALE`).
+    if (adoptFailArmed) {
+      adoptFailArmed = false;
+      await delay(150);
+      throw scanFailure();
+    }
+    // `?tools=slow` drives the COLD scanning state (7a): the first read is slow,
+    // so a persisted selection has no label yet and the placeholder shows.
+    // `?tools=slowrescan` is the 7b seam and the opposite case — the first read
+    // is fast and only a `refresh: true` takes the measured 2.1 s cold number,
+    // which is the only way to prove a rescan does NOT blank the picker.
+    if (seam() === 'slowrescan' && refresh) await delay(2100);
+    else if (seam() === 'slow') await delay(1200);
+    else await delay(150);
     if (refresh) scannedAtMs += 1000;
     return buildScan();
   },
@@ -156,6 +199,7 @@ export const toolsHandlers = {
       };
       throw err;
     }
+    if (seam() === 'browseadopterr') adoptFailArmed = true;
     const path = PATHOLOGICAL_CUSTOM_PATH;
     writeCustomToolPaths({ ...readCustomToolPaths(), [kind]: path });
     // Mirrors the backend writing BOTH keys in one settings cycle: the caller

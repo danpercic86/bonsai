@@ -21,10 +21,15 @@
 //   3. Only while focus is inside the row that OWNS the slot. The user standing
 //      on the control gets the correction; a user who navigated elsewhere during
 //      the async operation is never yanked.
-//   4. Dev slots only — this hook is called by `DevCategory` and by nothing else.
-//      The Accounts host slots keep the blanket ban: they sit at the TOP of their
-//      group (rarely clipped) and their commit can REMOVE a card, so scrolling
-//      there is a jump under the pointer.
+//   4. Named callers only — `DevCategory` and, since P112 §16.12,
+//      `GeneralCategory`. The permission was extended rather than opened up: the
+//      external-tools group is the LAST group on General and `general.rescan-tools`
+//      is the last row on the page, structurally identical to `dev.delete-logs`,
+//      which is where the clipping failure was found; and focus is still on the
+//      acting control there, because Browse and Rescan are `aria-disabled`, not
+//      `disabled`. The Accounts host slots keep the blanket ban: they sit at the
+//      TOP of their group (rarely clipped) and their commit can REMOVE a card, so
+//      scrolling there is a jump under the pointer.
 
 import { useEffect, useRef } from 'react';
 
@@ -111,7 +116,8 @@ export function useOutcomeScrollCorrection(notes: ReadonlyMap<string, SettingsOu
     previous.current = notes;
     for (const [slot, outcome] of notes) {
       if (before.get(slot) === outcome) continue;
-      // At most one slot changes per commit (every Dev action is `anyBusy`-gated).
+      // At most one slot changes per commit: every Dev action is `anyBusy`-gated,
+      // and on General a scan and a Browse each report into one slot only.
       correct(slot);
       return;
     }

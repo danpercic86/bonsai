@@ -100,6 +100,10 @@ function renderPanel(over: Partial<SettingsPanelProps> = {}) {
     onRequestEnableMcpWrite: vi.fn(),
     repoPath: null,
     profiles: [],
+    // P112 §16.4a: the picker's two selections + the Browse flow's adopt.
+    terminalTool: '',
+    editorTool: '',
+    onAdoptToolSelection: vi.fn(),
     dev: {
       enabled: false,
       level: 'debug',

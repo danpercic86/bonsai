@@ -51,20 +51,33 @@ export interface OutcomeNotes {
    *  announcer** — whatever its key, and whether or not the previous
    *  announcement carried the same string. */
   report(key: string, tone: SettingsOutcome['tone'], text: string, announceText?: string): void;
+  /** Announce WITHOUT writing a note: for an action whose visible result is already
+   *  complete in the row's own state (a landed rescan's counts, a confirmed Browse),
+   *  where a second visible line would only restate it one step brighter.
+   *
+   *  P112 §16.4 R2. It obeys `report`'s discipline exactly — same dedup flush,
+   *  same ref record — so the AC17 invariant below still holds: the proof is
+   *  about WHO may write the announcer and whether they record it, not about how
+   *  many such functions there are. */
+  announceOnly(text: string): void;
 }
 
 export function useOutcomeNotes(): OutcomeNotes {
   const [notes, setNotes] = useState<ReadonlyMap<string, SettingsOutcome>>(NO_NOTES);
   const [announce, setAnnounce] = useState('');
-  /** The text of the last utterance `report` wrote — the identity the AC17
-   *  invariant is keyed on, and the only identity any skipped clear may key on
-   *  (§8.2:507-509, which requires a skip it can PROVE).
+  /** The text of the last utterance written to the announcer — the identity the
+   *  AC17 invariant is keyed on, and the only identity any skipped clear may key
+   *  on (§8.2:507-509, which requires a skip it can PROVE).
    *
-   *  Why this proves it: the announcer goes non-empty ONLY through `report`,
-   *  which records the text here, so a non-empty announcer showing `X` implies
-   *  `ref === X`. Therefore `ref !== next` proves the next write differs from
-   *  what is displayed, and `ref === next` forces the pre-clear. `begin` does
-   *  not reset it — see the comment there.
+   *  Why this proves it: the announcer goes non-empty ONLY through `report` and
+   *  `announceOnly` (P112 §16.4 R2), and BOTH record the text here, so a
+   *  non-empty announcer showing `X` implies `ref === X`. Therefore `ref !== next`
+   *  proves the next write differs from what is displayed, and `ref === next`
+   *  forces the pre-clear. `begin` does not reset it — see the comment there.
+   *
+   *  The scope of that "ONLY" is the invariant, so it is what a new writer has to
+   *  join: any future function that sets `announce` must record the text here in
+   *  the same call, or the proof silently stops covering the surface.
    *
    *  Key identity is no proxy for text identity, which is why clearing by key
    *  was WRONG: two different keys routinely carry byte-identical text (no
@@ -124,7 +137,23 @@ export function useOutcomeNotes(): OutcomeNotes {
     [],
   );
 
+  // P112 §16.4 R2 — `report` minus `setNotes`. The `''`-flush is what makes an
+  // IDENTICAL string announce again (§16.8: a warm rescan finds the same tools,
+  // so `3 terminals and 4 editors found.` is byte-identical and a live region
+  // fires on a text CHANGE — writing it back is silence). Same AC17 shape as
+  // `report`: same text, different event, still a mutation.
+  const announceOnly = useCallback((text: string) => {
+    if (announcedTextRef.current === text) {
+      flushSync(() => setAnnounce(''));
+    }
+    announcedTextRef.current = text;
+    setAnnounce(text);
+  }, []);
+
   // Stable identities: `begin`/`report` take the place of the old toast callback
   // inside `useCallback` dependency arrays, so they must not change every render.
-  return useMemo(() => ({ notes, announce, begin, report }), [notes, announce, begin, report]);
+  return useMemo(
+    () => ({ notes, announce, begin, report, announceOnly }),
+    [notes, announce, begin, report, announceOnly],
+  );
 }

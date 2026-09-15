@@ -100,6 +100,12 @@ export function AppearanceCategory() {
             options={SEASON_OPTIONS}
             value={graphSeason}
             disabled={seasonDisabled}
+            /* P112 §1: pre-existing gap, fixed here because the prop now exists.
+               This row's help line was unannounced — `Combobox` had no way to
+               describe its input. The catalog gives this row a `help`, so
+               `settingsRowHelpId` resolves to a real element (unlike the picker
+               rows, whose explanation is stateful and hand-written). */
+            describedBy={settingsRowHelpId(GRAPH_SEASON)}
             onChange={(next) => change({ graphSeason: next as GraphSeason })}
           />
         </SettingsRow>

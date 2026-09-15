@@ -4,8 +4,9 @@
 // preview), then a single merged `ipc.setUiSettings` write is debounced (~300 ms)
 // so a burst of knob changes reaches disk once.
 //
-// Owned here: the per-field state, the patch merge (`handleSettingsChange`), and
-// launch-time hydration (`hydrateUiSettings`). The debounced coalescing WRITE —
+// Owned here: the per-field state, the patch merge (`handleSettingsChange`),
+// launch-time hydration (`hydrateUiSettings`) and P112's narrow non-writing
+// adopt for the two external-tool fields. The debounced coalescing WRITE —
 // window, single-writer invariant, retry budget, teardown flush and the P113
 // failure surface — lives in `useSettingsWriteQueue`; this hook only feeds it.
 //
@@ -45,6 +46,17 @@ import type { PushToast } from '../ToastContext';
 import { useSettingsWriteQueue } from './useSettingsWriteQueue';
 import type { SettingsOpenSignal } from './useSettingsOpenSignal';
 
+/**
+ * P112 §16.16-5 — the two fields the external-tool picker may adopt from disk
+ * without writing, each optional so a caller adopts only the kind it owns.
+ *
+ * Derived from `UiSettingsPatch` on purpose: these are the same two keys the
+ * picker PATCHES through `handleSettingsChange`, and a hand-written pair could
+ * drift from them. It is not a patch, though — `adoptToolSelection` never
+ * reaches the write queue.
+ */
+export type ToolSelection = Pick<UiSettingsPatch, 'terminalTool' | 'editorTool'>;
+
 export interface UiSettingsController {
   panelDensity: PanelDensity;
   /** P80 D1: which commit button is emphasized in the Working tab footer. */
@@ -79,6 +91,11 @@ export interface UiSettingsController {
   mcpWriteConsented: boolean;
   autoCheckUpdates: boolean;
   profiles: IdentityProfile[];
+  /** P112 §16.4a: the selected terminal / editor — `''` (auto-detect), a catalog
+   *  id, or `'custom'`. Read by Settings' detected-tool picker; the launch sites
+   *  resolve the id in Rust, so nothing else in the renderer reads them. */
+  terminalTool: string;
+  editorTool: string;
   /** P91 §10: Dev-mode / observability settings (whole-struct, the autoFetch
    *  idiom). Threaded to the Settings Developer page and the header pill. */
   dev: DevSettings;
@@ -100,8 +117,17 @@ export interface UiSettingsController {
    *  preview and calls this so the write still coalesces with everything else.
    *  Stable for as long as `pushToast` is. */
   queueSettingsWrite(patch: UiSettingsPatch): void;
-  /** Seed every field from the launch-time `getUiSettings()` read (§6.2). */
+  /** Seed every field from the launch-time `getUiSettings()` read (§6.2). It has
+   *  exactly one caller, App's launch effect: a MID-SESSION whole-struct hydrate
+   *  reverts every unflushed patch on screen until the next launch (§17.3), so
+   *  the external-tool picker takes `adoptToolSelection` instead. */
   hydrateUiSettings(settings: UiSettings): void;
+  /** P112 §16.16-5: adopt one or both tool selections read from disk, touching
+   *  NO other field, queueing NO write and bumping NO `metricsVersion` — the
+   *  Browse flow needs it because `pick_external_tool` persists the selection
+   *  itself, so the renderer re-reads rather than patching, or it races that
+   *  write (`ipc-api-tools.ts:24-25`). */
+  adoptToolSelection(selection: ToolSelection): void;
   /** P113 §17.3: the debounced write is failing. Renders as the Settings card's
    *  save banner; the toast covers the Settings-closed case. */
   settingsSaveFailed: boolean;
@@ -193,11 +219,14 @@ export function useUiSettings(
   // P44: named identity profiles (global). Source of truth for the Settings
   // section; persisted via handleSettingsChange like every other setting.
   const [profiles, setProfiles] = useState<IdentityProfile[]>([]);
-  // P112 §5.1: `terminalTool` / `editorTool` are deliberately NOT held here. No
-  // UI reads them until sub-increment 4's detected-tool picker, and the launch
-  // sites resolve them in Rust — so state for them would be a value the renderer
-  // owns and nothing renders. They stay on the `UiSettings` DTO (Rust always
-  // sends them) and on `UiSettingsPatch` (the picker will write them).
+  // P112 §16.4a: sub-increment 4's detected-tool picker is the UI that reads
+  // them, so they are held here now — one hook, one context, like every other
+  // settings value. Holding them inside `useExternalToolScan` instead was
+  // REJECTED: a second source of truth for two settings is how a stale row
+  // survives a reset-to-defaults. Both are lookup keys, never program strings
+  // (`ipc/types/settings.ts:105-113`), and Rust's `coerce_tool_id` is the gate.
+  const [terminalTool, setTerminalTool] = useState('');
+  const [editorTool, setEditorTool] = useState('');
   // P91 §10: Dev-mode / observability settings (whole-struct, like autoFetch).
   // Privacy defaults out of the box: OFF and strict redaction (mirrors DEFAULTS.dev).
   const [dev, setDev] = useState<DevSettings>({
@@ -268,6 +297,8 @@ export function useUiSettings(
       if (patch.mcpWriteConsented !== undefined) setMcpWriteConsented(patch.mcpWriteConsented);
       if (patch.autoCheckUpdates !== undefined) setAutoCheckUpdates(patch.autoCheckUpdates);
       if (patch.profiles !== undefined) setProfiles(patch.profiles);
+      if (patch.terminalTool !== undefined) setTerminalTool(patch.terminalTool);
+      if (patch.editorTool !== undefined) setEditorTool(patch.editorTool);
       if (patch.dev !== undefined) setDev(patch.dev);
       if (patch.aiDockHeight !== undefined) setAiDockHeight(patch.aiDockHeight);
       if (patch.aiDockCollapsed !== undefined) setAiDockCollapsed(patch.aiDockCollapsed);
@@ -285,6 +316,15 @@ export function useUiSettings(
     },
     [queueSettingsWrite],
   );
+
+  // P112 §16.16-5 — the narrow, non-writing adopt. Two `if`s and nothing else:
+  // no `queueSettingsWrite` (the backend already persisted the pick) and no
+  // `setMetricsVersion` bump (no geometry changed), which is the pair of costs
+  // `hydrateUiSettings` carries and §17.3 priced after the fact.
+  const adoptToolSelection = useCallback((selection: ToolSelection) => {
+    if (selection.terminalTool !== undefined) setTerminalTool(selection.terminalTool);
+    if (selection.editorTool !== undefined) setEditorTool(selection.editorTool);
+  }, []);
 
   // Launch-time hydration (§6.2). Same setter order as the single read it
   // replaces, including the metricsVersion bump that follows setGraph.
@@ -311,6 +351,8 @@ export function useUiSettings(
     setMcpWriteConsented(s.mcpWriteConsented);
     setAutoCheckUpdates(s.autoCheckUpdates);
     setProfiles(s.profiles);
+    setTerminalTool(s.terminalTool);
+    setEditorTool(s.editorTool);
     setDev(s.dev);
     setAiDockHeight(s.aiDockHeight);
     setAiDockCollapsed(s.aiDockCollapsed);
@@ -345,6 +387,8 @@ export function useUiSettings(
     mcpWriteConsented,
     autoCheckUpdates,
     profiles,
+    terminalTool,
+    editorTool,
     dev,
     aiDockHeight,
     aiDockCollapsed,
@@ -362,6 +406,7 @@ export function useUiSettings(
     handleSettingsChange,
     queueSettingsWrite,
     hydrateUiSettings,
+    adoptToolSelection,
     settingsSaveFailed,
     retrySettingsSave,
   };

@@ -331,7 +331,13 @@ describe('settings search — the rail (§3.2)', () => {
 describe('settings search — the live region (§3.2)', () => {
   it('announces the count, and the zero case, politely', () => {
     renderPanel();
-    const status = screen.getByRole('status');
+    // P112 sub-inc 4: with no query the General page renders its external-tools
+    // group, which brings that SECTION's announcer — so `getByRole('status')` is
+    // ambiguous here too (the same disambiguation as "counts it once the
+    // requirement holds" below, for the same structural reason). The two regions
+    // are per-surface by design: one shell count line, one per section.
+    const status = document.querySelector<HTMLElement>('.settings-search-status');
+    expect(status).not.toBeNull();
     expect(status).toHaveAttribute('aria-live', 'polite');
     expect(status).toHaveTextContent('');
 

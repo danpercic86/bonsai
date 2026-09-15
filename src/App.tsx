@@ -100,6 +100,8 @@ export default function App() {
     mcpWriteConsented,
     autoCheckUpdates,
     profiles,
+    terminalTool,
+    editorTool,
     dev,
     aiDockHeight,
     aiDockCollapsed,
@@ -108,6 +110,7 @@ export default function App() {
     handleSettingsChange,
     queueSettingsWrite,
     hydrateUiSettings,
+    adoptToolSelection,
     settingsSaveFailed,
     retrySettingsSave,
   } = useUiSettings(pushToast, settingsOpen);
@@ -513,6 +516,9 @@ export default function App() {
           configInitialFocus={settings.request.focus}
           focusProfileId={settings.request.focusProfileId}
           profiles={profiles}
+          terminalTool={terminalTool}
+          editorTool={editorTool}
+          onAdoptToolSelection={adoptToolSelection}
           dev={dev}
           onRegisterMcp={handleRegisterMcp}
           onShowOnboarding={showOnboarding}

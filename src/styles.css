@@ -17,6 +17,9 @@
 /* P113 §4: the outcome-note modifiers. MUST stay directly after the primitives —
    same specificity as `.settings-row-note`, so source order is what makes them win. */
 @import './styles/settings-outcome-note.css';
+/* P112 §11: the tool picker. Every selector here is a descendant/child selector,
+   so unlike the block above its position in the cascade is not load-bearing. */
+@import './styles/settings-tool-picker.css';
 @import './styles/settings-dev.css';
 @import './styles/settings-legacy-sections.css';
 @import './styles/graph-banners.css';

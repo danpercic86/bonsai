@@ -120,6 +120,11 @@ const NO_OUTCOMES = {
   onRetrySettingsSave: () => {},
 } as const;
 
+/** P112 §16.4a — the Browse flow's non-writing adopt. A handler, but it lives in
+ *  the VALUE fixture (the `onRetrySettingsSave` precedent above) so the six
+ *  suites that spread `MINIMAL`/`MAXIMAL` need no edit to keep compiling. */
+const NO_ADOPT = { onAdoptToolSelection: () => {} } as const;
+
 export const MINIMAL: FixtureValues = {
   theme: D.theme,
   listView: D.listView,
@@ -161,6 +166,10 @@ export const MINIMAL: FixtureValues = {
   repoPath: null,
   configInitialFocus: null,
   profiles: [],
+  // P112: both at the default (`''` = Auto-detect), so no picker ↺ shows.
+  terminalTool: '',
+  editorTool: '',
+  ...NO_ADOPT,
   // P91: Dev mode off at the production defaults, so the fieldset is disabled and
   // no dev ↺ shows in the minimal fixture.
   dev: D.dev,
@@ -224,6 +233,11 @@ export const MAXIMAL: FixtureValues = {
   mcpWriteConsented: true,
   repoPath: '/repo/fixture',
   profiles: [...FIXTURE_PROFILES],
+  // P112: both OFF the default, so `↺` must be PRESENT on both picker rows —
+  // which is the half of the guard a uniformly-absent ↺ could not check. Ids,
+  // never program strings: `windows-terminal` and `vscode` are catalog ids.
+  terminalTool: 'windows-terminal',
+  editorTool: 'vscode',
   autoCheckUpdates: true,
   // P91: Dev mode ON with every resettable dev knob off its default, so each dev
   // row's ↺ is present. `level: 'info'` (not 'trace') keeps Frame timing a live

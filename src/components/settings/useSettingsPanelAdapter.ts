@@ -45,6 +45,7 @@ import type {
 import { type McpScope } from '../../lib/mcpAddCommand';
 import type { SettingsOutcome } from './SettingsOutcomeNote';
 import type { AiRunPrefs } from '../../settings/aiRunPrefs';
+import type { ToolSelection } from '../../hooks/useUiSettings';
 import type { UpdateUiState } from '../../hooks/useUpdateController';
 import type { SettingsActions, SettingsValues } from './SettingsContext';
 
@@ -141,6 +142,16 @@ export interface SettingsPanelProps {
   /** P44: named identity profiles (global app setting). CRUD persists via
    *  `onChange({ profiles })`; Apply is owned by the section's own IPC. */
   profiles: IdentityProfile[];
+  /** P112 §16.4a: the detected-tool picker's two selections (a catalog id, `''`
+   *  or `'custom'`). Patched via `onChange`, like every other scalar. */
+  terminalTool: string;
+  editorTool: string;
+  /** P112 §16.16-5: App's `adoptToolSelection` — adopt one or both tool
+   *  selections read from disk without queueing a write. The Browse flow needs it
+   *  because the backend persists the selection itself, so the renderer re-reads
+   *  instead of patching; it is deliberately NOT the whole-struct
+   *  `hydrateUiSettings`, which would revert every unflushed patch (§17.3). */
+  onAdoptToolSelection(selection: ToolSelection): void;
   /** P91 §10: Dev-mode / observability settings (whole-struct, the autoFetch
    *  idiom). Patched via `onChange({ dev })`. */
   dev: DevSettings;
@@ -197,6 +208,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     onOpenRepository,
     onCheckUpdate,
     onOpenUpdateDialog,
+    onAdoptToolSelection,
   } = props;
 
   // In-flight scope for the "Add" registration buttons — disables a button while
@@ -276,6 +288,8 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     aiRun,
     autoCheckUpdates,
     profiles,
+    terminalTool,
+    editorTool,
     dev,
     repoPath,
     configInitialFocus,
@@ -317,6 +331,8 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       mcpWriteConsented,
       autoCheckUpdates,
       profiles,
+      terminalTool,
+      editorTool,
       dev,
       ...aiRun,
     }),
@@ -339,6 +355,8 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       mcpWriteConsented,
       autoCheckUpdates,
       profiles,
+      terminalTool,
+      editorTool,
       dev,
       aiRun,
     ],
@@ -382,6 +400,8 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       mcpWriteConsented,
       autoCheckUpdates,
       profiles,
+      terminalTool,
+      editorTool,
       dev,
       repoPath,
       aiAvailability,
@@ -421,6 +441,8 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       mcpWriteConsented,
       autoCheckUpdates,
       profiles,
+      terminalTool,
+      editorTool,
       dev,
       repoPath,
       aiAvailability,
@@ -450,6 +472,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       checkUpdate: onCheckUpdate,
       openUpdateDialog: onOpenUpdateDialog,
       resetRow,
+      adoptToolSelection: onAdoptToolSelection,
     }),
     [
       onChange,
@@ -464,6 +487,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       onCheckUpdate,
       onOpenUpdateDialog,
       resetRow,
+      onAdoptToolSelection,
     ],
   );
 

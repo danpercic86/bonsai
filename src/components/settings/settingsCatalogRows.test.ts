@@ -1,5 +1,5 @@
 /**
- * P69 §4.3 rule 7 — UI §1.3's 60-row coverage table, pinned literally.
+ * P69 §4.3 rule 7 — UI §1.3's coverage table, pinned literally.
  *
  * Split out of `settingsCatalog.test.ts` purely for size: this file is the row
  * bookkeeping, that one is the catalog's own invariants. The DOM half of the
@@ -50,6 +50,12 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
   29: ['git-config.user-email'],
   30: ['git-config.behaviour'],
   31: ['git-config.custom-keys'],
+  // P112 sub-increment 4 — #32/#33 return as the detected-tool PICKER (not the
+  // free-text program fields the archived table names), so RETIRED_ROWS is empty
+  // again; #79 is the section's one Rescan row, which the archived table has no
+  // number for (the post-archive convention: keep counting).
+  32: ['general.terminal-tool'],
+  33: ['general.editor-tool'],
   34: [
     'identities.profile-label',
     'identities.profile-name',
@@ -111,6 +117,8 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
   76: ['dev.privacy-note'],
   77: ['dev.logs'],
   78: ['dev.delete-logs'],
+  // P112 §7 — General → External tools: the one refresh control for the scan.
+  79: ['general.rescan-tools'],
 };
 
 /**
@@ -127,28 +135,28 @@ const DISSOLVED_ROWS: ReadonlySet<number> = new Set([5, 25, 38, 39, 40, 43, 52, 
  * Coverage rows whose CONTROL has been removed from the product, pending a
  * replacement — they are neither covered nor phantom.
  *
- * #32/#33 are the "Terminal command" / "Editor command" rows of
- * `docs/contracts/archive/P69-settings-ui.md` §1.3 — the ARCHIVED coverage table
- * whose row numbering this file pins. It stays as archived: it is the historical
- * record, not a document edited to match today's code. (`ui-reference.md` has no
- * numbered settings-row table, so it is not the citation for these rows.)
+ * **EMPTY as of P112 sub-increment 4**, and that is the point of keeping it: the
+ * set held #32/#33 — the "Terminal command" / "Editor command" rows of
+ * `docs/contracts/archive/P69-settings-ui.md` §1.3, the ARCHIVED coverage table
+ * whose row numbering this file pins — for exactly as long as the product had no
+ * control for them. The replacements are not text boxes: they are the
+ * detected-tool picker (`general.terminal-tool` / `general.editor-tool`), whose
+ * value is a catalog id, which is why the rows could not simply come back.
+ * `RETIRED_ROW_IDS` below still fences off the old ids.
  *
- * P112 §5.1 deleted the free-text program settings behind them; their
- * replacements (`terminalTool` / `editorTool`) are catalog ids, so a text box
- * would accept values the backend coerces to `''`. The rows return as ONE
- * detected-tool picker in P112 sub-increment 4 (`docs/contracts/P112-ui.md`), at
- * which point this set empties again.
+ * The archived table stays as archived — it is the historical record, not a
+ * document edited to match today's code.
  */
-const RETIRED_ROWS: ReadonlySet<number> = new Set([32, 33]);
+const RETIRED_ROWS: ReadonlySet<number> = new Set([]);
 
 /** The ids those retired rows used to own. Pinned so they cannot creep back in
  *  as text rows: P112 AC19 forbids the legacy keys anywhere in `src/`. */
 const RETIRED_ROW_IDS = ['general.terminal-command', 'general.editor-command'] as const;
 
-describe('UI §1.3 coverage — all 78 rows, structurally', () => {
-  it('maps exactly rows 1..78, minus the retired ones', () => {
+describe('UI §1.3 coverage — all 79 rows, structurally', () => {
+  it('maps exactly rows 1..79, minus the retired ones', () => {
     const rows = [...Object.keys(COVERAGE).map(Number), ...RETIRED_ROWS].sort((a, b) => a - b);
-    expect(rows).toEqual(Array.from({ length: 78 }, (_, i) => i + 1));
+    expect(rows).toEqual(Array.from({ length: 79 }, (_, i) => i + 1));
     // A retired row may not ALSO be covered — that would hide a resurrection.
     for (const row of RETIRED_ROWS) expect(COVERAGE[row]).toBeUndefined();
   });

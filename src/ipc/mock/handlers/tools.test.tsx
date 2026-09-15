@@ -1,4 +1,4 @@
-// P112 AC14 (the checkable half) — the ten `?tools=` harness seams serve the
+// P112 AC14 (the checkable half) — the thirteen `?tools=` harness seams serve the
 // payload SHAPES `docs/contracts/P112-external-tool-detection.md` §6 specifies.
 //
 // Per-state UI assertions belong to `P112-ui.md` §13 and sub-increment 4; what
@@ -35,6 +35,16 @@ async function settle<T>(p: Promise<T>): Promise<T> {
   return p;
 }
 
+/** The rejecting half of `settle`. The assertion is attached BEFORE the timers
+ *  run, because `settle` awaits inside: a promise that rejects while nothing is
+ *  listening is reported as an unhandled rejection even though the caller
+ *  handles it one microtask later. */
+async function settleRejects(p: Promise<unknown>, kind: AppError['kind']): Promise<void> {
+  const assertion = expect(p).rejects.toMatchObject({ kind });
+  await vi.runAllTimersAsync();
+  await assertion;
+}
+
 function ids(rows: DetectedTool[]): string[] {
   return rows.map((r) => r.id);
 }
@@ -48,7 +58,14 @@ describe('P112 §6 mock — listExternalTools', () => {
     // `detail` is the resolved absolute path, or the literal 'built in'.
     expect(scan.terminals[1].source).toBe('builtIn');
     expect(scan.terminals[1].detail).toBe('built in');
-    expect(scan.editors[0].detail).toBe('C:\\Program Files\\Microsoft VS Code\\Code.exe');
+    // §16.9 / UA14: both `source: 'path'` rows carry the PATHEXT SPELLING of the
+    // extension, which is what a real PATH resolution returns. Pinned here so a
+    // renderer that case-normalises has something to fail against, and so the
+    // fixture cannot be quietly "tidied" back to lowercase.
+    expect(scan.editors[0].detail).toBe(
+      'C:\\Users\\dev\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.CMD',
+    );
+    expect(scan.terminals[0].detail.endsWith('wt.EXE')).toBe(true);
     // Every probe-derived row is present by construction (AMEND-3).
     expect([...scan.terminals, ...scan.editors].every((r) => r.present)).toBe(true);
     expect(scan.editorLabels.zed).toBe('Zed');
@@ -108,6 +125,50 @@ describe('P112 §6 mock — listExternalTools', () => {
     expect(scan.editors[0].label).toHaveLength(64);
     expect(scan.editors[0].detail).toHaveLength(180);
     expect(scan.editors[1].detail.startsWith('/usr/local/lib/')).toBe(true);
+    // §16.13: a detail the BACKEND already truncated — `sanitize_detail` caps at
+    // 512 content chars and appends `…`, so 513 ending in an ellipsis is a real
+    // arrival shape, and the one that is not a well-formed path.
+    expect(scan.editors[2].detail).toHaveLength(513);
+    expect(scan.editors[2].detail.endsWith('…')).toBe(true);
+  });
+
+  it('?tools=scanerr rejects AppError(other) on EVERY call, first one included', async () => {
+    const { toolsHandlers } = await withSeam('scanerr');
+    // §16.4 R5's cold failure: nothing is cached, so this is the only seam where
+    // the Rescan row ends up with no state note at all.
+    await settleRejects(toolsHandlers.listExternalTools(false), 'other');
+    await settleRejects(toolsHandlers.listExternalTools(true), 'other');
+  });
+
+  it('?tools=slowrescan is fast COLD and slow on refresh (the 7b seam)', async () => {
+    const { toolsHandlers } = await withSeam('slowrescan');
+    // The distinction is the whole point: `?tools=slow` delays the FIRST read
+    // (7a, placeholder); this one delays only the refresh (7b, which must keep
+    // the selected label). A single "slow" seam cannot show both.
+    await expect(settle(toolsHandlers.listExternalTools(false))).resolves.toBeDefined();
+
+    const pending = toolsHandlers.listExternalTools(true);
+    let landed = false;
+    void pending.then(() => {
+      landed = true;
+    });
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(landed, 'a rescan under this seam must still be in flight at 1.5 s').toBe(false);
+    await vi.advanceTimersByTimeAsync(700);
+    expect(landed).toBe(true);
+    await expect(pending).resolves.toBeDefined();
+  });
+
+  it('?tools=browseadopterr resolves the pick, then fails the follow-up read ONCE', async () => {
+    const { toolsHandlers } = await withSeam('browseadopterr');
+    await expect(settle(toolsHandlers.listExternalTools(false))).resolves.toBeDefined();
+    // The pick SUCCEEDS and is persisted — this is the `BROWSE_STALE` path, where
+    // the choice is on disk and only the re-read that would display it failed.
+    const picked = await settle(toolsHandlers.pickExternalTool('editor'));
+    expect(picked?.id).toBe('custom');
+    await settleRejects(toolsHandlers.listExternalTools(false), 'other');
+    // Once, not forever: a permanently-failing list is `?tools=scanerr`.
+    await expect(settle(toolsHandlers.listExternalTools(false))).resolves.toBeDefined();
   });
 
   it('refresh: true advances scannedAtMs (the freshness identity)', async () => {

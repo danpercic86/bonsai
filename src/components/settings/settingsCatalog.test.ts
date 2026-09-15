@@ -105,6 +105,8 @@ const RESET_LEAVES: Readonly<Record<string, string>> = {
   'ai.max-turns': 'aiMaxTurns',
   'ai.bulk-batch-size': 'aiBulkMaxBytes',
   'about.auto-check-updates': 'autoCheckUpdates',
+  'general.terminal-tool': 'terminalTool',
+  'general.editor-tool': 'editorTool',
   'dev.enabled': 'dev.enabled',
   'dev.level': 'dev.level',
   'dev.capture-ipc': 'dev.captureIpc',
@@ -120,6 +122,12 @@ const RESET_LEAVES: Readonly<Record<string, string>> = {
  */
 const FORMATTED_DEFAULT_LABELS: Readonly<Record<string, readonly [string, unknown]>> = {
   'general.primary-commit-action': ['Commit', 'commit'],
+  // P112 §8: the picker's default is the EMPTY id — `''` is the auto-detect
+  // ladder, and `Reset to default ("")` would be unreadable. `Auto-detect` is
+  // also the label of the option that carries that value, so the ↺ title and the
+  // list agree.
+  'general.terminal-tool': ['Auto-detect', ''],
+  'general.editor-tool': ['Auto-detect', ''],
   'graph.date-basis': ['Author', 'author'],
   'ai.conflict-resolution': ['Propose & review', 'proposeReview'],
   'ai.repository-access': ['Read-only', 'readOnly'],

@@ -1,10 +1,14 @@
-/** P69 §4 — General category rows (UI §1.3 #5–#9, #61).
+/** P69 §4 — General category rows (UI §1.3 #5–#9, #32–#33, #61, #79).
  *
- *  P112 §5.1: UI §1.3 #32–#33 ("Terminal command" / "Editor command") are NOT
- *  here any more. They were free-text program fields; their replacements are
- *  catalog ids, so the row comes back as a detected-tool picker in sub-increment
- *  4 rather than as a text box that would accept a value the backend discards.
- *  `settingsCatalogRows.test.ts` carries them as RETIRED_ROWS until then. */
+ *  P112 §8: #32–#33 are back, as the detected-tool PICKER — not the free-text
+ *  program fields they were. The value is a lookup key (a catalog id, `''` or
+ *  `'custom'`), and `general.rescan-tools` (#79) is the one refresh control for
+ *  the scan both rows read.
+ *
+ *  All three carry NO `help`, deliberately (§8 / ui-reference §12.2's "never
+ *  both"): every one of them varies with the scan, so their explanation is a
+ *  stateful `.settings-row-note` the section renders. Their vocabulary therefore
+ *  has to live in `keywords` — the only place search can see it. */
 import type { SettingsIndexEntry } from '../types';
 import { resetField, resetKey } from './reset';
 
@@ -58,5 +62,35 @@ export const GENERAL_ENTRIES: readonly SettingsIndexEntry[] = [
     keywords: 'commit push button default primary emphasize',
     control: 'segmented',
     reset: resetKey('primaryCommitAction', 'Commit'),
+  },
+  {
+    id: 'general.terminal-tool',
+    category: 'general',
+    group: 'External tools',
+    label: 'Terminal',
+    keywords:
+      'shell console command external open in terminal program picker browse detect installed',
+    control: 'combobox',
+    reset: resetKey('terminalTool', 'Auto-detect'),
+  },
+  {
+    id: 'general.editor-tool',
+    category: 'general',
+    group: 'External tools',
+    label: 'Editor',
+    keywords: 'ide vscode code editor command external open in program picker browse detect installed',
+    control: 'combobox',
+    reset: resetKey('editorTool', 'Auto-detect'),
+  },
+  {
+    /** §7: a catalogued BUTTON row — `label` is the button text and its
+     *  accessible name, `rowLabel="Detected tools"` is the visible row title.
+     *  No `reset`: there is nothing to reset, so the 24px column stays empty. */
+    id: 'general.rescan-tools',
+    category: 'general',
+    group: 'External tools',
+    label: 'Rescan',
+    keywords: 'detect scan refresh installed terminals editors external tools find again',
+    control: 'button',
   },
 ];

@@ -109,6 +109,94 @@ function watchAnnouncer(): { texts: string[]; stop(): void } {
   };
 }
 
+/** The counts sentence a warm rescan re-announces byte-identically (P112 §16.8). */
+const COUNTS = '3 terminals and 4 editors found.';
+
+/** P112 §16.4 R2 — one slot plus `announceOnly`, the picker section's shape: the
+ *  Rescan row's counts are a STATE note, so a landed rescan announces without
+ *  writing anything into the outcome slot. */
+function AnnounceOnlyHarness() {
+  const { notes, announce, begin, report, announceOnly } = useOutcomeNotes();
+  return (
+    <>
+      <button type="button" onClick={() => begin('general.rescan-tools')}>
+        begin rescan
+      </button>
+      <button type="button" onClick={() => announceOnly(COUNTS)}>
+        rescan landed
+      </button>
+      <button type="button" onClick={() => report('general.rescan-tools', 'error', T)}>
+        rescan failed
+      </button>
+      <button type="button" onClick={() => announceOnly(T)}>
+        announce the failure text
+      </button>
+      <SettingsOutcomeNote
+        slot="general.rescan-tools"
+        id="general-rescan-tools-outcome"
+        outcome={notes.get('general.rescan-tools') ?? null}
+      />
+      <p className="sr-only" role="status" aria-live="polite">
+        {announce}
+      </p>
+    </>
+  );
+}
+
+describe('useOutcomeNotes — UA13, AC17 holds for `announceOnly` too (P112 §16.4 R2)', () => {
+  it('two rescans whose counts do not change announce twice', () => {
+    render(<AnnounceOnlyHarness />);
+    const watch = watchAnnouncer();
+
+    // The §16.8 case: a warm rescan finds the same tools, so the string is
+    // byte-identical. `['', T]` — one utterance — is the failure this pins.
+    fireEvent.click(screen.getByRole('button', { name: 'begin rescan' }));
+    fireEvent.click(screen.getByRole('button', { name: 'rescan landed' }));
+    fireEvent.click(screen.getByRole('button', { name: 'begin rescan' }));
+    fireEvent.click(screen.getByRole('button', { name: 'rescan landed' }));
+    watch.stop();
+
+    expect(watch.texts).toEqual(['', COUNTS, '', COUNTS]);
+  });
+
+  it('announces with NO visible line, and does not clear a standing note', () => {
+    render(<AnnounceOnlyHarness />);
+    const note = document.querySelector('[data-outcome-note="general.rescan-tools"]');
+
+    fireEvent.click(screen.getByRole('button', { name: 'rescan landed' }));
+    // The whole point of R2: the visible channel is the row's own state note, so
+    // the outcome slot stays EMPTY (and `:empty`-collapsed) after an announcement.
+    expect(note).toHaveTextContent('');
+    expect(document.querySelector('[role="status"]')).toHaveTextContent(COUNTS);
+
+    // `announceOnly` owns the announcer only — a note some other outcome put in
+    // the slot is not its business to erase (`begin` is what clears a slot).
+    fireEvent.click(screen.getByRole('button', { name: 'rescan failed' }));
+    fireEvent.click(screen.getByRole('button', { name: 'rescan landed' }));
+    expect(note).toHaveTextContent(T);
+  });
+
+  it('shares the announced-text ref with `report`, so a repeat across the two still fires', () => {
+    render(<AnnounceOnlyHarness />);
+    const watch = watchAnnouncer();
+
+    // The proof AC17 rests on is about WHO may write the announcer and whether
+    // they RECORD what they wrote. An `announceOnly` with its own ref (or none)
+    // passes both tests above and fails here: `report` leaves T displayed, and
+    // the announce-only repeat of T is then a no-op write — silence.
+    //
+    // Only strings equal to their predecessor are asserted, deliberately: this
+    // file's `watchAnnouncer` cannot observe a transition between two DISTINCT
+    // non-empty strings (see its doc comment), so a sequence mixing T and the
+    // counts would drop a step in the reconstruction, not in the product.
+    fireEvent.click(screen.getByRole('button', { name: 'rescan failed' }));
+    fireEvent.click(screen.getByRole('button', { name: 'announce the failure text' }));
+    watch.stop();
+
+    expect(watch.texts).toEqual(['', T, '', T]);
+  });
+});
+
 describe('useOutcomeNotes — AC17, the announcer transition is guaranteed per REPORT', () => {
   it('two DIFFERENT keys carrying identical text announce twice', () => {
     render(<TwoRowHarness />);

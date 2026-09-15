@@ -19,6 +19,7 @@ import type { AiAvailability, McpStatus, UiSettings, UiSettingsPatch } from '../
 import type { McpScope } from '../../lib/mcpAddCommand';
 import type { SettingsOutcome } from './SettingsOutcomeNote';
 import type { AiRunPrefs } from '../../settings/aiRunPrefs';
+import type { ToolSelection } from '../../hooks/useUiSettings';
 import type { UpdateUiState } from '../../hooks/useUpdateController';
 import type { SettingsRowId } from './types';
 
@@ -54,6 +55,11 @@ export type SettingsPersistedValues = Pick<
   | 'mcpWriteConsented'
   | 'autoCheckUpdates'
   | 'profiles'
+  /** P112 §16.4a: the detected-tool picker's two selections. Lookup keys, never
+   *  program strings — the picker can only ever write a catalog id, `''` or
+   *  `'custom'`, and Rust coerces anything else to `''`. */
+  | 'terminalTool'
+  | 'editorTool'
   | 'dev'
 > &
   /** Spec-002: optional in `UiSettings` (frontend-only, absent from the Rust
@@ -129,6 +135,18 @@ export interface SettingsActions {
    *  `reset` descriptor + `DEFAULT_UI_SETTINGS`; a row with no descriptor is a
    *  no-op, never a throw. */
   resetRow(id: SettingsRowId): void;
+  /** P112 §16.16-5 — adopt one or both external-tool selections read from disk
+   *  WITHOUT queueing a write. App's `adoptToolSelection`, surfaced here because
+   *  `pick_external_tool` persists the selection ITSELF: the renderer must
+   *  re-read rather than patch, or it races the backend's own write
+   *  (`ipc-api-tools.ts:24-25`).
+   *
+   *  NOT `hydrateUiSettings` (§17.3 reversed that): a whole-struct hydrate set
+   *  every field from disk, and a successful write is never re-adopted
+   *  (`useSettingsWriteQueue.ts:108-120`), so a patch still inside its 300 ms
+   *  window was reverted ON SCREEN UNTIL THE NEXT LAUNCH — §16.4a's "one debounce
+   *  window" was wrong. This setter touches only the field the caller names. */
+  adoptToolSelection(selection: ToolSelection): void;
 }
 
 /** `null` ⇒ no provider above. The hooks below throw on that. */

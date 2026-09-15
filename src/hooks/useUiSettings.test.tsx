@@ -231,6 +231,12 @@ describe('hydrateUiSettings', () => {
     expect(result.current.autoFetch).toEqual(HYDRATED.autoFetch);
     expect(result.current.healthRefresh).toEqual(HYDRATED.healthRefresh);
     expect(result.current.profiles).toEqual(HYDRATED.profiles);
+    // P112 §16.4a: the two fields this hook DECLINED to hold until the picker
+    // existed. No contract claimed them, so they were one forgetting away from
+    // being lost — asserted here so dropping either fails a test rather than
+    // silently showing `Auto-detect` over a persisted selection.
+    expect(result.current.terminalTool).toBe('windows-terminal');
+    expect(result.current.editorTool).toBe('vscode');
     expect(result.current.aiDockHeight).toBe(320);
     expect(result.current.aiDockCollapsed).toBe(true);
     expect(result.current.aiStreamLog).toBe(false);
@@ -250,6 +256,70 @@ describe('hydrateUiSettings', () => {
 
     // Hydration is a read replay — it must never write back.
     expect(setSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('external-tool selections (P112 §16.4a)', () => {
+  it('a picker patch previews live and rides the same debounced write', () => {
+    vi.useFakeTimers();
+    const setSpy = vi.spyOn(mockIpc, 'setUiSettings').mockResolvedValue(HYDRATED);
+    const { result } = mount();
+
+    act(() => result.current.handleSettingsChange({ editorTool: 'sublime' }));
+    // Live preview BEFORE the debounce: without the patch-path lines the picker
+    // would snap back to its old label until the next full hydrate.
+    expect(result.current.editorTool).toBe('sublime');
+    expect(result.current.terminalTool).toBe('');
+
+    act(() => result.current.handleSettingsChange({ terminalTool: 'cmd' }));
+    expect(result.current.terminalTool).toBe('cmd');
+
+    act(() => vi.advanceTimersByTime(300));
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    expect(setSpy.mock.calls[0][0]).toEqual({ editorTool: 'sublime', terminalTool: 'cmd' });
+  });
+
+  it("a patch for one tool leaves the other alone", () => {
+    const { result } = mount();
+    act(() => result.current.hydrateUiSettings(HYDRATED));
+    act(() => result.current.handleSettingsChange({ editorTool: '' }));
+    expect(result.current.editorTool).toBe('');
+    expect(result.current.terminalTool).toBe('windows-terminal');
+  });
+
+  // §16.16-5, and why it exists rather than the whole-struct hydrate (§17.3):
+  // `useSettingsWriteQueue` does NOT adopt the `setUiSettings` response on
+  // success and `hydrateUiSettings` has exactly one other caller (App's launch
+  // effect), so a field a mid-session hydrate reverted stays reverted ON SCREEN
+  // UNTIL THE NEXT LAUNCH while the pending patch still reaches disk — not "one
+  // debounce window" as §16.4a priced it.
+  it('adoptToolSelection takes ONE field, queues no write and bumps no metricsVersion', () => {
+    vi.useFakeTimers();
+    const setSpy = vi.spyOn(mockIpc, 'setUiSettings').mockResolvedValue(HYDRATED);
+    const { result } = mount();
+    act(() => result.current.hydrateUiSettings(HYDRATED));
+    const metrics = result.current.metricsVersion;
+
+    // An unrelated patch still inside the 300 ms window, i.e. not yet on disk…
+    act(() => result.current.handleSettingsChange({ panelDensity: 'cozy' }));
+    // …and then the Browse adopt of a selection the backend already persisted.
+    act(() => result.current.adoptToolSelection({ editorTool: 'custom' }));
+
+    expect(result.current.editorTool).toBe('custom');
+    // The OTHER picker and the in-flight patch are both untouched — the two
+    // reverts the whole-struct hydrate caused.
+    expect(result.current.terminalTool).toBe('windows-terminal');
+    expect(result.current.panelDensity).toBe('cozy');
+    // No geometry changed, so no GraphCanvas re-measure behind the overlay.
+    expect(result.current.metricsVersion).toBe(metrics);
+    // Non-writing: the pick is already on disk, and re-writing it would race
+    // the backend's own write.
+    expect(setSpy).not.toHaveBeenCalled();
+
+    // The pending patch still lands, with no trace of the adopt in it.
+    act(() => vi.advanceTimersByTime(300));
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    expect(setSpy.mock.calls[0][0]).toEqual({ panelDensity: 'cozy' });
   });
 });
 

@@ -1,11 +1,14 @@
-// P69g — the "General" category page: background activity + committing.
+// P69g — the "General" category page: background activity, committing, and the
+// external tools Bonsai launches.
 //
-// P112 §5.1: the "External tools" group is GONE from this page for now. Its two
-// rows were free-text PROGRAM fields, and the replacement settings
-// (`terminalTool` / `editorTool`) are catalog ids — a text box writing one would
-// let the user type a non-id, which the backend's `coerce_tool_id` turns into
-// `''`, i.e. a control that silently discards input. Until sub-increment 4 lands
-// the detected-tool picker, the per-OS auto-detect ladder IS the behaviour.
+// P112 sub-increment 4: this is the CONTAINER for the external-tools group — it
+// owns the scan hook and the page's one `useOutcomeNotes` instance and threads
+// `notes` + `announce` + handlers down; `SettingsExternalToolsSection` stays a
+// leaf that renders them (§2.3). The group that was deleted in sub-increment 1
+// is back as a detected-tool PICKER rather than the free-text program fields it
+// used to be: the settings are catalog ids, so a text box would let the user
+// type a non-id, which the backend's `coerce_tool_id` turns into `''` — a
+// control that silently discards input.
 //
 // Re-skinned onto the canonical row (UI §5.1): the two checkboxes are
 // `SettingsSwitchRow` (the row+switch pairing, including the `{rowId}-input` id
@@ -16,6 +19,8 @@
 //
 // Every label, help string and `↺` descriptor comes from the CATALOG via the row
 // id; nothing here restates them.
+
+import { useMemo } from 'react';
 
 import { NumberSlider } from '../../NumberSlider';
 import {
@@ -29,6 +34,10 @@ import { SettingsGroup } from '../SettingsGroup';
 import { SettingsRow } from '../SettingsRow';
 import { SettingsSegmented } from '../SettingsSegmented';
 import { SettingsSwitchRow } from '../SettingsSwitchRow';
+import { SettingsExternalToolsSection } from '../SettingsExternalToolsSection';
+import { useExternalToolScan } from '../useExternalToolScan';
+import { useOutcomeNotes } from '../useOutcomeNotes';
+import { useOutcomeScrollCorrection } from '../useOutcomeScrollCorrection';
 import { useSettingsActions, useSettingsValues } from '../SettingsContext';
 import type { PrimaryCommitAction } from '../../../ipc';
 
@@ -39,8 +48,44 @@ const REFRESH_INTERVAL = 'general.refresh-interval';
 const PRIMARY_COMMIT_ACTION = 'general.primary-commit-action';
 
 export function GeneralCategory() {
-  const { autoFetch, healthRefresh, primaryCommitAction } = useSettingsValues();
-  const { change } = useSettingsActions();
+  const { autoFetch, healthRefresh, primaryCommitAction, terminalTool, editorTool } =
+    useSettingsValues();
+  const { change, adoptToolSelection } = useSettingsActions();
+
+  // ONE `useOutcomeNotes` for the whole page, and one announcer — rendered by
+  // the section, as its last child (§16.4). Seven outcomes A–G key into it by
+  // row id; none of them is a toast being relocated, they are new outcomes
+  // routed into the channel P113 built.
+  const { notes, announce, begin, report, announceOnly } = useOutcomeNotes();
+  // §16.12: extended from the Dev slots to these three. `general.rescan-tools`
+  // is the LAST row on this page, structurally identical to `dev.delete-logs`,
+  // which is where the clipping failure was found — and focus is still on the
+  // acting control, because Browse and Rescan are `aria-disabled`, not
+  // `disabled`. All four of the hook's conditions are unchanged.
+  useOutcomeScrollCorrection(notes);
+
+  // The hook's whole permitted surface: the outcome channel, App's narrow
+  // non-writing adopt (§16.16-5 — one field, never the whole struct) and the
+  // ordinary settings write for the two picker keys. No launcher callback, no
+  // `pushToast` (§16.5 / UA17).
+  //
+  // `change` is threaded IN rather than called from here because the hook owns
+  // the order (its rule 6): an explicit pick has to clear that kind's owed
+  // adopt, and an `onChangeTool` defined in this file could patch without
+  // clearing — which is exactly the divergence the rule closes. The picker's
+  // writes therefore all go through `tools.changeTool`; the rows' `↺` resets
+  // still go through the generic `resetRow`, which is the known gap recorded on
+  // `ExternalToolScanState.changeTool`.
+  //
+  // Memoised for the reader's sake, not the hook's: the hook destructures these
+  // five and depends on them individually, so a fresh wrapper object per render
+  // would be harmless. One bag with a stable identity is still the honest shape
+  // for "this is everything the hook may do to the page".
+  const toolOps = useMemo(
+    () => ({ begin, report, announceOnly, adoptToolSelection, changeToolSelection: change }),
+    [begin, report, announceOnly, adoptToolSelection, change],
+  );
+  const tools = useExternalToolScan(toolOps);
 
   return (
     <>
@@ -113,6 +158,20 @@ export function GeneralCategory() {
           />
         </SettingsRow>
       </SettingsGroup>
+
+      <SettingsExternalToolsSection
+        scan={tools.scan}
+        scanning={tools.scanning}
+        scanFailedCold={tools.scanFailedCold}
+        browsing={tools.browsing}
+        terminalTool={terminalTool}
+        editorTool={editorTool}
+        notes={notes}
+        announce={announce}
+        onChangeTool={tools.changeTool}
+        onBrowse={tools.browse}
+        onRescan={tools.refresh}
+      />
     </>
   );
 }

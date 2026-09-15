@@ -1,0 +1,65 @@
+/* Bonsai — the detected-tool picker (P112 §11, ui-reference §12.13).
+   No new theme token: every colour below is an existing custom property.
+
+   Its own file rather than a tail on settings-primitives.css, which is at 472
+   lines against the 500 ratchet — the same arithmetic that moved P113's outcome
+   note out of that file.
+
+   Unlike settings-outcome-note.css, IMPORT ORDER IS NOT LOAD-BEARING here: every
+   selector is a descendant or child selector of at least (0,2,1), so it outranks
+   `.dialog-input` (0,1,0) and `.dialog-input:focus` (0,2,0) wherever it lands. */
+
+/* Two corrections that apply to EVERY settings combobox — the Appearance season
+   row is fixed by the same rules, which is the point: one control, one geometry
+   per surface. */
+.settings-row .combobox {
+  width: 100%;
+}
+
+.settings-row .combobox > .dialog-input {
+  width: 100%;
+  height: 28px; /* matches .settings-text; .dialog-input's 32px is dialog geometry */
+  padding: 0 8px;
+}
+
+/* `.dialog-input:focus` declares `outline: none`, so a settings combobox has no
+   focus RING today — only a border tint, which is colour-only. */
+.settings-row .combobox > .dialog-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The picker takes the row's spare width and the Browse button holds its 88px,
+   so at narrow widths the label ellipsizes rather than wrapping to a second row
+   (§2). `min-width: 0` is what lets it shrink inside the flex row at all. */
+.settings-value-copy > .tool-picker {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.settings-value-copy > .tool-picker-browse {
+  flex: none;
+  min-width: 88px;
+}
+
+/* Two-line option rows (§4.3): label over a muted detail line. Scoped to the
+   picker so `checked out` in the worktree dialog keeps its inline hint —
+   `flex: none` on a 46-char path collapses the label to nothing and then
+   overflows the popover's padding box. Row height goes 27px → ~38px, so the
+   existing `max-height: 220px` shows ~5.5 rows and scrolls; that is fine for a
+   2–8 row list and `max-height` is NOT changed. */
+.tool-picker .combobox-option {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 1px;
+}
+
+.tool-picker .combobox-option-hint {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+}

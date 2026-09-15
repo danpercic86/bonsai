@@ -25,26 +25,37 @@ function tool(
   return { id, label, kind, source, detail, present: true };
 }
 
-/** The default (Windows-flavoured) populated scan — harness states 1 and 3. */
+/** The default (Windows-flavoured) populated scan — harness states 1 and 3.
+ *
+ *  P112 §16.9 / UA14: the `source: 'path'` rows carry the **`PATHEXT` spelling**
+ *  of their extension (`wt.EXE`, `code.CMD`), because that is what a `PATH`
+ *  resolution really returns — `PATHEXT` is conventionally uppercase and Windows
+ *  paths are case-insensitive, so the resolution carries the `PATHEXT` casing
+ *  while the on-disk name is lowercase (`procutil_tests.rs:26-33`). The renderer
+ *  displays `detail` byte-identically, so the fixture has to be able to catch one
+ *  that "tidies" it. Do NOT normalise these. */
 export const WIN_TERMINALS: DetectedTool[] = [
   tool(
     'windows-terminal',
     'Windows Terminal',
     'terminal',
     'path',
-    'C:\\Users\\dev\\AppData\\Local\\Microsoft\\WindowsApps\\wt.exe',
+    'C:\\Users\\dev\\AppData\\Local\\Microsoft\\WindowsApps\\wt.EXE',
   ),
   tool('powershell', 'Windows PowerShell', 'terminal', 'builtIn', 'built in'),
   tool('cmd', 'Command Prompt', 'terminal', 'builtIn', 'built in'),
 ];
 
 export const WIN_EDITORS: DetectedTool[] = [
+  // `Rung::OnPath` is the FIRST rung of the Windows `vscode` row
+  // (`catalog_table.rs:133-140`), so the usual resolution is a `PATH` hit on
+  // `code` — a `.cmd` shim, reported with the `PATHEXT` casing.
   tool(
     'vscode',
     'Visual Studio Code',
     'editor',
-    'wellKnown',
-    'C:\\Program Files\\Microsoft VS Code\\Code.exe',
+    'path',
+    'C:\\Users\\dev\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.CMD',
   ),
   tool('sublime', 'Sublime Text', 'editor', 'path', 'C:\\Program Files\\Sublime Text\\subl.exe'),
   tool(
@@ -88,6 +99,14 @@ const LONG_DETAIL =
     'x',
   ) + 'editor-cli-launcher.exe';
 
+/** A detail the BACKEND has already truncated: `sanitize_detail` cuts at 512
+ *  content chars and appends `…`, so 513 chars ending in an ellipsis is a shape
+ *  the renderer really receives (`tools/custom.rs:355-369`). Nothing else in the
+ *  harness shows that `detail` is not reliably a well-formed path — and
+ *  `ToolPathLabel` splits this string on its last separator. */
+const TRUNCATED_DETAIL =
+  'C:\\Users\\a.very.long.account.name\\AppData\\Local\\Programs\\'.padEnd(512, 'y') + '…';
+
 export const LONG_EDITORS: DetectedTool[] = [
   tool('vscode', LONG_LABEL, 'editor', 'wellKnown', LONG_DETAIL),
   tool(
@@ -97,6 +116,7 @@ export const LONG_EDITORS: DetectedTool[] = [
     'path',
     '/usr/local/lib/vendor-tools/editors/zed/2026.09/bin/zed-cli-launcher',
   ),
+  tool('sublime', 'Sublime Text', 'editor', 'path', TRUNCATED_DETAIL),
 ];
 
 /** The pathological browsed path of `?tools=custom` / `?tools=customgone`
