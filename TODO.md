@@ -147,6 +147,82 @@ Killed; port confirmed free; no other `node` process on this repo remains. Found
    the server still up, so it is a contributor at most. But it is a **concrete** mechanism where I
    previously had only "ambient load", and it is one I created.
 
+### ✅ SECURITY AUDIT of sub-inc 3 — no CRITICAL, no HIGH; "a net reduction in attack surface"
+
+The auditor's framing is worth keeping: this increment **deletes a capability** (free-text program
+strings) rather than adding a validator in front of one.
+
+### 🐞 LOW-1 — the `pub(crate) spec_from` reasoning is internally inconsistent. I AMPLIFIED IT.
+
+I told the user this was "the right instinct — the property the whole milestone exists for". **The
+instinct was right and the reasoning was not, and I should have checked it before endorsing it.**
+Verified by me against source:
+
+* `PickedTool` (`tools/mod.rs:119-131`) is `pub` with **five `pub` fields** and no `#[non_exhaustive]`.
+* `spec_from` is `pub(crate)` (`external.rs:258`) — but `terminal_ladder` (`:357`), `editor_ladder`
+  (`:389`), `open_in_terminal` (`:427`) and `open_in_editor` (`:447`) are **all `pub` and all take
+  `Option<&PickedTool>`.**
+
+So the premise ("public fields make a `pub` constructor an arbitrary-program primitive") applies
+**verbatim to the four functions that remain**. From `src-tauri` today, a `PickedTool` literal with an
+attacker-chosen `program` can be handed straight to `open_in_terminal`. **`pub(crate)` on `spec_from`
+closes one door and leaves four identical ones open.** Either all are acceptable or none is.
+
+**The property is nonetheless TRUE of the code as written** — I verified it: `grep 'PickedTool' src-tauri/src/`
+returns **exactly one hit**, a function *return type* (`commands/external.rs:140`), with **zero field
+reads**. It is enforced by **convention, not by the compiler**.
+
+**Overclaim to correct:** `external.rs:36-40` says a `PickedTool` "can only be built by `tools::picked`
+or by the auto arm". False at the type level. That file **already carries two dated corrections to
+comments of exactly this shape** — this is the third.
+
+**Fix at the right layer (zero-caller, verified):** make the five fields `pub(crate)`, or add
+`#[non_exhaustive]`. `src-tauri` holds `Option<PickedTool>` opaquely, so nothing breaks, and the
+compiler enforces AC6 instead of the reviewer.
+
+> **THE SINGLE FACT A FUTURE REFACTOR MUST NOT BREAK:** *no code outside `bonsai-core` constructs a
+> `PickedTool` literal.* Everything AC6 claims rests on that one fact.
+
+### 🐞 LOW-2 / LOW-3 — two smaller ones
+
+- **`listExternalTools(refresh: true)` is an unmetered `reg.exe` spawn primitive.** `refresh` bypasses
+  the cache unconditionally and `probe_host` takes the write lock **only after** probing, so N
+  concurrent calls run N concurrent probes rather than coalescing. **Not escalation** — absolute
+  program, fixed argv, nothing renderer-supplied reaches the child — local resource consumption only.
+  Fix: an in-flight flag under the existing `RwLock` so refreshes coalesce.
+- **The native dialog is not parented to the Bonsai window** (`tools.rs:114-133`, no `set_parent`).
+  May be lost behind the window, complicates the UC-UI-2 focus checkpoint, and is marginally more
+  spoofable. **Confidence medium** — the auditor could not verify statically what
+  `tauri-plugin-dialog` does by default on Windows; check against the version in `Cargo.lock`.
+
+### 📌 THREE RESULTS WORTH KEEPING PERMANENTLY
+
+1. **Why `.exe`-only is sufficient and not a heuristic.** A batch file **renamed** to `.exe` is handed
+   to `CreateProcess`, which validates the **image header** and fails with **error 193** — it never
+   reaches `cmd.exe`. So DEC-1 genuinely **removes** the CVE-2024-24576 `%VAR%` re-expansion path
+   rather than making it harder to name. And the gate is independent of the dialog filter: the filter
+   is cosmetic (`custom.rs:262-267`), the gate is `custom.rs:268-275`, and `tests_tools_pick.rs:78-109`
+   writes **real** `payload.cmd`/`.bat`/`.ps1` files and asserts all three are refused.
+2. **My "no path is ever an argument on this surface" is TRUE but was scoped too widely.** It holds
+   **for the two new commands**. `openInTerminal`, `openInEditor` and `revealInFileManager` carry
+   `["path"]` in `rawArgPolicy.json`, so paths **do** reach raw-mode logs on the neighbouring
+   external surface — pre-existing and out of scope, but the property must be stated as *"on the two
+   new commands"*. **Pin the dependency it rests on:** the pipeline logs **arguments and never result
+   values**; a future change that logged result values in raw mode would break this **without
+   touching either command or the policy file**.
+3. **The deletion took nothing live.** Of 17 deleted tests, **1 migrated verbatim** (`safe_cwd`) and
+   **16 tested `validate_command_setting` over a setting that no longer exists**; the surviving
+   *properties* are covered in `tools/custom_tests.rs` — with **new** coverage the old file never had
+   (`.exe`-only, execute bit, device namespace, UNC). `validate_command_setting` / `program_spec` /
+   `PathDelivery` have **zero** remaining code references, and the dangerous shape (a surviving
+   reader of a now-unvalidated field) was checked: `terminal_command`/`editor_command` are read
+   **only** by `migrate_external_tools`, which cannot manufacture the human dialog click.
+
+**INFO worth recording:** `browsed_tool_row` validates the real `&Path` but stores
+`to_string_lossy()`. For a non-UTF-8 path the stored string differs from the validated one — it
+**fails closed** (re-validated on every launch, `is_file()` false, auto ladder runs) so there is no
+security consequence, but "validated one value, stored another" is a shape worth having on record.
+
 # 🔧 RESUMED 2026-09-15 — P112 sub-increment 3 IN PROGRESS
 
 **Started from a clean tree at `11f896c`** with the 8-step gate green at that exact source tree
