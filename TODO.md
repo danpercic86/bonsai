@@ -147,6 +147,59 @@ Killed; port confirmed free; no other `node` process on this repo remains. Found
    the server still up, so it is a contributor at most. But it is a **concrete** mechanism where I
    previously had only "ambient load", and it is one I created.
 
+### ✅ `P112-ui.md` §17 — the contract's own mechanisms corrected, with three rulings
+
+Precedence is now **§17 > §16 > §§0-15**. `ui-reference.md` also corrected (option-row figure) and
+extended (the `announceOnly` bullet). Everything verified against source before writing.
+
+**A DURABLE RULE, extracted by `ui-designer` from its own error — keep this:**
+
+> **When a contract signs an error string that names a recovery, the recovery is part of the same
+> contract item.**
+
+§16.4a signed `BROWSE_STALE`'s *string* and its *report* but not its *verb* — so as written, the
+message named an action that did nothing. In the designer's words: *"my failure was writing a string
+that names a verb and not the verb."* Same class as the toast that fabricated log files and the
+confirmation that understated its blast radius.
+
+**§16.8's mechanism was impossible, and the symptom is worth recording.** `refresh: false` returns the
+cached scan with its **original** timestamp, so the specced `scannedAtMs` compare would have
+discarded **the only response carrying the new row** — surfacing to a user as **"Browse sometimes does
+nothing", intermittently.** Replaced with a request-id counter. **`scannedAtMs` is now read by nothing
+in the renderer.**
+
+**A reuse that was never intended:** `hydrateUiSettings` is documented as **launch-time** hydration
+(`useUiSettings.ts:299-301`), and §16.4a put it on a **runtime** path. Its unnamed cost is confirmed
+at `:306-307`: it bumps `metricsVersion`, so **every Browse confirm triggers a GraphCanvas full
+re-measure** while the canvas is live behind the overlay — against a 20k-commit jank target. Now in
+§17.3.
+
+**Ruling: 45.78 px ratified, the `line-height` override declined.** The criterion was never the pixel
+count — it is **equality across densities**, which holds. An override would give this picker a
+different option rhythm from the four other `Combobox` consumers, and the line it would compress is
+the **11 px mono path subtitle whose entire job is telling two same-label installs apart.** It also
+improves the hit target.
+
+**Ruling on R5 (cold-scan failure below the fold): do NOT relax scroll condition 3.** Relaxing it is
+the tempting fix and the wrong one — on first mount the user is reading from the top, and scrolling
+the pane to its end to report a scan they never asked for is exactly the yank condition 3 exists to
+prevent. **The fix is one string.** The two picker rows had **no specified note** in that state and
+must not fall back to `NOTE_NONE` ("No terminals found on this computer.") — **that is a lie when the
+scan failed.** New `NOTE_SCAN_FAILED` puts the explanation in **row 1 of the group**, ~90 px above
+Rescan, on the control it describes.
+
+**And the part both of us missed in framing R5:** *the announcer was always the channel that reaches
+this state* — site D's `report` speaks `SCAN_ERR` regardless of scroll. So the below-the-fold problem
+was **visual-only**, and the a11y channel was already correct. The fix adds a visible carrier rather
+than moving the existing one.
+
+**The self-observation that stings, and belongs on the board:** UA12's absolute **dialog-level**
+live-region count of 1 was **unpassable against a correct implementation** — `SettingsSearch`
+legitimately holds a second `role="status"` outside the tabpanel, so the **scope** was wrong, not the
+count. That is **P113 §17.1 R5's error class, repeated inside the document that names it.**
+
+**One correction to me:** `mock/handlers/tools.ts` is **204** lines, not the 171 I cited.
+
 ### 🚨 FOUR BAD CITATIONS IN ONE BRIEF — and one had already propagated a false claim
 
 `ui-designer` checked every reference I gave it and **four were wrong**:

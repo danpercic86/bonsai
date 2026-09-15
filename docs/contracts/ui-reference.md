@@ -2357,7 +2357,14 @@ ids; the label and subtitle come from the backend and are display-only.
   one-word state like `checked out` and **wrong** for a 46-char absolute path — `flex: none`
   collapses the label and overflows the popover. Apply it from an ancestor class on the picker
   wrapper, not with a new `Combobox` prop, so every other consumer keeps the inline hint.
-  Option-row height goes 27px → ~38px; the 220px `max-height` is unchanged and the list scrolls.
+  **Option-row height goes 27px → 45.78px, measured** (corrected from an estimated `~38px`,
+  P112 §17.4): `.combobox-option` padding 5 + 5, `gap: 1`, a 13px label line ≈ 19.9 and an 11px hint
+  line ≈ 14.9 at **inherited** line-heights. The 220px `max-height` is unchanged, so the list shows
+  **4.6 rows** and scrolls — fine for a handful of options. **Do not add a `line-height` override to
+  hit a tidier number:** it would give one picker a different option rhythm from the other four
+  combobox consumers, and the line it would compress is the mono path subtitle, whose whole job is
+  telling two same-label installs apart. The criterion for a two-line option row is **equal height in
+  both densities**, never a specific pixel count.
 - **Platform paths are §3.0-R3 members.** `RefLabel` delegates to `splitPath`, which splits on `/`
   only, so a Windows path comes back as one unsplittable leaf. Use `ToolPathLabel`
   (`src/components/settings/ToolPathLabel.tsx`) — same `.ref-label-head` / `.ref-label-leaf` CSS,
@@ -2466,6 +2473,20 @@ toast raised from the Settings surface is an inline note. **15** call sites swep
   result: **zero mutation records** and stale text. Fix this in the hook, never with `flushSync` at the
   caller: a hook whose correctness depends on how each caller schedules its two calls is a convention,
   not a guard.
+- **Announce without a note when the visible result is already complete — `announceOnly` (P112 §16.4
+  R2, approved 2026-09-15).** Some actions change a row's **own state** rather than producing a
+  separate outcome: a landed rescan updates the counts sentence, a confirmed Browse changes the
+  picker's label and its state note. A second visible line there would restate what two elements
+  already say, one step brighter (`--result` is `--text-1` against the state note's `--text-2`) —
+  the same reason a `--success` tint was rejected above. But **silence is not the alternative**: the
+  clear-at-operation-start leaves the announcer empty, so the sighted user watches the row change
+  while the AT user hears nothing, and *placement is not an accessible carrier of meaning*. So the
+  hook exposes a third call that writes **only** the announcer. Two rules make it safe: it must obey
+  the **identical** dedup-flush and record what it wrote into the same ref (the soundness proof above
+  is about *who may write the announcer and whether they record it*, not about how many such
+  functions there are); and the hook's proof comment must **name every writer**, or the next reader
+  will scope the proof to one of them. Announce only for an action the **user initiated** — a
+  first-mount load that nobody asked for is chatter, not feedback.
 - **An inline note is not a toast and must not imitate one.** No ✕, no timer, no motion, no
   auto-scroll. It clears when **any operation reporting into that slot begins** (not when a confirm
   dialog opens), and on unmount. Its meaning is *"the result of the last time you pressed this"* —
