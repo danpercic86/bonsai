@@ -147,6 +147,44 @@ Killed; port confirmed free; no other `node` process on this repo remains. Found
    the server still up, so it is a contributor at most. But it is a **concrete** mechanism where I
    previously had only "ambient load", and it is one I created.
 
+### ✅ GATE GREEN at `d0e6cf0` — 457.5s, exit 0, all 8 steps, zero FAIL lines
+
+nextest 159.3s (**2556 passed, 1 leaky, 10 skipped**) · doctests 3.3s · clippy 27.7s · eslint 14.8s ·
+size ratchet 0.87s · vitest 56.2s (**2919 / 261 files**) · tsc+build 13.9s · e2e 181.3s (**185
+passed**). **Windows-only evidence** — see the CI note above; that limitation is unchanged by this
+green.
+
+### 🔧 P112 SUB-INC 4 — CONTRACT REFRESH FIRST, implementation after
+
+**`P112-ui.md` was written 2026-09-11 and predates everything that makes it implementable.** Rather
+than let an implementer reconcile two contracts by guesswork, `ui-designer` is refreshing it against
+what actually shipped:
+
+- **The scrim finding** — which made its "no toast for Browse errors" ruling *correct for a reason it
+  did not yet know*: the toast would have been unclickable, not merely dim.
+- **P113 built the mechanism** — `SettingsOutcomeNote` / `useOutcomeNotes` / and crucially
+  **`.settings-row-note--warn` now EXISTS**. When §6.11.6 called the fix "pure reuse of the signed
+  P107 recipe" that recipe had **zero users and no CSS rule**; sub-inc 4 genuinely can reuse it now.
+- **AC17's announcer invariant** and **the scroll correction's `Math.ceil`** (a 0.171875 px residue
+  DPR-1 snapping will not absorb, measured at two viewports).
+- **P113 §17.3a's standing cross-reference:** `useExternalTools.ts:22/:28/:34` are *accounted-for, not
+  swept* — **"in scope the moment P112-4 puts a picker in Settings."** That moment is now, and the AC1
+  enumeration has to flip them or say why not.
+
+**Seven questions sent, and two constraints the refresh must not contradict:** the picker's **strict
+mode is the security property** (`allowFreeInput: false` — the backend coerces an unknown id to `""`,
+so a free-text control silently discards what the user typed; that is why the old text rows were
+**removed** rather than rewired), and **a browsed path is displayed but never trusted** (backend-
+sanitized, backend-derived label — no UI may re-derive a label from the path).
+
+**Numbers the refresh needs that the contract predates:** a cold scan is **2.1 s measured** (55 PATH
+dirs × 11 `PATHEXT` ≈ 4400 stats; 0.45 s warm) — a visible wait; subtitles will carry `PATHEXT`
+casing (`code.CMD`, `wt.EXE`); and `scannedAtMs` ships on the DTO with **no React consumer**, so
+freshness surfaces only if the contract says so.
+
+**Building sub-inc 4 also makes the pending Browse-dialog observation reachable** — the picker is what
+exposes the dialog, so the two native-window checks consolidate into one sitting.
+
 ### ✅ P112 SUB-INC 3 COMMITTED `d0e6cf0` — 3 of 4 done. Reviewed + audited + one focused re-review.
 
 `bonsai-core --lib` **1102** · `bonsai --lib` **547** · `h_misc` **51** · `nextest --workspace`
