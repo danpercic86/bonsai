@@ -10,7 +10,7 @@
  *  stateful `.settings-row-note` the section renders. Their vocabulary therefore
  *  has to live in `keywords` — the only place search can see it. */
 import type { SettingsIndexEntry } from '../types';
-import { resetField, resetKey } from './reset';
+import { resetField, resetKey, resetRouted } from './reset';
 
 export const GENERAL_ENTRIES: readonly SettingsIndexEntry[] = [
   {
@@ -71,7 +71,7 @@ export const GENERAL_ENTRIES: readonly SettingsIndexEntry[] = [
     keywords:
       'shell console command external open in terminal program picker browse detect installed',
     control: 'combobox',
-    reset: resetKey('terminalTool', 'Auto-detect'),
+    reset: resetRouted('terminalTool', 'Auto-detect'),
   },
   {
     id: 'general.editor-tool',
@@ -80,7 +80,7 @@ export const GENERAL_ENTRIES: readonly SettingsIndexEntry[] = [
     label: 'Editor',
     keywords: 'ide vscode code editor command external open in program picker browse detect installed',
     control: 'combobox',
-    reset: resetKey('editorTool', 'Auto-detect'),
+    reset: resetRouted('editorTool', 'Auto-detect'),
   },
   {
     /** §7: a catalogued BUTTON row — `label` is the button text and its

@@ -21,6 +21,7 @@
  * launcher, it never invokes one.
  */
 import { Combobox } from '../Combobox';
+import { DEFAULT_UI_SETTINGS } from '../../settings/defaults';
 import { SettingsOutcomeNote, type SettingsOutcome } from './SettingsOutcomeNote';
 import { SettingsRow } from './SettingsRow';
 import { BUILT_IN, buildToolOptions } from './toolPickerOptions';
@@ -70,6 +71,16 @@ export interface ToolPickerRowProps {
   outcome: SettingsOutcome | null;
   onChange(next: string): void;
   onBrowse(): void;
+}
+
+/**
+ * The id this kind's ↺ resets TO, read from the defaults rather than written as
+ * `''`, so the row's reset cannot drift from the catalog descriptor it has to
+ * agree with (`settingsCatalog.coverage.test.tsx` compares the ↺'s visibility
+ * against `resetRouted`'s own `isDefault`, in both fixtures).
+ */
+function defaultIdFor(kind: ExternalToolKind): string {
+  return kind === 'terminal' ? DEFAULT_UI_SETTINGS.terminalTool : DEFAULT_UI_SETTINGS.editorTool;
 }
 
 /** The inline path, `.mono` + `title` — the `SettingsDevLogsSection.tsx:56-58`
@@ -145,12 +156,26 @@ export function ToolPickerRow(props: ToolPickerRowProps) {
   const options = buildToolOptions(rows, labels, value, hasScan);
   const selectedLabel = options.find((o) => o.value === value)?.label;
   const describedBy = `${noteId} ${outcomeId}`;
+  const defaultId = defaultIdFor(kind);
 
   return (
     <SettingsRow
       id={rowId}
       controlId={controlId}
       stacked
+      /* P112 rule 6: the ↺ is an explicit SELECTION of the default, so it takes
+         the same route the list does — `onChange`, hence `changeTool`, which
+         clears that kind's owed adopt and retracts the `BROWSE_STALE` that named
+         a Rescan the reset just made pointless. Through the catalog's generic
+         `resetRow` it patched the key alone, and the next scan then put the
+         browsed value back over the reset while the reset still reached disk.
+         `resetRouted` is what makes this override the ONLY path: without it the
+         row renders no ↺ at all.
+
+         Deliberately independent of `hasScan` / `scanning`: the default is a
+         synchronous fact about the VALUE, and gating it on the scan would make
+         the button flicker through a Rescan and disagree with the descriptor. */
+      reset={{ isDefault: value === defaultId, onReset: () => onChange(defaultId) }}
       hint={
         <>
           <p className="settings-row-note" id={noteId}>

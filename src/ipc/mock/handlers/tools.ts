@@ -100,7 +100,7 @@ let adoptFailArmed = false;
 /** Armed by a CONFIRMED pick and consumed by the NEXT list call, so anything
  *  that ends the flow in between — a category switch, the end of a test, a seam
  *  change — would otherwise leak a spurious scan failure into the next mount.
- *  `useExternalToolScan.ts:91`'s `resetExternalToolScanCacheForTests` is the
+ *  `toolScanMemory.ts`'s `resetExternalToolScanCacheForTests` is the
  *  precedent and the same reason. Called from `beforeEach`, never from product
  *  code. (`tools.test.tsx` needs it only implicitly: it re-imports a fresh
  *  module graph per seam, which resets this too.) */

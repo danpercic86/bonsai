@@ -105,6 +105,22 @@ export interface SettingsRowReset {
   isDefault(current: PersistedSettingsValues, defaults: UiSettings): boolean;
   /** Whole-struct fields MERGE, e.g. `{ graph: { ...current.graph, rowHeight: d.graph.rowHeight } }`. */
   patch(current: PersistedSettingsValues, defaults: UiSettings): UiSettingsPatch;
+  /**
+   * P112 rule 6: the ↺'s write belongs to the row's CONTAINER, not to the
+   * generic `resetRow`.
+   *
+   * Set only by `resetRouted` (`catalog/reset.ts`); absent ⇒ the ordinary
+   * generic reset. Two consumers honour it: `resetRow`
+   * (`useSettingsPanelAdapter.ts`) returns early, which is what stops a
+   * programmatic `resetRow('general.editor-tool')` patching the key without
+   * clearing that kind's owed adopt — the refusal sits there rather than in a
+   * hook-visible seam, because `resetRow` has no business knowing WHICH
+   * container performs it, only that it is not the one doing so; and
+   * `SettingsRow` renders no ↺ from the catalog for it, so a container that
+   * forgets the `reset` override loses the button (the coverage guard fails)
+   * instead of silently writing around the rule.
+   */
+  routed?: true;
 }
 
 export interface SettingsIndexEntry {

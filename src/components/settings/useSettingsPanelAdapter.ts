@@ -371,6 +371,8 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     (id: SettingsRowId): void => {
       const reset = findSettingsRow(id)?.reset;
       if (reset === undefined) return;
+      // P112 rule 6 — see `SettingsRowReset.routed` for why the refusal is here.
+      if (reset.routed === true) return;
       onChange(reset.patch(snapshotRef.current, DEFAULT_UI_SETTINGS));
     },
     [onChange],

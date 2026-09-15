@@ -70,12 +70,13 @@ export function GeneralCategory() {
   // `pushToast` (§16.5 / UA17).
   //
   // `change` is threaded IN rather than called from here because the hook owns
-  // the order (its rule 6): an explicit pick has to clear that kind's owed
+  // the order (its rule 6): an explicit selection has to clear that kind's owed
   // adopt, and an `onChangeTool` defined in this file could patch without
-  // clearing — which is exactly the divergence the rule closes. The picker's
-  // writes therefore all go through `tools.changeTool`; the rows' `↺` resets
-  // still go through the generic `resetRow`, which is the known gap recorded on
-  // `ExternalToolScanState.changeTool`.
+  // clearing — which is exactly the divergence the rule closes. BOTH of each
+  // row's write controls therefore go through `tools.changeTool`: the list and
+  // the `↺`, the latter through `SettingsRow`'s `reset` override rather than
+  // the generic `resetRow`, which cannot see the owed adopt (rule 6 enumerates
+  // the closed set; `catalog/reset.ts` makes the generic path refuse these keys).
   //
   // Memoised for the reader's sake, not the hook's: the hook destructures these
   // five and depends on them individually, so a fresh wrapper object per render

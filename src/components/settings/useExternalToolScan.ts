@@ -40,20 +40,45 @@
  *   5. **An owed adopt outlives the component.** §17.2 grants recovery "from
  *      either the button **or a remount**", and a per-mount ref cannot do that:
  *      switching category away from General and back dropped the owed adopt AND
- *      its note, silently, leaving the picked value only on disk. So it sits
- *      beside `cachedScan` — and inside the same test reset seam, or it becomes
- *      the next cross-suite leak. A mount that finds one owed restores the note
- *      and completes the adopt; the ordinary warm remount still costs zero
- *      round trips.
- *   6. **An explicit pick supersedes that kind's owed adopt.** An owed adopt
- *      means "the disk holds a value the UI has not picked up yet"; if the user
- *      then picks something for that kind, the owed adopt is stale by
- *      definition — there is nothing left to adopt, because the user has just
- *      told us what they want. This is why the pick is routed THROUGH this hook
- *      (`changeTool`): a call site patching `terminalTool`/`editorTool` itself
- *      could not clear it, and the next scan would then put the browsed value
- *      back over the newer pick while that pick reached disk anyway — screen and
- *      disk disagreeing until the next launch.
+ *      its note, silently, leaving the picked value only on disk. So it sits in
+ *      `toolScanMemory.ts` beside the cached scan — and inside the same test
+ *      reset seam, or it becomes the next cross-suite leak. A mount that finds
+ *      one owed restores the note and completes the adopt; the ordinary warm
+ *      remount still costs zero round trips.
+ *   6. **An explicit SELECTION supersedes that kind's owed adopt — every one of
+ *      them.** An owed adopt means "the disk holds a value the UI has not picked
+ *      up yet"; if the user then says what they want for that kind, the owed
+ *      adopt is stale by definition. So every explicit selection is routed
+ *      THROUGH this hook (`changeTool`): a call site patching
+ *      `terminalTool`/`editorTool` itself could not clear it, and the next scan
+ *      would then put the browsed value back over the newer choice while that
+ *      choice reached disk anyway — screen and disk disagreeing until the next
+ *      launch.
+ *
+ *      Four review rounds each found a DIFFERENT control mutating this state
+ *      without going through the rule, so the entry points are ENUMERATED here
+ *      rather than left to be rediscovered a fifth time. The two kinds of writer
+ *      are not interchangeable:
+ *
+ *      * **Explicit selections — MUST route through `changeTool`.** The picker's
+ *        list (`ToolPickerRow`'s `onChange`) and each row's `↺` (the same
+ *        `onChange`, through `SettingsRow`'s `reset` override). A `↺` is a
+ *        selection of the DEFAULT, no less explicit than picking an option, and
+ *        it used to patch the key through the generic `resetRow`; `resetKey` now
+ *        refuses to build a descriptor for either key at all (`catalog/reset.ts`
+ *        — `resetRouted`, `SettingsRowReset.routed`). There is no third one: the
+ *        tree has no reset-all and nothing adopts the settings file at runtime.
+ *      * **Disk reads — must NOT clear it.** `adoptToolSelection` (this hook's
+ *        own, §16.16-5) and App's launch-time `hydrateUiSettings`. Neither
+ *        expresses a choice, and an owed adopt IS a pending disk read, so
+ *        clearing it on a read would discard the recovery — which is the whole
+ *        argument, and it holds unconditionally. (`hydrateUiSettings` is also
+ *        one-shot behind App's `launchedRef` and in practice precedes any
+ *        Browse, but that is ordering, not the reason.) Documented exception,
+ *        not an oversight.
+ *
+ *      `externalToolsWriters.guard.test.ts` fails if a writer of either key
+ *      appears outside that set.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -68,6 +93,7 @@ import {
   announceBrowsed,
   scanCounts,
 } from './toolPickerCopy';
+import { getAdoptOwed, getCachedScan, setAdoptOwed, setCachedScan } from './toolScanMemory';
 import type { ExternalToolKind, ExternalToolScan, UiSettings } from '../../ipc';
 import type { SettingsOutcome } from './SettingsOutcomeNote';
 import type { ToolSelection } from '../../hooks/useUiSettings';
@@ -133,76 +159,20 @@ export interface ExternalToolScanState {
   /** Open the backend's native program picker for one kind. */
   browse(kind: ExternalToolKind): void;
   /**
-   * The user picked an option from one row's list: clear that kind's owed adopt
-   * (rule 6) and persist the pick, in that order, so no call site can do the
-   * second without the first.
+   * An explicit selection for one row: clear that kind's owed adopt (rule 6) and
+   * persist the choice, in that order, so no call site can do the second without
+   * the first.
    *
-   * It is the PICKER's write path and not the only writer of these two
-   * settings: each row's `↺` reset patches the same key through the generic
-   * `resetRow` (`useSettingsPanelAdapter.ts:370`), which cannot reach this hook.
-   * **Known gap, unclosed:** a reset made while an adopt is owed is still
-   * overridden by that adopt on the next scan — the same divergence rule 6
-   * closes for a pick, and a reset is just as explicit. Closing it means routing
-   * the `↺` for these two rows through here (or giving `resetRow` a seam),
-   * which is a decision above this file.
+   * **The ONE write path for both of the row's controls** — the list and the
+   * `↺`. The reset used to patch the key through the generic `resetRow`
+   * (`useSettingsPanelAdapter.ts`), which cannot reach this hook, so a reset made
+   * while an adopt was owed was overridden by that adopt on the next scan while
+   * the reset still reached disk — the pick case's divergence, one control over.
+   * It is routed rather than given a seam because a seam is a second place to
+   * forget; `resetRouted` + `SettingsRowReset.routed` make the generic path
+   * refuse these two keys, and `resetKey('editorTool', …)` no longer compiles.
    */
   changeTool(kind: ExternalToolKind, next: string): void;
-}
-
-/**
- * Module-scoped, so switching category away from General and back does not cost
- * another round trip (§3). The backend caches too, but a second trip per visit
- * is still waste — and the 2.1 s cold scan is then paid at most once per app run
- * (§16.7).
- */
-let cachedScan: ExternalToolScan | null = null;
-
-/**
- * A Browse landed on disk but its follow-up read did not (`BROWSE_STALE`), so
- * React still holds the OLD selection — this is the KIND that owes an adopt.
- *
- * It is what makes that note's "Press Rescan" TRUE. §16.4a specified the string
- * and the report but not the recovery: a Rescan refetches the LIST, which by
- * then contains the `custom` row, and without re-reading settings the picker
- * would still show the previous tool — copy naming an action with no visible
- * effect.
- *
- * Module-scoped by rule 5, not a ref: §17.2's recovery has to work across a
- * remount, and a ref dies with the mount that owns it.
- *
- * An OBJECT rather than a bare kind, because two comparisons mean different
- * things. A scan reads the owed adopt when it is dispatched and applies it when
- * it lands, and in between the user may pick that kind's tool (rule 6, which
- * nulls it) and a second Browse may fail (which owes it again). Kind equality
- * cannot tell "still the same owed pick" from "a different one, owed since" —
- * reference identity can, and the second case must NOT be satisfied by settings
- * this scan read before that second pick was written. Same generation-token
- * logic as `scanEpoch`, one level over.
- */
-interface OwedAdopt {
-  readonly kind: ExternalToolKind;
-}
-let owedAdopt: OwedAdopt | null = null;
-
-/** The ONE writer of `owedAdopt`. Through a function because
- *  `require-atomic-updates` flags a module variable written after an `await` in
- *  a scope that read it before — which `load` does, by design — and because one
- *  place makes the flag's lifetime readable: owed when a Browse's follow-up read
- *  fails, cleared when the adopt lands, when a Browse succeeds for that kind, or
- *  when the user picks that kind's tool themselves. */
-function setAdoptOwed(owed: OwedAdopt | null): void {
-  owedAdopt = owed;
-}
-
-/** Suites share a module graph, and a scan cached by one of them would satisfy
- *  the next one's mount effect — so the first-scan path would silently stop
- *  being covered. The owed adopt is reset here for the same reason and it is
- *  the sharper half: leaked, it makes the NEXT suite's first mount restore a
- *  `BROWSE_STALE` note and adopt a selection nobody in it ever browsed.
- *  Called from `beforeEach`, never from product code. */
-export function resetExternalToolScanCacheForTests(): void {
-  cachedScan = null;
-  owedAdopt = null;
 }
 
 function rowsFor(scan: ExternalToolScan): string {
@@ -236,7 +206,7 @@ function labelFor(scan: ExternalToolScan, kind: ExternalToolKind, id: string): s
 
 export function useExternalToolScan(ops: ToolScanOutcomeOps): ExternalToolScanState {
   const { begin, report, announceOnly, adoptToolSelection, changeToolSelection } = ops;
-  const [scan, setScan] = useState<ExternalToolScan | null>(cachedScan);
+  const [scan, setScan] = useState<ExternalToolScan | null>(getCachedScan());
   const [scanning, setScanning] = useState(false);
   const [scanFailedCold, setScanFailedCold] = useState(false);
   const [browsing, setBrowsing] = useState<ExternalToolKind | null>(null);
@@ -290,7 +260,7 @@ export function useExternalToolScan(ops: ToolScanOutcomeOps): ExternalToolScanSt
       // Read synchronously, and deliberately NOT cleared here: if this scan
       // fails the adopt is still owed, so the next Rescan retries it. The TOKEN
       // is kept, not its kind — see `OwedAdopt`; it is re-checked at landing.
-      const owed = owedAdopt;
+      const owed = getAdoptOwed();
       void (async () => {
         try {
           // The settings read rides along only while an adopt is owed, so the
@@ -304,7 +274,7 @@ export function useExternalToolScan(ops: ToolScanOutcomeOps): ExternalToolScanSt
           // the stale list in the module cache would re-show it on the next
           // visit to General.
           if (!mounted.current || scanEpoch.current !== epoch) return;
-          cachedScan = next;
+          setCachedScan(next);
           // Same one-commit rule as the Browse adopt, for the same reason: the
           // selection and the option that names it must arrive together.
           //
@@ -316,7 +286,7 @@ export function useExternalToolScan(ops: ToolScanOutcomeOps): ExternalToolScanSt
           // over. Reference identity also refuses an adopt re-owed by a second
           // Browse failure since dispatch, whose value these `settings` predate.
           let adopted: string | null = null;
-          if (owed !== null && settings !== null && owedAdopt === owed) {
+          if (owed !== null && settings !== null && getAdoptOwed() === owed) {
             setAdoptOwed(null);
             adopted = storedId(owed.kind, settings);
             adoptToolSelection(selectionFor(owed.kind, adopted));
@@ -339,6 +309,13 @@ export function useExternalToolScan(ops: ToolScanOutcomeOps): ExternalToolScanSt
           // to press Rescan and then a value that changed unheard.
           // `announceBrowsed`, because this IS the browse's confirmation
           // arriving late; an id no row carries has no name to say.
+          //
+          // The condition is "any non-refresh load that completed an owed
+          // adopt", which includes a COLD mount and not only the remount §17.2
+          // describes — considered and kept (ruling, sub-increment 5): §16.10's
+          // string is true on that path too. The user browsed, the follow-up
+          // read failed, the choice was saved, and the adopt has now landed;
+          // that is what the sentence says. No contract amendment.
           else if (owed !== null && adopted !== null) {
             const label = labelFor(next, owed.kind, adopted);
             if (label !== null) announceOnly(announceBrowsed(owed.kind, label));
@@ -347,7 +324,7 @@ export function useExternalToolScan(ops: ToolScanOutcomeOps): ExternalToolScanSt
           if (!mounted.current || scanEpoch.current !== epoch) return;
           report(RESCAN_SLOT, 'error', SCAN_ERR);
           // Rule 1: the cached scan is KEPT. Only a cold failure has nothing.
-          if (cachedScan === null) setScanFailedCold(true);
+          if (getCachedScan() === null) setScanFailedCold(true);
         } finally {
           // NO epoch check here, deliberately: `scanning` belongs to THIS load
           // and nothing else can clear it (loads are serialised), so a
@@ -374,7 +351,7 @@ export function useExternalToolScan(ops: ToolScanOutcomeOps): ExternalToolScanSt
     // again. This is the ONE path that spends a round trip on a warm cache, and
     // only in an error-recovery state (`refresh: false`, so the backend's PATH
     // walk is not re-run).
-    const owed = owedAdopt;
+    const owed = getAdoptOwed();
     if (owed !== null) {
       // A microtask, not a direct call: `report`'s `flushSync` is legal only
       // from a promise continuation (`useOutcomeNotes.ts`), and React warns when
@@ -383,14 +360,15 @@ export function useExternalToolScan(ops: ToolScanOutcomeOps): ExternalToolScanSt
       // token, so a recovery that has ALREADY landed (a load resolving before
       // this tick) restores no note.
       void Promise.resolve().then(() => {
-        if (!mounted.current || owedAdopt !== owed) return;
+        if (!mounted.current || getAdoptOwed() !== owed) return;
         report(slotFor(owed.kind), 'error', BROWSE_STALE);
       });
       load(false);
       return;
     }
-    if (cachedScan !== null) {
-      setScan(cachedScan);
+    const held = getCachedScan();
+    if (held !== null) {
+      setScan(held);
       return;
     }
     load(false);
@@ -429,14 +407,14 @@ export function useExternalToolScan(ops: ToolScanOutcomeOps): ExternalToolScanSt
             // a Rescan that is still in flight must not put its older list back
             // over this one.
             scanEpoch.current += 1;
-            cachedScan = next;
+            setCachedScan(next);
             // An adopt owed for THIS kind is now satisfied — this read is the
             // one it was waiting for. Leaving it owed only mattered once the
             // flag outlived the mount (rule 5): a browse that recovered from an
             // earlier failed one would otherwise re-raise "Press Rescan." over a
             // correct value on the next visit to General. The other kind's owed
             // adopt is untouched; nothing here read its field.
-            if (owedAdopt?.kind === kind) setAdoptOwed(null);
+            if (getAdoptOwed()?.kind === kind) setAdoptOwed(null);
             // Rule 2 — ONE update: the new selection and the option that names
             // it must arrive in the same render, or the input blanks in between.
             adoptToolSelection(selectionFor(kind, storedId(kind, settings)));
@@ -476,7 +454,7 @@ export function useExternalToolScan(ops: ToolScanOutcomeOps): ExternalToolScanSt
       // utterance. And it `begin`s at all for rule 4's reason in reverse:
       // `BROWSE_STALE` names a Rescan that can no longer change this row, so
       // the pick that superseded it retracts it.
-      if (owedAdopt?.kind === kind) {
+      if (getAdoptOwed()?.kind === kind) {
         setAdoptOwed(null);
         begin(slotFor(kind));
       }

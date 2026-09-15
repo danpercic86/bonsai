@@ -16,7 +16,7 @@ import { SettingsPanel, type SettingsPanelProps } from '../SettingsPanel';
 import { MINIMAL } from './coverageFixtures';
 import { WIN_TERMINALS } from '../../ipc/fixtures/externalTools';
 import { resetExternalToolMockForTests } from '../../ipc/mock/handlers/tools';
-import { resetExternalToolScanCacheForTests } from './useExternalToolScan';
+import { resetExternalToolScanCacheForTests } from './toolScanMemory';
 
 export function seamUrl(seam: string): void {
   window.history.replaceState({}, '', seam === '' ? '/' : `/?tools=${seam}`);

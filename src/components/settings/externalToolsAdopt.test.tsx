@@ -29,7 +29,7 @@ import { SettingsPanel, type SettingsPanelProps } from '../SettingsPanel';
 import { MINIMAL } from './coverageFixtures';
 import { BROWSE_STALE, EDITOR_OUTCOME_ID, RESCAN_NOTE_ID } from './toolPickerCopy';
 import { resetExternalToolMockForTests } from '../../ipc/mock/handlers/tools';
-import { resetExternalToolScanCacheForTests } from './useExternalToolScan';
+import { resetExternalToolScanCacheForTests } from './toolScanMemory';
 import type { ToolSelection } from '../../hooks/useUiSettings';
 import type { UiSettingsPatch } from '../../ipc';
 
@@ -140,6 +140,12 @@ const rescanNote = (): HTMLElement => {
 const browseEditor = (): HTMLElement =>
   screen.getByRole('button', { name: 'Browse for an editor program' });
 const rescan = (): HTMLElement => screen.getByRole('button', { name: 'Rescan' });
+/** The editor row's ↺. Named from the CATALOG label, like every other row's
+ *  — `Reset ${label} to default` (`SettingsRow.tsx`). It renders only while the
+ *  value differs from the default, which is why the owed-adopt state is where it
+ *  is visible: the browsed value is still on disk, so the row shows `vscode`. */
+const resetEditor = (): HTMLElement =>
+  screen.getByRole('button', { name: 'Reset Editor to default' });
 const tab = (name: string): HTMLElement => screen.getByRole('tab', { name });
 
 /** Arm the owed adopt the way a user does: browse, and let the follow-up read
@@ -260,5 +266,35 @@ describe('P112 §17.2 — the owed adopt recovers from a REMOUNT', () => {
     await settle();
     expect(log.adopts).toHaveLength(1);
     expect(editorInput()).toHaveValue('editor-cli-launcher');
+  });
+});
+
+describe('P112 rule 6 — an explicit RESET supersedes it too (the ↺)', () => {
+  it('the reset survives the Rescan the note asked for, and retracts that note', async () => {
+    const log = await browseIntoStaleAdopt();
+
+    // The ↺ is an explicit selection of the DEFAULT, not a different kind of
+    // write: "reset this row" says what the user wants just as plainly as
+    // picking an option does, so rule 6 has to hold for it. Before this went
+    // through `changeTool` it did not — `resetRow` patched the key through the
+    // generic catalog path, which cannot see the owed adopt.
+    fireEvent.click(resetEditor());
+    expect(log.picks).toEqual([{ editorTool: '' }]);
+    expect(editorInput()).toHaveValue('Auto-detect');
+    // Rule 4 in reverse, exactly as for a pick: `BROWSE_STALE` names a Rescan
+    // that can no longer change this row, so the act that superseded it retracts
+    // it. The standing note used to instruct the failing action.
+    expect(editorOutcome()).toHaveTextContent('');
+
+    fireEvent.click(rescan());
+    await settle();
+
+    // Before the fix the owed adopt read `editorTool: 'custom'` off the disk and
+    // put the browsed tool back OVER the reset, while the reset still reached
+    // disk — the pick case's divergence, one control over and a shorter path.
+    expect(editorInput()).toHaveValue('Auto-detect');
+    expect(log.adopts).toEqual([]);
+    // A refused adopt is still not a refused scan.
+    expect(rescanNote()).toHaveTextContent('3 terminals and 4 editors found.');
   });
 });

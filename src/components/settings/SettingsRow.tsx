@@ -57,8 +57,18 @@ export function SettingsRow({
   /** Extra modifier class(es) on the row div (P91 `.settings-row--sensitive`).
    *  Appended to the computed base classes; never replaces them. */
   className?: string;
-  /** Reset source for a leaf section rendered OUTSIDE the provider (its props are
-   *  its only value source). Omitted ⇒ resolved from the catalog + context. */
+  /** Who performs this row's ↺, when the catalog descriptor may not.
+   *
+   *  Two cases, and the second is P112's: a leaf section rendered OUTSIDE the
+   *  provider (its props are its only value source), and a `resetRouted` row
+   *  whose write has to go through its container's own handler — the two tool
+   *  pickers, whose ↺ must clear that kind's owed adopt (rule 6) and therefore
+   *  cannot be a generic key patch. A routed descriptor renders NO ↺ without
+   *  this prop, so a container that forgets it loses the button rather than
+   *  silently writing around the rule.
+   *
+   *  Omitted ⇒ resolved from the catalog + context, unless the descriptor is
+   *  routed. */
   reset?: SettingsRowResetOverride;
   /** P69c §13.2.1: the draft-divergence hint shares the help cell and hides the
    *  help text while it shows. Wired by the increment that lands the hint hook. */
@@ -87,7 +97,7 @@ export function SettingsRow({
   // and their suites render them bare, with no provider above.
   const resolved: SettingsRowResetOverride | null =
     reset ??
-    (descriptor !== undefined && values !== null && actions !== null
+    (descriptor !== undefined && descriptor.routed !== true && values !== null && actions !== null
       ? {
           isDefault: descriptor.isDefault(values.snapshot, DEFAULT_UI_SETTINGS),
           onReset: () => actions.resetRow(id),

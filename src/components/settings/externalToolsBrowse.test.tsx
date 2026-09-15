@@ -18,7 +18,7 @@ import { useLayoutEffect, useState } from 'react';
 import { SettingsPanel, type SettingsPanelProps } from '../SettingsPanel';
 import { MINIMAL } from './coverageFixtures';
 import { resetExternalToolMockForTests } from '../../ipc/mock/handlers/tools';
-import { resetExternalToolScanCacheForTests } from './useExternalToolScan';
+import { resetExternalToolScanCacheForTests } from './toolScanMemory';
 import type { ToolSelection } from '../../hooks/useUiSettings';
 
 function seamUrl(seam: string): void {
@@ -355,7 +355,7 @@ describe('P112 §7 / §16.6 — Rescan (sites D, E, F)', () => {
  *  no `node:fs`, this tsconfig has no node types). Globbed, so a rename fails
  *  loudly here instead of silently checking nothing. */
 const SOURCES = import.meta.glob(
-  './{SettingsExternalToolsSection.tsx,ToolPickerRow.tsx,useExternalToolScan.ts}',
+  './{SettingsExternalToolsSection.tsx,ToolPickerRow.tsx,toolScanMemory.ts,useExternalToolScan.ts}',
   { query: '?raw', import: 'default', eager: true },
 ) as Record<string, string>;
 
@@ -370,6 +370,7 @@ describe('P112 §16.5 / UA17 — the new components cannot launch anything', () 
     expect(Object.keys(SOURCES).sort()).toEqual([
       './SettingsExternalToolsSection.tsx',
       './ToolPickerRow.tsx',
+      './toolScanMemory.ts',
       './useExternalToolScan.ts',
     ]);
     // The structural half of §16.5, checkable by reading the signatures rather
