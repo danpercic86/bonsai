@@ -287,10 +287,20 @@ is a *soft* restriction: the agent can still call them, it is merely told not to
 restriction was intended, line 4 needs the same edit. **Flagged to the user; left untouched.**
 
 ### Owed by the user — nothing is blocked on 1 or 2
-1. **USER CHECKPOINT** — `pnpm tauri dev`, then **Settings → General**: it should show exactly two
-   groups (**Background activity**, **Committing**) with the subtitle "Background activity and commit
-   defaults. Applies to every repository." Verified by me in the **mock** harness only; the native
-   window is the user's to confirm and **must not be self-confirmed.**
+1. **USER CHECKPOINT** — `pnpm tauri dev`. Two things to look at:
+   * **Settings → General** should show exactly two groups (**Background activity**, **Committing**)
+     with the subtitle "Background activity and commit defaults. Applies to every repository."
+     Verified by me in the **mock** harness only; the native window is the user's to confirm and
+     **must not be self-confirmed.**
+   * **If the tool picker is reachable yet, watch whether the Browse dialog behaves as a child of the
+     Bonsai window** — i.e. it stays in front, and focus returns to the Browse button when it closes.
+     The audit flagged that `open_program_dialog` (`commands/tools.rs:108-138`) builds the dialog from
+     `AppHandle` with **no `set_parent`**. I checked the version — `tauri-plugin-dialog` **2.7.2** —
+     and **deliberately did NOT add `set_parent` blind**: the auditor could not establish statically
+     whether the plugin already attaches to the focused window on Windows, so the call might be a
+     no-op or might itself misbehave, and **I cannot observe either outcome without the native
+     window.** If it goes behind the main window or loses focus, that is the fix; if it behaves,
+     leave it alone and record that.
 2. **`CLAUDE.md` trigger** — whether `BrowsedProgram::from_settings_field` joins the mandatory
    `security-auditor` path trigger. Not added unilaterally: the sibling rule there is a user ruling.
 3. **BLOCKING — what a PARTIAL account removal tells the user.** `forge_remove_account_inner`

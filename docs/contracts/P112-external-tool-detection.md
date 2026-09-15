@@ -394,6 +394,38 @@ struct CachedScan { at_ms: u64, found: Vec<(&'static ToolEntry, Resolution)> }
 > 7. **The catalog has 35 rows, not 36** (contract and code agree at 35; only a code comment said 36).
 > 8. **`§4`'s auto-ladder lookup — see AMEND-4 above.** Unchanged and still binding: use `find_for`.
 >
+> ### AMEND-8 (orchestrator, 2026-09-15) — generalising item 6: host-bound tests, and why `pnpm gate` cannot see them
+>
+> AMEND-5 item 6 recorded that **AC16's accept cases are host-bound**. Sub-increment 3 reproduced the
+> same defect in a new file, so the rule is promoted from an observation about one criterion to a
+> **rule about this whole surface**:
+>
+> > **Any test that passes an explicit `TargetOs` while touching the real filesystem is host-bound.**
+> > The binding constraint is the **absoluteness rule** (`custom::is_absolute_for`), which
+> > `validate_custom_program` reaches at `custom.rs:249-250` — *before* the bundle branch, `is_file`
+> > and the extension rule. A `tempfile::TempDir` path is `/tmp/…` on Linux and `C:\u2026` on Windows, so
+> > a fixture validated against an explicit `TargetOs::Windows` is **refused on unix by absoluteness**,
+> > never reaching the rule the test believes it is exercising.
+>
+> **Why this is not merely a test-hygiene note: `pnpm gate` runs on Windows only, while
+> `.github/workflows/ci.yml` runs `cargo nextest run --workspace` on
+> `[ubuntu-22.04, windows-latest, macos-latest]`.** A green local gate is therefore **Windows-only
+> evidence** and is structurally incapable of seeing a break on two of the three CI legs. In
+> sub-increment 3 four tests in `commands/tests_tools_pick.rs` panicked on both non-Windows legs while
+> the local gate stayed green — and the file's own module doc asserted the opposite, that the fixtures
+> were accepted "on any host".
+>
+> **The two acceptable shapes**, both now in the tree as precedents:
+> * `#[cfg(windows)]` the accept cases and **say in the docstring which half goes unasserted on the
+>   other host** — `tools/custom_tests.rs:167-207`.
+> * Drive `TargetOs::host()` and provide a host-appropriate fixture (on unix, `chmod 0o755`, since the
+>   execute bit becomes the operative gate) — `commands/tests_tools_pick.rs`. **Note the cost:** the
+>   Windows-specific DEC-1 rows are then asserted on the **Windows leg only**, and the docstring must
+>   say so.
+>
+> **The unacceptable shape is a docstring claiming host-independence that the absoluteness rule
+> denies.** That is what shipped, and only a reviewer reading the CI matrix caught it.
+>
 > **A shipped bug this increment uncovered, measured rather than argued.** `external.rs`'s Windows
 > `editor_ladder` opens with bare `spec("code", …)`, and `procutil::resolve_program` returns
 > `dir.join(program)` **before** its `PATHEXT` loop — so `"code"` resolves to
