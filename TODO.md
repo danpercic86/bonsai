@@ -147,40 +147,35 @@ Killed; port confirmed free; no other `node` process on this repo remains. Found
    the server still up, so it is a contributor at most. But it is a **concrete** mechanism where I
    previously had only "ambient load", and it is one I created.
 
-# ⏸ SESSION STOPPED BY THE USER 2026-09-14 — CLEAN. RESUME HERE.
+# 🔧 RESUMED 2026-09-15 — P112 sub-increment 3 IN PROGRESS
 
-**Stopping state is deliberately clean:** HEAD `e98b2b0`, **working tree empty**, **full 8-step gate
-green at this exact source tree** (427.4s, 2564 Rust / 2906 vitest / 185 e2e), **port 1420 free**, no
-stray `node`, no `cargo`/`rustc` running. Nothing is half-done and nothing needs untangling.
+**Started from a clean tree at `11f896c`** with the 8-step gate green at that exact source tree
+(427.4s: 2564 Rust / 2906 vitest / 185 e2e), port 1420 free, no stray processes.
 
-**I stopped a `senior-dev` mid-spawn on P112 sub-increment 3** — it had only read the contract and
-written **nothing**, so there is no partial work to reconcile. Its brief is reproduced in this file's
-sub-inc 3 section; re-spawn it as written.
+**In flight:** `senior-dev` on **P112 sub-inc 3** — `spec_from(PickedTool)` + the auto ladders rebuilt
+from `tools::catalog` (§4), `pick_external_tool` + the backend-invoked native dialog (§5.4), the IPC
+surface **and the mock** (§6), and the §7 deletions. The brief carries the **seven established
+requirements** so none is rediscovered — they are the accumulated output of two review rounds and two
+audits, and requirement 1 *panics on this host* if missed.
 
-### The single next action
-**P112 sub-increment 3** — `spec_from(PickedTool)` + the auto ladders rebuilt from `tools::catalog`
-(§4), `pick_external_tool` + the backend-invoked native dialog (§5.4), the IPC surface **and the mock**
-(§6), and the §7 deletions. **Seven requirements are already established and must not be
-rediscovered** — they are listed in the sub-inc 3 section below: `find_for` not `find` (AMEND-4, or it
-panics off-Mac and AC9 becomes unprovable here); `validate_custom_program` inside `spawn_blocking`
-(UNC can now block on a dead share); a deliberate obs-capture decision (the settings commands are
-**already** in the capture list); widen `external_cmd.rs:150`'s duplicate `is_unc` during the §7 move;
-`picked` must not spawn a foreign-OS row; keep the `is_dir()` precheck (it is the `.cmd` argv filter);
-and plan the `settings.rs` split — it is at 494/500 and §7 crosses it.
+**Not mine, do not commit:** `.claude/agents/context-explorer.md` has an uncommitted edit from
+outside this work — its body now says "only `code_search` and `Read`" while its **frontmatter at
+line 4 still grants `Grep` and `Glob`**. The frontmatter is what the harness enforces, so today that
+is a *soft* restriction: the agent can still call them, it is merely told not to. If a hard
+restriction was intended, line 4 needs the same edit. **Flagged to the user; left untouched.**
 
-### Owed by the user — nothing else is blocked on these
-1. **USER CHECKPOINT, and it is the one thing no tier here can substitute for:** run `pnpm tauri dev`
-   and confirm **Settings → General** reads correctly now that P112 deleted both External-tools text
-   rows. The page should show exactly two groups — **Background activity** and **Committing** — with
-   the subtitle "Background activity and commit defaults. Applies to every repository." I verified
-   that in the mock harness; the native window is the user's to confirm. **Do not self-confirm it.**
-2. **`CLAUDE.md` trigger:** whether `BrowsedProgram::from_settings_field` joins the mandatory
-   `security-auditor` path trigger. Not added unilaterally because the sibling rule there is an
-   explicit user ruling.
-3. **What a PARTIAL account removal tells the user** — this **blocks** implementing the credential
-   defect (`forge_remove_account_inner` discards both `delete_token` and `settings::update` results
-   and returns `Ok`, so "account removed" can be reported while the token is still in the keychain).
-   The two swallowed calls mean different things, so the copy has to be able to say which half failed.
+### Owed by the user — nothing is blocked on 1 or 2
+1. **USER CHECKPOINT** — `pnpm tauri dev`, then **Settings → General**: it should show exactly two
+   groups (**Background activity**, **Committing**) with the subtitle "Background activity and commit
+   defaults. Applies to every repository." Verified by me in the **mock** harness only; the native
+   window is the user's to confirm and **must not be self-confirmed.**
+2. **`CLAUDE.md` trigger** — whether `BrowsedProgram::from_settings_field` joins the mandatory
+   `security-auditor` path trigger. Not added unilaterally: the sibling rule there is a user ruling.
+3. **BLOCKING — what a PARTIAL account removal tells the user.** `forge_remove_account_inner`
+   discards both the `delete_token` and `settings::update` results and returns `Ok`, so "account
+   removed" can be reported while the token is **still in the keychain**. The two swallowed calls
+   fail differently, so the copy must be able to say which half happened. **The credential fix cannot
+   be implemented until this is decided.**
 
 **Ruling #25 stands: the branch is NOT to be pushed, and that is not to be raised again.**
 
