@@ -147,6 +147,52 @@ Killed; port confirmed free; no other `node` process on this repo remains. Found
    the server still up, so it is a contributor at most. But it is a **concrete** mechanism where I
    previously had only "ambient load", and it is one I created.
 
+### 🚨 THE LOCAL GATE CANNOT SEE A CI BREAK — four tests red-line ubuntu and macOS
+
+**The most important finding of sub-inc 3's review, and the gate is structurally blind to it.**
+`src-tauri/src/commands/tests_tools_pick.rs` `:46`, `:126`, `:161`, `:182` build a fixture under
+`tempfile::TempDir` and validate it with an explicit `TargetOs::Windows`. On Linux/macOS that path is
+`/tmp/…` or `/var/folders/…`, which `is_absolute_for(Windows, …)` refuses (it needs a drive letter or
+a UNC head) — so `.expect("accepted")` **panics**.
+
+**I verified the matrix:** `.github/workflows/ci.yml` runs `cargo nextest run --workspace` on
+**`[ubuntu-22.04, windows-latest, macos-latest]`**. **`pnpm gate` here only runs Windows.** So a green
+local gate says nothing about two of the three CI legs — **the same shape as the mock blindness from
+yesterday: a check that cannot observe the thing it is trusted for.**
+
+Compounding it, the module doc at `:9-11` **asserts the opposite** — that the fixtures are accepted
+"on any host" and "both branches run here regardless of the runner". Neither clause is true; only the
+*refusal* test at `:78` is genuinely host-agnostic. **The lesson was already encoded one
+sub-increment away** — `tools/custom_tests.rs:167-207` gates its accept cases `#[cfg(windows)]` under
+a "host-split" heading and names the mechanism.
+
+**Durable rule: a green `pnpm gate` is Windows-only evidence.** Any test that passes an explicit
+`TargetOs` while touching the real filesystem is host-bound, and the absoluteness rule is what makes
+it so.
+
+### ✏ CORRECTION — `spec_from`'s visibility went the OTHER way, and I repeated the error
+
+I told the user the implementer "narrowed `spec_from` to `pub(crate)` against the contract's `pub`".
+**Backwards.** The contract declares `fn spec_from(…)` at **§4 line 414 with no `pub`**, and §1's table
+(line 66) says *"new **private** `spec_from`"*. So `pub(crate)` is **wider** than the contract — and it
+had to be, because `tools/settings_ids_tests.rs:10` imports it for the AC6 provenance assertion.
+
+The chain is worth noting: the implementer misread the contract, **I repeated it without checking**,
+the auditor built a correct and valuable finding on the unchecked premise, and only the reviewer went
+and read §4. **Three passes accepted a claim about a file that was one grep away.**
+
+### 📌 Two more from the review, kept because they are about evidence quality
+
+- **A test that can NEVER run under the gate.** `external_picked_tests.rs:186` is
+  `#[cfg(not(debug_assertions))]`, so it compiles only under `--release`, which the gate never does.
+  This is the limit case of the pattern that has recurred all through this work: **not a test that
+  passes in both the correct and broken states, but one that is never in any state.**
+- **An AC18 test whose message overstates what it proves.** `tests_tools_pick.rs:148` claims "both
+  fields in ONE update cycle" — but **two sequential `settings::update` calls would produce an
+  identical final state and the test would still pass.** What it discriminates is `update` versus a
+  bare `load_from` + `save_to`. The code is right; the label is not, and **mislabelled evidence is
+  this repository's named defect.**
+
 ### ✅ SECURITY AUDIT of sub-inc 3 — no CRITICAL, no HIGH; "a net reduction in attack surface"
 
 The auditor's framing is worth keeping: this increment **deletes a capability** (free-text program
