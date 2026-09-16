@@ -73,10 +73,11 @@ being wrong is kept deliberately.
 awaiting USER CHECKPOINT (native window)*. That entry owns the line; keep it updated there, not here.
 Its five checkpoint items are the only thing left in P112.
 
-**Branch `feat/post-p91-rulings`, no upstream — 86 commits ahead of `origin/dev` (`8b88efd`),
+**Branch `feat/post-p91-rulings`, no upstream — 92 commits ahead of `origin/dev` (`8b88efd`),
 unpushed, and it stays unpushed (ruling #25, do not raise it again).** HEAD is the board commit
-below `934a280`. Measured 2026-09-16 with `git rev-list --count origin/dev..HEAD`: **85 at
-`934a280`**, +1 for this board commit. The curator's "80" was true when measured, before the six
+below `5654eaa`. Measured 2026-09-16 with `git rev-list --count origin/dev..HEAD`: **91 at
+`5654eaa`**, +1 for this board commit. (It read 85 at `934a280` earlier the same day; the real-log
+investigation added five commits.) The curator's "80" was true when measured, before the six
 commits of the 2026-09-16 review-and-split session; the earlier "18 commits ahead, last commit
 `8026622`" was 2026-09-14 and had already gone stale (archive Part 75.2). **Each of these three
 numbers was correct when written** — which is the argument for measuring rather than carrying one
@@ -238,10 +239,18 @@ branch unpushed, so CI cannot run it either.** The first real CI run is the veri
 
 ### Verification state
 
-- **Full 8-step gate GREEN at `934a280` — 2026-09-16, 414.2s, exit 0, all 8 steps, zero FAIL
-  lines.** nextest 147.2s (**2556 run, 2556 passed, 1 leaky, 10 skipped**) · doctests 3.9s · clippy
-  1.3s (**cache, not a change in work**) · eslint 14.1s · size ratchet 668ms · vitest 56.9s
-  (**2978 / 267 files**) · tsc+build 11.5s · e2e 178.7s (**185 passed, 1 skipped**).
+- **Full 8-step gate GREEN at `5654eaa` — 2026-09-16, 450.1s, exit 0, all 8 steps, zero FAIL
+  lines.** nextest 141.9s (**2563 run, 2563 passed, 10 skipped, ZERO leaky this run**) · doctests
+  3.2s · clippy 12.5s · eslint 13.4s · size ratchet 678ms · vitest 60.1s (**3007 / 271 files**) ·
+  tsc+build 13.4s · e2e 177.6s (**185 passed**). Log:
+  `D:/Data/Temp/claude/bonsai-gate/gate-5654eaa.log`.
+- **Against the `934a280` green** (414.2s, 2556 Rust / 2978 vitest): Rust **+7**, vitest **+29**, e2e
+  unchanged. The intermittent `external_spawn::detached_spawn_ignores_nonzero_exit` leak did **not**
+  reproduce this run — 1 then 0, which is the record of it being timing, not a defect.
+- **Pre-gate machine state:** CPU **16%**, port 1420 free, no `cargo`/`rustc`/`vite` running. A
+  lingering `bonsai.exe` (PID 31196) from the user's Dev-mode session was **left alone** — it holds no
+  port; if `watcher::tests::git_internals_filtered` ever flakes near this commit, that is the ambient
+  filesystem activity the board already names as its real variable.
 - **Read from the `gate summary` block in the log file, not from the wrapper's exit status** — the
   backgrounded wrapper also reported 0, which is exactly the coincidence the gate-running rules warn
   about. Log: `D:/Data/Temp/claude/bonsai-gate/gate-934a280.log`.
@@ -932,6 +941,144 @@ archive Part 44; the milestone entry is archive Part 54.6.
 
 Condensed to one line per item on 2026-09-03 and again 2026-09-14; pre-condensation text is archive
 Part 50 and **Part 69**. Nothing here was closed by the curator.
+
+### 🔬 NEW 2026-09-16 — THE REAL-LOG INVESTIGATION: 5 commits, and 2 of my own diagnoses were WRONG
+
+The user's Dev-mode boot (see P91 above) produced an 11,848-record log. Parsing it found real defects;
+**investigating those found that two of my conclusions were wrong**, both because I trusted an
+instrument instead of checking it. Commits `88a4004`, `7f186b3`, `2fc03cc`, `5654eaa` (+ board).
+
+**✅ THE RENDER STORM — FIXED. `MAX_TALLY_RENDERS` 1012 → 8 for one ref change** (`BranchRow` 1000
+renders / 500 instances → **2 / 1**), and a no-change `worktree` round went from **4 commits to 0**.
+
+Three problems wearing one costume, fixed in a **ruled order** (commits → identity → memo; memoising
+first papers over the commits and is defeated by the churn anyway):
+
+1. **4 unconditional state commits per round.** Three refetches run under `Promise.all` but each IPC
+   response resolves in its own microtask, so React cannot batch across them. Setters now keep `prev`
+   when the new value is structurally equal (`src/utils/structuralEqual.ts`, `keepIfUnchanged`), so a
+   background refresh finding nothing new commits **nothing**. A watcher round also no longer flips
+   the loading flag — progress belongs to a gesture.
+2. **NO memoization anywhere in the sidebar.** Repo-wide `React.memo` appeared **once**
+   (`DiffView.tsx:72`). Comparators, not plain `memo` — git2+serde return a fresh object per `list_*`
+   call, so a shallow memo would never bail.
+3. **Identity churn that would have defeated any memo:** `filterItems`/`filterTree` called outside
+   `useMemo` beside already-memoised neighbours; `listFilter` copying the array for a **blank** query;
+   nine inline arrows at the call site; **and seven context-menu openers rebuilt per render** — the
+   last two were found by the implementer, were not in my brief, and **either alone would have
+   defeated every memo in the app.**
+
+**⚠ THE WATCHER WAS NEVER AT FAULT** — my first suspect. 10,280 raw events correctly debounced to
+**43 fires** at 300 ms. All amplification was downstream.
+
+**⚠ THE HEADLINE WAS WRONG UNTIL THE LAST FIX, and the test could not see it.** `onReveal` is rebuilt
+whenever the graph re-streams (every `full`/`refsOnly`/`remoteMeta`/`stash` round), so
+**`git branch foo` in a terminal still re-rendered all 500 rows** — while the churn test stayed green
+because its fixture **omitted the prop entirely**. **NINTH instance of "green in both states."** Now
+latched, pinned by `callbackIdentity.test.tsx`, and the storm is a **permanent negative control**
+asserting 1010 renders / 500 instances — the proof lives in CI, not in an agent report.
+
+**📌 THE PATTERN BEHIND THREE OF TODAY'S MISSES — keep this.** `changedProps` compared two empty
+objects; `settingsToastGuard` asserted on a bare `vi.fn()`; the churn fixture omitted `onReveal`.
+**None was a wrong assertion — each was an assertion with nothing to bite on.** The fixture, not the
+`expect`, is where this hides. Require an **observed** red state per case, and on review probe a
+regression *other* than the induced one.
+
+**✅ `mono` — the writer now stamps it where it stamps `seq`** (`88a4004`). All 431 `anomaly` records
+had `mono: 0` while `anomaly.rs:239` claimed the writer minted it; there was no `rec.mono = …`
+anywhere. Two guards, each proved by flipping it: `mono == 0` (producer wins) and `src == Rust` (the
+UI keeps its own base). **Three kinds benefited, not one** — `anomaly`, `truncate`, `drop`.
+
+**✅ The StrictMode activation guard fired ON MOUNT** (`7f186b3`) — the opposite of its comment.
+StrictMode re-runs a mount effect on the same instance, so the "already flipped" ref was true on the
+second pass. A run-once ref **cannot** serve a flip detector; extracted to `useActivationRefresh.ts`
+with remember-the-value-seen, and the old guard failed 3 of 4 cases when lifted into the new test.
+
+**✅ `changedProps` absence now means "not tracked"** (`2fc03cc`) — and it needed the **wire**, not
+just the hook: the Rust mirror had `changed_props: Vec<String>` with no `default`, and `log_append`
+deserialises the **whole batch** before its body runs, so one untracked tally would have failed every
+record in it. **`#[serde(default)]` alone was a FALSE fix** (absent → `vec![]` → `[]` on disk = the
+same ambiguity); a test pins exactly that shortcut.
+
+**✅ `OBS_SCHEMA_VERSION` 1 → 2.** `changed_props` changed shape **and** meaning, the stated bump
+condition — and the carve-out that kept it at 1 twice rested partly on *"no v1 corpus exists on
+disk"*, which **lapsed the moment a real session wrote 11,848 schema-1 records**, 680 carrying the old
+ambiguous `[]`. Only the log header moved; the **metrics file** and the **history/search** DTOs keep
+their own versions (three `schema` fields share the name — reviewer-verified). Three comments
+asserting "stays 1" were falsified by the bump and corrected.
+
+**🚨 TWO OF MY DIAGNOSES WERE WRONG. Both times an agent refused and was right.**
+
+1. **`suppressed`/`suppressReason` are NOT dead, and I ordered them deleted.** The frontend is a
+   second producer — `useCoalescedRefresh.ts:156-157` emits `suppressed: true, suppressReason:
+   'echo'`, asserted at `useCoalescedRefresh.causality.test.tsx:86-90`/`:151-153`. **Deleting them
+   would have stripped echo-suppression evidence from users' logs with serde AND `tsc` green** — the
+   inverse of the defect class I was fixing. **Root cause of MY error: I piped the consumer grep
+   through `head -10`**, the paths sorted `components/…` before `repoWorkspace/…`, and the producer
+   fell off the end. **That is the board's own grep rule** — *"a truncating pipe manufactured the
+   failure and hid the evidence"* — repeated verbatim. The all-`false` log was a second false clue:
+   0 of 10,280 records were UI-source because that session armed **no echo window**. Fixed by
+   **documenting** which side populates it; the absence of that note is what made "dead" plausible.
+2. **`changedProps: []` was never evidence.** Ten sites pass `undefined`, so it could only ever be
+   empty. I reported "not one prop changed across 26,334 renders" as a finding. It was a dead gauge.
+
+**📌 And my brief was wrong three more times, each caught by the agent:** `RepoWorkspace.tsx` is
+**2264** lines, not the 559 I wrote (that is `App.tsx`); `types.ts:122` is `RenderPayload`, not the
+tally type (`:131`); and my prescribed churn-fixture fix (*a fresh `onReveal` per render*) was
+**unachievable** — the churn test mounts `Sidebar` directly so `useReveal` is never in its render
+path, and a fresh prop defeats the comparator whether or not the latch exists, i.e. permanently red.
+The implementer's substitute (stable prop + a separate negative control + identity pinned in
+`callbackIdentity.test.tsx`) is **better than what I asked for**.
+
+**✅ The 8 redundant-refresh anomalies are TRUE POSITIVES — ruling, do not "fix" them.** All 8 pairs
+are **consecutive rounds** (19→20, 34→35 … 47→48), verified against the log, so they are the
+coalescer's legitimate **leading+trailing** pair: a burst arriving mid-flight costs two rounds. The
+focus hypothesis was **refuted** — focus and activation both use `full`, not `worktree`. Silencing the
+rule would hide a real cost; the fix is a cheap round, which is what landed.
+
+**⚠ Two behaviour changes, both deliberate, both reviewed:** `refreshing` now covers only manual
+refresh, so the palette action / Mod+R / toolbar (**three** consumers — I had said two) are no longer
+greyed during a background round; greying on filesystem-event timing was the bug. And memoising froze
+**two** clocks the storm had been powering by accident (`rows.tsx:248` stash age,
+`TagsSection.tsx:223` "Last checked") — both now take the 30 s job ticker as a prop, the cadence they
+always had. **Not one spot — a class of two**, which the review corrected me on.
+
+**🆕 FILED, not done:**
+
+- **The one-commit refactor.** A *genuinely-changed* round still lands **up to 3** commits, because
+  each IPC response resolves in its own microtask. Having the refetches **return** data and applying
+  it once after `Promise.all` is the real next step. **The 126× win is for the common no-change case,
+  not universal.**
+- **`Sink::mono()` (`sink.rs:401/405`) is wall-clock derived** (`now_ms() - started_ms`), which
+  contradicts the "jitter-free" framing on the producer path. ~4 lines (an `Instant` beside
+  `started_ms`). Interacts with "0 means unset": the sink can legitimately return 0 in the first ms.
+- **`each`-mode `changedProps` still cannot distinguish** tracked-unchanged from untracked (it omits
+  when empty, by instruction). Only `render.tally` carries the three-state guarantee.
+- **The 10 `useRenderCount(…, undefined, 'aggregate')` sites** — pass real props to make the gauge
+  diagnostic (deliberately NOT done: inventing props for 10 sites is a judgment call, not a fix).
+- **Cross-tab detector keying:** `window.rs:158-165` keys the redundant-refresh window on `scope`
+  **alone** and the refresh record carries **no repoId**, so two unrelated repos refreshing within 1 s
+  are indistinguishable. Latent (all 8 pairs here were same-tab) but the log shows two coalescer
+  instances both at `round: 1`, so multiple tabs do happen. Needs a DTO field → **`architect`**.
+- **Dev-mode log VOLUME:** 10,280 watcher records = **87%** of a 2.2 MB / 6-minute log, and **7,247
+  had `relevant: 0`** — a record per file change it then correctly ignores. Cost, not correctness.
+- **`RemotesSection` still re-renders on a local-branch change** — it receives `data` directly; the
+  `remoteFlatFiltered` dep narrowing does not stop it. 2 renders / 1 instance.
+- **Contract drift (contracts are not the orchestrator's to edit):**
+  `docs/contracts/P91-observability.md:261` still says "jitter-free ordering aid" and
+  `:230,235,252,322` still say schema 1; the **P81** contract names `pendingTagForceRef`, **renamed**
+  to `pendingUserOriginRef` (a rename, not a merge — reviewer-verified the gating line byte-identical).
+- **Headroom:** `Sidebar.tsx` **491/500** (9 lines — next sidebar prop needs a split), `writer.rs`
+  **491**, `record.rs` **487**. All hard caps (not baselined).
+
+**❓ USER DECISION OWED — the `render-storm` threshold.** `anomaly.rs:136` is
+`renders > 3 * instances`, and the docstring claiming `aggregate` mode "collapses away" the StrictMode
+doubling was **false** (it collapses *records*, not *renders*) — so the threshold was set against a
+belief that never held, and effectively trips at **1.5× real renders**. That is why it fired **423
+times in 6 minutes**. Options: raise the threshold · have the tally divide the doubling out for
+aggregate mode · leave it noisy-but-sensitive. **My recommendation: divide it out** — a detector that
+fires on essentially every refresh round trains the user to ignore it. **Not actioned; it is a
+detector-tuning decision and it is the user's.**
 
 ### 🆕 NEW 2026-09-16 — the nine-file second review pass: 2 MUST-FIX routed, 4 filed here
 
