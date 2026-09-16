@@ -128,7 +128,10 @@ export interface RenderTallyPayload {
   windowMs: number;
   renders: number;
   instances: number;
-  changedProps: string[];
+  /** Absent ⇒ the call site tracks no props. `[]` ⇒ tracked, nothing changed
+   *  this window. Names ⇒ tracked, these changed. Never coalesce the first two:
+   *  a tally that can only ever say `[]` reports nothing. */
+  changedProps?: string[];
   traces: TraceId[];
 }
 

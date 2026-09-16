@@ -132,13 +132,18 @@ pub struct LogRecord {
     /// Ms since session start (ordering aid).
     ///
     /// Each side has its OWN base, so `mono` compares within a `src`, never
-    /// across one. `0` means "unset": `LogWriter::append_record` stamps any
-    /// `src: "rust"` record that arrives at 0 from the writer's session clock —
-    /// a `std::time::Instant` delta, so it cannot be moved by a wall-clock step.
-    /// That is how `anomaly`, `truncate`, `drop` and part headers get theirs.
-    /// Producer-side Rust records are stamped earlier, by `Sink::mono`, which is
-    /// still a `now_ms()` difference (a pre-existing wall-clock dependency, not
-    /// the writer's). A `ui` record is never restamped.
+    /// across one. `0` is TREATED as unset: `LogWriter::append_record` stamps
+    /// any `src: "rust"` record that arrives at 0 from the writer's session
+    /// clock — a `std::time::Instant` delta, so it cannot be moved by a
+    /// wall-clock step. That is how `anomaly`, `truncate`, `drop` and part
+    /// headers get theirs. Producer-side Rust records are stamped earlier, by
+    /// `Sink::mono`, which is still a `now_ms()` difference (a pre-existing
+    /// wall-clock dependency, not the writer's) — and which can legitimately
+    /// RETURN 0: in a session's first millisecond, or when a wall-clock
+    /// step-back makes the difference negative and `.max(0)` floors it. Such a
+    /// record is restamped too, from a strictly better clock, so the collision
+    /// is harmless-to-better — but 0 is not PROOF that a producer asked to be
+    /// stamped. A `ui` record is never restamped.
     pub mono: u64,
     pub src: LogSource,
     pub lvl: LogLevel,
@@ -315,7 +320,15 @@ pub enum LogPayload {
         window_ms: f64,
         renders: u64,
         instances: u64,
-        changed_props: Vec<String>,
+        /// THREE states, all distinct on the wire (§9.2): absent ⇒ the call site
+        /// tracks no props; `Some([])` ⇒ tracked and nothing changed this
+        /// window; `Some(names)` ⇒ tracked and these changed. Optional because
+        /// `log_append` deserializes a whole batch up front, so a required field
+        /// would reject the batch over one untracked row — and
+        /// `skip_serializing_if` because re-emitting absent as `[]` would put
+        /// the collapsed ambiguity straight back on disk.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        changed_props: Option<Vec<String>>,
         traces: Vec<String>,
     },
     #[serde(rename = "effect")]

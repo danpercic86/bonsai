@@ -283,3 +283,61 @@ describe('useStateTransitionLog — reserved API', () => {
     expect(JSON.stringify(content)).not.toContain('NEGTEST_DRAFT_ZQX');
   });
 });
+
+/**
+ * The wire contract for `changedProps` (P91 §9.2): three states, all distinct.
+ * Absent ⇒ the call site tracks no props. `[]` ⇒ tracked, nothing changed.
+ * Names ⇒ tracked, these changed. Coercing an unsupplied props bag to `{}`
+ * collapses the first two, and a tally that can only ever say `[]` is a
+ * diagnostic that says nothing.
+ */
+describe('render.tally changedProps — absence means "not tracked"', () => {
+  function Untracked() {
+    useRenderCount('Untracked', undefined, 'aggregate');
+    return null;
+  }
+  function Tracked({ tick }: { tick: number }) {
+    useRenderCount('Tracked', { tick }, 'aggregate');
+    return null;
+  }
+
+  it('a site that supplies no props emits NO changedProps key at all', async () => {
+    await act(async () => {
+      render(<Untracked />);
+    });
+    await drain();
+    const tally = byKind('render.tally').find((r) => r.component === 'Untracked');
+    expect(tally).toBeTruthy();
+    // `not.toHaveProperty`, not `toBeUndefined` — the latter also passes for a
+    // present-but-undefined key, which serializes to nothing but reads as tracked.
+    expect(tally).not.toHaveProperty('changedProps');
+  });
+
+  it('a props-supplied site that saw no change emits changedProps: []', async () => {
+    await act(async () => {
+      render(<Tracked tick={0} />);
+    });
+    await drain();
+    const tally = byKind('render.tally').find((r) => r.component === 'Tracked');
+    expect(tally).toHaveProperty('changedProps');
+    expect(tally?.changedProps).toEqual([]);
+  });
+
+  it('a props-supplied site whose prop changed emits the NAME', async () => {
+    let bump: () => void = () => undefined;
+    function Host() {
+      const [tick, setTick] = useState(0);
+      bump = () => setTick((t) => t + 1);
+      return <Tracked tick={tick} />;
+    }
+    await act(async () => {
+      render(<Host />);
+    });
+    sunk = [];
+    __resetRenderTally();
+    await act(async () => bump());
+    await drain();
+    const tally = byKind('render.tally').find((r) => r.component === 'Tracked');
+    expect(tally?.changedProps).toEqual(['tick']);
+  });
+});

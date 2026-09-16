@@ -201,7 +201,7 @@ pub(super) fn render_tally(ts: i64, component: &str, renders: u64, instances: u6
             window_ms: 1000.0,
             renders,
             instances,
-            changed_props: vec![],
+            changed_props: None,
             traces: vec![],
         },
     )

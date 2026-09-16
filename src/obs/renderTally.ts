@@ -23,8 +23,11 @@ interface Bucket {
   renders: number;
   /** Distinct mounted instances seen this window (§9.2 `instances`). */
   instances: Set<string>;
-  /** Union of changed prop NAMES over the window — never values (§7/§9.1). */
-  changedProps: Set<string>;
+  /** Union of changed prop NAMES over the window — never values (§7/§9.1).
+   *  `null` while no render in this window supplied a props bag at all: the
+   *  emitted record then OMITS `changedProps`, which is how "not tracked" stays
+   *  distinguishable from the empty set ("tracked, nothing changed"). */
+  changedProps: Set<string> | null;
   traces: Set<TraceId>;
 }
 
@@ -37,17 +40,23 @@ let windowStart = 0;
 export function tallyRender(
   component: string,
   instanceId: string,
-  changedProps: string[],
+  changedProps: string[] | undefined,
   trace: TraceId | undefined,
 ): void {
   let b = buckets.get(component);
   if (b === undefined) {
-    b = { renders: 0, instances: new Set(), changedProps: new Set(), traces: new Set() };
+    b = { renders: 0, instances: new Set(), changedProps: null, traces: new Set() };
     buckets.set(component, b);
   }
   b.renders += 1;
   b.instances.add(instanceId);
-  for (const p of changedProps) b.changedProps.add(p);
+  // An EMPTY array still tracks — it promotes the bucket out of `null`, so a
+  // window of no-change renders reports `[]` rather than nothing.
+  if (changedProps !== undefined) {
+    const seen = b.changedProps ?? new Set<string>();
+    for (const p of changedProps) seen.add(p);
+    b.changedProps = seen;
+  }
   if (trace !== undefined) b.traces.add(trace);
   if (timer === null) {
     windowStart = Date.now();
@@ -69,7 +78,7 @@ export function flushRenderTally(): void {
       windowMs,
       renders: b.renders,
       instances: b.instances.size,
-      changedProps: [...b.changedProps],
+      ...(b.changedProps === null ? {} : { changedProps: [...b.changedProps] }),
       traces: [...b.traces],
     });
   }

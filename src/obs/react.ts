@@ -61,6 +61,11 @@ function changedNames(
  * already reads as 4 renders per instance and trips the rule. Read dev
  * `render-storm` warnings on aggregate surfaces with that factor in mind (and any
  * renders-per-instance budget asserted in a StrictMode test likewise).
+ *
+ * OMITTING `props` means NOT TRACKED, and the emitted record omits
+ * `changedProps` entirely to say so. Passing a bag that saw no change reports
+ * `changedProps: []` — "tracked, nothing changed". Those are different claims
+ * and the wire keeps them apart, so do not pass `{}` to silence the type.
  */
 export function useRenderCount(
   component: string,
@@ -77,9 +82,14 @@ export function useRenderCount(
     instanceId.current = `${component}#${instanceCounter}`;
   }
   const now = Date.now();
-  const next = props ?? {};
-  const changed = changedNames(prevProps.current, next);
-  prevProps.current = { ...next };
+  // `undefined` all the way through: a call site that names no props is NOT
+  // TRACKED, and coercing to `{}` here would make every record claim "tracked,
+  // nothing changed" — a diagnostic with exactly one possible value.
+  let changed: string[] | undefined;
+  if (props !== undefined) {
+    changed = changedNames(prevProps.current, props);
+    prevProps.current = { ...props };
+  }
   count.current += 1;
   const sinceMs = lastTs.current === 0 ? 0 : now - lastTs.current;
   lastTs.current = now;
@@ -92,7 +102,7 @@ export function useRenderCount(
     component,
     count: count.current,
     sinceMs,
-    ...(changed.length > 0 ? { changedProps: changed } : {}),
+    ...(changed !== undefined && changed.length > 0 ? { changedProps: changed } : {}),
   });
 }
 

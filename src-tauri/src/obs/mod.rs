@@ -47,6 +47,10 @@ pub use trace::{emit_logged, TraceMeta};
 mod tests_redact;
 
 #[cfg(test)]
+#[path = "tests_record.rs"]
+mod tests_record;
+
+#[cfg(test)]
 #[path = "tests_writer.rs"]
 mod tests_writer;
 

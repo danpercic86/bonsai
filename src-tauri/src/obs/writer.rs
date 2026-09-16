@@ -89,9 +89,11 @@ impl LogWriter {
             .map_err(|e| AppError::Io(format!("cannot create log dir: {e}")))?;
         prune(&cfg.dir, cfg.limits);
         // Captured AFTER the prune scan and immediately before the first part
-        // opens, so the header written below lands at `mono` ≈ 0 and the base
-        // agrees to within one header write with `Sink::started_ms` (taken right
-        // after this call returns).
+        // opens, so the header written below lands at `mono` ≈ 0. The writer's
+        // base therefore runs AHEAD of `Sink::started_ms` (taken once this call
+        // returns) by one header write plus a thread spawn — sub-ms typical, but
+        // NOT bounded: `Sink::start` also does two `Arc` shares and a
+        // `sync_channel` construction, then hands off to the OS scheduler.
         let started = Instant::now();
         let mut w = LogWriter {
             cfg,

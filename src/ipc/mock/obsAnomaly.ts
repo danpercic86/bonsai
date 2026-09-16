@@ -100,10 +100,15 @@ export function analyzeAnomalies(records: readonly LogRecord[]): LogRecord[] {
     traces: string[],
     ts: number,
   ): void => {
+    const seq = nextSeq++;
     out.push({
-      seq: nextSeq++,
+      seq,
       ts,
-      mono: 0,
+      // NON-ZERO, like the real writer's output: `LogWriter::append_record`
+      // stamps any `src: "rust"` record that arrives at 0 from its own session
+      // clock, so a `mono: 0` rust line is a shape the app no longer emits.
+      // Same synthetic ladder as `obs.ts` (`mockSpanSeq * 10`).
+      mono: seq * 10,
       src: 'rust',
       lvl: severityToLvl(severity),
       kind: 'anomaly',

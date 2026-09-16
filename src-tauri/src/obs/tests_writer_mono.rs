@@ -184,12 +184,13 @@ fn a_rotation_part_header_carries_a_later_mono_than_part_zero() {
     // asserting an absolute ceiling on it would be a timing bet on the host's
     // file system. The claim being pinned is the ORDER: the rotation part's
     // header is at least the elapsed sleep later than part 0's.
-    let (m0, m1) = (
-        head0[0]["mono"].as_u64().unwrap_or(u64::MAX),
-        head1[0]["mono"].as_u64().unwrap_or(0),
-    );
+    // Both `mono`s stay OPTIONAL through the comparison: a missing or
+    // non-integer value must fail THIS assertion with both values printed, not
+    // panic inside the arithmetic on a sentinel and hide what the headers said.
+    let (m0, m1) = (head0[0]["mono"].as_u64(), head1[0]["mono"].as_u64());
     assert!(
-        m1 >= m0 + SETTLE_MS,
-        "a rotation part's header carries the ms at which THAT part began:          part0={m0} part1={m1}"
+        m0.zip(m1)
+            .is_some_and(|(a, b)| b >= a.saturating_add(SETTLE_MS)),
+        "a rotation part's header carries the ms at which THAT part began:          part0={m0:?} part1={m1:?}"
     );
 }
