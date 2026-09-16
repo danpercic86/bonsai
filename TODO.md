@@ -223,10 +223,10 @@ branch unpushed, so CI cannot run it either.** The first real CI run is the veri
 
 ### Four USER ACTIONS — only the user can clear these
 
-- **Boot `pnpm tauri dev` with Dev mode ON** so P91's owed AI-gate item (a real `logs/*.jsonl` parse)
-  can be done (ruling #16). Verified 2026-09-11: no Dev-mode key in the persisted `settings.json`, so
-  it cannot be pre-set from disk, and the 2026-09-10 confirmation run produced no `logs/` directory.
-  **Any boot is not enough — Dev mode must be on.**
+- **✅ CLEARED 2026-09-16 — the user booted with Dev mode ON and the parse is DONE.** Log:
+  `%APPDATA%/com.bonsai.app/logs/bonsai-2026-09-16T09-03-46-s636c0dc4.jsonl`, session `s636c0dc4`.
+  Evidence + the one defect it exposed are in `### P91 — open items` below. **Three USER ACTIONS
+  remain**, not four.
 - **Back up `.tauri/updater-prod.key`** (ruling #14, deferred). Gitignored and untracked, so it exists
   in exactly ONE place: this working copy. Losing it permanently breaks auto-update for every
   installed client. The committed `tauri.conf.json` pubkey was verified to match it. **P71 must not
@@ -1550,14 +1550,61 @@ the IPC struct is the last place it surfaces, not where the information is lost.
 - **Deliberately not taken:** `src/obs/types.ts:68` still cites `A26 §D`, the dead lettered scheme
   retired inside `raw_args.rs`. A repo-wide letter→section migration is a decision, not a drive-by.
 
-### P91 — open items (branch merged 2026-09-11; one AI-gate item still owed)
+### P91 — open items (branch merged 2026-09-11; **the owed AI-gate item is CLOSED 2026-09-16**)
 
 Milestone detail: Part 54.6 · security arc 42 · audit F1–F9 43 · build diary 44 · SHOULD-FIX full
 text 45 · pre-condensation board text 69.1. User decisions + architectural rulings: see
 `## Accepted decisions` above.
 
-- **OWED AI-GATE ITEM — the real `logs/*.jsonl` parse** → the USER ACTIONS block above. A native
-  checkpoint confirmation does not reach it.
+- **✅ CLOSED 2026-09-16 — THE REAL `logs/*.jsonl` PARSE IS DONE** (ruling #16). The user booted
+  Dev mode; `logs/bonsai-2026-09-16T09-03-46-s636c0dc4.jsonl` (session `s636c0dc4`, 2.2 MB) was
+  parsed with the **SHIPPED deserializer** (`LogRecord`, `src-tauri/src/obs/record.rs:126`), not a
+  hand-rolled reader — a throwaway `#[cfg(test)]` harness gated on `BONSAI_REAL_LOG`, run and then
+  **removed** (tree verified clean; the harness is deliberately NOT committed, since it depends on a
+  machine-local file and could never be a gate step).
+
+  **Result: 11 848 records, ZERO rejections.** First line is the `session` record with `schema=1`,
+  `devMode=true` (§6). `seq` **strictly increasing and dense 1..11 848** — the sink-assigned ordering
+  invariant holds on real data. `mono` monotonic **per source** among set values (last 362 244 ms).
+
+  **The strong part of this result is the key-set diff, not the parse.** `LogRecord` uses
+  `#[serde(flatten)]` over an internally-tagged enum, which **cannot** carry `deny_unknown_fields` —
+  so a clean parse would NOT have proved the schema covers the writer's output. Each line was
+  re-serialized and its top-level key set diffed against the original: **zero dropped fields across
+  all 11 848 records.** The cross-language DTO and the on-disk format agree in fact, not by assertion.
+
+  **Record mix (a real session, ~6 min):** `watcher` 10 280 (**87%**) · `render.tally` 664 ·
+  `anomaly` 431 · `ipc.recv` 300 · `span` 61 · `refresh` 48 · `event` 47 · `session` 1.
+
+  **✅ PRIVACY INVARIANTS VERIFIED ON REAL OUTPUT for the first time** (previously unit-tested only —
+  and home masking was once **FAIL-OPEN**, fixed under ruling #22). Session record reports
+  `homeMasking: true`, `redaction: "strict"`. Probed the whole 2.2 MB: **0 occurrences** of the home
+  path (either slash form), the OS username, the user's email, or the repo path. The `redactionNote`
+  is intact (a suspected mojibake was chased and **disproved** — U+2014 em dash, no U+FFFD in the
+  file; the replacement glyph was terminal rendering).
+
+- **🐞 NEW 2026-09-16, FOUND BY THAT PARSE — `mono` is 0 on EVERY `anomaly` record (431 of 431), and
+  the comment that explains it away describes a mechanism that does not exist.**
+  `src-tauri/src/obs/anomaly.rs:239-240` reads: *"`seq`/`mono` are left 0: the sink's writer assigns
+  the real `seq`, and `mono` mirrors the writer-minted `drop` record."* The `seq` half is true and
+  observable (`writer.rs:223` — `rec.seq = self.seq;`). **The `mono` half is not: there is no
+  `rec.mono = …` anywhere in `writer.rs` or `sink.rs`.** `mono` is producer-stamped only, so an
+  anomaly record built with `mono: 0` ships with `mono: 0`. This session minted **no `drop` records
+  at all**, so the pairing the comment relies on never arose — 431 warn-level records carry no
+  position on the field `record.rs:137` documents as the *"jitter-free ordering aid"*, with no
+  "except anomalies" caveat at the point of definition.
+  **Bounded, not cosmetic:** ordering is still recoverable — `seq` is documented authoritative and
+  was verified dense, and `ts` wall-clock is present. **Third instance in this project of "literally
+  accurate and materially understating"**, and the same class as the signed error string that named
+  a verb it did not perform. Fix is a decision: either the writer stamps `mono` like it stamps `seq`,
+  or `record.rs:137` and `anomaly.rs:239` say plainly that anomaly records have no `mono`.
+
+- **📊 PRODUCT SIGNAL from the same run, not a schema issue — the anomaly detector fired 431 times
+  in ~6 minutes:** `render-storm` **423**, `redundant-refresh` **8**, all `severity: warn`. And
+  `watcher` records are **87% of the whole log** (10 280). The board already carries the rule that
+  the watcher fires event storms and must be debounced (~300 ms); this is the first real measurement
+  of what that looks like in a live session, and **423 render-storms is the app complaining about
+  itself.** Worth a look before Polish — it is exactly what P91 was built to surface.
 - **F7 — LOW, mostly latent.** `redact_names` misses bare ref/file names and never touches JSON keys
   (`feature/acme-client-migration` would be written verbatim into a strict file). `strict::enforce`
   is the **sole** enforcement point for Rust *and* frontend records, so a gap there is a single point
