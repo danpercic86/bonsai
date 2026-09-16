@@ -57,12 +57,20 @@ All notable changes to Bonsai are documented here. The format is based on
   smuggled arguments, and a configured command no longer runs with the repository as its working
   directory. **This narrows the surface rather than closing it**, in two ways worth naming: an audit
   showed that validating the *shape* of a program string a compromised renderer can write cannot
-  make it safe — so free-text entry for these two settings is slated for removal in favour of a
-  picker over detected tools — and the built-in "open in terminal" rungs that must start *in* the
-  repository still do, because the alternative (building a `Set-Location` command line out of a
-  repository-authored path) would be a worse hazard.
+  make it safe — so **free-text entry for these two settings has since been removed** in favour of a
+  picker over detected tools (see *Changed*, below) — and the built-in "open in terminal" rungs that
+  must start *in* the repository still do, because the alternative (building a `Set-Location`
+  command line out of a repository-authored path) would be a worse hazard.
 
 ### Fixed
+
+- **"Open in editor" now works on a standard VS Code install on Windows.** Bonsai resolved the bare
+  name `code` against your `PATH` and took the first match, which on Windows is the extension-less
+  shell script VS Code ships beside `code.cmd` — a file Windows cannot execute, so the action failed
+  with "%1 is not a valid Win32 application" and, because the next rung looks for VS Code Insiders,
+  the whole attempt gave up. Program lookup now prefers a real executable extension and only falls
+  back to the bare name, and it ignores empty and relative `PATH` entries so a stray file named
+  `code` or `git` inside the repository you have open can never be run as the program.
 
 - **The commit graph no longer jumps back to the working directory while you are reading a commit.**
   A background refresh re-streamed the graph and re-picked the selection by row position, so a
@@ -116,6 +124,15 @@ All notable changes to Bonsai are documented here. The format is based on
   first, and the branch name itself is shortened only as a last resort.
 
 ### Changed
+
+- **Terminal and editor are chosen from a list of what is actually installed, not typed in.** The two
+  free-text command boxes in Settings → General are gone. Bonsai scans your machine for the terminals
+  and editors it knows about and offers what it found, with the resolved program path under each
+  entry so two installs of the same tool can be told apart; a **Browse…** button opens a native file
+  picker for anything not on the list. The first scan on a cold machine takes a couple of seconds and
+  shows a placeholder while it runs, and a **Rescan** action picks up a tool installed since Bonsai
+  started. Typing a program name is no longer possible at all, which is the point: the old boxes let
+  a value that was never a real program become the thing Bonsai launched.
 
 - **Two stash actions instead of three.** The commit-panel `⋯` menu now offers **Stash** — the whole
   working directory, staged, unstaged and brand-new files alike — and **Stash staged**. The old

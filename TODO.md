@@ -43,25 +43,41 @@ Full detail for everything compacted out of this file is in `docs/history/` — 
 closed by the curator: a pending USER CHECKPOINT, an owed AI-gate item and an open follow-up all
 stay here however old they are.
 
-**2026-09-14 pass — Parts 62-70.** On **2026-09-11** the user ruled **all 22** open FOR-USER items
-(17 + a second round of 5) and the work those rulings created landed the same day. Archived: the
-stale 2026-09-10 resume block + FU-1 residue (62) · the FOR-USER *evidence* blocks, now that the
-rulings are the record (63) · the `IN FLIGHT` queue + the 2026-09-11 closures (64) · `SEC-2026-09-11`
-and `SEC-2026-09-11b` **including their verified-CLEAN registers** (65, 66) · P108 `AC11`, closed by
-ruling #13 (67) · the happy-dom narrative (68) · the open follow-ups as they stood pre-condensation
-(69) · superseded curator bookkeeping (70). **Not archived:** both ruling blocks in full, the durable
-rules, the accepted decisions, every open follow-up, the four user actions, the ruling queue.
+**2026-09-16 pass — Parts 71-75.** P112's four sub-increments all landed and its AI gate is green,
+so the **build and review transcript** moved out while **the milestone, its status
+(`awaiting USER CHECKPOINT`) and all five checkpoint items stayed** — the rule Parts 37-40 set.
+Archived: the sub-inc 3/4 transcript incl. the `P112-ui.md` §17 rulings, the four bad citations, the
+coalescing lesson and the sub-inc-3 audit (71) · the superseded gate states and the completed
+2026-09-14 queue — F6, P77, the e2e measurement, the UNC clearance (72) · the sub-inc 2 + P113
+phase-1 review transcript (73) · the two items **closed 2026-09-16** with their evidence, plus the
+`.cmd` launch audit (74) · superseded curator bookkeeping and one consolidated duplicate (75).
+**Not archived:** the P112 USER CHECKPOINT, the two decisions owed by the user, the four user
+actions, the nine-file second review pass (in flight), every open follow-up, both ruling ledgers,
+the durable rules, the accepted decisions.
 
-**Earlier passes.** 2026-09-10 → Parts 54-61 (the eight confirmed native checkpoints); 2026-09-03 →
-Parts 36-53, plus a staleness sweep that found **11 of 35 open entries had drifted**; 2026-09-01 →
-Parts 22-35. The board's own record of being wrong is kept deliberately.
+**The previous pass truncated instead of archiving, and it had to be undone.** `c5b3ea5` cut 1950
+lines from this file without writing them anywhere; `67e2ce6` restored them wholesale. Every range
+removed on 2026-09-16 was extracted to `docs/history/` **first** and diffed byte-identical against
+`git show HEAD:TODO.md` **before** removal — 20 ranges, 935 lines, all 20 verified.
+
+**Earlier passes.** 2026-09-14 → Parts 62-70 (the 22 FOR-USER rulings); 2026-09-10 → Parts 54-61
+(the eight confirmed native checkpoints); 2026-09-03 → Parts 36-53, plus a staleness sweep that
+found **11 of 35 open entries had drifted**; 2026-09-01 → Parts 22-35. The board's own record of
+being wrong is kept deliberately.
 
 ---
 
-## ⏸ RESUME HERE — updated 2026-09-14
+## ⏸ RESUME HERE — updated 2026-09-16
 
-**Branch `feat/post-p91-rulings`, no upstream — 18 commits ahead of `origin/dev` (`8b88efd`),
-unpushed.** Last commit `8026622` (2026-09-11).
+**Current step:** see the **P112** entry below — *all four sub-increments in, AI gate green,
+awaiting USER CHECKPOINT (native window)*. That entry owns the line; keep it updated there, not here.
+Its five checkpoint items are the only thing left in P112.
+
+**Branch `feat/post-p91-rulings`, no upstream — 80 commits ahead of `origin/dev` (`8b88efd`),
+unpushed, and it stays unpushed (ruling #25, do not raise it again).** HEAD `67e2ce6`.
+Curator-verified 2026-09-16 with `git rev-list --count origin/dev..HEAD`; the board's previous
+"18 commits ahead, last commit `8026622`" was measured 2026-09-14 and had gone stale
+(archive Part 75.2).
 
 **The P91 branch merge is DONE (2026-09-11, ruling #1)** — `feat/p91-observability` was
 fast-forwarded onto `dev` and pushed. Every "DO NOT MERGE" / "unmerged by user instruction" line
@@ -69,38 +85,6 @@ this board used to carry is **void**; where one survives inside an archived part
 instruction. Curator-verified 2026-09-14: `dev` = `origin/dev` = `8b88efd`, and
 `git rev-list --count cb70f4a..8b88efd` = **165** — the ledger's "164" was measured before `8b88efd`
 (the jbcontext commit of ruling #2) existed. Both were true when measured.
-
-### ✅ The "`ui-reference.md` §1.3 rows 32-33" citation — RESOLVED, and it was wrong
-
-`ui-designer` refused to act on it and **asked for the anchor instead of guessing**, which was
-correct: had it guessed, it would have edited a canonical row inventory on a bad reference. I traced
-it rather than handing the question back.
-
-**Those rows live in `docs/contracts/archive/P69-settings-ui.md:148-149`** — an **archived** contract,
-not `ui-reference.md`, which has no numbered table with those rows at all. The misleading trail is
-the test's own comment at `src/components/settings/settingsCatalogRows.test.ts:130`: *"#32/#33 are UI
-§1.3's Terminal command / Editor command"* — that `§1.3` is **P69's**, not the canonical reference's.
-
-**Resolution: nothing to amend in `ui-reference.md`, and the archive stays as written.** Archived
-contracts are the historical record; rewriting one to match today's code destroys the reason it was
-archived. The only real fix is the **test comment**, which should name
-`docs/contracts/archive/P69-settings-ui.md §1.3` explicitly so the next reader does not chase
-`ui-reference.md` the way I sent an agent to.
-
-**The lesson is one I already have a rule for and broke anyway:** I passed an implementer's citation
-to another agent **unverified**, and it was wrong. Same shape as the phantom board claims early in
-this session. Verify a citation before delegating on it — especially a `file §section` pair, where the
-section number can be right for a *different* file.
-
-### 📝 RULED by `ui-designer`: fix the false General subtitle NOW, restore it with the picker
-
-`src/components/settings/settingsCatalog.ts:42-43` still promises "…and the external tools Bonsai
-launches" on a page that no longer contains those controls. Ruling: **correct it now and restore the
-clause in the increment that lands the picker** — a subtitle naming a control its page does not
-contain is exactly the drift the catalog guard exists to prevent, and "true again soon" is no defence
-to the user looking at it this week. Two one-line edits with an obvious owner for the second.
-`ui-designer` cannot make it (`src/**`), so it needs a `senior-dev` line — **queued behind the running
-gate**, since editing the tree mid-gate would invalidate the run.
 
 ### 🚨 PROCESS FAILURE (mine) — I let one review diff grow to 41 modified + 13 new files
 
@@ -121,352 +105,16 @@ bookkeeping complaint — and it is the direct consequence of my batching.
 routed; review the fix against a small diff. The nine files above should get a targeted second pass
 before this branch is considered done.
 
-### 🚨 AN AGENT ORPHANED A DEV SERVER ON PORT 1420 FOR 3.5 HOURS — found and killed
-
-**This would have broken the USER CHECKPOINT I had just asked for.** `vite --mode mock` (PID 12712,
-parent `cmd.exe /d /s /c vite --mode mock`) started **13:18:31** and was still listening at
-**16:50:55**. `vite.config.ts` sets **`strictPort: true`**, so `pnpm tauri dev` does not fall back to
-another port — it **fails outright**. The board has carried the line *"Port 1420 is free. Keep it so"*
-for exactly this reason, and I let an agent violate it and then told the user to go run the command
-it breaks.
-
-Killed; port confirmed free; no other `node` process on this repo remains. Found only because my own
-`preview_start` was auto-assigned **53948** instead of 1420 — i.e. **by luck, not by checking.**
-
-**Two durable consequences:**
-
-1. **Agents that drive `pnpm dev` by hand orphan it.** `playwright.config.ts` already warns that a
-   hand-run dev server orphans the port on Windows; the Playwright-managed lifecycle
-   (`scripts/e2e-server.mjs`) does not. **Brief agents to use the managed path, and check 1420 after
-   any harness-heavy pass.** A one-line `Get-NetTCPConnection -LocalPort 1420` is the whole check.
-2. **This is a candidate contributor to the `watcher::tests::git_internals_filtered` flake.** That
-   test declares quiet after a 1 s sweep, then asserts **nothing arrives for 1500 ms of wall clock**.
-   A vite dev server **watching this repo** for 3.5 hours is exactly the kind of ambient filesystem
-   and CPU activity the reviewer identified as the real variable — and it was running during at least
-   some of the runs where that test failed. Not proven, and the test passed in the final gate with
-   the server still up, so it is a contributor at most. But it is a **concrete** mechanism where I
-   previously had only "ambient load", and it is one I created.
-
-### ✅ `P112-ui.md` §17 — the contract's own mechanisms corrected, with three rulings
-
-Precedence is now **§17 > §16 > §§0-15**. `ui-reference.md` also corrected (option-row figure) and
-extended (the `announceOnly` bullet). Everything verified against source before writing.
-
-**A DURABLE RULE, extracted by `ui-designer` from its own error — keep this:**
-
-> **When a contract signs an error string that names a recovery, the recovery is part of the same
-> contract item.**
-
-§16.4a signed `BROWSE_STALE`'s *string* and its *report* but not its *verb* — so as written, the
-message named an action that did nothing. In the designer's words: *"my failure was writing a string
-that names a verb and not the verb."* Same class as the toast that fabricated log files and the
-confirmation that understated its blast radius.
-
-**§16.8's mechanism was impossible, and the symptom is worth recording.** `refresh: false` returns the
-cached scan with its **original** timestamp, so the specced `scannedAtMs` compare would have
-discarded **the only response carrying the new row** — surfacing to a user as **"Browse sometimes does
-nothing", intermittently.** Replaced with a request-id counter. **`scannedAtMs` is now read by nothing
-in the renderer.**
-
-**A reuse that was never intended:** `hydrateUiSettings` is documented as **launch-time** hydration
-(`useUiSettings.ts:299-301`), and §16.4a put it on a **runtime** path. Its unnamed cost is confirmed
-at `:306-307`: it bumps `metricsVersion`, so **every Browse confirm triggers a GraphCanvas full
-re-measure** while the canvas is live behind the overlay — against a 20k-commit jank target. Now in
-§17.3.
-
-**Ruling: 45.78 px ratified, the `line-height` override declined.** The criterion was never the pixel
-count — it is **equality across densities**, which holds. An override would give this picker a
-different option rhythm from the four other `Combobox` consumers, and the line it would compress is
-the **11 px mono path subtitle whose entire job is telling two same-label installs apart.** It also
-improves the hit target.
-
-**Ruling on R5 (cold-scan failure below the fold): do NOT relax scroll condition 3.** Relaxing it is
-the tempting fix and the wrong one — on first mount the user is reading from the top, and scrolling
-the pane to its end to report a scan they never asked for is exactly the yank condition 3 exists to
-prevent. **The fix is one string.** The two picker rows had **no specified note** in that state and
-must not fall back to `NOTE_NONE` ("No terminals found on this computer.") — **that is a lie when the
-scan failed.** New `NOTE_SCAN_FAILED` puts the explanation in **row 1 of the group**, ~90 px above
-Rescan, on the control it describes.
-
-**And the part both of us missed in framing R5:** *the announcer was always the channel that reaches
-this state* — site D's `report` speaks `SCAN_ERR` regardless of scroll. So the below-the-fold problem
-was **visual-only**, and the a11y channel was already correct. The fix adds a visible carrier rather
-than moving the existing one.
-
-**The self-observation that stings, and belongs on the board:** UA12's absolute **dialog-level**
-live-region count of 1 was **unpassable against a correct implementation** — `SettingsSearch`
-legitimately holds a second `role="status"` outside the tabpanel, so the **scope** was wrong, not the
-count. That is **P113 §17.1 R5's error class, repeated inside the document that names it.**
-
-**One correction to me:** `mock/handlers/tools.ts` is **204** lines, not the 171 I cited.
-
-### 🚨 FOUR BAD CITATIONS IN ONE BRIEF — and one had already propagated a false claim
-
-`ui-designer` checked every reference I gave it and **four were wrong**:
-1. **"P113 §17.3a names `useExternalTools.ts:22/:28/:34`"** — it names only `:22, :34`. **My
-   enumeration was right and P113 is short by one.**
-2. **"§6.11.6"** is **P91-privacy-copy-ui**'s section, not P113's.
-3. **"`ui-reference.md` §12.13 says no toast"** — P113 §18 **moved** that rule to **§12.14**; §12.13
-   keeps only a pointer.
-4. **"P113 §17.3 does this for its ten sites"** — §17.3 covers sites **11-15**; §6 covers 1-10.
-
-**The consequence, and this is the part worth keeping:** `P112-ui.md` §11 had **inherited citation #2
-without checking it** — and the designer's own words are that this *"is exactly why the recipe had no
-CSS rule"*. A bad citation does not merely waste a search; **it propagates a false claim into a
-contract, where the next reader treats it as established.** That is the mechanism behind the
-"pure reuse of the signed P107 recipe" error, and it is now the second time that same phrase has
-needed correcting.
-
-**Rule for my own briefs: cite from the file, not from a summary.** Every `file §section` pair I have
-passed on from memory this week has been wrong at least once — the archived P69 rows, the
-`ui-reference §1.3` rows, and now these four.
-
-### ✅ `P112-ui.md` REFRESHED — §16, 17 sub-sections, and 15 passages marked SUPERSEDED
-
-Nothing rewritten silently. Two rulings worth noting beyond the list:
-
-- **It found two of its OWN P113 passages to be defects if implemented** — §9's "two live regions"
-  and §6's `<p aria-live>` for `BROWSE_ERR`. §16 supersedes both.
-- **It declined to canonise its own new mechanism.** `announceOnly` would have justified a
-  `ui-reference.md` §12.14 bullet and it deliberately did not write one: *"canonising an unapproved
-  mechanism is how that file stops being trustworthy."* I have since **approved `announceOnly`**, on
-  the condition that `useOutcomeNotes.ts:59-79`'s comment is amended to cover it.
-
-### 🚨 TWO FINDINGS NO CONTRACT HAD CAPTURED
-
-1. **`terminalTool` / `editorTool` have NO React state anywhere.** `useUiSettings.ts:196-200`
-   deliberately declines to hold them and hands the job to sub-inc 4 — a decision recorded in an
-   agent report and in my summary, but **in no contract**. It was **one forgetting away from being
-   lost**, and the milestone would have shipped a picker with nothing to bind. §16.4a is now the
-   record, and the brief asks for a test that fails if a future change drops it.
-2. **The Browse SUCCESS path blanks the input** unless the re-read settings and the refetched scan
-   commit **in one tick** — the same defect as the blank state, on the path nobody was watching
-   because it is the happy one. `refresh: false` is correct (`true` wastes 0.45 s).
-
-### ✅ GATE GREEN at `d0e6cf0` — 457.5s, exit 0, all 8 steps, zero FAIL lines
-
-nextest 159.3s (**2556 passed, 1 leaky, 10 skipped**) · doctests 3.3s · clippy 27.7s · eslint 14.8s ·
-size ratchet 0.87s · vitest 56.2s (**2919 / 261 files**) · tsc+build 13.9s · e2e 181.3s (**185
-passed**). **Windows-only evidence** — see the CI note above; that limitation is unchanged by this
-green.
-
-### 🔧 P112 SUB-INC 4 — CONTRACT REFRESH FIRST, implementation after
-
-**`P112-ui.md` was written 2026-09-11 and predates everything that makes it implementable.** Rather
-than let an implementer reconcile two contracts by guesswork, `ui-designer` is refreshing it against
-what actually shipped:
-
-- **The scrim finding** — which made its "no toast for Browse errors" ruling *correct for a reason it
-  did not yet know*: the toast would have been unclickable, not merely dim.
-- **P113 built the mechanism** — `SettingsOutcomeNote` / `useOutcomeNotes` / and crucially
-  **`.settings-row-note--warn` now EXISTS**. When §6.11.6 called the fix "pure reuse of the signed
-  P107 recipe" that recipe had **zero users and no CSS rule**; sub-inc 4 genuinely can reuse it now.
-- **AC17's announcer invariant** and **the scroll correction's `Math.ceil`** (a 0.171875 px residue
-  DPR-1 snapping will not absorb, measured at two viewports).
-- **P113 §17.3a's standing cross-reference:** `useExternalTools.ts:22/:28/:34` are *accounted-for, not
-  swept* — **"in scope the moment P112-4 puts a picker in Settings."** That moment is now, and the AC1
-  enumeration has to flip them or say why not.
-
-**Seven questions sent, and two constraints the refresh must not contradict:** the picker's **strict
-mode is the security property** (`allowFreeInput: false` — the backend coerces an unknown id to `""`,
-so a free-text control silently discards what the user typed; that is why the old text rows were
-**removed** rather than rewired), and **a browsed path is displayed but never trusted** (backend-
-sanitized, backend-derived label — no UI may re-derive a label from the path).
-
-**Numbers the refresh needs that the contract predates:** a cold scan is **2.1 s measured** (55 PATH
-dirs × 11 `PATHEXT` ≈ 4400 stats; 0.45 s warm) — a visible wait; subtitles will carry `PATHEXT`
-casing (`code.CMD`, `wt.EXE`); and `scannedAtMs` ships on the DTO with **no React consumer**, so
-freshness surfaces only if the contract says so.
-
-**Building sub-inc 4 also makes the pending Browse-dialog observation reachable** — the picker is what
-exposes the dialog, so the two native-window checks consolidate into one sitting.
-
-### ✅ P112 SUB-INC 3 COMMITTED `d0e6cf0` — 3 of 4 done. Reviewed + audited + one focused re-review.
-
-`bonsai-core --lib` **1102** · `bonsai --lib` **547** · `h_misc` **51** · `nextest --workspace`
-**2556 passed, 10 skipped** · `clippy --workspace --all-targets -D warnings` exit 0 · doctests with
-`RUSTDOCFLAGS=-D warnings` exit 0 · `npx vitest run` **261 files / 2919** · size ratchet OK.
-
-**The free-text launch path is DELETED, not guarded** — `external_cmd.rs` + its validator are gone,
-which also removed the **second copy** of the homogeneous-only `is_unc` bug. Satisfied by deletion
-rather than by keeping two copies correct.
-
-**AC6 is now compiler-enforced.** `PickedTool`'s five fields are `pub(crate)`, so the four `pub`
-launch functions can no longer be handed a hand-built literal from outside the crate. The invariant
-lives on the struct doc: *no code outside `bonsai-core` constructs a `PickedTool` literal.*
-
-### 📌 THE COALESCING FIX TOOK THREE ATTEMPTS, AND THE LESSON IS THE TEST, NOT THE CODE
-
-1. **Naive version:** N concurrent `listExternalTools(true)` calls ran N probes, because `probe_host`
-   took the write lock only **after** probing.
-2. **First fix** introduced `Lease: Drop` clearing the in-flight flag — correct for the wedge case,
-   but on the **panic** path the follower woke, saw the flag clear, and served the **dead leader's
-   predecessor's rows** with the old `at_ms`. The doc claimed "the leader's own result lands moments
-   later", which is **false when the leader never publishes**. The reviewer's words:
-   *"literally accurate and materially understating"* — the same characterisation earned by the
-   `docs(mcp):` commit that carried 222 lines into MCP tool contracts. **Third instance of that class
-   in `external.rs` alone.**
-3. **Second fix** (a generation counter) had **two holes found by the implementer reviewing its own
-   draft**: snapshotting the generation on entry to `await_leader` — **the shape I relayed** — lets the
-   leader publish in the gap after `claim()` releases the lock, so the follower re-probes for nothing
-   and eventually flakes the coalescing test; and leaving `Lease::drop` an unconditional clear makes
-   it a **TOCTOU against `claim()`**, erasing the flag of a caller that claimed between publish and
-   drop — **reopening the storm the increment exists to close.** Closed with an `armed` flag and by
-   snapshotting inside `claim()`.
-
-**Why it survived that long:** `a_panicking_probe_does_not_wedge_the_cell` had **no follower and an
-empty cache**, so it proved the wedge property and never the stale handoff that property enables. The
-new test fails with the follower running **zero** probes; the old one passes in both states. **A test
-that passes in the correct and the broken state is not coverage** — the fourth instance of that exact
-finding in this work.
-
-### ⚠ THE CI FIX IS UNVERIFIABLE FROM HERE — state this plainly, do not let a green gate imply otherwise
-
-The four host-bound tests (AMEND-8) are fixed, but **nothing available can prove it**:
-- **`pnpm gate` runs Windows only**, so it cannot execute the Linux/macOS legs.
-- **CI cannot run either — ruling #25 says do not push**, and the branch is local.
-
-**Best available evidence:** the reviewer traced the unix accept chain line by line — `browsable_root`
-→ `is_absolute_for(Linux|MacOs, …)` = `starts_with('/')` satisfied by `/tmp/…` → not a device prefix →
-bundle branch false for a regular file → `is_file` → **`has_execute_bit` reached** (hence the `0o755`
-chmod) → `require_label`. And the `#[cfg(unix)]` block uses only std `PermissionsExt`. That is
-**reasoned, not executed**, and the docstring now says so. **The first real CI run on this branch is
-the verification**, whenever a push happens.
-
-### 🐛 Pre-existing, found in passing: `cargo doc` is dirty
-
-`RUSTDOCFLAGS=-D warnings cargo doc -p bonsai-core --no-deps --document-private-items` reports **127**
-findings crate-wide (unresolved `Clock`, `super::session`, and more). **Not a gate step** — the
-doctest step is, and it is green with `-D warnings`. One lands on a line edited this pass:
-*public documentation for `PickedTool` links to private item `picked_custom`*. Pre-existing link, not
-introduced. Worth a `docs-curator` or `refactorer` sweep, not a blocker.
-
-### 🚨 THE LOCAL GATE CANNOT SEE A CI BREAK — four tests red-line ubuntu and macOS
-
-**The most important finding of sub-inc 3's review, and the gate is structurally blind to it.**
-`src-tauri/src/commands/tests_tools_pick.rs` `:46`, `:126`, `:161`, `:182` build a fixture under
-`tempfile::TempDir` and validate it with an explicit `TargetOs::Windows`. On Linux/macOS that path is
-`/tmp/…` or `/var/folders/…`, which `is_absolute_for(Windows, …)` refuses (it needs a drive letter or
-a UNC head) — so `.expect("accepted")` **panics**.
-
-**I verified the matrix:** `.github/workflows/ci.yml` runs `cargo nextest run --workspace` on
-**`[ubuntu-22.04, windows-latest, macos-latest]`**. **`pnpm gate` here only runs Windows.** So a green
-local gate says nothing about two of the three CI legs — **the same shape as the mock blindness from
-yesterday: a check that cannot observe the thing it is trusted for.**
-
-Compounding it, the module doc at `:9-11` **asserts the opposite** — that the fixtures are accepted
-"on any host" and "both branches run here regardless of the runner". Neither clause is true; only the
-*refusal* test at `:78` is genuinely host-agnostic. **The lesson was already encoded one
-sub-increment away** — `tools/custom_tests.rs:167-207` gates its accept cases `#[cfg(windows)]` under
-a "host-split" heading and names the mechanism.
-
-**Durable rule: a green `pnpm gate` is Windows-only evidence.** Any test that passes an explicit
-`TargetOs` while touching the real filesystem is host-bound, and the absoluteness rule is what makes
-it so.
-
-### ✏ CORRECTION — `spec_from`'s visibility went the OTHER way, and I repeated the error
-
-I told the user the implementer "narrowed `spec_from` to `pub(crate)` against the contract's `pub`".
-**Backwards.** The contract declares `fn spec_from(…)` at **§4 line 414 with no `pub`**, and §1's table
-(line 66) says *"new **private** `spec_from`"*. So `pub(crate)` is **wider** than the contract — and it
-had to be, because `tools/settings_ids_tests.rs:10` imports it for the AC6 provenance assertion.
-
-The chain is worth noting: the implementer misread the contract, **I repeated it without checking**,
-the auditor built a correct and valuable finding on the unchecked premise, and only the reviewer went
-and read §4. **Three passes accepted a claim about a file that was one grep away.**
-
-### 📌 Two more from the review, kept because they are about evidence quality
-
-- **A test that can NEVER run under the gate.** `external_picked_tests.rs:186` is
-  `#[cfg(not(debug_assertions))]`, so it compiles only under `--release`, which the gate never does.
-  This is the limit case of the pattern that has recurred all through this work: **not a test that
-  passes in both the correct and broken states, but one that is never in any state.**
-- **An AC18 test whose message overstates what it proves.** `tests_tools_pick.rs:148` claims "both
-  fields in ONE update cycle" — but **two sequential `settings::update` calls would produce an
-  identical final state and the test would still pass.** What it discriminates is `update` versus a
-  bare `load_from` + `save_to`. The code is right; the label is not, and **mislabelled evidence is
-  this repository's named defect.**
-
-### ✅ SECURITY AUDIT of sub-inc 3 — no CRITICAL, no HIGH; "a net reduction in attack surface"
-
-The auditor's framing is worth keeping: this increment **deletes a capability** (free-text program
-strings) rather than adding a validator in front of one.
-
-### 🐞 LOW-1 — the `pub(crate) spec_from` reasoning is internally inconsistent. I AMPLIFIED IT.
-
-I told the user this was "the right instinct — the property the whole milestone exists for". **The
-instinct was right and the reasoning was not, and I should have checked it before endorsing it.**
-Verified by me against source:
-
-* `PickedTool` (`tools/mod.rs:119-131`) is `pub` with **five `pub` fields** and no `#[non_exhaustive]`.
-* `spec_from` is `pub(crate)` (`external.rs:258`) — but `terminal_ladder` (`:357`), `editor_ladder`
-  (`:389`), `open_in_terminal` (`:427`) and `open_in_editor` (`:447`) are **all `pub` and all take
-  `Option<&PickedTool>`.**
-
-So the premise ("public fields make a `pub` constructor an arbitrary-program primitive") applies
-**verbatim to the four functions that remain**. From `src-tauri` today, a `PickedTool` literal with an
-attacker-chosen `program` can be handed straight to `open_in_terminal`. **`pub(crate)` on `spec_from`
-closes one door and leaves four identical ones open.** Either all are acceptable or none is.
-
-**The property is nonetheless TRUE of the code as written** — I verified it: `grep 'PickedTool' src-tauri/src/`
-returns **exactly one hit**, a function *return type* (`commands/external.rs:140`), with **zero field
-reads**. It is enforced by **convention, not by the compiler**.
-
-**Overclaim to correct:** `external.rs:36-40` says a `PickedTool` "can only be built by `tools::picked`
-or by the auto arm". False at the type level. That file **already carries two dated corrections to
-comments of exactly this shape** — this is the third.
-
-**Fix at the right layer (zero-caller, verified):** make the five fields `pub(crate)`, or add
-`#[non_exhaustive]`. `src-tauri` holds `Option<PickedTool>` opaquely, so nothing breaks, and the
-compiler enforces AC6 instead of the reviewer.
-
-> **THE SINGLE FACT A FUTURE REFACTOR MUST NOT BREAK:** *no code outside `bonsai-core` constructs a
-> `PickedTool` literal.* Everything AC6 claims rests on that one fact.
-
-### 🐞 LOW-2 / LOW-3 — two smaller ones
-
-- **`listExternalTools(refresh: true)` is an unmetered `reg.exe` spawn primitive.** `refresh` bypasses
-  the cache unconditionally and `probe_host` takes the write lock **only after** probing, so N
-  concurrent calls run N concurrent probes rather than coalescing. **Not escalation** — absolute
-  program, fixed argv, nothing renderer-supplied reaches the child — local resource consumption only.
-  Fix: an in-flight flag under the existing `RwLock` so refreshes coalesce.
-- **The native dialog is not parented to the Bonsai window** (`tools.rs:114-133`, no `set_parent`).
-  May be lost behind the window, complicates the UC-UI-2 focus checkpoint, and is marginally more
-  spoofable. **Confidence medium** — the auditor could not verify statically what
-  `tauri-plugin-dialog` does by default on Windows; check against the version in `Cargo.lock`.
-
-### 📌 THREE RESULTS WORTH KEEPING PERMANENTLY
-
-1. **Why `.exe`-only is sufficient and not a heuristic.** A batch file **renamed** to `.exe` is handed
-   to `CreateProcess`, which validates the **image header** and fails with **error 193** — it never
-   reaches `cmd.exe`. So DEC-1 genuinely **removes** the CVE-2024-24576 `%VAR%` re-expansion path
-   rather than making it harder to name. And the gate is independent of the dialog filter: the filter
-   is cosmetic (`custom.rs:262-267`), the gate is `custom.rs:268-275`, and `tests_tools_pick.rs:78-109`
-   writes **real** `payload.cmd`/`.bat`/`.ps1` files and asserts all three are refused.
-2. **My "no path is ever an argument on this surface" is TRUE but was scoped too widely.** It holds
-   **for the two new commands**. `openInTerminal`, `openInEditor` and `revealInFileManager` carry
-   `["path"]` in `rawArgPolicy.json`, so paths **do** reach raw-mode logs on the neighbouring
-   external surface — pre-existing and out of scope, but the property must be stated as *"on the two
-   new commands"*. **Pin the dependency it rests on:** the pipeline logs **arguments and never result
-   values**; a future change that logged result values in raw mode would break this **without
-   touching either command or the policy file**.
-3. **The deletion took nothing live.** Of 17 deleted tests, **1 migrated verbatim** (`safe_cwd`) and
-   **16 tested `validate_command_setting` over a setting that no longer exists**; the surviving
-   *properties* are covered in `tools/custom_tests.rs` — with **new** coverage the old file never had
-   (`.exe`-only, execute bit, device namespace, UNC). `validate_command_setting` / `program_spec` /
-   `PathDelivery` have **zero** remaining code references, and the dangerous shape (a surviving
-   reader of a now-unvalidated field) was checked: `terminal_command`/`editor_command` are read
-   **only** by `migrate_external_tools`, which cannot manufacture the human dialog click.
-
-**INFO worth recording:** `browsed_tool_row` validates the real `&Path` but stores
-`to_string_lossy()`. For a non-UTF-8 path the stored string differs from the validated one — it
-**fails closed** (re-validated on every launch, `is_file()` false, auto ladder runs) so there is no
-security consequence, but "validated one value, stored another" is a shape worth having on record.
+**Status of that second pass: `in-progress`.** A `reviewer` agent is executing it as of 2026-09-16.
+No outcome is recorded here because none exists yet — do not read this entry as closed.
 
 # ✅ P112 — AI GATE GREEN, ALL FOUR SUB-INCREMENTS IN. **USER CHECKPOINT IS THE ONLY THING LEFT.**
 
 **Per the workflow, a milestone is done when BOTH halves pass. The AI half is done; the native half
 is not, and I must not self-confirm it.**
+
+**Current step: P112 — all four sub-increments in, AI gate green, awaiting USER CHECKPOINT (native
+window).** This is the canonical `Current step:` line; `## ⏸ RESUME HERE` points here.
 
 **AI gate, 2026-09-15 at `9fca997`: 437.6s, exit 0, all 8 steps, zero FAIL lines.** nextest 136.5s
 (**2556 passed, 10 skipped**) · doctests 3.5s · clippy 0.94s · eslint 13.2s · ratchet 0.69s · vitest
@@ -527,172 +175,30 @@ branch unpushed, so CI cannot run it either.** The first real CI run is the veri
 - **StrictMode** double-runs the owed-adopt mount effect → two identical microtask `report`s (legal,
   one visible note, one extra dev `flushSize`). No e2e reaches that state.
 
-# ✅ MERGE BLOCK LIFTED — full 8-step gate GREEN, CONFIRMED AT HEAD'S SOURCE TREE
+# ✅ The 2026-09-14/15 queue — what landed (full detail: archive Part 72)
 
-**Two independent green runs, 2026-09-14.** The second was run specifically because the first was
-attached to `dcff54b` while two `src/` files had changed after it — a subagent flagged the gap and was
-right to.
+- **P112 sub-increments 1-4** — all in. Sub-inc 2 `a2eb091`, sub-inc 3 `d0e6cf0`, sub-inc 4
+  `e13ff2d` + `9fca997`. **AI half done, native half not** — the milestone entry above is the live
+  record, and the curator did not upgrade it.
+- **F6 — `usage.json` 90-day window + deletable** (ruling #3) — `done` 2026-09-14, `d46c98e` +
+  `b53618a`. Both reviews approved; R13a/R13b/R13c fixed; **all five new mock seams verified in the
+  harness by the orchestrator**, including strings that had never once been rendered. Narrative and
+  the seam table: Part 72.2.
+- **P77 — trigger `list_tag_sync` on auto-fetch completion** (ruling #11) — `done` 2026-09-14,
+  `d46c98e`. Rides the existing 5-min cycle; no repo-open call. No `useJobStatus` test file exists at
+  all (pre-existing gap); the receiving end is covered.
+- **The e2e cold-timing MEASUREMENT** (ruling #9) — `done` 2026-09-14, `6a6f284`. **102 s cold bundle
+  vs 191.4 s dev**, build included, cold-vs-warm 1 s. **Not flipped** — the decision now has its
+  number and remains the user's.
+- **The UNC / `\wsl$` `canonicalize` check on `216ca45`** — ship-blocker **cleared** 2026-09-14 by a
+  real UNC probe. `\wsl$` and OneDrive placeholders remain untested — see the section below.
+- **Superseded gate greens** — `d0e6cf0` 457.5s, `dcff54b` 454.0s, the 427.4s confirming run over
+  HEAD's source tree, and the `e9ed93d` Rust tier 386.0s. All superseded by `9fca997`; see
+  `### Verification state`. Parts 72.1-72.4.
 
-| run | commit | total | nextest | vitest | e2e |
-|---|---|---|---|---|---|
-| first | `dcff54b` | **454.0s** | 2564 passed, 10 skipped, **0 leaky** | 2906 / 260 files | 185 passed, 1 skipped |
-| **confirming** | HEAD's source tree (started after `b1acb1f`) | **427.4s** | 2564 passed, 10 skipped, **1 leaky** | 2906 / 260 files | 185 passed, 1 skipped |
+### Still open from that queue (numbering as filed)
 
-Both exit 0, all 8 steps, zero FAIL lines. Identical test counts. **Precise claim:** the confirming
-run measured the **same `src/`, `crates/` and `src-tauri/` tree as HEAD** — the only commit made during
-it (`dc628fc`) touches `TODO.md` alone, and `pnpm gate` does not read the board.
 
-Against the `b53618a` baseline (461.9s): Rust **2467 → 2564** (+97), vitest **2848 → 2906** (+58), e2e
-unchanged at 185, and **faster** despite 155 more tests.
-
-**The leaky count differed between the two runs (0 then 1)** on
-`external_spawn::detached_spawn_ignores_nonzero_exit`, which settles that question: leakiness there
-is **intermittent**, so it is a detached child's timing and not a defect. Also worth knowing clippy
-read **1.0s** on the second run against 15.3s on the first — that is the cache, not a change in work.
-
-**Be precise about what this green does and does not establish.**
-- It **does** establish that the cross-language DTO is consistent again: the parity oracle is total,
-  with no exemption, and it passed first time.
-- It **does not** establish that the native app is correct. **P112 deleted the External-tools UI
-  rows**, so Settings → General now has two groups where it had three. That is a **USER CHECKPOINT**
-  — the orchestrator cannot confirm the native window, and must not self-confirm it.
-- The e2e tier ran in **dev-server** mode (the `playwright.config.ts` default), so the new DEV-only
-  toast guard **existed** for this run. Under `E2E_BUNDLE=1` it is compiled out by Vite's static
-  replacement of `import.meta.env.DEV`, so a bundle-mode run is **not** protected by it.
-- **0 leaky this run**, where the earlier rust-tier run reported 1
-  (`external_spawn::detached_spawn_ignores_nonzero_exit`). Leakiness there is **intermittent**, which
-  fits a detached child's timing rather than a defect.
-
-**Next unit of work: P112 sub-increment 3** — `pick_external_tool` + the native Browse dialog + the
-§7 deletions. Two forward requirements are already recorded and must not be rediscovered: the browse
-validation has to run **inside `spawn_blocking`** (it can now stat a disconnected SMB share and would
-freeze the command loop), and `setUiSettings`/`getUiSettings` are **already in the observability
-capture list**, so returning a browsed path makes a filesystem path something dev mode writes to
-disk. Then sub-inc 4, the picker UI — which **must** land `ui-reference.md`'s `--warn` recipe
-dependency and restore the General subtitle clause.
-
-Branch `feat/post-p91-rulings` is UNPUSHED and **stays that way — ruling #25, do not raise it again.**
-
-**The 2026-09-14 batch is DONE and verified: full 8-step gate GREEN under happy-dom** (461.9s, 2467
-Rust / 2848 vitest / 185 e2e, `GATE_EXIT=0`). F6, P77, `h_ai` serialisation, D3 and A3 all landed
-(`d46c98e`, `b53618a`); the UNC ship-blocker and the e2e measurement are cleared (`6a6f284`).
-
-**P112 is four sub-increments and will NOT finish in one session.** Sub-inc 1 (in progress): catalog
-+ probe ladders + `FakeToolEnv`/`HostToolEnv` + label maps — contract §1-§3, AC2/AC3/AC4/AC8/AC12/AC20.
-Sub-inc 2: settings shape + migration + write-time coercion (§5, AC5/AC6/AC15/AC16). Sub-inc 3:
-`pick_external_tool` + native Browse + the §7 deletions (§4/§6/§7, AC18). Sub-inc 4: the UI
-(`P112-ui.md`). **Each sub-increment is scoped to NOT touch the next one's surface** — sub-inc 1
-deliberately does not wire `list_external_tools`, edit `external.rs`, or delete anything, because
-that would pull §6 and the mock IPC into a review meant to cover detection only.
-
-Three contract facts verified against the tree before briefing (they have drifted before):
-`crates/bonsai-core/src/tools/` is **absent** (sub-inc 1 creates it); `HostGitEnv` is at
-`gitbin.rs:102` and `parse_reg_query` at `gitbin.rs:203`, so §3's "use `gitbin`, not
-`winenv::HostWinEnv`" ruling still lands; `terminal_ladder`/`editor_ladder` are `pub(crate)` at
-`external.rs:302/354` and §7 keeps them **byte-identical**, so nothing asks for a visibility change.
-`REG_BUDGET` (`winenv.rs:155`) is shared and sized for PATH rehydration — the scan gets its own budget.
-
-### Next, in order — the queue the rulings created (detail one section down)
-
-1. **P112 — remove user-supplied `terminalCommand` / `editorCommand`** (ruling #21) —
-   **sub-inc 1 of 4 IMPLEMENTED 2026-09-14, in review.** Contracts:
-   `P112-external-tool-detection.md` + `P112-tool-catalog.md` + `P112-ui.md`.
-
-   New `crates/bonsai-core/src/tools/` — `mod.rs` (387), `catalog.rs` (163), `catalog_table.rs`
-   (310, data only, 36 rows 1:1 with the catalog contract), `detect.rs` (334), `custom.rs` (229),
-   `fake.rs` (143, cfg-test), plus 1387 lines of tests. **`external.rs` untouched; no IPC, no
-   settings, no TypeScript** — the boundary held. `tools` 59 passed / 1 ignored; full lib **1087
-   passed, 4 ignored**; `clippy -D warnings` clean; file-size ratchet clean.
-
-   **Two findings worth keeping, both verified by me against source:**
-   - **A real product bug the ladder order exposed, on this very host.** `vscode` resolved via
-     `OnPath` to `…\Microsoft VS Code\bin\code` — VS Code's **extension-less POSIX shim**, which
-     Windows cannot execute — because `procutil::resolve_program` tries the bare name before each
-     `PATHEXT` extension, as it must for npm's `claude.cmd`. **The picker would have listed a tool
-     that then fails to launch.** Guarded in `detect::executable_hit`: on `TargetOs::Windows` an
-     extension-less candidate is a miss, so the ladder falls through to App Paths and finds
-     `Code.exe`. Fixing it in `procutil` was rejected — that would change `ai::resolve_bin`.
-   - **`catalog::find` is host-OS-first, so §4's `e.app_name.expect("AC8")` panics off-Mac** and
-     AC9 was unprovable from the only machine this project builds on. Recorded as **AMEND-4 at the
-     point of use** in `P112-external-tool-detection.md` §4, not just here: **sub-inc 3 must call
-     `find_for(kind, id, os)`, never `find`.** General rule — any caller taking `os` as a parameter
-     must resolve the catalog by that `os`, and an `unwrap()` justified by AC8 is only justified
-     when the lookup and the ladder agree on which OS they mean.
-
-   **Deviations accepted:** `tools/custom.rs` is an extra module versus §1 (§5.4 split out because
-   `mod.rs` was already at 387); §1's "widen `parse_reg_query` to `pub(crate)`" proved unnecessary
-   (the `/ve` branch lives inside `HostGitEnv::registry_string`, parser stays private); UNC is
-   **refused** for tool detection unlike the git ladder, so a UNC `PATH` entry on a managed machine
-   is not offered — deliberate, and stat-ing a share inside a budgeted scan would go to the network.
-   **AC16's accept-cases are `cfg`-split** (every *refusal* is asserted on all three OSes, but the
-   `.exe` accept is Windows-host-only and the bundle/exec-bit accepts unix-host-only) because
-   `validate_custom_program`'s unix exec-bit check has no `mode()` on Windows — a real, stated
-   weakening of AC16, not a clean pass.
-
-   **Still to do:** sub-inc 2 settings shape + migration + coercion (`coerce_tool_id` and
-   `legacy_tool_id` are deliberately absent; `LEGACY_ALIASES` ships as data only); sub-inc 3
-   `pick_external_tool` + Browse + the §7 deletions; sub-inc 4 the UI.
-
-   **Two housekeeping items:** `crates/bonsai-core/src/gitbin.rs` is now **exactly 500 lines** — one
-   more trips the ratchet, so it is a `refactorer` candidate. And the size ratchet reports **14
-   reclaimed lines** (the `h_ai` consolidation shrank two files) and suggests `--update-baseline`;
-   not run, orchestrator's call at commit time.
-2. ~~**F6 — `usage.json` 90-day window + deletable** (ruling #3)~~ — **DONE 2026-09-14**,
-   `d46c98e` + `b53618a`. Both reviews approved; 2 MUST-FIX from the design review fixed (the confirm
-   dialog understating its scope, and the mock inventing counts), then the harness caught the failure
-   toast fabricating log files. **Both copy residues are now RULED** — `ui-designer`
-   §6.11 of `P91-privacy-copy-ui.md` (R12-R14), 2026-09-14. The one-word question was answered by
-   generalising it: `announce` becomes **byte-identical to `text`**, because each of R5/R9/R10 had
-   fixed one twin and left the other, and an announcement that drops a count of files actually
-   removed understates the blast radius to the one user who cannot read the toast. The per-category
-   counts need **two** fields, not the three the architect filed — `failedMetrics` drives no string,
-   since `metricsCleared` is the usage clause's only correct driver and a count never could be
-   (`merge_metrics_counts` adds a **sentinel 1** on a failed clear, and `metrics_purge.rs:63-65`
-   counts a *subdirectory* as a failure).
-
-   **Three further defects the review found in shipped F6 code, all verified by me against source
-   before routing** (in flight now, TS-only):
-   - **R13a, unconditional MUST-FIX — a green toast that reports a failure.** `metricsCleared ===
-     false` with `failedFiles === 0` is reachable (`metrics_purge.rs:52-57`: a **present but
-     unreadable** `metrics/` yields `dir_removed: false` with `failed_files` at its default 0,
-     passed straight through by `obs_delete.rs:171`), and the success branch returns
-     `tone: 'success'`. The **text** is correct — the branch deliberately leads with `usageLead` and
-     says so in a comment — which is exactly why two code reviews passed it. Only the tone
-     contradicts the words, and `Try again.` never attaches on that path.
-   - **R13b** — `Usage counts cleared. 0 B freed.` reachable on a pre-first-flush success.
-   - **R13c** — the failure branch returns before the `rolled` suffix, so Dev ON + a locked log file
-     never hears that recording continues.
-
-   **The mock could not render any of this, which is why the harness never caught it.**
-   `src/ipc/mock/handlers/obs.ts:174/:202` hard-code `exportFiles: 0` and `:218` concedes it in a
-   comment; `:216` gives at most **one** log file. So the partial-failure row and **every**
-   export-bearing string — including §6.10 8b's confirm-dialog archive line — have never once been
-   rendered. New seams specced and in flight: `?obsLogFiles=N`, `?obsExports=N`,
-   `?obsMetricsUnreadable=1`, `?obsDeleteFail=logs|exports|all|partial|throw`.
-
-   **ALL FIVE SEAMS VERIFIED IN THE HARNESS by the orchestrator, 2026-09-14.** The implementing
-   agent had **no browser tools in its function set**, so it shipped string-level (jsdom) evidence
-   only and said so — the harness half was mine to do, and it is done:
-
-   | Seam | Rendered |
-   |---|---|
-   | `?obsMetricsUnreadable=1`, Dev OFF | `Usage counts were not cleared. Try again.` — class `toast toast-error`, `sr-only` byte-identical. **R13a fixed.** |
-   | `?obsLogFiles=5&obsExports=2&obsDeleteFail=partial` | `Deleted 4 log files and 1 export. 3.3 MiB freed. 2 files could not be deleted — they may be open in another program. Usage counts cleared.` parity true |
-   | … its confirm dialog | `This includes 2 exported log archives.` — **a string never once rendered before today** |
-   | `?obsMetricsFresh=1` | `Usage counts cleared.` — no `0 B freed`, tone `toast-success`. **R13b fixed.** |
-   | `?obsLogFiles=3&obsDeleteFail=throw` | `Bonsai isn't allowed to delete files in that folder.` — tone error, **no fabricated counts** |
-
-   The throw row is the one to keep: it is the path that previously had **no** coverage, and it
-   invents no numbers — precisely the defect class that got through two code reviews and was only
-   caught in the harness last time. Arithmetic is fixture-derived throughout (5 logs + 2 exports,
-   10% failure min 1 ⇒ 4 logs + 1 export deleted, 2 failed).
-
-   Note the accepted imprecision this makes visible: **`2 files could not be deleted` cannot say
-   *which* category** — that is exactly what R14's `failedLogs`/`failedExports` would buy, and why
-   the copy for it is already written and waiting.
-3. ~~**P77 — trigger `list_tag_sync` on auto-fetch completion** (ruling #11)~~ — **DONE 2026-09-14**, `d46c98e`. Rides the existing 5-min cycle; no repo-open call. No `useJobStatus` test file exists at all (pre-existing gap) — the receiving end is covered.
-4. ~~**The e2e cold-timing MEASUREMENT** (ruling #9)~~ — **DONE 2026-09-14**, `6a6f284`. **102 s cold bundle vs 191.4 s dev**, build included, cold-vs-warm 1 s. Not flipped. The decision now has its number and remains the user's.
-5. ~~**The UNC / `\\wsl$` `canonicalize` check** on `216ca45` — ship-blocker.~~ **CLEARED 2026-09-14** by a real UNC probe; `\\wsl$` and OneDrive placeholders remain untested — see the section below.
 6. **`h_ai` stub isolation** — the only code item left besides P112. Serialised for now by a nextest
    test-group (`d46c98e`, both `profile.default` and `profile.ci`; 57/57 in 45 s). **Root cause found,
    not fixed:** twelve test modules each define their own `env_lock()` with its own `static LOCK`
@@ -719,16 +225,20 @@ Three contract facts verified against the tree before briefing (they have drifte
 
 ### Verification state
 
-- **Full 8-step gate green at `1d8c6f9` (2026-09-10, 452.5s)** — 2344 Rust tests, 185 e2e passed /
-  1 skipped. Per step: nextest 133.2s · doctests 3.7s · clippy 22.8s · eslint 12.7s · size ratchet
-  0.9s · vitest 82.9s · tsc+build 15.3s · e2e 181.1s. A later 8-step green (542.4s) closed the
-  reviewer follow-ups over `e9d025d` + `7f9f16b`.
-- **No full-gate run is recorded at or after `216ca45`, `1953c0a` or `9422e8b`.** The last recorded
-  full-gate attempts under happy-dom are the **two that failed** on vitest (see the load-flake entry;
-  `9422e8b` fixed two of the five affected tests). **Treat the gate state as unproven at HEAD.**
-- Exit code 0 is not sufficient evidence, and neither is a piped log — see `### The gate-running
+- **Full 8-step gate GREEN at `9fca997` — 2026-09-15, 437.6s, exit 0, all 8 steps, zero FAIL
+  lines.** Per-step timings and test counts are recorded **once**, in the P112 section above.
+- **That green measured HEAD's source tree.** The only commits after `9fca997` are `c5b3ea5` and
+  `67e2ce6`, and **both touch `TODO.md` alone**; `pnpm gate` does not read the board.
+  Curator-verified 2026-09-16.
+- **It is Windows-only evidence, and must not be read as three platforms.** `pnpm gate` runs Windows;
+  `.github/workflows/ci.yml` runs `[ubuntu-22.04, windows-latest, macos-latest]`. The AMEND-8
+  host-bound test fix is **reasoned, not executed** — the unix accept chain was traced line by line —
+  and **ruling #25 keeps the branch unpushed, so CI cannot run it either.** The first real CI run on
+  this branch is the verification.
+- **Exit code 0 is not sufficient evidence, and neither is a piped log** — see `### The gate-running
   rules` below, which those two facts earned.
 - Port **1420 is free**. Keep it so: `strictPort: true` means a held port breaks `pnpm tauri dev`.
+- Superseded gate states: archive Parts 58 and 72.
 
 ---
 
@@ -1226,6 +736,52 @@ bucket, record a verdict per site, predict the post-fix residue, then verify the
   they would have drained on their own, and each kill discarded build progress and forced a cold
   vendored-libgit2 rebuild. **Do not kill them. Run one cargo at a time and wait** — CLAUDE.md's
   "never conclude failure from a timeout" covers this exact case.
+- **Check port 1420 after any harness-heavy pass** — `Get-NetTCPConnection -LocalPort 1420` is the
+  whole check. An agent that drives `pnpm dev` by hand **orphans** it (once for **3.5 hours**,
+  2026-09-14, PID 12712, 13:18:31 → 16:50:55), and `vite.config.ts` sets **`strictPort: true`**, so
+  `pnpm tauri dev` then **fails outright** rather than falling back — i.e. it breaks the USER
+  CHECKPOINT. Brief agents to the Playwright-managed path (`scripts/e2e-server.mjs`), never a
+  hand-run dev server. `playwright.config.ts` already carries the warning. Narrative: Part 71.2.
+- **`cargo fmt --check` is NOT a gate step** and is dirty at baseline, so never read its output on a
+  diff as a regression — see `### cargo fmt has never been run on this repo`.
+
+### The coverage and evidence rules (earned 2026-09-14/15; narratives archive Parts 71 and 73)
+
+- **A test that passes in the correct AND the broken state is not coverage.** Four instances in the
+  P112 work alone. The negative must be proven red on the unfixed code first.
+- **The limit case is a test that is never in any state.** `external_picked_tests.rs:186` is
+  `#[cfg(not(debug_assertions))]`, so it compiles only under `--release`, which the gate never runs.
+- **A green gate says nothing about a Rust/TS DTO change.** Every frontend tier — vitest, tsc, e2e,
+  the browser harness — consumes the mock, so all of them stay green while the real app is broken.
+  Only `src-tauri/src/settings_defaults_parity_tests.rs` spans the two languages, so **weakening the
+  parity oracle is never routine**, and a DTO change must land its Rust and TypeScript halves in the
+  **same** increment. The mock is not inventing anything in this failure mode; it is **stale**, and
+  staleness is invisible to every test that consumes it.
+- **A green `pnpm gate` is Windows-only evidence.** Any test that passes an explicit `TargetOs` while
+  touching the real filesystem is host-bound; the absoluteness rule is what makes it so.
+- **When a contract signs an error string that names a recovery, the recovery is part of the same
+  contract item.** §16.4a signed `BROWSE_STALE`'s string and its report but **not its verb**, so as
+  written the message named an action that did nothing.
+- **Cite from the file, not from a summary.** Four citations in one brief were wrong, and one had
+  already propagated a false claim into a contract — where the next reader treats it as established.
+  A `file §section` pair is the dangerous shape: the section number can be right for a *different*
+  file. Verify a citation **before** delegating on it.
+- **Mislabelled evidence is this repository's named defect.** A test message that claims more than
+  the test discriminates (`tests_tools_pick.rs:148`: "both fields in ONE update cycle", which two
+  sequential `settings::update` calls would also satisfy) is a defect even when the code is right.
+
+### 📌 TWO DURABLE CONSTRAINTS discovered in the fix pass — keep these
+
+1. **`tracing` DOES NOT EXIST in this workspace.** My brief said "`settings.rs` has zero `tracing::`
+   calls, so there is nothing to piggyback on" — that understated it: **no crate depends on
+   `tracing` at all**, so there is no facade to add a call to. The project's actual non-fatal
+   diagnostic facade is `eprintln!("bonsai: …")` (as in `commands::repo`, `lib.rs`,
+   `commands::ui_settings`). Use that, and do not write `tracing::` into a brief again.
+2. **The settings-load path CANNOT use the observability sink — a bootstrapping constraint.** The
+   P91 `obs` sink is **configured from the very settings** that `load_from` is in the middle of
+   reading, so it cannot be running yet when migration code executes. Any diagnostic inside
+   `load_from` has to be `eprintln!`. This is a real ordering constraint, not a preference, and it
+   will bite anyone who tries to route settings-layer diagnostics through `obs`.
 
 ---
 
@@ -1349,6 +905,68 @@ archive Part 44; the milestone entry is archive Part 54.6.
 Condensed to one line per item on 2026-09-03 and again 2026-09-14; pre-condensation text is archive
 Part 50 and **Part 69**. Nothing here was closed by the curator.
 
+### 🆕 NEW 2026-09-16 — the nine-file second review pass: 2 MUST-FIX routed, 4 filed here
+
+**The pass that closed the coverage gap my batching created.** The nine files named in the earlier
+scope note carried exactly one review pass; this was the second. Verdict **APPROVE WITH MUST-FIX**.
+Reviewed `fd98dd8..HEAD` for those paths (699 insertions / 190 deletions) plus all nine files in
+full. Targeted evidence: 9 suites / **65 tests pass**, `tsc --noEmit` exit 0. Nothing crossed the
+Rust/React boundary; all nine are under the 500-line limit.
+
+**Two MUST-FIX, both verified by me against source before routing, both in the MCP note lifetime:**
+
+1. **MCP outcome notes outlive the Settings surface.** `useMcpControls.ts:54` holds the
+   `useOutcomeNotes()` instance and the hook mounts in `App.tsx` for the app's lifetime, but
+   `SettingsPanel.tsx:32` (`if (!open) return null`) unmounts the section — so the note map survives
+   a close. A failed Add (Globally) leaves `Could not register: …` on screen to be re-read tomorrow.
+   Violates `P113-settings-inline-notes.md:363` verbatim: *"reopening Settings is a clean page."*
+2. **The stale-register-slot clear misses the event-driven stop.** `useMcpControls.ts:100-103` clears
+   the slots only in `handleSetMcpEnabled`'s success continuation, but `mcp-server-changed` is emitted
+   from **both** `mcp.rs` ~`:399` (`stop()`) and ~`:213` (`start_or_signal_stopped`'s **error arm** — a
+   failed restart during a write-gate bounce), and the subscription at `:75` only calls
+   `setMcpStatus`. So `handleSetMcpAllowWrite` can reach stopped with no `handleSetMcpEnabled(false)`.
+   **`mcpOutcomeNotes.test.tsx:202-218` is green in both the fixed and the broken state — the FIFTH
+   recurrence of that pattern in this work.**
+
+**ORCHESTRATOR RULING on the §7-vs-§17.3 conflict the reviewer raised: both passages stand.**
+`P113-settings-inline-notes.md:1088` (§17.3) governs *who owns the instance* and *where the live
+region lives* — the announcer must stay in the section, count **1**. `:363` (§7) governs *lifetime*.
+They constrain different things, so the reconciling fix (expose a reset from `useOutcomeNotes`, fire
+it on the section's unmount) satisfies both. **No contract edit is owed; neither was rewritten.**
+
+**Filed, NOT routed (velocity mode):**
+
+- **`useOutcomeScrollCorrection.ts` has ZERO automated coverage** — 125 lines of contract-critical DOM
+  math. Its `Math.ceil` residual (`:95`) is what `P113-settings-inline-notes.md:641-647` calls
+  load-bearing (*"without it the four-edge test in AC2b cannot be met"*) and it rests on **one**
+  harness measurement. The jsdom bailout at `:67` makes the module a no-op in every current suite.
+  **→ `tester`**: three cases with `scrollIntoView`/`getBoundingClientRect` stubbed.
+- **`adoptToolSelection` cites a STRUCK, REVERSED contract bullet.** `useUiSettings.ts:50` and `:126`
+  (echoed `SettingsContext.ts:139`, `useExternalToolScan.ts:106`) cite "P112 §16.16-5", struck and
+  reversed at `P112-ui.md:1594-1601`; the governing §17 passage (`:1683-1690`) rules *"accept it as
+  shipped; do not rework"*. No passage in `docs/contracts/` specifies `adoptToolSelection` at all — so
+  the shipped setter is an approved **deviation** cited to a dead bullet. → `architect` to record it.
+- **`useSettingsSaveFailure.ts:71` decides banner-vs-toast ONCE, at failure time.** Fail with Settings
+  open → banner, no toast; user closes Settings → the condition persists with **no surface at all**,
+  backoff having stopped after 3 attempts. `P113-settings-inline-notes.md:1133-1137` promises the
+  banner *"persists exactly as long as the condition does"*. Fix: raise the toast lazily on the
+  open→closed transition while `settingsSaveFailed` is still true.
+- **Four NITs.** `useSettingsOpenSignal.ts:20` cites `App.tsx:90`, actual wiring `:83` · §10.3's
+  `while (deficit > 0)` shipped as one pass + a height guard (both correct, but **a note taller than
+  the scrollport gets no correction, so AC2b is unachievable for it by construction** — one clause in
+  §10.3 would close it) · `useToastQueue.ts:63` reads an effect-synced ref, so a handler that opens
+  Settings and pushes in the same commit escapes the DEV guard · `useMcpControls.ts:71-74` swallows a
+  failed `getMcpStatus` and the section then renders "Stopped.", indistinguishable from a genuinely
+  stopped server.
+
+**Three worries CLOSED by this pass, by verification — do not re-open:** `useUiSettings.ts` lost
+nothing load-bearing in its 237-line cut (the write machine moved **verbatim** into
+`useSettingsWriteQueue.ts` — streak, merge-back, `disposedRef`, `pagehide`/`beforeunload`, StrictMode
+reset all identical) · **`hydrateUiSettings` has exactly ONE runtime caller**, `App.tsx:272` (launch),
+so the `metricsVersion` full-re-measure concern is dead · the `announceOnly` approval condition on
+`useOutcomeNotes.ts` **was met** (the JSDoc and the ref proof comment both name it; the range shifted
+off the cited `:59-79` because the edit moved the blocks).
+
 ### 🆕 NEW 2026-09-14 — every Settings toast renders behind Settings' own scrim (§6.11.6)
 
 **Found by `ui-designer`, verified by me against source. This is not an F6 item** — it is the whole
@@ -1440,171 +1058,30 @@ sub-inc 4 must carry the recipe itself.
   real risk. But the comments at `DevCategory.tsx:111-114` and `:119-120` that *assert* toast
   behaviour are being corrected in place.
 
-### ✅ SECURITY AUDIT of sub-inc 2 — "unrepresentable, not rejected" HOLDS. No CRITICAL/HIGH/MEDIUM.
+### ✅ P112 sub-increment 2 — reviewed, audited, committed `a2eb091` (transcript: archive Part 73.1)
 
-**The property, in one sentence a reviewer can check a diff against** (keep this verbatim — it is the
-whole point of P112):
+- **The audit property, kept because it is what a reviewer checks a diff against:** every
+  renderer-reachable write to `settings::Settings` funnels through
+  `commands::ui_settings::apply_patch`, whose input type `UiSettingsPatch` has **no field able to
+  carry a path**, and whose two `String` fields are never stored — they are replaced by a
+  `&'static str` catalog literal via `coerce_tool_id`. No CRITICAL/HIGH/MEDIUM. The three **non-type**
+  facts it rests on are in `### The security record`.
+- **The AMEND-6 LOW is CLOSED** — the heterogeneous-separator `is_unc` hole was sub-inc 2's MUST-FIX,
+  and the two new mixed-separator cases were run **red before, green after**. The most load-bearing
+  artifact in the increment is the exhaustive **36-field destructure with no `..`**: a new field on
+  the patch type becomes a compile error.
+- **STILL OPEN — the observability-capture privacy decision.** `setUiSettings`/`getUiSettings` are
+  both already in the captured-command list (`obs/metrics_cmds.rs:130,209`) and `obs/record.rs:207`
+  has an optional raw-payload capture. Now that `pick_external_tool` returns a browsed path and
+  `tool_scan` returns `DetectedTool.detail`, a **filesystem path can be written to a log file on disk
+  under dev mode**. Decide whether those two commands stay in the capture set — same class as P91's
+  home-masking work.
+- **Trust boundary, stated once so nobody later reads it as a gap:** a **hand-edited `settings.json`**
+  carrying `customEditorPath` **is honoured**, deliberately and in scope. The property is scoped to
+  *a **renderer-written** program path is unrepresentable*; someone who can edit `settings.json` can
+  equally replace the binary it names.
 
-> Every renderer-reachable write to `settings::Settings` funnels through
-> `commands::ui_settings::apply_patch`, whose input type `UiSettingsPatch` has **no field able to
-> carry a path**, and whose two `String` fields are never stored — they are replaced by a
-> `&'static str` catalog literal via `coerce_tool_id`.
-
-**Three NON-TYPE facts it also rests on, each silently breakable by a refactor:**
-- **(a) `src-tauri/capabilities/default.json` grants NO `fs:` permission** (only `core:default`,
-  `dialog:allow-open`, `updater:default`, `process:default`). **Adding any `fs:` write permission
-  scoped to the app config dir would defeat P112 entirely without touching a single line of Rust.**
-  That is the cheapest way to lose this property and it would not show up in any Rust review.
-- **(b)** `ui_settings_of` is the only outbound mapper for these fields, and `tool_scan` /
-  `DetectedTool.detail` — the one DTO *designed* to carry a browsed path outbound — **has no
-  `#[tauri::command]` wrapper yet**, so the path does not leave the backend at all today.
-- **(c)** `catalog::find` is an exact `e.id == id` with **no trim, case-fold or prefix match**, so
-  there is no normalisation step that could echo a caller substring into the stored value.
-
-**A framing correction worth keeping:** the implementer cited the **absence** of
-`deny_unknown_fields` as *protective*. It is **neutral** for security — with or without it, no field
-exists to write. What the absence actually buys is **availability**: an injected key cannot make
-`set_ui_settings` return `Err` and wedge the settings writer's merge-and-requeue loop, so it cannot
-spoil the legitimate keys riding in the same patch.
-
-**The single most load-bearing artifact in the increment** is the exhaustive 36-field destructure with
-**no `..`** — a new field on the patch type becomes a **compile error**, which is what blocks a
-future `#[serde(flatten)]` catch-all.
-
-**Trust boundary, stated once so nobody later reads it as a gap:** a **hand-edited `settings.json`**
-carrying `customEditorPath` **is honoured**, deliberately and in scope. The property is scoped to *a
-**renderer-written** program path is unrepresentable*; someone who can edit `settings.json` can
-equally replace the binary it names.
-
-### 🐞 LOW — my AMEND-6 "detection is provably unmoved" argument is FALSE (verified by me)
-
-I wrote that the new `unc_share` arm "requires two leading separators, which makes `is_unc` true", so
-`locally_absolute = !is_unc && is_absolute_for` stays `false`. **The two predicates disagree on
-separator HOMOGENEITY**, and I checked the source myself:
-- `is_unc` (`custom.rs:100-106`) matches **only** `(`\\`)` or `(`//`)` — both the same character.
-- the new `unc_share` arm (`custom.rs:174-177`) matches `(Some('\' | '/'), Some('\' | '/'), Some(c))` — **any mix**.
-
-So for `\/server\share\Code.exe`: `is_unc` → **false**, `is_absolute_for(Windows)` → **true** via the
-new arm, therefore `locally_absolute` → **true**, where it was `false` at HEAD. **Detection moved.**
-Win32 normalises `/` to `\` before classifying a prefix, so both mixed spellings are genuine UNC.
-
-Impact is bounded and **outside the stated threat model** — it needs control of `PATH`, an HKCU
-`App Paths` default, or a `WinFolder` env var, i.e. local code execution already. The consequence is
-an **unbudgeted SMB stat**: `SCAN_REG_BUDGET` bounds *registry* time only, so a blackholed host
-stalls the scan for the full TCP/SMB timeout on exactly the `WinFolder`/`AppPaths` rungs where this
-check was the thing preventing the stat.
-
-**It is worth fixing anyway because the falsified claim is load-bearing for the next change** —
-`custom.rs:96-99` and `detect.rs:192-199` both tell a future reader that `is_unc` is what keeps
-detection refusing shares, and that is now false for two input shapes. The test meant to pin it
-(`custom_tests.rs:95-110`) exercises only the homogeneous forms, so it passes while the invariant is
-broken. **Fix at the right layer:** broaden `is_unc` to accept heterogeneous separators, as
-`is_device_prefix` already does and as Win32 classifies. **Do NOT tighten `unc_share`** — accepting
-mixed separators there is correct, since a dialog can legitimately return either spelling.
-
-### ⚠ TWO FORWARD REQUIREMENTS FOR SUB-INC 3 — do not discover these late
-
-1. **`pick_external_tool` must call `validate_custom_program` inside `spawn_blocking`.** Now that
-   AMEND-6 accepts shares, `path.is_file()` / `is_mac_bundle` can block on a disconnected SMB host
-   for the full timeout, and a synchronous call **would freeze the Tauri command loop**. There is no
-   call site yet, so there is nothing to fix — only something to get right the first time.
-2. **Observability capture is a privacy decision waiting to happen.** `obs/record.rs:207` has an
-   optional raw-payload capture and **`setUiSettings`/`getUiSettings` are both already in the
-   captured-command list** (`obs/metrics_cmds.rs:130,209`). No tool path can ride either payload
-   today. The moment `pick_external_tool` returns a browsed path and `tool_scan` returns
-   `DetectedTool.detail`, those become commands whose payload contains a **filesystem path written to
-   a log file on disk under dev mode.** Decide then whether they stay in the capture set — this is
-   the same class P91's home-masking work existed to handle.
-
-### 🚨 DECOMPOSITION ERROR (mine) — P112's DTO change is split across two sub-increments
-
-**P112 sub-inc 2 is implemented and under review** (bonsai-core 1114, bonsai 543, workspace nextest
-**2564 passed**, clippy/check clean). But I split the milestone **by layer** — settings shape in
-sub-inc 2, UI in sub-inc 4 — when the thing being changed is a **DTO**, which is by definition the
-contract *between* those layers. **A DTO change split across increments creates a broken interim by
-construction.** That is my planning error, not the implementer's.
-
-Concretely: `ui_settings.rs` no longer emits `terminalCommand` / `editorCommand`, and the TypeScript
-still reads them in **87 places** with **zero** references to the new `terminalTool` / `editorTool`.
-
-### 🚨 AND THE GATE CANNOT SEE IT — the most important finding of the day
-
-**The mock supplies the removed keys from its own defaults**: `src/ipc/mock/persistence.ts:387-391`,
-`src/ipc/mock/handlers/session.ts:150-151`, and `src/settings/uiSettingsDefaults.json:38-39`. Every
-frontend tier of the gate — **vitest, tsc, e2e, and the browser harness** — runs against
-`VITE_MOCK_IPC=1`. So all of them stay **green** while the **real Tauri app is broken**.
-
-This is not a mock bug. The mock is *faithfully implementing a contract the backend no longer
-honours*. The rule this project already has ("the mock must never invent results") does not cover it,
-because nothing is being invented — the mock is merely **stale**, and staleness is invisible to every
-test that consumes it.
-
-**The one guard that CAN see this is `src-tauri/src/settings_defaults_parity_tests.rs`**, which
-compares Rust `ui_settings_of(&Settings::default())` against the **TS-owned**
-`src/settings/uiSettingsDefaults.json`. It is the only cross-boundary oracle in the project — and it
-is precisely the test this increment had to **weaken** in order to land. **The mitigation worked exactly as designed and is now GONE**
-(`P112_KEYS_IN_TRANSIT` named **four** keys with everything else still compared, and
-`the_p112_key_transition_is_still_in_flight` **fired the moment the TS defaults gained the new keys** —
-both deleted 2026-09-14, oracle total again, passed first time) — but the shape is worth naming: **the increment that broke
-the boundary is the increment that exempted the boundary check.**
-
-**Durable rule earned:** a green gate says nothing about a Rust/TS DTO change. The frontend tiers
-consume the mock, not the backend. Only the parity oracle spans the two, so **weakening it is never
-routine** — and a DTO change must land its Rust and TypeScript halves in the same increment.
-
-**Sequenced next:** the TS bridge (drop the legacy plumbing, adopt the new keys, update the defaults
-JSON and mock). It **cannot** run concurrently with P113 phase 2 — both touch `App.tsx` and
-`useUiSettings.ts`.
-
-### ✅ P112 SUB-INC 2 COMMITTED `a2eb091` — MUST-FIX fixed, AMEND-7 written, all gates green
-
-`bonsai-core --lib` **1115** · `bonsai --lib` **543** · `h_ai` **57** · `h_misc` **51** ·
-`nextest --workspace` **2565 passed, 10 skipped** · `clippy --workspace --all-targets -D warnings`
-exit 0 · doctests with `RUSTDOCFLAGS=-D warnings` exit 0.
-
-**The MUST-FIX came with the evidence that mattered:** the two new mixed-separator cases were run
-**before** the `is_unc` widening and **FAILED**, then passed after. That ordering was necessary, not
-ceremonial — the pre-existing test that *promised* to catch a leak of the browse relaxation into
-detection covered only the homogeneous spellings, so it **passed the whole time the invariant was
-broken**. AMEND-7 now records the implication the ruling rests on (`unc_share(v) ⇒ is_unc(v)`) rather
-than asserting a predicate is untouched.
-
-### 📌 TWO DURABLE CONSTRAINTS discovered in the fix pass — keep these
-
-1. **`tracing` DOES NOT EXIST in this workspace.** My brief said "`settings.rs` has zero `tracing::`
-   calls, so there is nothing to piggyback on" — that understated it: **no crate depends on
-   `tracing` at all**, so there is no facade to add a call to. The project's actual non-fatal
-   diagnostic facade is `eprintln!("bonsai: …")` (as in `commands::repo`, `lib.rs`,
-   `commands::ui_settings`). Use that, and do not write `tracing::` into a brief again.
-2. **The settings-load path CANNOT use the observability sink — a bootstrapping constraint.** The
-   P91 `obs` sink is **configured from the very settings** that `load_from` is in the middle of
-   reading, so it cannot be running yet when migration code executes. Any diagnostic inside
-   `load_from` has to be `eprintln!`. This is a real ordering constraint, not a preference, and it
-   will bite anyone who tries to route settings-layer diagnostics through `obs`.
-
-### ⚙ Three smaller items from the same pass
-
-- **`legacy_tool_stem` is a new `pub`** in `bonsai-core`, which makes `settings_ids.rs`'s module-doc
-  claim ("both functions return … never a caller-supplied substring") **literally false**. Amended
-  with an explicit **diagnostics-only, never-stored** carve-out rather than leaving a second false
-  doc claim in a file whose first one was just fixed. Worth a reviewer's eye.
-- **`is_unc` is OS-agnostic**, so on unix `/\opt/bin/x` is now a detection refusal where it was a
-  candidate. **My ruling: leave it.** It matches `is_device_prefix` (`//?/…` is already refused on
-  unix), no unix ladder or realistic `PATH` entry produces that spelling, and an `os` parameter would
-  add a third predicate variant for no benefit. Documented at the function.
-- **`external_cmd.rs:150` carries an IDENTICAL homogeneous-only `is_unc`.** Unreachable from the app
-  today (`commands/external.rs` reads the legacy fields, which `load_from` now always clears) but
-  reachable from `bonsai-core`'s API and tests. §7 moves those four helpers into `tools/mod.rs`, so
-  **sub-inc 3 widens it there rather than patching it twice.**
-
-### ⚠ `cargo fmt --check` IS NOT A GATE STEP, and it is 2290 hunks dirty at baseline
-
-Measured this pass. `gate.mjs` does not run it, and files nobody touched (e.g. `ai/bin_resolve.rs`)
-are dirty. **Do not read `cargo fmt` output on a diff as a regression** — it will show pre-existing
-lines in any file you happen to open. Also: `h_ai` / `h_misc` are **`bonsai-core`** test targets, not
-`bonsai` (`cargo test -p bonsai --test h_ai` errors); my brief had that wrong.
-
-### 🔧 P113 PHASE 2 IMPLEMENTED (in review) — AC1 says zero, and it was earned
+### 🔧 P113 PHASE 2 — LANDED `dcff54b`, REVIEWED 2026-09-16 (2 MUST-FIX in flight). AC1 says zero, and it was earned
 
 **AC1's full accounting**, the check that has never been run in this form and whose absence lost five
 call sites: `rg -n "pushToast\(" src/` → **233**, every one classified.
@@ -1640,21 +1117,12 @@ quietly removed the only record of a real one. **Routing: keep the user-facing s
 the raw error on the diagnostic path (dev-mode log).** Not a copy change — the string stays as
 approved.
 
-### 📐 Two contract corrections earned by measurement, for `ui-designer`
+### 📐 Two contract corrections earned by measurement — DELIVERED to `ui-designer`
 
-1. **§10.3 condition 2 is insufficient as written.** `scrollIntoView({block:'nearest',
-   behavior:'auto'})` **alone does not satisfy AC2b**: it settles at `scrollTop 1269`, leaving the
-   note bottom at **687.171875** against a clip bottom of exactly **687** (pane rect 137→687, zero
-   borders — real clipping, not `clientHeight` rounding). `scrollTop += 0.171875` reads back **1269**
-   because DPR 1 snaps to whole pixels, so **`Math.ceil` → 1270** is what makes the four-edge test
-   pass. A sub-pixel residue defeats the correction the contract prescribes.
-2. **§8.2's key-scoped clearing — which I routed — reopens §8.1 across keys.** Two **different** keys
-   with byte-identical text now announce **once**. Real cases: both REGISTER rows share
-   `Could not register: {e}`; `Could not open the token page: {e}` on host A then host B. The
-   implementer reports it is not fixable inside `report` without breaking AC7's exactly-once mutation
-   spy. **I traded a global-clear bug for a narrower cross-key one** — the designer should rule
-   whether that trade is the right one, with both concrete cases in hand. (A previous "no way to do
-   this" claim in this contract turned out to be too strong, so the claim is under review too.)
+§10.3's sub-pixel residue (`scrollIntoView({block:'nearest'})` alone settles at note-bottom
+**687.171875** against a clip bottom of exactly **687**, so **`Math.ceil` → 1270** is what makes the
+four-edge test pass) and §8.2's key-scoped clearing, **withdrawn in `2aee970`**. Both measurements
+and both concrete cross-key cases: archive Part 73.3.
 
 ### ✅ `watcher::tests::git_internals_filtered` — SETTLED, and my mechanism was wrong
 
@@ -1694,31 +1162,19 @@ positive (`tests.rs:149-152`) is the half that earns its keep.
 
 **Stop re-characterising this.** It is ambient-load sensitivity in a wall-clock negative assertion.
 
-### ✅ P113 PHASE 1 COMMITTED `0c86376` — approved, no MUST-FIX. Phase 2 in flight.
+**Two earlier characterisations of this test are history, not competing claims:** the "orphaned vite
+dev server as a candidate contributor" mechanism (archive Part 71.2) and the "did not reproduce" note
+further below. **The canonical reading is the one in this section.**
 
-Ten call sites moved from toasts to inline notes; `SettingsOutcomeNote.tsx`, `useOutcomeNotes.ts`,
-`settings-outcome-note.css`. tsc clean, eslint 0 errors, vitest **640/640 across 49 files**, size
-ratchet OK, `elementFromPoint` evidence per note.
+### ✅ P113 PHASE 1 COMMITTED `0c86376` — approved, no MUST-FIX (review narrative: archive Part 73.4)
 
-**The review verified rather than assumed, and two results are worth keeping:**
-- **The "clipped by scroll, not occluded by z-index" distinction is provable from CSS alone** —
-  `.settings-pane` is `overflow-y: auto` inside `.dialog-card.settings-card` (`overflow: hidden`), so
-  nothing below that clip is painted and `elementFromPoint` there **necessarily** returns the next
-  painted thing. Categorically different from the original defect, where the toast's *entire* box lay
-  inside the viewport, on top of the card, un-hit-testable at every point including its ✕.
-- **No string changed** — `devLogMessages.ts`, `dev.test.tsx` and `devDeleteToastRows.test.ts` are
-  **absent from the diff**, which is AC10's own test. The sweep moved messages without rewriting them.
-
-**Three review follow-ups, all routed into phase 2:** a stale host note **resurrects** when a removed
-host is re-added (the hook prunes only via `begin`, and the remove path never calls it); rows 9/10
-still emit byte-identical announcements so **the second is silent** — the designer called the fix
-impossible without a forbidden prop change and the reviewer showed `flushSync(() => begin(key))` does
-it with no prop change at all; and the `scrollIntoView` relaxation.
-
-**NITs filed:** `begin(key)` clears the announcer **globally** while clearing one key's note —
-contract-conformant, but Accounts has no busy gate, so an action on host B can blank a just-written
-utterance for host A. Mock path citations in `forge.ts:438,459` are off (`:340`, and the path needs
-`src-tauri/`). `?forgeRemoveFail=long` omits §14's 60-char host half.
+Ten call sites moved from toasts to inline notes. Its three review follow-ups were all routed into
+phase 2 (the stale host note **resurrecting** when a removed host is re-added; rows 9/10 emitting
+byte-identical announcements so the second is silent, fixed by `flushSync(() => begin(key))`; the
+`scrollIntoView` relaxation). **Its NITs are still filed:** `begin(key)` clears the announcer
+**globally** while clearing one key's note, and Accounts has no busy gate; the mock path citations in
+`forge.ts:438,459` are off (`:340`, and the path needs `src-tauri/`); `?forgeRemoveFail=long` omits
+§14's 60-char host half.
 
 ### 🔧 P113 PHASE 2 — the five missed sites, the guard redesign, the approved banner
 
@@ -1748,26 +1204,6 @@ utterance for host A. Mock path citations in `forge.ts:438,459` are off (`:340`,
 
 **One more site for when P112-4 lands:** `useExternalTools.ts:22/:34` are repo-UI only today, but
 sub-inc 4 puts a tool picker **in** Settings, and a Browse failure raised there hits the same scrim.
-
-### ✅ RUST GATE TIER GREEN at `e9ed93d` — 2026-09-14, 386.0s, exit 0
-
-`pnpm gate --rust`, all 3 steps: nextest **312.9s — 2542 tests run, 2542 passed (1 leaky), 10
-skipped** · doctests 4.9s · clippy 68.2s. Against the 2026-09-14 full-gate baseline of **2467** Rust
-tests, that is **+75**, consistent with `tools/` (59 + the follow-up additions) and `procutil` (10).
-
-Two things this settles:
-- **`watcher::tests::git_internals_filtered` PASSED** (3.850s) in a full workspace run under gate
-  load — the condition I had wrongly called "a gate flake". It has now failed once, in one agent's
-  run, and passed in two independent full runs since. **Not a flake on the evidence available.**
-- The **one "leaky"** test is `bonsai-core::h_misc external_spawn::detached_spawn_ignores_nonzero_exit`
-  — a test whose entire purpose is to spawn a **detached** process and not wait for it. nextest flags
-  a test as leaky when a child outlives it holding handles, so this is **definitional, not a defect**.
-  Worth knowing it sits in the external-spawn area P112 is rewriting; if it ever stops being leaky,
-  that is the signal something changed.
-
-**Still unproven at HEAD: the FULL 8-step gate.** The last green was 461.9s at `b53618a`, which
-predates every change today. The frontend tiers (vitest, tsc+build, eslint, e2e) have not run against
-the P113 work, which is still uncommitted and under review.
 
 ### 🚨 NEW 2026-09-14 — "Remove account" reports success even when the token was NOT deleted
 
@@ -1801,47 +1237,14 @@ leaves the account listed. Removing one without the other is a partial state, an
 able to say which half happened. Needs a contract decision before implementation, and a
 `security-auditor` pass on the result.
 
-### 🆕 SECURITY AUDIT of the `.cmd` launch change — CLEAN, and clean STRUCTURALLY
+### 🆕 SECURITY AUDIT of the `.cmd` launch change — CLEAN (full reasoning: archive Part 74.2)
 
-**Nothing CRITICAL/HIGH/MEDIUM.** Worth recording *why*, because the reasoning is reusable and the
-next person to touch the launch path should not have to re-derive it.
-
-The auditor traced the full hostile chain: a hostile `.gitmodules` declaring `path = evil<metachars>`
-→ clone → right-click the submodule row → `open_in_editor` → `editor_ladder` builds
-`spec("code", &[&p])` → `resolve_program` now returns `code.CMD` → `Command::args([dirname])`. So an
-**attacker-named directory does reach a batch file's argv.** Four independent things stop it:
-
-1. **`is_dir()` is itself the character filter.** The only characters that defeat std's bat quoting
-   are `\r`, `\n` (std refuses: "batch file arguments are invalid") and `"` (quote breakout) — and
-   **all three are illegal in Win32 path components**, so anything satisfying `is_dir()` cannot carry
-   them. The dangerous inputs are *unreachable*, not blocklisted.
-2. std quotes any argument outside `alnum + #$*+-./:?\_`, so `&`, `^`, `(`, `)`, `,`, `;`, space and
-   `%` all force quoting, and inside quotes cmd does not treat `&`/`|` as separators.
-3. `%` is neutralised at the outer parse by std's `%%cd:~,%` substitution.
-4. `cmd.exe /e:ON /v:OFF /d /c` — delayed expansion **off**, so `!` is inert.
-
-**The auditor read the actual shim rather than recalling it**: VS Code's `code.cmd` is
-`"%~dp0..\Code.exe" "%~dp0..\...\cli.js" %*` with **no `call`**. Percent expansion is single-pass,
-so the classic `call %*` double-expansion does not apply. A *different* `.cmd` using `call ... %*`
-would get a second pass — worst case even then is a directory named `%PATH%` disclosing environment
-into a same-user process, because quote breakout still needs a `"` that cannot exist in a path.
-**`idea.cmd` is UNVERIFIED** (JetBrains not installed on this host).
-
-**MSRV is sufficient and deliberate:** `rust-toolchain.toml` pins `channel = "1.97"` (mitigation
-landed 1.77.2), and `.github/workflows/release.yml:179-182` documents that CI takes the channel from
-that file — a past `dtolnay@stable` step was removed precisely because it bypassed it.
-
-**The single assumption that would upgrade this if wrong:** whether git-on-Windows can be coerced into
-checking out a directory name containing `"` (via `core.protectNTFS = false` + `\\?\` long-path
-APIs). Assessed as not realistically reachable — Win32 forbids the character in path components
-regardless of API — but `"` is the one character that breaks std's quoting, so that is the one datum
-worth getting if this is ever revisited.
-
-**Also confirmed solid (INFO-3), and worth knowing:** the AI path already does the right thing.
-`ai/mod.rs:178-183` and `ai/session_argv.rs:13-20` state that all repo-derived and user data flows
-through **stdin only, never argv**, asserted by `argv_never_contains_a_newline`. That is the one place
-the bat-argv question *would* have been serious — commit messages and diffs are multi-line and would
-hit std's `\r`/`\n` refusal — and it was handled before this change.
+Nothing CRITICAL/HIGH/MEDIUM, and clean **structurally**: `is_dir()` is itself the character filter,
+because the only characters that defeat std's batch quoting — `\r`, `\n` and `"` — are **illegal in
+Win32 path components**, so the dangerous inputs are *unreachable*, not blocklisted. VS Code's
+`code.cmd` was read rather than recalled: no `call`, so no double expansion. **`idea.cmd` is
+UNVERIFIED** (JetBrains not installed on this host). The one datum that would upgrade this if wrong:
+whether git-on-Windows can be coerced into checking out a directory name containing `"`.
 
 ### 🆕 A ROBUSTNESS REGRESSION the `.cmd` fix introduced (LOW-1) — recorded, not fixed
 
@@ -1877,37 +1280,14 @@ block on the editor's lifetime. Deliberately recorded rather than patched.
   path. Routed as a cheap fix. Grapheme clusters can also split (base kept, combining mark dropped);
   no attacker under the stated trust model.
 
-### 🆕 2026-09-14 — P112 follow-ups IMPLEMENTED (in review): 7 items + the shipped resolver fix
+### 🆕 P112 follow-up pass — IMPLEMENTED, reviewed + security-audited (transcript: archive Part 74.3)
 
-All seven routed items landed. `cargo test -p bonsai-core --lib` **1100 passed, 0 failed, 4 ignored**
-(1088 + 12 new: 9 `procutil`, 3 `tools`); `h_ai` **57**; `h_misc` **51**; `clippy -D warnings` clean;
-`check --workspace --all-targets` clean; size ratchet OK with `gitbin.rs` held **net-neutral at
-exactly 500 lines**. Under review by `reviewer` + `security-auditor`.
-
-**`looks_absolute` is DELETED.** `executable_hit` now calls one predicate,
-one predicate per concern — `custom::is_absolute_for` is the genuinely shared
-half, while the **UNC arm is deliberately NOT shared**: `detect::locally_absolute` for detection,
-inlined in `validate_custom_program` for browse, each citing AMEND-6 (an earlier `is_local_absolute`
-that fused them was reverted as the reviewer's MUST-FIX — see below) — which settles the conflict
-where the old predicate took **no `os`** and accepted a leading `/` while its own doc said it refused
-that shape as drive-relative. **Two reviews disagreed and the auditor was right.** Note AMEND-6 now
-makes the browse path diverge again, deliberately.
-
-**THE LAUNCH SURFACE CHANGED, and that is the thing to watch.** With PATHEXT-first resolution,
-`vscode`'s provenance flips **`Registry` → `Path`** and its program becomes `...\bin\code.CMD`
-instead of `Code.exe` — **so the app now launches batch files where it previously launched a PE.**
-This routes through std's case-insensitive batch detection, i.e. the **mitigated CVE-2024-24576 /
-"BatBadBut"** path, where std applies cmd.exe quoting and errors on args it cannot escape. The guard
-was deliberately **not** tightened to `.exe`-only because the Windows `idea` row has **only** a
-`Rung::OnPath` and JetBrains ships `idea.cmd` — tightening would delete a catalog row. Audit in
-flight on exactly this; the interesting input is **a crafted filename inside a cloned repository**,
-not `PATH`, because that is the only attacker-influenced argv source.
-
-**Group C did NOT move AI resolution** — measured with a standalone probe against the real host PATH:
-`claude` resolves to `...\.local\bin\claude.EXE` under **both** orders, `git` unchanged. Only `code`
-(the fix) and `pnpm` (nothing spawns it) change. Stat counts equal (4375 vs 4376), so the reorder is
-free. Bonus: `gitbin`'s Windows `resolve_on_path` delegates to `procutil`, so **Windows git
-resolution now inherits the empty-component / `is_absolute` guards its unix branch already had.**
+Seven routed items plus the shipped resolver fix (`fd93616`). `looks_absolute` is **deleted**, and
+the **UNC arm is deliberately NOT shared** between detection (`detect::locally_absolute`) and browse
+(inlined in `validate_custom_program`), each citing AMEND-6 — a fused `is_local_absolute` was
+reverted as the reviewer's MUST-FIX. **Its own residue is still open and is listed on this board:**
+the LOW-1 robustness regression above, the further audit items above, and the contract deltas owed to
+`architect` below.
 
 ### 🆕 MEASURED, LEFT UNFIXED — a cold first scan can spend the registry budget before using it
 
@@ -1957,33 +1337,22 @@ take `BrowsedProgram`; the §4 example becomes
 `tools::picked(&s.terminal_tool, ToolKind::Terminal, BrowsedProgram::from_settings_field(&s.custom_terminal_path))`;
 AMEND-5 items 1, 2 and 7 are now reflected in code; and the `.cmd`-hit consequence needs stating.
 
-### 🆕 NEW 2026-09-14 — "Open in editor" is broken on Windows, and it is MEASURED
+### ✅ CLOSED 2026-09-16 — "Open in editor" was broken on Windows; the fix shipped in `fd93616`
 
-Uncovered by P112 sub-inc 1's ladder work; **not a P112 bug — it is in shipped code.** Routed to
-`senior-dev` as Group C of the follow-up pass, recorded here because the measurement is the evidence.
-
-`external.rs`'s Windows `editor_ladder` opens with bare `spec("code", ...)`, and
-`procutil::resolve_program` (`crates/bonsai-core/src/procutil.rs:26-29`) returns `dir.join(program)`
-**before** its `PATHEXT` loop. So `"code"` resolves to VS Code's extension-less POSIX shim — a
-2073-byte file beginning `#!/usr/bin/env sh`. A standalone `rustc` probe making the exact
-`Command::new(path).spawn()` call `SpawnRunner` makes:
-
-| Program | `spawn()` |
-|---|---|
-| `bin/code` (the shim `resolve_program` returns) | **ERR `os error 193` — "%1 is not a valid Win32 application"** |
-| `bin/code.cmd` (what `PATHEXT` would have found) | OK |
-| `Code.exe` (what App Paths names) | OK |
-
-Rung #2 is bare `code-insiders`, normally absent — so the ladder fails outright. **P112 also removes
-the `editorCommand` escape hatch that currently masks this**, so the fix is not optional cleanup.
-Probe kept at `D:/Data/Temp/claude/shim-probe/shim_check.rs`.
-
-Fix routed: prefer `PATHEXT` matches over the bare name in `resolve_program`, and filter **empty**
-`PATH` components while requiring `is_absolute()` — the non-Windows branch of
-`gitbin::HostGitEnv::resolve_on_path` already does both, so this is porting a guard that exists.
-The bare-name-first branch was believed load-bearing for npm's `claude.cmd`; it is not, because the
-`PATHEXT` loop finds `claude.cmd` on its own. **Caveat carried into the brief:** `resolve_program`
-also serves `ai::resolve_bin`, so the reorder needs AI-test evidence, not just editor-test evidence.
+- **Fixed.** `procutil::resolve_program` now prefers `PATHEXT` matches over the bare name, skips
+  **empty** `PATH` components and requires `is_absolute()`. Curator-verified 2026-09-16 against the
+  shipped doc comment on `resolve_program`, which records the mechanism and the measurement.
+- **What was broken:** the bare name resolved to VS Code's extension-less POSIX shim (2073 bytes,
+  `#!/usr/bin/env sh`), and spawning it fails with **`os error 193`** — so the Windows
+  `editor_ladder`, which opens with a bare `code` rung, **failed outright on a standard install**.
+  The `spawn()` measurement table (shim **ERR 193** · `bin/code.cmd` OK · `Code.exe` OK) is preserved
+  in **archive Part 74.4**.
+- **AI resolution measured unmoved:** `claude` resolves to `claude.EXE` under **both** orders, `git`
+  unchanged, stat counts **4375 vs 4376** — the reorder is free. Windows git resolution also inherits
+  the empty-component / `is_absolute` guards, because `gitbin`'s `resolve_on_path` delegates here.
+- **The security consequence is LIVE, not archived** — see `### The security record`: the launch
+  surface flipped `Registry → Path` for `vscode`, so the app now launches `code.CMD` rather than a
+  PE, through the mitigated CVE-2024-24576 / "BatBadBut" path.
 
 ### 🆕 NEW 2026-09-14 — follow-ups both P112 reviews produced, NOT routed
 
@@ -2128,6 +1497,49 @@ text 45 · pre-condensation board text 69.1. User decisions + architectural ruli
   `src-tauri/src/commands/staging.rs:19-23` still passes frontend paths straight to `stage_paths`,
   keeping `git add -f` semantics with **no status-membership check**; the *escape* half is closed for
   that caller too. Also: `ensure_within_workdir` treats `.git` as inside the boundary.
+
+### The external-tool launch surface — SEC-2026-09-14/15 (three audits, all CLEAN at HIGH and above)
+
+- **The three audits:** sub-inc 2 ("unrepresentable, not rejected" **holds**), sub-inc 3 (*"a net
+  reduction in attack surface"* — it **deletes** the free-text program capability rather than putting
+  a validator in front of it), and the `.cmd` launch change. Board narratives: archive Parts 71.3,
+  73.1 and 74.2.
+- **THE LAUNCH SURFACE NOW RUNS A BATCH FILE.** With `PATHEXT`-first resolution (`fd93616`),
+  `vscode`'s provenance flips **`Registry` → `Path`** and its program becomes `…\bin\code.CMD`
+  instead of `Code.exe` — **so Bonsai launches a batch file where it previously launched a PE**,
+  through std's case-insensitive batch detection, i.e. the **mitigated CVE-2024-24576 /
+  "BatBadBut"** path. Audited CLEAN. **Deliberately not tightened to `.exe`-only:** the Windows
+  `idea` row has **only** a `Rung::OnPath` and JetBrains ships `idea.cmd`, so tightening would delete
+  a catalog row. The only attacker-influenced argv source is **a crafted filename inside a cloned
+  repository**, not `PATH`. MSRV is sufficient and deliberate — `rust-toolchain.toml` pins
+  `channel = "1.97"` and the mitigation landed in 1.77.2.
+- **THE SINGLE FACT A FUTURE REFACTOR MUST NOT BREAK:** *no code outside `bonsai-core` constructs a
+  `PickedTool` literal.* Everything AC6 claims rests on it, and it is enforced by **convention, not
+  by the compiler**: `PickedTool` (`tools/mod.rs:119-131`) is `pub` with five `pub` fields and no
+  `#[non_exhaustive]`, while `terminal_ladder` (`:357`), `editor_ladder` (`:389`),
+  `open_in_terminal` (`:427`) and `open_in_editor` (`:447`) are **all `pub` and all take
+  `Option<&PickedTool>`**. Verified: `grep 'PickedTool' src-tauri/src/` returns **exactly one hit**,
+  a return type (`commands/external.rs:140`), with **zero field reads**. Fix at the right layer
+  (zero-caller): make the five fields `pub(crate)`, or add `#[non_exhaustive]`.
+- **`src-tauri/capabilities/default.json` grants NO `fs:` permission** — only `core:default`,
+  `dialog:allow-open`, `updater:default`, `process:default`. **Adding any `fs:` write permission
+  scoped to the app config dir would defeat P112 entirely without touching a single line of Rust**,
+  and it would not show up in any Rust review. Cheapest way to lose the property.
+- **`.exe`-only is sufficient and not a heuristic.** A batch file **renamed** to `.exe` is handed to
+  `CreateProcess`, which validates the **image header** and fails with **error 193** — it never
+  reaches `cmd.exe`. The dialog filter is cosmetic (`custom.rs:262-267`); the gate is
+  `custom.rs:268-275`, and `tests_tools_pick.rs:78-109` writes **real** `payload.cmd`/`.bat`/`.ps1`
+  files and asserts all three are refused.
+- **"No path is ever an argument" holds only for the two NEW commands.** `openInTerminal`,
+  `openInEditor` and `revealInFileManager` carry `["path"]` in `rawArgPolicy.json`, so paths **do**
+  reach raw-mode logs on the neighbouring external surface (pre-existing). **Pin the dependency this
+  rests on:** the pipeline logs **arguments and never result values** — a future change that logged
+  result values in raw mode would break the property **without touching either command or the policy
+  file**.
+- **INFO, on record:** `browsed_tool_row` validates the real `&Path` but stores `to_string_lossy()`.
+  For a non-UTF-8 path the stored string differs from the validated one. It **fails closed**
+  (re-validated on every launch; `is_file()` false, auto ladder runs), so there is no security
+  consequence — but "validated one value, stored another" is a shape worth having on record.
 
 ### SEC-2026-09-03 — external-launch residue (remediated `0806596`)
 
@@ -2311,13 +1723,17 @@ Ratchet baseline moved **27 offenders / 6241 excess → 20 / 3528**; full gate g
 ### `cargo fmt` has never been run on this repo
 
 - No `rustfmt.toml` anywhere, no fmt check in any hook or CI (re-verified 2026-09-03: zero
-  `rustfmt.toml` in the tree).
-- `cargo fmt --all --check` reports **1773 hunks across 221 files**; `--config
-  use_small_heuristics=Max` is *worse* (2065). **These two numbers were NOT re-measured in the
-  2026-09-03 staleness sweep** (cargo is not on the default PATH and running it is out of that
-  sweep's scope) — treat them as of their original measurement date, not as current.
+  `rustfmt.toml` in the tree). **`gate.mjs` does not run it**, so it is not a gate step.
+- **Two dated measurements, both kept because neither was re-measured against the other's tree:**
+  `cargo fmt --all --check` reported **1773 hunks across 221 files** (original measurement;
+  `--config use_small_heuristics=Max` was *worse*, 2065), and a 2026-09-14 measurement reported
+  **2290 hunks** dirty at baseline. Treat each as of its own date.
+- **Do not read `cargo fmt` output on a diff as a regression** — files nobody touched (e.g.
+  `ai/bin_resolve.rs`) are dirty, so it will show pre-existing lines in any file you happen to open.
 - Right shape: its own commit — pick a config, add `rustfmt.toml`, one-shot reformat, then add
   `cargo fmt --check` to the gate. **Do it between milestones, never inside one.**
+- Unrelated fact from the same pass, kept because a brief got it wrong: **`h_ai` / `h_misc` are
+  `bonsai-core` test targets, not `bonsai`** (`cargo test -p bonsai --test h_ai` errors).
 
 ### Audit #2 remainder (full audit `docs/audit-2026-08-18.md`; fix-batch mapping archive Part 16)
 
@@ -2399,7 +1815,7 @@ part number. The table below is the short form.
 | File | Covers |
 |---|---|
 | `docs/history/README.md` | **The archive index** — which file/part holds which milestone. |
-| `docs/history/todo-archive-2026-09.md` | **Parts 62-70 (moved 2026-09-14, after the user ruled all 22 FOR-USER items on 2026-09-11):** the stale 2026-09-10 resume block + FU-1 residue (62) · the FOR-USER evidence blocks for items 0-6 (63) · the `IN FLIGHT` queue, the 2026-09-11 orchestrator closures, the unreviewed-MCP-merge warning (64) · **`SEC-2026-09-11`**, the MCP tool-contract audit, with its verified-CLEAN register (65) · **`SEC-2026-09-11b`**, the review of that implementation, with its verified-CLEAN register (66) · P108 `AC11`, closed by ruling #13 (67) · the happy-dom load-flake narrative (68) · the open follow-ups as they stood pre-condensation (69.1 P91 · 69.2 SEC-2026-09-03 through the 2026-09-01 hoisted items · 69.3 P69 Settings) · superseded curator bookkeeping (70). **Parts 54-61 (moved 2026-09-10):** the whole USER-CHECKPOINT block — P102+P105, P106, P107, P108, P91 (54) · P110 + P109 (55) · the 2026-09-03 closures + SEC-2026-09-03 remediation (56) · `Queued housekeeping` incl. the `e149382` CSS-split proof (57) · the superseded `c218258` and earlier gate states (58) · the 2026-09-10 session: P111, FU-1, six reviewer-follow-up closures (59) · the board's record of the confirmation (60) · superseded curator bookkeeping (61). **Parts 51-53 (2026-09-03):** the `5c2dcd2` + `c6cd7dd` gate states and the e2e-contention mis-diagnosis · the full narratives of everything closed 2026-09-03 · the durable-lessons stories and worked numbers. **Parts 36-50 (2026-09-03):** the file-size refactor pass · P102+P105, P106, P107, P108 and the P91 security arc + audit + build diary · superseded pre-ship filings · the 2026-09-03 velocity pass · P99, P100, P101, P98, P95, P96, P97 · built-bundle e2e + P103 + P104 · the DX/velocity stubs · the pre-condensation open-follow-up text. **Parts 33-35 (2026-09-01):** the P84 record gap · macOS ad-hoc signing · the two 2026-08-22 design reviews. **Parts 22-32 (2026-09-01):** P94 · P93+P92 · DEP REFRESH · P90+P89 · P88 · the P85-P87 batch · P82+P83 · divergence reconcile + Release 1.1.0 · the DX dev-loop text · the confirmed-checkpoints block · the 2026-08-21 resolved follow-ups. |
+| `docs/history/todo-archive-2026-09.md` | **Parts 71-75 (moved 2026-09-16; P112 itself STAYED — its USER CHECKPOINT is pending):** the P112 sub-inc 3/4 build + review transcript, incl. the `P112-ui.md` §17 rulings, the four bad citations, the coalescing lesson and the sub-inc-3 audit (71) · superseded gate states (`d0e6cf0`, `dcff54b`, the 427.4s confirming run, the `e9ed93d` Rust tier) and the completed 2026-09-14 queue — F6, P77, the e2e cold-timing measurement, the UNC clearance (72) · the P112 sub-inc 2 + P113 phase-1 review transcript (73) · **the two items CLOSED 2026-09-16 with their evidence** — "Open in editor" (fixed `fd93616`, with its `os error 193` measurement table) and the false General subtitle (resolved by the picker landing) — plus the `.cmd` launch-path audit (74) · superseded curator bookkeeping, the duplicated `cargo fmt` measurement and the pre-consolidation `cargo fmt` section (75). **Parts 62-70 (moved 2026-09-14, after the user ruled all 22 FOR-USER items on 2026-09-11):** the stale 2026-09-10 resume block + FU-1 residue (62) · the FOR-USER evidence blocks for items 0-6 (63) · the `IN FLIGHT` queue, the 2026-09-11 orchestrator closures, the unreviewed-MCP-merge warning (64) · **`SEC-2026-09-11`**, the MCP tool-contract audit, with its verified-CLEAN register (65) · **`SEC-2026-09-11b`**, the review of that implementation, with its verified-CLEAN register (66) · P108 `AC11`, closed by ruling #13 (67) · the happy-dom load-flake narrative (68) · the open follow-ups as they stood pre-condensation (69.1 P91 · 69.2 SEC-2026-09-03 through the 2026-09-01 hoisted items · 69.3 P69 Settings) · superseded curator bookkeeping (70). **Parts 54-61 (moved 2026-09-10):** the whole USER-CHECKPOINT block — P102+P105, P106, P107, P108, P91 (54) · P110 + P109 (55) · the 2026-09-03 closures + SEC-2026-09-03 remediation (56) · `Queued housekeeping` incl. the `e149382` CSS-split proof (57) · the superseded `c218258` and earlier gate states (58) · the 2026-09-10 session: P111, FU-1, six reviewer-follow-up closures (59) · the board's record of the confirmation (60) · superseded curator bookkeeping (61). **Parts 51-53 (2026-09-03):** the `5c2dcd2` + `c6cd7dd` gate states and the e2e-contention mis-diagnosis · the full narratives of everything closed 2026-09-03 · the durable-lessons stories and worked numbers. **Parts 36-50 (2026-09-03):** the file-size refactor pass · P102+P105, P106, P107, P108 and the P91 security arc + audit + build diary · superseded pre-ship filings · the 2026-09-03 velocity pass · P99, P100, P101, P98, P95, P96, P97 · built-bundle e2e + P103 + P104 · the DX/velocity stubs · the pre-condensation open-follow-up text. **Parts 33-35 (2026-09-01):** the P84 record gap · macOS ad-hoc signing · the two 2026-08-22 design reviews. **Parts 22-32 (2026-09-01):** P94 · P93+P92 · DEP REFRESH · P90+P89 · P88 · the P85-P87 batch · P82+P83 · divergence reconcile + Release 1.1.0 · the DX dev-loop text · the confirmed-checkpoints block · the 2026-08-21 resolved follow-ups. |
 | `docs/history/todo-archive-2026-08.md` | Parts 1-9: P65 to P28 build detail, the Phase 1-4 banners, resolved FOR-USER decisions, P69(1.0.0)/P67/P68 detail. Parts 10-16: the P62-P74 checkpoint waiver + P71-P74, the P69 Settings redesign, the Audit #2 fix batch. Parts 17-18: P70 and P77. Part 19: the follow-ups resolved 2026-08-21, verbatim. Part 20: P78/P79/P80. Part 21: P80b/P81/P82. |
 | `docs/history/todo-archive.md` | P27 to P2, M0-M6 |
 | `docs/history/milestones-mvp.md` | the M0-M6 AI-gate vs USER CHECKPOINT split |
@@ -2412,27 +1828,46 @@ have passed (or the native half is explicitly waived). A milestone with a pendin
 stays on this board. **An owed AI-gate item also keeps its entry here** — P91's `logs/*.jsonl` parse
 is the live example (P108's `AC11`, the other one, was closed by user ruling on 2026-09-11).
 
-### Why this board is ~988 lines, not ~300 (curator note, 2026-09-14)
+### Why this board is ~1800 lines, not ~300 (curator note, 2026-09-16)
 
-**1537 → 988**, the largest single archiving pass this board has had (**1215 lines extracted
-verbatim** into Parts 62-70 — every range diffed byte-identical against the pre-pass file before
-removal). It did **not** reach ~300, and the reason is worth stating plainly rather than
-re-discovering next pass.
+**2438 → 1811.** 942 lines left the board. **935 lines were extracted verbatim into archive Parts
+71-75 across 20 ranges, and every range was diffed byte-identical against `git show HEAD:TODO.md`
+before removal** (7 of those 935 duplicate a paragraph deliberately kept live here, so 928 of the 942
+are archived). The remaining **14** are: 12 lines of the two durable constraints **relocated**
+byte-identical into `## Durable lessons — the rules`, 1 structural blank, and 1 Archive-table row
+this pass rewrote. Nothing was summarized away and **no status was
+upgraded by the curator.**
 
-Residual composition, measured after this pass: header + conventions + navigation **60** ·
-RESUME HERE incl. the four user actions **75** · the two ruling blocks, kept **verbatim and
-authoritative** **147** · the ruling queue **61** · durable-lesson rules **130** · accepted decisions
-**114** · open follow-ups **351** · archive + this note **45**.
+**Why the verify-before-remove order is now mandatory, in writing.** The previous attempt
+(`c5b3ea5`) cut 1950 lines from this file and wrote them nowhere; `67e2ce6` had to restore them
+wholesale. **Truncation is not compaction.** Extract → verify byte-identical → *then* remove, and
+leave a Part pointer where the text stood.
 
-**What sets the floor — three things, none of them curatable.** (1) The **two ruling blocks**: the
-user's own record of 22 decisions, which may be moved but not shortened. (2) The **durable-lesson
-rules**: operational instruction every future session depends on, kept on the board deliberately
-because each one was learned by a claim that was green the whole time it was wrong. (3) The **open
-follow-up backlog** — 351 lines carrying the `file:line` citations a cold resume needs most.
-Everything resolved is already a pointer into `docs/history/`.
+**Two items were closed this pass, both verified against the tree first:** "Open in editor is broken
+on Windows" (fixed in `fd93616`; the measurement table is Part 74.4 and the batch-file security
+consequence is live under `### The security record`) and the false-General-subtitle ruling (resolved
+by implementation — `settingsCatalog.ts:42-43` reads true again now that sub-inc 4 restored the
+picker). **Nothing else was closed**, and four things were explicitly refused: P112 (its USER
+CHECKPOINT is pending), the nine-file second review pass (a `reviewer` is executing it), both
+decisions owed by the user, and the four USER ACTIONS.
 
-**So ~300 is reachable only by working the backlog down, not by curating** — P112, F6, P77 and the
-`h_ai` stub isolation are the four largest items in it. The one structural option that would move
-the number without deleting open work is to give the durable rules their own file under `docs/` and
-leave a pointer here; that trades ~130 board lines for one more hop on every session's most
-load-bearing content, so it is a **user/orchestrator call, not a curator one.**
+Residual composition, measured after this pass: header + conventions + navigation **69** · RESUME
+HERE incl. the nine-file process failure **41** · the **P112 milestone entry, its checkpoint, the two
+owed decisions and its ranked follow-ups 67** · the landed queue + four user actions + verification
+state **73** · the three ruling blocks, kept **verbatim and authoritative** **207** · the ruling queue
+**153** · durable-lesson rules **177** · accepted decisions **115** · **open follow-ups 845** ·
+archive + this note **64**.
+
+**What sets the floor is one number: 845.** The open-follow-up backlog is now larger than the whole
+board was after the 2026-09-14 pass (988), because P112 and P113 filed ~40 new items — three security
+audits' residue, two reviews' worth of "filed, not routed" findings, the measured-but-unfixed scan
+budget, the standing warnings, and the contract deltas owed to `architect` and `ui-designer`. Every
+one carries a fresh `file:line` citation, which is exactly what a cold resume needs most. **Working
+that backlog down is the only thing that moves this number; curating cannot.** The other three
+blocks — the ruling ledgers (207), the durable rules (177) and the accepted decisions (115) — are
+marked must-survive-compaction and were not touched.
+
+**The one structural option, unchanged from the last note and still not a curator's call:** give the
+durable rules their own file under `docs/` and leave a pointer here. That trades ~177 board lines for
+one more hop on the session's most load-bearing content. **User/orchestrator decision, not a curator
+one.**
