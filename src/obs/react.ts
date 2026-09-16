@@ -49,8 +49,18 @@ function changedNames(
  * That is the correct trade: the whole point of §9.1 is to make a render that
  * should not have happened visible, and an effect-based emit would miss renders
  * that bail out before commit — exactly the ones worth catching. The doubling is
- * uniform, dev-only, and `render-storm` (§5) thresholds are set against it;
- * `aggregate` mode collapses it away for the list-heavy surfaces anyway.
+ * uniform, dev-only, and `render-storm` (§5) thresholds are set against it.
+ *
+ * `aggregate` does NOT collapse the doubling — it collapses the RECORD count, not
+ * the render count. `renderTally.ts` adds 1 to `renders` per render body, while
+ * `instanceId` below is minted once per instance, so under StrictMode `renders`
+ * doubles and `instances` does not: the `renders / instances` ratio in a
+ * `render.tally` is **2x inflated in dev**. The `render-storm` rule is
+ * `renders > 3 * instances` (`src-tauri/src/obs/anomaly.rs`), so with the
+ * inflation any window in which a component genuinely commits twice per instance
+ * already reads as 4 renders per instance and trips the rule. Read dev
+ * `render-storm` warnings on aggregate surfaces with that factor in mind (and any
+ * renders-per-instance budget asserted in a StrictMode test likewise).
  */
 export function useRenderCount(
   component: string,

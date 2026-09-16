@@ -265,7 +265,24 @@ pub enum LogPayload {
         relevant: u32,
         debounce_ms: u32,
         fired: bool,
+        /// §2.4 — set ONLY by the FRONTEND echo-suppression path
+        /// (`src/components/repoWorkspace/useCoalescedRefresh.ts`), which mints a
+        /// `suppressed: true, suppressReason: "echo"` record for a self-caused fs
+        /// echo it dropped inside an armed window. The renderer is a second
+        /// producer of this variant, and it is the only one that ever sets these.
+        ///
+        /// The Rust watcher emit site (`src-tauri/src/watcher/mod.rs`) is
+        /// LEGITIMATELY a constant `false`/`None`: echo suppression is a renderer
+        /// concern (the arming gesture and the TTL registry both live there), so
+        /// the backend has nothing to attribute a suppression to. A log whose
+        /// watcher records are ALL `suppressed: false` is therefore the EXPECTED
+        /// shape for a session that armed no UI echo window — it is NOT evidence
+        /// that these fields are dead. (A log parse read it exactly that way and
+        /// ordered a deletion; the fields are asserted by
+        /// `useCoalescedRefresh.causality.test.tsx`.)
         suppressed: bool,
+        /// `"echo"` on a frontend-suppressed record; omitted otherwise. See the
+        /// `suppressed` field above for why the Rust emit site never sets it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         suppress_reason: Option<String>,
         /// P110: the debounced burst's path class — `"worktree"` (status-only)

@@ -28,6 +28,7 @@ import { useRailInput } from './repoWorkspace/railProps';
 import { useReplayController } from './repoWorkspace/replayProps';
 import { usePaletteCallbacks } from './repoWorkspace/paletteCallbacks';
 import { useCoalescedRefresh, type RefreshOrigin } from './repoWorkspace/useCoalescedRefresh';
+import { useActivationRefresh } from './repoWorkspace/useActivationRefresh';
 import { useRenderCount } from '../obs/react';
 import { traced, GESTURES } from '../obs/gesture';
 import type { TraceId } from '../obs/types';
@@ -930,21 +931,11 @@ export function RepoWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Activation self-heal (§7): on every flip TO active AFTER mount, refreshAll —
+  // Activation self-heal (§7): on every flip TO active AFTER mount, refresh —
   // catches events missed while the tab was display:none. Skips the mount run
-  // (the initial load above already covers first paint).
-  const refreshRef = useRef(refresh);
-  refreshRef.current = refresh;
-  const activeFlipRef = useRef(false);
-  useEffect(() => {
-    if (!activeFlipRef.current) {
-      activeFlipRef.current = true;
-      return;
-    }
-    // P81: activation ALWAYS refreshes (never echo-gated) — catches events
-    // missed while the tab was display:none. Full scope for the self-heal.
-    if (active) void refreshRef.current('activation', 'full');
-  }, [active]);
+  // (the initial load above already covers first paint), including StrictMode's
+  // repeat of it — see useActivationRefresh.ts for why that needed a real fix.
+  useActivationRefresh(active, refresh);
 
   // The OID-anchored selection (useStickySelection.ts): a background refetch
   // re-streams from row 0, so the selected ROW is briefly absent from the
