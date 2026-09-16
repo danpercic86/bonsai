@@ -73,11 +73,14 @@ being wrong is kept deliberately.
 awaiting USER CHECKPOINT (native window)*. That entry owns the line; keep it updated there, not here.
 Its five checkpoint items are the only thing left in P112.
 
-**Branch `feat/post-p91-rulings`, no upstream — 80 commits ahead of `origin/dev` (`8b88efd`),
-unpushed, and it stays unpushed (ruling #25, do not raise it again).** HEAD `67e2ce6`.
-Curator-verified 2026-09-16 with `git rev-list --count origin/dev..HEAD`; the board's previous
-"18 commits ahead, last commit `8026622`" was measured 2026-09-14 and had gone stale
-(archive Part 75.2).
+**Branch `feat/post-p91-rulings`, no upstream — 86 commits ahead of `origin/dev` (`8b88efd`),
+unpushed, and it stays unpushed (ruling #25, do not raise it again).** HEAD is the board commit
+below `934a280`. Measured 2026-09-16 with `git rev-list --count origin/dev..HEAD`: **85 at
+`934a280`**, +1 for this board commit. The curator's "80" was true when measured, before the six
+commits of the 2026-09-16 review-and-split session; the earlier "18 commits ahead, last commit
+`8026622`" was 2026-09-14 and had already gone stale (archive Part 75.2). **Each of these three
+numbers was correct when written** — which is the argument for measuring rather than carrying one
+forward.
 
 **The P91 branch merge is DONE (2026-09-11, ruling #1)** — `feat/p91-observability` was
 fast-forwarded onto `dev` and pushed. Every "DO NOT MERGE" / "unmerged by user instruction" line
@@ -157,11 +160,21 @@ branch unpushed, so CI cannot run it either.** The first real CI run is the veri
 
 ## Follow-ups, ranked, none blocking
 
-- **`useSettingsPanelAdapter.ts` is 497/500** — 3 lines of slack. The next increment touching it
-  splits first, exactly as `useExternalToolScan.ts` did (489 → 467, cross-mount state moved to
-  `toolScanMemory.ts` so "the ONE writer of `owedAdopt`" is a module boundary, not a comment).
-- **`App.tsx` is at exactly 590 = its baseline, ZERO slack.** The next change there **extracts**;
-  packing declarations onto one line is what an earlier round removed.
+- **✅ SPLIT 2026-09-16 (`934a280`) — both zero-slack files now have room, and the baseline is
+  regenerated so the gain is locked.** `App.tsx` **590 → 559**, `useSettingsPanelAdapter.ts`
+  **499 → 445**, `SettingsPanel.test.tsx` **526 → 325**. New files: `useMcpWiring.ts` (95),
+  `useSettingsConsentGates.ts` (123), `settingsPanelKit.tsx` (134),
+  `mcpOutcomeLifetime.test.tsx` (90). Equivalence **2978 = 2978**, with the 27 `it()` titles diffed
+  against the 23 + 4 they became. `scripts/file-size-baseline.json` regenerated — `App.tsx` 590→559
+  plus **14 lines three untouched files had already reclaimed** (`ai_digest_cli.rs` 525→519,
+  `ai_stream_bulk_cli.rs` 532→525, `RepoWorkspace.tsx` 2265→2264). **Shrinking only REPORTS a
+  reclaim** — without `pnpm lint:size -- --update-baseline` the record is not rewritten and the file
+  creeps back unnoticed. That is why the regen is part of the increment.
+- **🆕 STILL PACKED, deliberately: `App.tsx:480`/`:481` (and `:423`/`:426`).** Same defect class as
+  the `:506` line `934a280` removed — `:481` packs six props including `onChange`. **Why they were
+  NOT taken:** unpacking costs ~+7 lines, which was safe against the old 590 but now **grows a
+  freshly-baselined 559 file and fails the ratchet** unless paired with another extraction. So this
+  is an extraction task, not a formatting one.
 - **`Combobox.tsx`'s NUL byte** is fixed in the working tree but git will class the *pair* binary
   until the commit that lands it is itself the base — so the shared control was undiffable during
   its own review.
@@ -225,11 +238,26 @@ branch unpushed, so CI cannot run it either.** The first real CI run is the veri
 
 ### Verification state
 
-- **Full 8-step gate GREEN at `9fca997` — 2026-09-15, 437.6s, exit 0, all 8 steps, zero FAIL
-  lines.** Per-step timings and test counts are recorded **once**, in the P112 section above.
-- **That green measured HEAD's source tree.** The only commits after `9fca997` are `c5b3ea5` and
-  `67e2ce6`, and **both touch `TODO.md` alone**; `pnpm gate` does not read the board.
-  Curator-verified 2026-09-16.
+- **Full 8-step gate GREEN at `934a280` — 2026-09-16, 414.2s, exit 0, all 8 steps, zero FAIL
+  lines.** nextest 147.2s (**2556 run, 2556 passed, 1 leaky, 10 skipped**) · doctests 3.9s · clippy
+  1.3s (**cache, not a change in work**) · eslint 14.1s · size ratchet 668ms · vitest 56.9s
+  (**2978 / 267 files**) · tsc+build 11.5s · e2e 178.7s (**185 passed, 1 skipped**).
+- **Read from the `gate summary` block in the log file, not from the wrapper's exit status** — the
+  backgrounded wrapper also reported 0, which is exactly the coincidence the gate-running rules warn
+  about. Log: `D:/Data/Temp/claude/bonsai-gate/gate-934a280.log`.
+- **The 1 leaky is the KNOWN one** — `h_misc external_spawn::detached_spawn_ignores_nonzero_exit`,
+  recorded as intermittent (0 or 1 across runs) and settled as a detached child's timing, not a
+  defect. No new information.
+- **Rust is unchanged this session and the count proves it:** 2556 matches `d0e6cf0` exactly. The
+  8-test drop from `dcff54b`'s 2564 predates today — sub-inc 3 **deleted** `external_cmd.rs` and its
+  validator, which took their tests with them.
+- **Pre-gate machine state, recorded so a future slow number is attributed and not inferred:** CPU
+  **40%**, 18 `node` processes (this session's own tooling — no `cargo`, `rustc` or `vite`), port
+  1420 free. Not an idle machine; the e2e leg passed anyway.
+- **⚠ The previous entry claimed `9fca997`'s green covered HEAD because only `TODO.md`-only commits
+  followed it. That went FALSE the moment `2b3dfd6` landed ten `src/` files**, and four more `src/`
+  commits followed. Superseded rather than patched, because piecemeal amendment is how a
+  verification block starts lying — the same failure the 2026-09-16 curation pass fixed here.
 - **It is Windows-only evidence, and must not be read as three platforms.** `pnpm gate` runs Windows;
   `.github/workflows/ci.yml` runs `[ubuntu-22.04, windows-latest, macos-latest]`. The AMEND-8
   host-bound test fix is **reasoned, not executed** — the unix accept chain was traced line by line —
@@ -967,6 +995,79 @@ so the `metricsVersion` full-re-measure concern is dead · the `announceOnly` ap
 `useOutcomeNotes.ts` **was met** (the JSDoc and the ref proof comment both name it; the range shifted
 off the cited `:59-79` because the edit moved the blocks).
 
+### ✅ CLOSED 2026-09-16 — both MUST-FIX fixed (`2b3dfd6`), the 4 SHOULD-FIX resolved, gate green
+
+**The full chain, so a resume does not re-litigate it:** second pass found 2 MUST-FIX (`2b3dfd6`) →
+focused re-review **APPROVED, no MUST-FIX** → 4 SHOULD-FIX (`9aa25f4`) → batched review **APPROVED
+both sets** → 2 coverage holes + 3 file splits (`934a280`) → **full 8-step gate GREEN 414.2s**.
+
+- **MUST-FIX 1 fixed** — `AiCategory` resets the notes on mount and unmount. Hook keeps the instance,
+  section keeps the announcer, so §17.3 **and** §7:363 both hold and **neither contract was edited.**
+- **MUST-FIX 2 fixed** — one effect keyed on the status discards both register slots on every
+  not-running observation, covering the command resolve *and* all **three** `mcp-server-changed`
+  emit sites (the third, `set_allow_write`'s already-stopped arm at `mcp.rs:270-279`, was uncited).
+- **`discardNotes` not `begin`** — the event's `setMcpStatus` and a rejection's `report` can land in
+  one commit, where `begin` would blank the ALLOW_WRITE announcement that just explained the stop.
+- **The announcer-writer set is now CLOSED at four** (`begin`, `report`, `announceOnly`, `reset`),
+  reviewer-verified by grep: every `setAnnounce` lives in exactly those four, and the setter is
+  never returned.
+- **Accepted, not suppressed:** Settings **search** is a **third** notes-clearing trigger
+  (`SettingsShell.tsx:65,213` → `SettingsResults.tsx:82`). Fail-safe — early, never stale — so the
+  comment was the only defect. **Orchestrator ruling; do not add code to suppress it.**
+- **✅ `useOutcomeScrollCorrection` coverage: 0 → 8 cases**, each shown red against a broken module.
+  The `Math.ceil` is pinned **twice** (floor → 1269, bare assignment → 1269.171875). Case 5 pins the
+  over-tall-note limitation *as intended* rather than hiding it.
+
+**TWO MORE INSTANCES of "green in both states" were found and closed — bringing the count to SEVEN.**
+Both were in the tests written to close the previous instance, which is the point worth keeping:
+`previous.current = notes` (`useOutcomeScrollCorrection.ts:116`) could be deleted with all six cases
+green, and the layout-timing clear survived a swap back to `useEffect` at 26/26. **The reviewer's
+suggested fix for the first did NOT work** — after the first correction the note sits inside the clip,
+so a re-detected change bails at condition 1 and still looks like a skip; the real discriminator is
+that the note must be **clipped at the moment of the second rerender**. Found by trying it, not by
+trusting it.
+
+**🆕 FILED — citation drift the `934a280` split created (none is a defect, all four will mislead):**
+
+- `docs/contracts/P113-settings-inline-notes.md:1088` cites `App.tsx:208` for the `useMcpControls`
+  wiring. **App no longer calls the hook at all** — it is `src/hooks/useMcpWiring.ts:67`, and
+  `App.tsx:201` is the `useMcpWiring` call. **Contract-owner's fix — deliberately not edited here.**
+- The closed "`hydrateUiSettings` has exactly ONE runtime caller" note: `App.tsx:272` → **`:259`**.
+- `mcpOutcomeNotes.test.tsx:41` cites the adapter at `:413` for the `mcpEnabled` derivation → **`:358`**.
+- `useMcpControls.ts`'s header still says it "is wired from `App.tsx`" — now via `useMcpWiring.ts`.
+
+**🆕 FILED — three from the same rounds, each needing a pass this one could not take:**
+
+- **`useOutcomeScrollCorrection.ts:65-66`'s comment is STALE and `:67` is unreachable here.** It
+  blames jsdom; this repo runs **happy-dom** (`vite.config.ts:45`), which implements `scrollIntoView`
+  as a no-op, so `src/test/setup.ts:29`'s `??=` never fires. The module is inert in other suites
+  because of **zero geometry** — every rect is the zero rect, so `fullyInside` is trivially true.
+  **The stale comment actively invited a wrong diagnosis in my own brief.** The guard is still pinned
+  (case 6 removes the method from the instance).
+- **Selector-constant risk:** the module hardcodes `.settings-pane` / `.settings-row`
+  (`useOutcomeScrollCorrection.ts:61,64`) and so does the test fixture — so a rename in
+  `SettingsShell.tsx:206` / `SettingsRow.tsx:109` breaks **production** while test and module keep
+  agreeing. Only an exported constant *consumed by production* closes it.
+- **`adoptToolSelection` cites a struck, reversed bullet** — `useUiSettings.ts:50`/`:126`,
+  `SettingsContext.ts:139`, `useExternalToolScan.ts:106` cite "P112 §16.16-5", struck at
+  `P112-ui.md:1594-1601`; the governing §17 passage (`:1683-1690`) rules *"accept it as shipped; do
+  not rework"*. **No passage specifies `adoptToolSelection` at all** — an approved deviation cited to
+  a dead bullet. **→ `architect`.**
+
+**🆕 FILED — still open from the first pass, unchanged:** `useSettingsSaveFailure.ts:71` decides
+banner-vs-toast **once, at failure time**, so a failure raised with Settings open has **no surface at
+all** after the user closes it (backoff having stopped after 3 attempts) — against
+`P113-settings-inline-notes.md:1133-1137`'s promise that the banner "persists exactly as long as the
+condition does". Its own increment: a behaviour change with UX implications. · The narrow
+**pre-existing** late-`report` race (Add → stop → clear → `report` writes with rows unmounted →
+re-enable takes the `enabled === true` early return), reachable only without a Settings close.
+
+**One process note, since the board exists to catch this:** `tester` ran `tsc` and `eslint` but
+**not the size ratchet**, and `SettingsPanel.test.tsx` at 526 was a **hard fail** (not baselined). I
+nearly committed on the agent's report alone — the gate would then have gone red at step 7 after a
+414 s run instead of before it. **Run `node scripts/check-file-size.mjs` before committing any pass
+that adds lines to a test file.**
+
 ### 🆕 NEW 2026-09-14 — every Settings toast renders behind Settings' own scrim (§6.11.6)
 
 **Found by `ui-designer`, verified by me against source. This is not an F6 item** — it is the whole
@@ -1081,7 +1182,7 @@ sub-inc 4 must carry the recipe itself.
   *a **renderer-written** program path is unrepresentable*; someone who can edit `settings.json` can
   equally replace the binary it names.
 
-### 🔧 P113 PHASE 2 — LANDED `dcff54b`, REVIEWED 2026-09-16 (2 MUST-FIX in flight). AC1 says zero, and it was earned
+### ✅ P113 PHASE 2 — LANDED `dcff54b`, REVIEWED + BOTH MUST-FIX FIXED `2b3dfd6` (2026-09-16). AC1 says zero, and it was earned
 
 **AC1's full accounting**, the check that has never been run in this form and whose absence lost five
 call sites: `rg -n "pushToast\(" src/` → **233**, every one classified.
