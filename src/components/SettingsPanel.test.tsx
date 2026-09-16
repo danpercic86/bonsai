@@ -1,41 +1,14 @@
 /** T3.5 — SettingsPanel container wiring: AI-consent gating, MCP enable/write
  *  gating + registration rows, background-job controls (with NumberSlider
  *  clamping at the wiring level), appearance toggles, and close paths.
- *  Range math itself is unit-tested elsewhere (settings/ranges). */
+ *  Range math itself is unit-tested elsewhere (settings/ranges).
+ *  The fixtures + `renderPanel` live in `src/test/settingsPanelKit.tsx`, and the
+ *  §7 note-lifetime suite in `settings/mcpOutcomeLifetime.test.tsx` (~500-line rule). */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { SettingsPanel } from './SettingsPanel';
-import type { SettingsPanelProps } from './SettingsPanel';
-import type { GraphPrefs, McpStatus } from '../ipc';
-import type { AiRunPrefs } from '../settings/aiRunPrefs';
+import { screen, fireEvent, cleanup } from '@testing-library/react';
+import type { McpStatus } from '../ipc';
 import { AUTO_FETCH_INTERVAL_MAX } from '../settings/ranges';
-
-const GRAPH: GraphPrefs = {
-  avatarRadius: 9,
-  rowHeight: 28,
-  laneWidth: 14,
-  showSha: true,
-  showAuthor: false,
-  showDate: true,
-  dateBasis: 'author',
-  showAheadBehind: true,
-  compact: false,
-  showSignatureBadge: true,
-  showPrBadge: false,
-  showCiStatus: false,
-};
-
-/** P68g: the shipped AI-run defaults, including the two LOCKED zeros. */
-const AI_RUN: AiRunPrefs = {
-  aiConflictTools: 'readOnly',
-  aiStreamLog: true,
-  aiIncludePartialMessages: false,
-  aiIdleTimeoutSecs: 300,
-  aiHardCapSecs: 0,
-  aiMaxTurns: 6,
-  aiMaxBudgetUsd: 0,
-  aiBulkMaxBytes: 400_000,
-};
+import { renderPanel } from '../test/settingsPanelKit';
 
 const RUNNING: McpStatus = {
   enabled: true,
@@ -45,86 +18,6 @@ const RUNNING: McpStatus = {
   token: 'tok-123',
   toolCount: 14,
 };
-
-// P69d: this suite needs no `resetEffectiveIdentityForTests` ONLY because `repoPath`
-// is null below — the Git-config and profiles sections then issue no IPC and write
-// nothing into the module-level identity cache. Set a repo path here and this suite
-// starts leaking store state between tests; reset it in a beforeEach at that point.
-//
-// P69g: Settings is a two-pane shell that renders ONE category at a time, so every
-// test below names the category its control lives in via `initialCategory`. That is
-// a genuine behaviour change, not a weakened assertion — the control is now behind
-// one rail click. `initialCategory` rather than clicking the tab because several
-// tests render the panel two or three times, which would make `getByRole('tab')`
-// ambiguous; the rail-click path itself is covered in SettingsShell.test.tsx.
-function renderPanel(over: Partial<SettingsPanelProps> = {}) {
-  const props: SettingsPanelProps = {
-    open: true,
-    onClose: vi.fn(),
-    requestSeq: 0,
-    // P113 §17.3 — the idle shape: no MCP outcome, a silent announcer, and a
-    // settings write that is not failing.
-    mcpOutcomes: new Map(),
-    mcpAnnounce: '',
-    onResetMcpOutcomes: vi.fn(),
-    settingsSaveFailed: false,
-    onRetrySettingsSave: vi.fn(),
-    theme: 'dark',
-    listView: 'flat',
-    panelDensity: 'cozy',
-    primaryCommitAction: 'commit',
-    autoFetch: { enabled: true, intervalMinutes: 10 },
-    healthRefresh: { enabled: false, intervalMinutes: 30 },
-    graph: GRAPH,
-    graphStyle: 'standard',
-    graphSeason: 'living',
-    graphFirstParent: false,
-    graphFoldLinear: false,
-    graphMinimapAlwaysShow: false,
-    graphColorMode: 'lane',
-    graphRefFilter: null,
-    onChange: vi.fn(),
-    onToggleTheme: vi.fn(),
-    onToggleListView: vi.fn(),
-    aiEnabled: false,
-    aiConflictAutonomy: 'proposeReview',
-    aiConsented: false,
-    aiAvailability: null,
-    onRequestEnableAi: vi.fn(),
-    aiRun: AI_RUN,
-    mcpStatus: null,
-    mcpConsented: false,
-    onSetMcpEnabled: vi.fn(),
-    onRequestEnableMcp: vi.fn(),
-    mcpWriteConsented: false,
-    onSetMcpAllowWrite: vi.fn(),
-    onRequestEnableMcpWrite: vi.fn(),
-    repoPath: null,
-    profiles: [],
-    // P112 §16.4a: the picker's two selections + the Browse flow's adopt.
-    terminalTool: '',
-    editorTool: '',
-    onAdoptToolSelection: vi.fn(),
-    dev: {
-      enabled: false,
-      level: 'debug',
-      captureIpc: true,
-      captureReact: true,
-      captureFrames: false,
-      includeRawNames: false,
-    },
-    onRegisterMcp: vi.fn(async () => {}),
-    onShowOnboarding: vi.fn(),
-    onOpenRepository: vi.fn(),
-    updateCurrentVersion: '1.2.3',
-    autoCheckUpdates: true,
-    updateState: { status: 'idle' },
-    onCheckUpdate: vi.fn(),
-    onOpenUpdateDialog: vi.fn(),
-    ...over,
-  };
-  return { ...render(<SettingsPanel {...props} />), props };
-}
 
 describe('SettingsPanel', () => {
   it('renders nothing when closed', () => {
@@ -428,44 +321,5 @@ describe('SettingsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show tour' }));
     expect(props.onShowOnboarding).toHaveBeenCalledTimes(1);
     expect(screen.getByText('1.2.3')).toBeInTheDocument();
-  });
-});
-
-describe('P113 §7 — the MCP outcome notes do not outlive the surface that shows them', () => {
-  it('resets them when the AI page unmounts — what closing Settings does', () => {
-    const onResetMcpOutcomes = vi.fn();
-    const { unmount } = renderPanel({ initialCategory: 'ai', onResetMcpOutcomes });
-    // The note map is owned by `useMcpControls`, which App mounts for the app's
-    // whole lifetime (§17.3), so the page that shows the notes is the only thing
-    // that can say when they die. The mount pass comes first — it covers a
-    // `report` that landed after the section was already gone.
-    const afterMount = onResetMcpOutcomes.mock.calls.length;
-    expect(afterMount).toBeGreaterThanOrEqual(1);
-
-    // `SettingsPanel` returns null when closed, so tearing the tree down is
-    // exactly the teardown a close performs.
-    unmount();
-    expect(onResetMcpOutcomes.mock.calls.length).toBeGreaterThan(afterMount);
-  });
-
-  it('resets them on leaving the category, without closing Settings', () => {
-    const onResetMcpOutcomes = vi.fn();
-    renderPanel({ initialCategory: 'ai', onResetMcpOutcomes });
-    const afterMount = onResetMcpOutcomes.mock.calls.length;
-
-    // §7 names both events; the shell renders ONE category at a time, so a rail
-    // click unmounts the AI page while Settings stays open.
-    fireEvent.click(screen.getByRole('tab', { name: 'General' }));
-    expect(onResetMcpOutcomes.mock.calls.length).toBeGreaterThan(afterMount);
-  });
-
-  it('does not reset while the user is somewhere else in Settings', () => {
-    // Scoped to the AI PAGE, not to the panel: opening Settings on General must
-    // not touch the notes, and this case is what fails if the effect is ever
-    // hoisted to the shell or the adapter (neither of which unmounts on a
-    // category change, so hoisting it would also break the case above).
-    const onResetMcpOutcomes = vi.fn();
-    renderPanel({ initialCategory: 'general', onResetMcpOutcomes });
-    expect(onResetMcpOutcomes).not.toHaveBeenCalled();
   });
 });

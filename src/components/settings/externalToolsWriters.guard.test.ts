@@ -100,6 +100,7 @@ const PINNED: Readonly<Record<string, string>> = {
   'src/settings/defaults.ts': 'the defaults table (both default to `\'\'` — auto-detect)',
   'src/components/settings/coverageFixtures.ts': 'settings-panel fixtures',
   'src/test/uiSettingsKit.ts': 'test kit fixtures',
+  'src/test/settingsPanelKit.tsx': 'test kit fixtures (the SettingsPanel props harness)',
   // ── the mock backend: the simulated DISK, not renderer selection state ────
   'src/ipc/mock/persistence.ts': 'mock disk: reads and normalises the stored settings',
   'src/ipc/mock/handlers/session.ts': 'mock `set_ui_settings`: merges the patch into stored state',

@@ -21,7 +21,7 @@ import { useAiAvailability } from './hooks/useAiAvailability';
 import { useAppCommands } from './hooks/useAppCommands';
 import { useCloneFlow } from './hooks/useCloneFlow';
 import { useExternalTools } from './hooks/useExternalTools';
-import { useMcpControls } from './hooks/useMcpControls';
+import { useMcpWiring } from './hooks/useMcpWiring';
 import { usePaneWidthState } from './hooks/usePaneWidthState';
 import { useRepoTabs } from './hooks/useRepoTabs';
 import { useSettingsRequest } from './hooks/useSettingsRequest';
@@ -196,22 +196,9 @@ export default function App() {
     handleSettingsChange,
   );
 
-  // P16 / P16c: embedded MCP server runtime state + controls (useMcpControls.ts).
-  const {
-    mcpStatus,
-    mcpConsentOpen,
-    setMcpConsentOpen,
-    mcpWriteConsentOpen,
-    setMcpWriteConsentOpen,
-    handleSetMcpEnabled,
-    handleRegisterMcp,
-    handleConfirmMcpConsent,
-    handleSetMcpAllowWrite,
-    handleConfirmMcpWriteConsent,
-    mcpOutcomes,
-    mcpAnnounce,
-    resetMcpOutcomes,
-  } = useMcpControls(activeRepo, handleSettingsChange);
+  // P16 / P16c: embedded MCP server runtime state + controls (useMcpControls.ts),
+  // adapted into this container's three prop surfaces by useMcpWiring.ts.
+  const mcp = useMcpWiring(activeRepo, handleSettingsChange, mcpConsented, mcpWriteConsented);
 
   // P21: the clone dialog's lifecycle (see hooks/useCloneFlow.ts).
   const {
@@ -355,8 +342,7 @@ export default function App() {
     healthOpen ||
     onboardingOpen ||
     consentOpen ||
-    mcpConsentOpen ||
-    mcpWriteConsentOpen ||
+    mcp.modalOpen ||
     update.dialogOpen;
 
   useAppShortcuts({
@@ -501,17 +487,9 @@ export default function App() {
           aiAvailability={aiAvailability}
           onRequestEnableAi={() => setConsentOpen(true)}
           aiRun={aiRun}
-          mcpStatus={mcpStatus}
-          mcpOutcomes={mcpOutcomes}
-          mcpAnnounce={mcpAnnounce} onResetMcpOutcomes={resetMcpOutcomes}
+          {...mcp.settingsProps}
           settingsSaveFailed={settingsSaveFailed}
           onRetrySettingsSave={retrySettingsSave}
-          mcpConsented={mcpConsented}
-          onSetMcpEnabled={handleSetMcpEnabled}
-          onRequestEnableMcp={() => setMcpConsentOpen(true)}
-          mcpWriteConsented={mcpWriteConsented}
-          onSetMcpAllowWrite={handleSetMcpAllowWrite}
-          onRequestEnableMcpWrite={() => setMcpWriteConsentOpen(true)}
           repoPath={activeRepo}
           configInitialFocus={settings.request.focus}
           focusProfileId={settings.request.focusProfileId}
@@ -520,7 +498,6 @@ export default function App() {
           editorTool={editorTool}
           onAdoptToolSelection={adoptToolSelection}
           dev={dev}
-          onRegisterMcp={handleRegisterMcp}
           onShowOnboarding={showOnboarding}
           onOpenRepository={openRepository}
           updateCurrentVersion={update.currentVersion}
@@ -549,16 +526,8 @@ export default function App() {
           onConfirm={handleConfirmConsent}
           onCancel={() => setConsentOpen(false)}
         />
-        <McpConsentDialog
-          open={mcpConsentOpen}
-          onConfirm={handleConfirmMcpConsent}
-          onCancel={() => setMcpConsentOpen(false)}
-        />
-        <McpWriteConsentDialog
-          open={mcpWriteConsentOpen}
-          onConfirm={handleConfirmMcpWriteConsent}
-          onCancel={() => setMcpWriteConsentOpen(false)}
-        />
+        <McpConsentDialog {...mcp.consentDialog} />
+        <McpWriteConsentDialog {...mcp.writeConsentDialog} />
         <CloneDialog
           open={cloneOpen}
           busy={cloneBusy}

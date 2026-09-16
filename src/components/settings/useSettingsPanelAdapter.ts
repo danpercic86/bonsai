@@ -17,10 +17,11 @@
 // owns the read, the hooks toggle is presentational, and every local-level load
 // primes the shared identity store. See that file's header for the rules.
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 
 import { DEFAULT_UI_SETTINGS } from '../../settings/defaults';
 import { findSettingsRow } from './settingsCatalog';
+import { useSettingsConsentGates } from './useSettingsConsentGates';
 import type { SettingsCategoryId, SettingsRowId } from './types';
 import type { UiSettings } from '../../ipc/types';
 import type {
@@ -194,17 +195,12 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     onToggleListView,
     aiEnabled,
     aiConsented,
-    onRequestEnableAi,
     mcpStatus,
     mcpOutcomes,
-    mcpAnnounce, onResetMcpOutcomes,
+    mcpAnnounce,
+    onResetMcpOutcomes,
     mcpConsented,
-    onSetMcpEnabled,
-    onRequestEnableMcp,
     mcpWriteConsented,
-    onSetMcpAllowWrite,
-    onRequestEnableMcpWrite,
-    onRegisterMcp,
     onShowOnboarding,
     onOpenRepository,
     onCheckUpdate,
@@ -212,62 +208,11 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     onAdoptToolSelection,
   } = props;
 
-  // In-flight scope for the "Add" registration buttons — disables a button while
-  // its `claude mcp add` run is pending.
-  const [mcpRegistering, setMcpRegistering] = useState<McpScope | null>(null);
-
-  // Enabling requires one-time consent (§8.1): turning ON without consent defers
-  // to App's consent dialog; turning OFF patches immediately (consent is kept).
-  const setAiEnabled = useCallback(
-    (checked: boolean): void => {
-      if (!checked) {
-        onChange({ aiEnabled: false });
-        return;
-      }
-      if (aiConsented) onChange({ aiEnabled: true });
-      else onRequestEnableAi();
-    },
-    [onChange, aiConsented, onRequestEnableAi],
-  );
-
-  // MCP enable toggle (P16): enabling without consent defers to App's consent
-  // dialog; disabling stops immediately.
-  const setMcpEnabled = useCallback(
-    (checked: boolean): void => {
-      if (!checked) {
-        onSetMcpEnabled(false);
-        return;
-      }
-      if (mcpConsented) onSetMcpEnabled(true);
-      else onRequestEnableMcp();
-    },
-    [onSetMcpEnabled, mcpConsented, onRequestEnableMcp],
-  );
-
-  // MCP write-gate (P16c): only meaningful while the server runs. Turning ON
-  // without the stronger write consent defers to App's write-consent dialog;
-  // turning OFF flips immediately. Either direction bounces the server.
-  const setMcpAllowWrite = useCallback(
-    (checked: boolean): void => {
-      if (!checked) {
-        onSetMcpAllowWrite(false);
-        return;
-      }
-      if (mcpWriteConsented) onSetMcpAllowWrite(true);
-      else onRequestEnableMcpWrite();
-    },
-    [onSetMcpAllowWrite, mcpWriteConsented, onRequestEnableMcpWrite],
-  );
-
-  // Run `claude mcp add` for one scope, holding the in-flight scope so its "Add"
-  // button disables until the run settles (App owns the toast).
-  const registerMcp = useCallback(
-    (scope: McpScope): void => {
-      setMcpRegistering(scope);
-      void onRegisterMcp(scope).finally(() => setMcpRegistering(null));
-    },
-    [onRegisterMcp],
-  );
+  // The consent-gated toggles + the "Add" in-flight scope, moved out verbatim
+  // (`useSettingsConsentGates.ts`). Called HERE, where its `useState` used to
+  // sit, so this file's hook order is unchanged.
+  const { mcpRegistering, setAiEnabled, setMcpEnabled, setMcpAllowWrite, registerMcp } =
+    useSettingsConsentGates(props);
 
   const {
     theme,
@@ -491,7 +436,8 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       onCheckUpdate,
       onOpenUpdateDialog,
       resetRow,
-      onAdoptToolSelection, onResetMcpOutcomes,
+      onAdoptToolSelection,
+      onResetMcpOutcomes,
     ],
   );
 

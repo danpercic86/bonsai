@@ -35,11 +35,13 @@
  * The fixture markup is hand-written rather than the real `SettingsRow` (which
  * needs catalog ids and two providers for no test value); the class names are
  * the ones the app renders — `.settings-pane` from `SettingsShell.tsx:206`,
- * `.settings-row` from `SettingsRow.tsx:110` — and the note element itself is
+ * `.settings-row` from `SettingsRow.tsx:109` — and the note element itself is
  * the real `SettingsOutcomeNote`, so `[data-outcome-note]` is not a guess.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
+
+import type { RenderResult } from '@testing-library/react';
 
 import { SettingsOutcomeNote, type SettingsOutcome } from './SettingsOutcomeNote';
 import { useOutcomeScrollCorrection } from './useOutcomeScrollCorrection';
@@ -48,6 +50,10 @@ import { useOutcomeScrollCorrection } from './useOutcomeScrollCorrection';
 const SLOT = 'dev.delete-logs';
 
 const OUTCOME: SettingsOutcome = { tone: 'success', text: 'Deleted 3 log files.' };
+
+/** A slot the fixture renders NO note for — an outcome can outlive its row
+ *  (P113 §7) or its row can be filtered out by the Settings search box. */
+const ABSENT = 'dev.no-such-row';
 
 // ---------------------------------------------------------------------------
 // The scroll model. Numbers are the contract's own where it states them.
@@ -91,7 +97,38 @@ const CLIPPED: Geometry = {
   settleScrollTop: SETTLE,
 };
 
+/** The note taller than the scrollport (700 > CLIP_HEIGHT), used by the
+ *  height-guard case. `nearest` on a box whose bottom is outside and whose
+ *  height exceeds the scrollport aligns its TOP, so `settleScrollTop` is
+ *  `noteTop`. Every number here is inside the scroll model: the note's bottom
+ *  (1800) fits `SCROLL_HEIGHT` and the settle offset (1100) is below the max
+ *  scroll offset (1350) — see `assertModelIsPossible`. */
+const OVERTALL: Geometry = {
+  noteTop: 1100,
+  noteHeight: 700,
+  initialScrollTop: 1000, // note starts below the fold: 237 → 937 against 137 → 687
+  settleScrollTop: 1100,
+};
+
 const SCROLL_HEIGHT = 1900;
+
+/** The pane's own numbers bound every geometry: content cannot extend past
+ *  `scrollHeight`, and no offset past `scrollHeight - clientHeight` is
+ *  reachable (the `scrollTop` setter below clamps there, as a real pane does).
+ *  A fixture that violates either models a pane that cannot exist, which is
+ *  behaviourally harmless here — the module reads neither number — but invites
+ *  a wrong diagnosis later, so it fails loudly instead. */
+function assertModelIsPossible(geom: Geometry): void {
+  const maxOffset = SCROLL_HEIGHT - CLIP_HEIGHT;
+  if (geom.noteTop + geom.noteHeight > SCROLL_HEIGHT) {
+    throw new Error(
+      `impossible pane: note bottom ${geom.noteTop + geom.noteHeight} > scrollHeight ${SCROLL_HEIGHT}`,
+    );
+  }
+  for (const offset of [geom.initialScrollTop, geom.settleScrollTop]) {
+    if (offset > maxOffset) throw new Error(`impossible pane: scrollTop ${offset} > max ${maxOffset}`);
+  }
+}
 
 interface Wired {
   pane: HTMLElement;
@@ -105,9 +142,13 @@ interface Wired {
   noteRect: () => DOMRect;
   clip: { top: number; bottom: number; left: number; right: number };
   scrollTop: () => number;
+  /** Move the pane as the USER would, bypassing the setter — so the move is not
+   *  recorded in `writes` and is not a module action. */
+  setScrollTop: (v: number) => void;
 }
 
 function wire(geom: Geometry, opts: { scrollIntoView?: boolean } = {}): Wired {
+  assertModelIsPossible(geom);
   const pane = document.querySelector<HTMLElement>('.settings-pane');
   const note = document.querySelector<HTMLElement>(`[data-outcome-note="${SLOT}"]`);
   if (pane === null || note === null) throw new Error('fixture did not render');
@@ -173,6 +214,9 @@ function wire(geom: Geometry, opts: { scrollIntoView?: boolean } = {}): Wired {
       right: CLIP_LEFT + CLIP_WIDTH,
     },
     scrollTop: () => offset,
+    setScrollTop: (v: number) => {
+      offset = v;
+    },
   };
 }
 
@@ -206,17 +250,30 @@ const EMPTY: ReadonlyMap<string, SettingsOutcome> = new Map();
 
 /**
  * Mount idle (the mount effect is a no-op: `previous` starts AT the mounted
- * map), wire the geometry, put focus where the case wants it, then commit the
- * outcome — the same order the app produces it in.
+ * map), wire the geometry, then put focus where the case wants it. Stops short
+ * of committing an outcome, for the cases that need the view to drive more than
+ * one commit themselves.
  */
+function mountIdle(
+  geom: Geometry,
+  focus: 'own-control' | 'elsewhere',
+  opts: { scrollIntoView?: boolean } = {},
+): { view: RenderResult; wired: Wired } {
+  const view = render(<Fixture notes={EMPTY} />);
+  const wired = wire(geom, opts);
+  view.getByTestId(focus).focus();
+  return { view, wired };
+}
+
+/** `mountIdle`, then commit the outcome — the same order the app produces it
+ *  in: the operation finishes and `report()` lands on an already-mounted,
+ *  already-focused row. */
 function mountThenReport(
   geom: Geometry,
   focus: 'own-control' | 'elsewhere',
   opts: { scrollIntoView?: boolean } = {},
 ): Wired {
-  const view = render(<Fixture notes={EMPTY} />);
-  const wired = wire(geom, opts);
-  view.getByTestId(focus).focus();
+  const { view, wired } = mountIdle(geom, focus, opts);
   view.rerender(<Fixture notes={new Map([[SLOT, OUTCOME]])} />);
   return wired;
 }
@@ -294,21 +351,49 @@ describe('useOutcomeScrollCorrection — the sub-pixel residual (AC2b, §10.3 co
     expect(rect.right).toBeLessThanOrEqual(w.clip.right);
   });
 
-  /** The doc comment's own claim (`:102-105`): keyed on object IDENTITY, not
-   *  text, because `report()` mints a fresh object every time. The mirror of
-   *  that claim is that a commit which does NOT change the object must not
-   *  scroll — a re-render for an unrelated reason is not an outcome. */
+  /**
+   * The doc comment's own claim (`:102-105`): keyed on object IDENTITY, not
+   * text, because `report()` mints a fresh object every time. The mirror of
+   * that claim is that a commit which does NOT change the object must not
+   * scroll — a re-render for an unrelated reason is not an outcome.
+   *
+   * THREE renders, not two, and the pane is scrolled back between them. Both
+   * details are what make this a test of the identity skip rather than of
+   * nothing:
+   *
+   *  - Mounting with the outcome ALREADY in the map (the earlier shape of this
+   *    case) leaves `before` at `useRef(notes)`'s initial value, which equals
+   *    the mounted map either way — so it passed with `previous.current = notes`
+   *    (`useOutcomeScrollCorrection.ts:116`) deleted. Mounting EMPTY and
+   *    reporting first means the ref assignment is the ONLY thing that can
+   *    carry A's note into the next commit's `before`.
+   *  - After the correction the note is fully inside the clip, so a re-detected
+   *    change would bail at condition 1 (`:69`) before `scrollIntoView` and
+   *    still look like a skip. `setScrollTop` puts the pane back where the user
+   *    left it, so a re-detection is observable as a real second yank — which
+   *    is the app defect `:116` prevents: without it `previous.current` stays at
+   *    its initial value forever and every later unrelated re-render still
+   *    carrying the first outcome object re-scrolls the pane.
+   */
   it('ignores a re-render that carries the same outcome object', () => {
-    const notes = new Map([[SLOT, OUTCOME]]);
-    const view = render(<Fixture notes={notes} />);
-    const w = wire(CLIPPED, {});
-    view.getByTestId('own-control').focus();
-    // A NEW map (so the effect's dep changes and it really re-runs) holding the
-    // SAME outcome object.
-    view.rerender(<Fixture notes={new Map(notes)} />);
+    const a = new Map([[SLOT, OUTCOME]]);
+    const { view, wired: w } = mountIdle(CLIPPED, 'own-control');
 
-    expect(w.scrollIntoView).not.toHaveBeenCalled();
-    expect(w.writes).toEqual([]);
+    // 1. The outcome arrives: the correction runs, exactly once.
+    view.rerender(<Fixture notes={a} />);
+    expect(w.scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(w.writes).toEqual([1270]);
+
+    // 2. The user scrolls back to where they were, then something unrelated
+    //    re-renders: a NEW map (so the effect's dep changes and it really
+    //    re-runs) holding the SAME outcome object.
+    w.setScrollTop(CLIPPED.initialScrollTop);
+    view.rerender(<Fixture notes={new Map(a)} />);
+
+    expect(w.scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(w.writes).toEqual([1270]);
+    // The observable that matters: the user's scroll position is untouched.
+    expect(w.scrollTop()).toBe(CLIPPED.initialScrollTop);
   });
 });
 
@@ -329,25 +414,19 @@ describe('useOutcomeScrollCorrection — the guards, pinned as written', () => {
    * better of the two reachable states — the head of the message is readable.
    */
   it('leaves a note taller than the scrollport where `nearest` put it, uncorrected', () => {
-    const tall: Geometry = {
-      noteTop: 1600,
-      noteHeight: 700, // > CLIP_HEIGHT (550)
-      initialScrollTop: 1207,
-      settleScrollTop: 1600, // `nearest` on an over-tall, bottom-outside box: align top
-    };
-    const w = mountThenReport(tall, 'own-control');
+    const w = mountThenReport(OVERTALL, 'own-control');
 
     // The scroll DID happen — the limitation is the missing ceil step, not a
     // missing correction.
     expect(w.scrollIntoView).toHaveBeenCalledTimes(1);
-    expect(w.scrollTop()).toBe(tall.settleScrollTop);
+    expect(w.scrollTop()).toBe(OVERTALL.settleScrollTop);
     expect(w.writes).toEqual([]);
 
     // And so it is still clipped: top flush with the scrollport, bottom 150 px
     // past it. AC2b cannot hold here; this assertion says so out loud.
     const rect = w.noteRect();
     expect(rect.top).toBe(CLIP_TOP);
-    expect(rect.bottom).toBe(CLIP_BOTTOM + (tall.noteHeight - CLIP_HEIGHT));
+    expect(rect.bottom).toBe(CLIP_BOTTOM + (OVERTALL.noteHeight - CLIP_HEIGHT));
   });
 
   /**
@@ -362,6 +441,56 @@ describe('useOutcomeScrollCorrection — the guards, pinned as written', () => {
     const w = mountThenReport(CLIPPED, 'own-control', { scrollIntoView: false });
 
     expect(w.noteRect().bottom).toBeGreaterThan(w.clip.bottom); // clipped, and left that way
+    expect(w.writes).toEqual([]);
+    expect(w.scrollTop()).toBe(CLIPPED.initialScrollTop);
+  });
+
+  /** The `:59` bail. A slot can hold an outcome with no note rendered for it:
+   *  the four MCP slots live in a map that outlives its surface (P113 §7), and
+   *  a slot whose row is filtered out by the Settings search box has no
+   *  element. Without the null check this throws on `el.closest`. */
+  it('no-ops, without throwing, for a slot with no note element in the DOM', () => {
+    const { view, wired: w } = mountIdle(CLIPPED, 'own-control');
+    view.rerender(<Fixture notes={new Map([[ABSENT, OUTCOME]])} />);
+
+    expect(document.querySelector(`[data-outcome-note="${ABSENT}"]`)).toBeNull();
+    expect(w.scrollIntoView).not.toHaveBeenCalled();
+    expect(w.writes).toEqual([]);
+    expect(w.scrollTop()).toBe(CLIPPED.initialScrollTop);
+  });
+
+  /**
+   * The `return` at `:122`, PINNED AS WRITTEN — it is not a `continue`. The
+   * module corrects the FIRST changed slot and stops, resting on the stated
+   * invariant that at most one slot changes per commit (`:119-120`: every Dev
+   * action is `anyBusy`-gated and a General scan or Browse reports into one
+   * slot only).
+   *
+   * Observable here: `ABSENT` is inserted first, so it is the first changed
+   * slot; the loop returns on it and never reaches `SLOT`, whose note is
+   * genuinely clipped and would otherwise be corrected. If the invariant ever
+   * stops holding, this case is where it surfaces — as a deliberate record of
+   * the trade, not as a passing test.
+   */
+  it('stops at the first changed slot, leaving a second changed slot untouched', () => {
+    const { view, wired: w } = mountIdle(CLIPPED, 'own-control');
+    // Checked BEFORE the commit: SLOT's note is genuinely clipped, so the only
+    // reason it goes uncorrected is the loop stopping. Read after the commit
+    // this would instead fail first on the very correction under test.
+    expect(w.noteRect().bottom).toBeGreaterThan(w.clip.bottom);
+
+    view.rerender(
+      <Fixture
+        notes={
+          new Map([
+            [ABSENT, OUTCOME],
+            [SLOT, OUTCOME],
+          ])
+        }
+      />,
+    );
+
+    expect(w.scrollIntoView).not.toHaveBeenCalled();
     expect(w.writes).toEqual([]);
     expect(w.scrollTop()).toBe(CLIPPED.initialScrollTop);
   });
