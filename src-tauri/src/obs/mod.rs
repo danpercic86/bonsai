@@ -51,6 +51,10 @@ mod tests_redact;
 mod tests_writer;
 
 #[cfg(test)]
+#[path = "tests_writer_mono.rs"]
+mod tests_writer_mono;
+
+#[cfg(test)]
 #[path = "tests_sink.rs"]
 mod tests_sink;
 

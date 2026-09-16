@@ -372,6 +372,9 @@ fn writer_loop(
 
 /// Emits ONE `drop` record covering everything backpressure discarded since the
 /// last report (§3 `DropPayload`), so a storm costs one line, not thousands.
+///
+/// `seq`/`mono` are left 0 for the writer to assign (`append_record`) — this is
+/// the writer thread, which has no `Sink` handle to read `Sink::mono` from.
 pub(super) fn emit_pending_drops(writer: &mut LogWriter, dropped: &AtomicU64, reported: &mut u64) {
     let total = dropped.load(Ordering::Relaxed);
     if total <= *reported {

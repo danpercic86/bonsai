@@ -236,8 +236,11 @@ impl AnomalyDetector {
     }
 }
 
-/// Builds one `anomaly` record. `seq`/`mono` are left 0: the sink's writer
-/// assigns the real `seq`, and `mono` mirrors the writer-minted `drop` record.
+/// Builds one `anomaly` record. `seq`/`mono` are left 0 because THIS builder has
+/// neither counter: the sink's writer assigns both in `LogWriter::append_record`
+/// — `seq` from its running ordinal, `mono` from the session `Instant` it
+/// captured at open (it stamps any `src: "rust"` record that arrives at 0).
+/// So an `anomaly` line on disk carries a real session-relative `mono`.
 pub(super) fn build_anomaly(
     rule: &str,
     severity: AnomalySeverity,

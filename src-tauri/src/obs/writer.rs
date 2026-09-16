@@ -17,6 +17,7 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
+use std::time::Instant;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -56,6 +57,16 @@ pub struct LogWriter {
     /// underlying `io::Error` — whose Display embeds the log path — is NEVER
     /// stored here or carried across IPC. The UI shows generic copy only.
     write_failed: Arc<AtomicBool>,
+    /// The session's monotonic base, captured when the writer opens. Every
+    /// Rust-side record that reaches [`LogWriter::append_record`] with
+    /// `mono == 0` is stamped with `elapsed()` off THIS clock (§3 `mono`).
+    ///
+    /// An [`Instant`], not `cfg.started_secs`: `mono` exists precisely because
+    /// `ts` (wall clock) can step under an NTP correction, so deriving it from
+    /// the wall clock would erase the field's only reason to exist. It is NOT
+    /// reset by [`LogWriter::roll`] — a purge roll keeps the session (like the
+    /// ordinals), so `mono` stays session-relative across parts.
+    started: Instant,
     /// §8.4 — the LAST attempt to open a part failed and the writer is still
     /// holding the previous part's `BufWriter`. Writer-local (never crosses IPC).
     ///
@@ -77,9 +88,15 @@ impl LogWriter {
         super::fs_perm::create_dir_private(&cfg.dir)
             .map_err(|e| AppError::Io(format!("cannot create log dir: {e}")))?;
         prune(&cfg.dir, cfg.limits);
+        // Captured AFTER the prune scan and immediately before the first part
+        // opens, so the header written below lands at `mono` ≈ 0 and the base
+        // agrees to within one header write with `Sink::started_ms` (taken right
+        // after this call returns).
+        let started = Instant::now();
         let mut w = LogWriter {
             cfg,
             redactor,
+            started,
             file: None,
             active: String::new(),
             part: 0,
@@ -158,6 +175,10 @@ impl LogWriter {
         Ok(())
     }
 
+    /// Line 1 of a part. `mono: 0` here is a REQUEST to be stamped, not a claim:
+    /// `append_record` fills it from the session clock, so part 0's header keeps
+    /// its ~0 (it is written at session start) while a rotation or purge-roll
+    /// header correctly carries the session-relative ms at which that part began.
     fn header_record(&self, after_purge: bool) -> LogRecord {
         let dropped = self.dropped_parts.load(Ordering::Relaxed) as u32;
         LogRecord {
@@ -221,6 +242,20 @@ impl LogWriter {
     fn append_record(&mut self, mut rec: LogRecord) -> Result<(), AppError> {
         self.seq += 1;
         rec.seq = self.seq;
+        // §3 `mono` — producer-stamped normally (`Sink::mono`), but records the
+        // WRITER mints or that a producer built without a session clock
+        // (`anomaly`, `truncate`, `drop`, the part header) arrive at 0. Stamp
+        // those here, where `seq` is assigned, so no record ships without a
+        // session-relative position.
+        //
+        // BOTH guards are load-bearing:
+        //   * `mono == 0` is the "unset" signal — a producer that set it wins.
+        //   * `src == Rust` — the UI keeps its OWN `mono` base (see the module
+        //     doc of `obs/anomaly.rs`: "`mono` bases differ per side"), so
+        //     stamping a `ui` record would restate a foreign clock in ours.
+        if rec.mono == 0 && rec.src == LogSource::Rust {
+            rec.mono = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        }
         let mut value = serde_json::to_value(&rec)
             .map_err(|e| AppError::Other(format!("cannot serialize log record: {e}")))?;
         // §7.1 — strict-mode enforcement BEFORE the credential scrubber, because
@@ -349,6 +384,9 @@ impl LogWriter {
 /// §6.3 — one `truncate` record for a part just evicted at the cap. `dropped_idx`
 /// is the part index (redacted to `part#<n>`, never a path); `dropped_parts` is
 /// the running total after this eviction.
+///
+/// `seq`/`mono` are left 0 and both are filled by [`LogWriter::append_record`]
+/// from the writer's own counters — this builder has no session clock.
 fn truncate_record(dropped_idx: u32, bytes: u64, dropped_parts: u32) -> LogRecord {
     LogRecord {
         seq: 0,

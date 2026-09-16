@@ -129,7 +129,16 @@ pub struct LogRecord {
     pub seq: u64,
     /// Epoch ms, wall clock.
     pub ts: i64,
-    /// Ms since session start (jitter-free ordering aid).
+    /// Ms since session start (ordering aid).
+    ///
+    /// Each side has its OWN base, so `mono` compares within a `src`, never
+    /// across one. `0` means "unset": `LogWriter::append_record` stamps any
+    /// `src: "rust"` record that arrives at 0 from the writer's session clock —
+    /// a `std::time::Instant` delta, so it cannot be moved by a wall-clock step.
+    /// That is how `anomaly`, `truncate`, `drop` and part headers get theirs.
+    /// Producer-side Rust records are stamped earlier, by `Sink::mono`, which is
+    /// still a `now_ms()` difference (a pre-existing wall-clock dependency, not
+    /// the writer's). A `ui` record is never restamped.
     pub mono: u64,
     pub src: LogSource,
     pub lvl: LogLevel,
