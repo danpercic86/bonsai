@@ -196,8 +196,7 @@ export default function App() {
     handleSettingsChange,
   );
 
-  // P16 / P16c: the embedded MCP server's runtime state and controls
-  // (see hooks/useMcpControls.ts).
+  // P16 / P16c: embedded MCP server runtime state + controls (useMcpControls.ts).
   const {
     mcpStatus,
     mcpConsentOpen,
@@ -211,6 +210,7 @@ export default function App() {
     handleConfirmMcpWriteConsent,
     mcpOutcomes,
     mcpAnnounce,
+    resetMcpOutcomes,
   } = useMcpControls(activeRepo, handleSettingsChange);
 
   // P21: the clone dialog's lifecycle (see hooks/useCloneFlow.ts).
@@ -503,7 +503,7 @@ export default function App() {
           aiRun={aiRun}
           mcpStatus={mcpStatus}
           mcpOutcomes={mcpOutcomes}
-          mcpAnnounce={mcpAnnounce}
+          mcpAnnounce={mcpAnnounce} onResetMcpOutcomes={resetMcpOutcomes}
           settingsSaveFailed={settingsSaveFailed}
           onRetrySettingsSave={retrySettingsSave}
           mcpConsented={mcpConsented}

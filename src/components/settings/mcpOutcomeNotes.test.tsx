@@ -32,6 +32,20 @@ const RUNNING: McpStatus = {
   toolCount: 14,
 };
 
+/** Byte-for-byte what the backend pushes when the server goes down:
+ *  `stopped_status()`, `src-tauri/src/mcp.rs:143`. Written out rather than
+ *  spread from `RUNNING` so the fixture documents what Rust actually sends —
+ *  `port`/`url`/`token` all drop to null, which is why the register rows can no
+ *  longer render (`ready` is false) even before `enabled` is read. */
+const STOPPED: McpStatus = {
+  enabled: false,
+  allowWrite: false,
+  port: null,
+  url: null,
+  token: null,
+  toolCount: 14,
+};
+
 function renderSection(
   outcomes: ReadonlyMap<string, SettingsOutcome> = new Map(),
   announce = '',
@@ -216,4 +230,93 @@ describe('useMcpControls — outcomes replace the deleted pushToast (AC1, AC15)'
       expect(result.current.mcpOutcomes.has(MCP_REGISTER_SLOT.user)).toBe(false);
     });
   });
+  it('drops a stale register note when the server reports stopped on its OWN (event path)', async () => {
+    // `mcpStatus` reaches "stopped" through TWO paths and only one of them runs
+    // `handleSetMcpEnabled`. Rust emits `mcp-server-changed` with
+    // `stopped_status()` from `stop()` (`src-tauri/src/mcp.rs:398-402`) AND from
+    // `start_or_signal_stopped`'s ERROR arm (`:213-218`) — a failed restart
+    // during a write-gate bounce, where the only command the user issued was
+    // `set_mcp_allow_write`. The register rows unmount either way
+    // (`SettingsMcpSection` renders them behind `running`), so a clear that
+    // lives in the command continuation alone lets the note resurrect on the
+    // next enable. This case NEVER calls `handleSetMcpEnabled` — that is the
+    // whole point, and it is why the sibling case above stayed green while this
+    // path was unhandled.
+    vi.spyOn(mockIpc, 'registerMcpWithClaude').mockRejectedValue(appErr('other', 'gone'));
+    let emit: ((s: McpStatus) => void) | null = null;
+    vi.spyOn(mockIpc, 'onMcpServerChanged').mockImplementation(async (cb) => {
+      emit = cb;
+      return () => {};
+    });
+    const { result } = renderHook(() => useMcpControls('/repo', vi.fn()));
+    await waitFor(() => expect(emit).not.toBeNull());
+
+    await act(async () => {
+      await result.current.handleRegisterMcp('user');
+    });
+    expect(result.current.mcpOutcomes.get(MCP_REGISTER_SLOT.user)).toEqual({
+      tone: 'error',
+      text: 'Could not register: gone',
+    });
+
+    act(() => emit?.(STOPPED));
+
+    expect(result.current.mcpOutcomes.has(MCP_REGISTER_SLOT.user)).toBe(false);
+  });
+
+  it('resetMcpOutcomes() empties every note AND the announcer (§7)', async () => {
+    // §7's "Also clears on: unmount". `AiCategory` calls this on mount and on
+    // unmount (`SettingsPanel.test.tsx` pins the wiring); this case pins what
+    // the call actually does, so a `reset` that quietly became a no-op fails
+    // here instead of passing everywhere.
+    vi.spyOn(mockIpc, 'registerMcpWithClaude').mockRejectedValue(appErr('other', 'gone'));
+    const { result } = renderHook(() => useMcpControls('/repo', vi.fn()));
+
+    await act(async () => {
+      await result.current.handleRegisterMcp('user');
+    });
+    expect(result.current.mcpOutcomes.size).toBe(1);
+    expect(result.current.mcpAnnounce).toBe('Could not register: gone');
+
+    act(() => result.current.resetMcpOutcomes());
+
+    expect(result.current.mcpOutcomes.size).toBe(0);
+    expect(result.current.mcpAnnounce).toBe('');
+  });
+
+  it('a reset also clears a note that landed while the page was AWAY', async () => {
+    // The one case an unmount-only reset cannot catch, and the reason
+    // `AiCategory` resets on MOUNT too: press Add, close Settings before the run
+    // settles, and the failure reports into a map that outlives the surface.
+    // `resetMcpOutcomes` stands in for both lifecycle calls here — that the
+    // MOUNT one exists is pinned in `SettingsPanel.test.tsx`.
+    let rejectRun: (e: unknown) => void = () => {};
+    const pending = new Promise<void>((_resolve, reject) => {
+      rejectRun = reject;
+    });
+    vi.spyOn(mockIpc, 'registerMcpWithClaude').mockReturnValue(pending);
+    const { result } = renderHook(() => useMcpControls('/repo', vi.fn()));
+
+    const run = result.current.handleRegisterMcp('user');
+    // The section goes away while the run is in flight (the unmount reset).
+    act(() => result.current.resetMcpOutcomes());
+    await act(async () => {
+      rejectRun(appErr('other', 'gone'));
+      await run;
+    });
+
+    // The late `report` wrote into the surviving map, so the unmount reset
+    // demonstrably could NOT have caught this one.
+    expect(result.current.mcpOutcomes.get(MCP_REGISTER_SLOT.user)).toEqual({
+      tone: 'error',
+      text: 'Could not register: gone',
+    });
+
+    // Reopening Settings mounts the page again — that pass is what makes §7's
+    // "reopening Settings is a clean page" true even for this ordering.
+    act(() => result.current.resetMcpOutcomes());
+    expect(result.current.mcpOutcomes.size).toBe(0);
+    expect(result.current.mcpAnnounce).toBe('');
+  });
+
 });

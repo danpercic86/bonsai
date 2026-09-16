@@ -28,6 +28,9 @@ import {
 import { useOutcomeNotes } from '../components/settings/useOutcomeNotes';
 import { errorMessage } from '../utils/errors';
 
+/** Both register slots, module-level so the effect below has a stable dep. */
+const REGISTER_SLOTS: readonly string[] = [MCP_REGISTER_SLOT.user, MCP_REGISTER_SLOT.local];
+
 export interface UseMcpControls {
   mcpStatus: McpStatus | null;
   mcpConsentOpen: boolean;
@@ -45,13 +48,22 @@ export interface UseMcpControls {
    *  — the live element must live IN the section for the per-section count to
    *  mean anything (§17.3, AC6). */
   mcpAnnounce: string;
+  /** §7 ("Also clears on: unmount") — back the four notes out to their mount
+   *  state. This instance is owned HERE, per §17.3, but `App` mounts this hook
+   *  for the app's whole lifetime while the notes' host section unmounts on a
+   *  category change or a Settings close; without this the user would reopen
+   *  Settings tomorrow onto yesterday's `Could not register: …`. Called by
+   *  `AiCategory` — the container that renders `SettingsMcpSection` — on mount
+   *  AND on unmount: unmount is the §7 rule, and mount covers the one case
+   *  unmount cannot, a `report` that lands after the section is already gone. */
+  resetMcpOutcomes: () => void;
 }
 
 export function useMcpControls(
   activeRepo: string | null,
   handleSettingsChange: (patch: UiSettingsPatch) => void,
 ): UseMcpControls {
-  const { notes, announce, begin, report } = useOutcomeNotes();
+  const { notes, announce, begin, report, discardNotes, reset } = useOutcomeNotes();
   // P16: embedded MCP server. `mcpStatus` is the live runtime state (from the
   // backend, kept fresh via `mcp-server-changed`); the one-time consent gates
   // (`mcpConsented` / `mcpWriteConsented`) are persisted settings and live in
@@ -85,23 +97,51 @@ export function useMcpControls(
     };
   }, []);
 
+  // §7 — the two register rows render behind `running` (`SettingsMcpSection`),
+  // so a server that is not running takes their home away while their note KEYS
+  // survive in the map and would resurrect on the next enable, after something
+  // demonstrably HAS happened.
+  //
+  // This is the ONE place that observes `mcpStatus` being not-running, and it
+  // has to be: the status arrives from TWO directions. `setMcpEnabled`'s resolve is one; the
+  // `mcp-server-changed` subscription above is the other, and Rust emits it with
+  // `stopped_status()` from `stop()` (`src-tauri/src/mcp.rs:398-402`) AND from
+  // `start_or_signal_stopped`'s error arm (`:213-218`) — a failed restart during
+  // a write-gate bounce, where `handleSetMcpEnabled` never ran at all. Clearing
+  // inside the command continuation covered only the first.
+  //
+  // `discardNotes`, not `begin`: those two setStates (the event's `setMcpStatus`
+  // and the rejection's `report`) can land in ONE React batch, so a `begin` here
+  // would run after the commit and blank the ALLOW_WRITE announcement that just
+  // explained the stop.
+  //
+  // The condition mirrors the adapter's `mcpEnabled: mcpStatus?.enabled ?? false`
+  // and hence the section's `running`: a null status is "not running", and the rows
+  // mount if and only if it is `true`, so a not-running status always means
+  // their slots have no home.
+  //
+  // Keyed on the status OBJECT, not on a derived `running` boolean: a boolean
+  // dep only fires on a TRANSITION, which would make the clear depend on this
+  // hook having first observed `running === true` — an assumption about another
+  // component's history. Keyed on the status it depends on nothing: every
+  // not-running observation clears, and the repeats are free because
+  // `discardNotes` bails when neither key is present (so the mount pass does not
+  // even re-render).
+  useEffect(() => {
+    if (mcpStatus?.enabled === true) return;
+    discardNotes(REGISTER_SLOTS);
+  }, [mcpStatus, discardNotes]);
+
   // P16: start/stop the embedded MCP server; keep `mcpStatus` in sync (the
   // `mcp-server-changed` subscription also updates it, but this is immediate).
   const handleSetMcpEnabled = useCallback(
     (enabled: boolean) => {
       begin(MCP_ENABLED_SLOT);
       ipc.setMcpEnabled(enabled).then(
-        (s) => {
-          setMcpStatus(s);
-          // Stopping the server unmounts the two register rows, so their slots
-          // lose their home while the KEYS survive. Without this, re-enabling
-          // resurrects a stale `Could not register: …` after something has
-          // happened since — the §7 rule the Accounts host slots also broke.
-          if (!enabled) {
-            begin(MCP_REGISTER_SLOT.user);
-            begin(MCP_REGISTER_SLOT.local);
-          }
-        },
+        // The stale-register-note clear does NOT live here: `mcpStatus` reaches
+        // "stopped" from two directions and this continuation is only one of
+        // them. See the effect below.
+        (s) => setMcpStatus(s),
         (e) =>
           report(
             MCP_ENABLED_SLOT,
@@ -177,5 +217,6 @@ export function useMcpControls(
     handleConfirmMcpWriteConsent,
     mcpOutcomes: notes,
     mcpAnnounce: announce,
+    resetMcpOutcomes: reset,
   };
 }

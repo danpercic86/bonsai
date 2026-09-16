@@ -126,6 +126,12 @@ export interface SettingsActions {
   setMcpAllowWrite(next: boolean): void;
   /** Holds `mcpRegistering` in the adapter while the run is in flight. */
   registerMcp(scope: McpScope): void;
+  /** P113 §7 — back the four MCP outcome notes out to their mount state.
+   *  `AiCategory` calls it on mount AND on unmount, because the instance is
+   *  owned by `useMcpControls` (§17.3) and that hook outlives the section:
+   *  without it, closing Settings on `Could not register: …` and reopening
+   *  tomorrow would show the same note with nothing having happened. */
+  resetMcpOutcomes(): void;
   showOnboarding(): void;
   /** P69h / UI §1.2 — App's folder picker, offered by the Git-config empty block. */
   openRepository(): void;

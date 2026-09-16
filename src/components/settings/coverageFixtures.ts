@@ -116,6 +116,7 @@ const D = cloneDefaultUiSettings();
 const NO_OUTCOMES = {
   mcpOutcomes: new Map(),
   mcpAnnounce: '',
+  onResetMcpOutcomes: () => {},
   settingsSaveFailed: false,
   onRetrySettingsSave: () => {},
 } as const;

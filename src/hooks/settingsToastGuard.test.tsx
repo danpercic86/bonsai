@@ -25,14 +25,30 @@ import { mockIpc } from '../ipc/mock';
 import { appErr } from '../test/actionHookKit';
 import { HYDRATED, mountUiSettings } from '../test/uiSettingsKit';
 import { SETTINGS_SAVE_FAILURE_TEXT } from './useSettingsSaveFailure';
-import { SETTINGS_TOAST_GUARD_MESSAGE, useToastQueue } from './useToastQueue';
+import { SETTINGS_TOAST_GUARD_MESSAGE, useToastQueue, type UseToastQueue } from './useToastQueue';
 
-/** `useToastQueue` takes the boolean and mirrors it; `useUiSettings` takes the
- *  ref it publishes, so the two suites below use the two shapes. */
 const OPEN = true;
 const CLOSED = false;
-const OPEN_REF = { current: true };
-const CLOSED_REF = { current: false };
+
+/** The two consumers wired the way App wires them (§13.1: the **same signal**,
+ *  wired once): `useToastQueue` takes the boolean, publishes the ONE
+ *  `settingsOpen` ref, and `useUiSettings` reads THAT ref plus THAT `pushToast`.
+ *
+ *  Two hand-written literal refs and a bare `vi.fn()` pusher would leave both
+ *  halves of the claim untested — the guard could never fire because a fake
+ *  pusher cannot warn (so `expect(spy).not.toHaveBeenCalled()` would pass with
+ *  the guard deleted), and App could hand `useUiSettings` a second, drifting
+ *  copy of the signal with every case below still green. */
+function mountWired(settingsOpenNow: boolean) {
+  const queue = renderHook(() => useToastQueue(settingsOpenNow));
+  const { pushToast, settingsOpen } = queue.result.current;
+  return { queue, ui: mountUiSettings(pushToast, settingsOpen) };
+}
+
+/** What the real stack is holding, as `[tone, text]` pairs — `useUiSettings`
+ *  pushes with a dedupe key, which is not part of what this suite claims. */
+const toastPairs = (queue: { result: { current: UseToastQueue } }) =>
+  queue.result.current.toasts.map((t) => [t.tone, t.text]);
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -78,37 +94,37 @@ describe("P113 §17.3 — useUiSettings's toast is exempt, and that falls out of
     vi.useFakeTimers();
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(mockIpc, 'setUiSettings').mockRejectedValue(appErr('io', 'disk on fire'));
-    const push = vi.fn();
-    const { result } = mountUiSettings(push, OPEN_REF);
+    const { queue, ui } = mountWired(OPEN);
 
-    act(() => result.current.handleSettingsChange({ panelDensity: 'compact' }));
+    act(() => ui.result.current.handleSettingsChange({ panelDensity: 'compact' }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     });
 
-    expect(push).not.toHaveBeenCalled();
-    // The guard must not fire either: there is no toast to warn about.
+    // Nothing reached the real stack, so the guard had nothing to warn about —
+    // and the guard IS in the loop here, on the same open signal it would fire
+    // on. That is what makes the silence below evidence of the exemption rather
+    // than evidence of an unwired spy.
+    expect(toastPairs(queue)).toEqual([]);
     expect(spy).not.toHaveBeenCalled();
-    expect(result.current.settingsSaveFailed).toBe(true);
+    expect(ui.result.current.settingsSaveFailed).toBe(true);
   });
 
   it('routes a failed write to the TOAST, with no guard error, when Settings is closed', async () => {
     vi.useFakeTimers();
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(mockIpc, 'setUiSettings').mockRejectedValue(appErr('io', 'disk on fire'));
-    const push = vi.fn();
-    const { result } = mountUiSettings(push, CLOSED_REF);
+    const { queue, ui } = mountWired(CLOSED);
 
-    act(() => result.current.handleSettingsChange({ panelDensity: 'compact' }));
+    act(() => ui.result.current.handleSettingsChange({ panelDensity: 'compact' }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     });
 
-    expect(push).toHaveBeenCalledTimes(1);
-    expect(push.mock.calls[0]).toEqual(['error', SETTINGS_SAVE_FAILURE_TEXT]);
+    expect(toastPairs(queue)).toEqual([['error', SETTINGS_SAVE_FAILURE_TEXT]]);
     expect(spy).not.toHaveBeenCalled();
     // The condition is the same either way, so the banner state is set in both.
-    expect(result.current.settingsSaveFailed).toBe(true);
+    expect(ui.result.current.settingsSaveFailed).toBe(true);
   });
 
   it('clears the banner only on a successful write', async () => {
@@ -116,25 +132,25 @@ describe("P113 §17.3 — useUiSettings's toast is exempt, and that falls out of
     const write = vi
       .spyOn(mockIpc, 'setUiSettings')
       .mockRejectedValue(appErr('io', 'disk on fire'));
-    const { result } = mountUiSettings(vi.fn(), OPEN_REF);
+    const { ui } = mountWired(OPEN);
 
-    act(() => result.current.handleSettingsChange({ panelDensity: 'compact' }));
+    act(() => ui.result.current.handleSettingsChange({ panelDensity: 'compact' }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     });
-    expect(result.current.settingsSaveFailed).toBe(true);
+    expect(ui.result.current.settingsSaveFailed).toBe(true);
 
     // A fresh user change resets the retry BUDGET but must not clear the banner:
     // the values are still not on disk at that moment, and clearing here would
     // blink it off for the debounce window and back on when the retry fails.
-    act(() => result.current.handleSettingsChange({ panelDensity: 'cozy' }));
-    expect(result.current.settingsSaveFailed).toBe(true);
+    act(() => ui.result.current.handleSettingsChange({ panelDensity: 'cozy' }));
+    expect(ui.result.current.settingsSaveFailed).toBe(true);
 
     write.mockResolvedValue(HYDRATED);
-    act(() => result.current.retrySettingsSave());
+    act(() => ui.result.current.retrySettingsSave());
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10);
     });
-    expect(result.current.settingsSaveFailed).toBe(false);
+    expect(ui.result.current.settingsSaveFailed).toBe(false);
   });
 });

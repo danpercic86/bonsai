@@ -51,6 +51,39 @@ export interface OutcomeNotes {
    *  announcer** — whatever its key, and whether or not the previous
    *  announcement carried the same string. */
   report(key: string, tone: SettingsOutcome['tone'], text: string, announceText?: string): void;
+  /** Drop these keys' notes and NOTHING else: the announcer is neither read nor
+   *  written here.
+   *
+   *  For a slot whose HOST row unmounted while the section stayed. The two MCP
+   *  register rows render behind `running` (`SettingsMcpSection`), so a stopped
+   *  server takes their home away while the note KEYS survive in this map.
+   *
+   *  This is NOT the withdrawn key-scoped clear (see `begin`). That rule was
+   *  wrong because it scoped the ANNOUNCER to a key, which silenced a second row
+   *  carrying byte-identical text. This function never touches the announcer, so
+   *  it cannot silence anything — and it must not touch it: the announcer belongs
+   *  to the still-mounted section and may be carrying the very outcome that
+   *  CAUSED the unmount (a failed write-gate bounce emits a stopped status and
+   *  rejects `set_mcp_allow_write`, which can land in one React batch), so
+   *  clearing it from here would swallow the explanation. */
+  discardNotes(keys: readonly string[]): void;
+  /** Clear every note, the announcement, and the last-announced record — the
+   *  instance goes back to its mount state.
+   *
+   *  §7, "Also clears on: unmount — leaving the category, or closing Settings.
+   *  Reopening Settings is a clean page." `DevCategory` and
+   *  `SettingsAccountsSection` get that for free by owning their notes
+   *  component-locally; the MCP instance lives in `useMcpControls`, which `App`
+   *  mounts for the whole app lifetime, so its host has to say it out loud.
+   *
+   *  Unlike `begin`, this DOES reset `announcedTextRef`. `begin`'s exception
+   *  exists because a caller can issue `begin` and `report` in ONE commit, where
+   *  a reset ref would make `report` skip the flush that is then the only thing
+   *  forcing the text change. `reset` is a lifecycle call (mount / unmount
+   *  cleanup), never coalesced with a `report`, and the announcer ELEMENT is
+   *  unmounting with the section — so `''` is exactly what the next mount
+   *  displays, which is what the ref is required to record. */
+  reset(): void;
   /** Announce WITHOUT writing a note: for an action whose visible result is already
    *  complete in the row's own state (a landed rescan's counts, a confirmed Browse),
    *  where a second visible line would only restate it one step brighter.
@@ -137,6 +170,24 @@ export function useOutcomeNotes(): OutcomeNotes {
     [],
   );
 
+  // Notes only — see the interface doc for why the announcer is off limits here.
+  const discardNotes = useCallback((keys: readonly string[]) => {
+    setNotes((prev) => {
+      if (!keys.some((key) => prev.has(key))) return prev;
+      const next = new Map(prev);
+      for (const key of keys) next.delete(key);
+      return next;
+    });
+  }, []);
+
+  // Both writes bail out when the instance is already clean, so a host that
+  // calls this on MOUNT as well as on unmount costs no extra render.
+  const reset = useCallback(() => {
+    setNotes((prev) => (prev.size === 0 ? prev : NO_NOTES));
+    announcedTextRef.current = '';
+    setAnnounce('');
+  }, []);
+
   // P112 §16.4 R2 — `report` minus `setNotes`. The `''`-flush is what makes an
   // IDENTICAL string announce again (§16.8: a warm rescan finds the same tools,
   // so `3 terminals and 4 editors found.` is byte-identical and a live region
@@ -153,7 +204,7 @@ export function useOutcomeNotes(): OutcomeNotes {
   // Stable identities: `begin`/`report` take the place of the old toast callback
   // inside `useCallback` dependency arrays, so they must not change every render.
   return useMemo(
-    () => ({ notes, announce, begin, report, announceOnly }),
-    [notes, announce, begin, report, announceOnly],
+    () => ({ notes, announce, begin, report, announceOnly, discardNotes, reset }),
+    [notes, announce, begin, report, announceOnly, discardNotes, reset],
   );
 }

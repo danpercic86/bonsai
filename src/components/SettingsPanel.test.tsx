@@ -66,6 +66,7 @@ function renderPanel(over: Partial<SettingsPanelProps> = {}) {
     // settings write that is not failing.
     mcpOutcomes: new Map(),
     mcpAnnounce: '',
+    onResetMcpOutcomes: vi.fn(),
     settingsSaveFailed: false,
     onRetrySettingsSave: vi.fn(),
     theme: 'dark',
@@ -427,5 +428,44 @@ describe('SettingsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show tour' }));
     expect(props.onShowOnboarding).toHaveBeenCalledTimes(1);
     expect(screen.getByText('1.2.3')).toBeInTheDocument();
+  });
+});
+
+describe('P113 §7 — the MCP outcome notes do not outlive the surface that shows them', () => {
+  it('resets them when the AI page unmounts — what closing Settings does', () => {
+    const onResetMcpOutcomes = vi.fn();
+    const { unmount } = renderPanel({ initialCategory: 'ai', onResetMcpOutcomes });
+    // The note map is owned by `useMcpControls`, which App mounts for the app's
+    // whole lifetime (§17.3), so the page that shows the notes is the only thing
+    // that can say when they die. The mount pass comes first — it covers a
+    // `report` that landed after the section was already gone.
+    const afterMount = onResetMcpOutcomes.mock.calls.length;
+    expect(afterMount).toBeGreaterThanOrEqual(1);
+
+    // `SettingsPanel` returns null when closed, so tearing the tree down is
+    // exactly the teardown a close performs.
+    unmount();
+    expect(onResetMcpOutcomes.mock.calls.length).toBeGreaterThan(afterMount);
+  });
+
+  it('resets them on leaving the category, without closing Settings', () => {
+    const onResetMcpOutcomes = vi.fn();
+    renderPanel({ initialCategory: 'ai', onResetMcpOutcomes });
+    const afterMount = onResetMcpOutcomes.mock.calls.length;
+
+    // §7 names both events; the shell renders ONE category at a time, so a rail
+    // click unmounts the AI page while Settings stays open.
+    fireEvent.click(screen.getByRole('tab', { name: 'General' }));
+    expect(onResetMcpOutcomes.mock.calls.length).toBeGreaterThan(afterMount);
+  });
+
+  it('does not reset while the user is somewhere else in Settings', () => {
+    // Scoped to the AI PAGE, not to the panel: opening Settings on General must
+    // not touch the notes, and this case is what fails if the effect is ever
+    // hoisted to the shell or the adapter (neither of which unmounts on a
+    // category change, so hoisting it would also break the case above).
+    const onResetMcpOutcomes = vi.fn();
+    renderPanel({ initialCategory: 'general', onResetMcpOutcomes });
+    expect(onResetMcpOutcomes).not.toHaveBeenCalled();
   });
 });

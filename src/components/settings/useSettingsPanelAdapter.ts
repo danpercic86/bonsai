@@ -109,6 +109,7 @@ export interface SettingsPanelProps {
    *  `useMcpControls`. Passed through untouched; the section renders both. */
   mcpOutcomes: ReadonlyMap<string, SettingsOutcome>;
   mcpAnnounce: string;
+  onResetMcpOutcomes(): void; // P113 §7 — clears them when the section unmounts.
   /** P113 §17.3 — the debounced settings write is failing. Shown as the card's
    *  save banner (`SettingsSaveBanner`), which is why it stops at the shell and
    *  never enters the value bag: it is not a setting, and it is category-wide. */
@@ -196,7 +197,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     onRequestEnableAi,
     mcpStatus,
     mcpOutcomes,
-    mcpAnnounce,
+    mcpAnnounce, onResetMcpOutcomes,
     mcpConsented,
     onSetMcpEnabled,
     onRequestEnableMcp,
@@ -475,6 +476,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       openUpdateDialog: onOpenUpdateDialog,
       resetRow,
       adoptToolSelection: onAdoptToolSelection,
+      resetMcpOutcomes: onResetMcpOutcomes,
     }),
     [
       onChange,
@@ -489,7 +491,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       onCheckUpdate,
       onOpenUpdateDialog,
       resetRow,
-      onAdoptToolSelection,
+      onAdoptToolSelection, onResetMcpOutcomes,
     ],
   );
 
