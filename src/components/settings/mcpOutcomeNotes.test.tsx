@@ -35,8 +35,13 @@ const RUNNING: McpStatus = {
 /** Byte-for-byte what the backend pushes when the server goes down:
  *  `stopped_status()`, `src-tauri/src/mcp.rs:143`. Written out rather than
  *  spread from `RUNNING` so the fixture documents what Rust actually sends —
- *  `port`/`url`/`token` all drop to null, which is why the register rows can no
- *  longer render (`ready` is false) even before `enabled` is read. */
+ *  `port`/`url`/`token` all drop to null alongside `enabled`. What removes the
+ *  register rows is `enabled`, though: `running = mcpEnabled && mcpStatus !== null`
+ *  (`SettingsMcpSection.tsx:140`) is the render gate (`:208`), and the adapter
+ *  derives `mcpEnabled` from `status.enabled` (`useSettingsPanelAdapter.ts:413`).
+ *  The nulled url/token only make
+ *  `ready` (`:139`) false, and `ready` gates `disabled` on the Add buttons
+ *  (`:226`) — it never unmounts a row. */
 const STOPPED: McpStatus = {
   enabled: false,
   allowWrite: false,
@@ -318,5 +323,4 @@ describe('useMcpControls — outcomes replace the deleted pushToast (AC1, AC15)'
     expect(result.current.mcpOutcomes.size).toBe(0);
     expect(result.current.mcpAnnounce).toBe('');
   });
-
 });

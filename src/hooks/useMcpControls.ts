@@ -105,10 +105,13 @@ export function useMcpControls(
   // This is the ONE place that observes `mcpStatus` being not-running, and it
   // has to be: the status arrives from TWO directions. `setMcpEnabled`'s resolve is one; the
   // `mcp-server-changed` subscription above is the other, and Rust emits it with
-  // `stopped_status()` from `stop()` (`src-tauri/src/mcp.rs:398-402`) AND from
-  // `start_or_signal_stopped`'s error arm (`:213-218`) — a failed restart during
-  // a write-gate bounce, where `handleSetMcpEnabled` never ran at all. Clearing
-  // inside the command continuation covered only the first.
+  // `stopped_status()` from THREE sites: `stop()` (`src-tauri/src/mcp.rs:398-404`),
+  // `start_or_signal_stopped`'s error arm (`:213-218`) — a failed restart during a
+  // write-gate bounce, where `handleSetMcpEnabled` never ran at all — and
+  // `set_allow_write`'s already-stopped arm (`:270-279`), where flipping the write
+  // gate on a server that is not running re-emits the stopped status with nothing
+  // to bounce. Clearing inside the command continuation covered only the first;
+  // this effect covers all three, because it keys on the status, not the caller.
   //
   // `discardNotes`, not `begin`: those two setStates (the event's `setMcpStatus`
   // and the rejection's `report`) can land in ONE React batch, so a `begin` here

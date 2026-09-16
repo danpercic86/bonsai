@@ -7,7 +7,7 @@
 // AI-runs `<fieldset disabled>` (UI §5.4) lives inside its own section because it
 // spans three of those groups and nothing above it may dim.
 
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 
 import { SettingsAiSection } from '../../SettingsAiSection';
 import { SettingsAiRunSection } from '../../SettingsAiRunSection';
@@ -36,12 +36,20 @@ export function AiCategory() {
   // `useMcpControls`, which `App` mounts for the app's WHOLE lifetime, so the
   // note map does not die with the surface that shows it (Dev and Accounts get
   // that for free by owning theirs component-locally). This page IS that
-  // surface's lifetime: it unmounts on exactly the two events §7 names — leaving
-  // the category, and closing Settings (`SettingsPanel` returns null when
-  // closed) — and it renders `SettingsMcpSection` unconditionally, so its
-  // unmount is the section's unmount.
+  // surface's lifetime, and it renders `SettingsMcpSection` unconditionally, so
+  // its unmount is the section's unmount.
   //
-  // The effect lives in the page, not in the section, because the section is
+  // THREE things unmount this page, not two. The two §7 names: leaving the
+  // category, and closing Settings (`SettingsPanel` returns null when closed).
+  // The third is the Settings search box — `SettingsShell` swaps `<Page>` for
+  // `SettingsResults` on any non-empty query (`SettingsShell.tsx:65,213`), and
+  // `SettingsResults.tsx:82` remounts `AiCategory` only when AI is among the
+  // matches, so typing clears the notes too. That is an ACCEPTED early clear,
+  // not a §7 trigger: it is fail-safe (clears early, never stale) and an outcome
+  // note is ephemeral feedback about an operation the user just performed. Do
+  // NOT add code to suppress it.
+  //
+  // These effects live in the page, not in the section, because the section is
   // presentational ("this component only renders", its own header) and the page
   // is the container that already reads the action bag. §17.3 is untouched: it
   // rules on who OWNS the instance and where the live region renders, and
@@ -53,10 +61,20 @@ export function AiCategory() {
   // was still in flight when the section went away (press Add, close Settings,
   // the run then fails). Both calls are no-ops on an already-clean instance, so
   // neither costs a render.
-  useEffect(() => {
+  //
+  // The mount pass is a LAYOUT effect, deliberately. A passive effect runs after
+  // paint, so that remount-after-a-late-`report` case would commit with the note
+  // VISIBLE and the announcer holding its text for one frame — a frame of a note
+  // §7 says is gone, plus a freshly inserted `role="status"` region that already
+  // carries content, which some assistive tech voices. Clearing before paint
+  // means neither is ever observable.
+  useLayoutEffect(() => {
     resetMcpOutcomes();
-    return resetMcpOutcomes;
   }, [resetMcpOutcomes]);
+
+  // The unmount clear stays passive: nothing paints after it (this subtree is
+  // going away), so there is nothing to beat to the screen.
+  useEffect(() => resetMcpOutcomes, [resetMcpOutcomes]);
 
   return (
     <>

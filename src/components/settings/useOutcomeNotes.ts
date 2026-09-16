@@ -107,6 +107,12 @@ export function useOutcomeNotes(): OutcomeNotes {
    *  non-empty announcer showing `X` implies `ref === X`. Therefore `ref !== next`
    *  proves the next write differs from what is displayed, and `ref === next`
    *  forces the pre-clear. `begin` does not reset it — see the comment there.
+   *  `reset` writes the announcer too, but only `''`, and records `''` in the
+   *  same call, so it cannot make the announcer non-empty and leaves the claim
+   *  above intact. That CLOSES the set: exactly four functions here set
+   *  `announce` — `begin`, `report`, `announceOnly`, `reset` — and all four are
+   *  accounted for in this paragraph, so the proof stands against the current
+   *  surface and not merely against the surface it was first written for.
    *
    *  The scope of that "ONLY" is the invariant, so it is what a new writer has to
    *  join: any future function that sets `announce` must record the text here in
@@ -121,8 +127,8 @@ export function useOutcomeNotes(): OutcomeNotes {
    *
    *  A ref, not state: read and written inside these callbacks only, and state
    *  here would churn `begin`/`report` identity, which the hook's `useCallback`
-   *  contract forbids. Compared in `report`, the only place that can see BOTH
-   *  the displayed text and the new one. */
+   *  contract forbids. Compared in `report` and in `announceOnly` (P112 §16.4 R2)
+   *  — the two places that can see BOTH the displayed text and the new one. */
   const announcedTextRef = useRef('');
 
   const begin = useCallback((key: string) => {
