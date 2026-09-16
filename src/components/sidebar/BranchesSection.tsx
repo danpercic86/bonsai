@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { BranchInfo, BranchesSnapshot } from '../../ipc';
 import type { RevealTarget } from '../../graph/reveal';
@@ -38,8 +39,8 @@ export interface BranchesSectionProps {
   branchFilter: string;
   setBranchFilter: Dispatch<SetStateAction<string>>;
   branchFiltering: boolean;
-  localFlatFiltered: BranchInfo[];
-  localTreeFiltered: TreeNode<BranchInfo>[];
+  localFlatFiltered: readonly BranchInfo[];
+  localTreeFiltered: readonly TreeNode<BranchInfo>[];
   branchNoMatch: boolean;
   createOpen: boolean;
   setCreateOpen: Dispatch<SetStateAction<boolean>>;
@@ -51,7 +52,7 @@ export interface BranchesSectionProps {
   submitCreate(): void | Promise<void>;
 }
 
-export function BranchesSection({
+function BranchesSectionImpl({
   data,
   branchesCollapsed,
   setBranchesCollapsed,
@@ -223,3 +224,8 @@ export function BranchesSection({
     </section>
   );
 }
+
+/** Render-storm fix: a plain `memo` is enough here — every prop is either a
+ *  scalar, a `useState` setter, or one of the Sidebar's memoised arrays, so an
+ *  unchanged round hands this component byte-identical props BY REFERENCE. */
+export const BranchesSection = memo(BranchesSectionImpl);

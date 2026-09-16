@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { BranchesSnapshot, RemoteBranchInfo, RemoteInfo } from '../../ipc';
 import type { RevealTarget } from '../../graph/reveal';
@@ -28,13 +29,13 @@ export interface RemotesSectionProps {
   remoteFilter: string;
   setRemoteFilter: Dispatch<SetStateAction<string>>;
   remoteFiltering: boolean;
-  remotesFiltered: RemoteInfo[];
-  remoteFlatFiltered: RemoteBranchInfo[];
-  remoteTreeFiltered: TreeNode<RemoteBranchInfo>[];
+  remotesFiltered: readonly RemoteInfo[];
+  remoteFlatFiltered: readonly RemoteBranchInfo[];
+  remoteTreeFiltered: readonly TreeNode<RemoteBranchInfo>[];
   remoteNoMatch: boolean;
 }
 
-export function RemotesSection({
+function RemotesSectionImpl({
   data,
   remotes,
   remotesCollapsed,
@@ -150,3 +151,6 @@ export function RemotesSection({
     </section>
   );
 }
+
+/** Render-storm fix — see BranchesSection for why a plain `memo` suffices. */
+export const RemotesSection = memo(RemotesSectionImpl);

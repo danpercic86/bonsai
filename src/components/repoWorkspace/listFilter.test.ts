@@ -33,6 +33,13 @@ describe('filterItems (flat object rows)', () => {
   it('no match yields an empty list', () => {
     expect(filterItems(rows, 'nope', (r) => r.name)).toEqual([]);
   });
+
+  it('blank / whitespace query is the identity (same array ref)', () => {
+    // Load-bearing for the sidebar's memoisation — a copy here re-renders every
+    // section on every render. See the doc comment in listFilter.ts.
+    expect(filterItems(rows, '', (r) => r.name)).toBe(rows);
+    expect(filterItems(rows, '  ', (r) => r.name)).toBe(rows);
+  });
 });
 
 describe('filterTree (tree mode ancestor-keep)', () => {
@@ -58,7 +65,8 @@ describe('filterTree (tree mode ancestor-keep)', () => {
     expect(filterTree(tree, 'zzz', (s) => s)).toEqual([]);
   });
 
-  it('blank query returns the tree unchanged', () => {
-    expect(filterTree(tree, '  ', (s) => s)).toEqual(tree);
+  it('blank query returns the tree unchanged, by the SAME reference', () => {
+    expect(filterTree(tree, '  ', (s) => s)).toBe(tree);
+    expect(filterTree(tree, '', (s) => s)).toBe(tree);
   });
 });

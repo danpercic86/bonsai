@@ -54,39 +54,65 @@ function snapshot(bump = 0): BranchesSnapshot {
   };
 }
 
+/**
+ * STABLE BY CONSTRUCTION, and that is the point. These were `vi.fn()` literals
+ * inside `props()`, so every `rerender` handed the Sidebar nine fresh callbacks
+ * and five fresh empty arrays — which no amount of memoisation can survive, and
+ * which is NOT what the app does any more: `repoWorkspace/useSidebarCallbacks.ts`
+ * and the stable context-menu openers give the real call site exactly these
+ * semantics. Note what is deliberately NOT stabilised: `snapshot(bump)` still
+ * rebuilds all 500 `BranchInfo` objects, because `list_branches` really does
+ * return brand-new serde objects on every round — that is precisely what
+ * `rowPropsEqual`'s structural comparison has to see through.
+ */
+const CALLBACKS = {
+  onDismissError: vi.fn(),
+  onCheckout: vi.fn(),
+  onContextMenu: vi.fn(),
+  onCreateBranch: vi.fn(async () => {}),
+  onCreateStash: vi.fn(),
+  onStashContextMenu: vi.fn(),
+  onSubmoduleContextMenu: vi.fn(),
+  onNewSubmodule: vi.fn(),
+  onWorktreeContextMenu: vi.fn(),
+  onNewWorktree: vi.fn(),
+  onTagContextMenu: vi.fn(),
+  onTagsExpand: vi.fn(),
+  onRemoteContextMenu: vi.fn(),
+  onAddRemote: vi.fn(),
+  // Stable BECAUSE the app's is: `repoWorkspace/useReveal.ts` latches
+  // `handleReveal` behind a ref so replacing the streamed `GraphLayout` (every
+  // `full`/`refsOnly`/`remoteMeta`/`stash` round) does not remint it. A fresh
+  // one per render costs 1010 renders over 500 BranchRow instances — asserted
+  // as the negative control at the bottom of this file.
+  onReveal: vi.fn(),
+};
+const NO_STASHES: SidebarProps['stashes'] = [];
+const NO_SUBMODULES: SidebarProps['submodules'] = [];
+const NO_WORKTREES: SidebarProps['worktrees'] = [];
+const REMOTES: SidebarProps['remotes'] = [{ name: 'origin', url: 'https://example.com/r.git' }];
+
 function props(over: Partial<SidebarProps> = {}): SidebarProps {
   return {
     data: snapshot(0),
     loading: false,
     error: null,
-    onDismissError: vi.fn(),
     busy: false,
     opActive: false,
     currentBranch: 'main',
-    onCheckout: vi.fn(),
-    onContextMenu: vi.fn(),
-    onCreateBranch: vi.fn(async () => {}),
     width: 240,
     listView: 'flat',
-    stashes: [],
-    onCreateStash: vi.fn(),
-    onStashContextMenu: vi.fn(),
-    submodules: [],
-    onSubmoduleContextMenu: vi.fn(),
+    stashes: NO_STASHES,
+    submodules: NO_SUBMODULES,
     submoduleBusy: null,
-    onNewSubmodule: vi.fn(),
-    worktrees: [],
-    onWorktreeContextMenu: vi.fn(),
-    onNewWorktree: vi.fn(),
-    onTagContextMenu: vi.fn(),
+    worktrees: NO_WORKTREES,
     tagSyncReport: null,
     tagSyncState: 'idle',
     tagSyncRemote: null,
     tagSyncCheckedAt: null,
-    onTagsExpand: vi.fn(),
-    remotes: [{ name: 'origin', url: 'https://example.com/r.git' }],
-    onRemoteContextMenu: vi.fn(),
-    onAddRemote: vi.fn(),
+    now: 1_700_000_000,
+    remotes: REMOTES,
+    ...CALLBACKS,
     ...over,
   };
 }
@@ -149,8 +175,12 @@ interface Churn {
  * scenario (one ref change); >1 exists so the renders budget can be shown to FAIL
  * on an induced extra re-render.
  */
-async function churnOfRefChange(bumps = 1): Promise<Churn> {
-  const { rerender } = render(<Sidebar {...props()} />, { wrapper: StrictMode });
+async function churnOfRefChange(
+  bumps = 1,
+  /** Evaluated per render — for props that are deliberately UNSTABLE. */
+  unstable: () => Partial<SidebarProps> = () => ({}),
+): Promise<Churn> {
+  const { rerender } = render(<Sidebar {...props(unstable())} />, { wrapper: StrictMode });
   // Discard mount-time churn; measure ONLY the ref change(s).
   await drain();
   sunk = [];
@@ -158,11 +188,15 @@ async function churnOfRefChange(bumps = 1): Promise<Churn> {
 
   for (let i = 1; i <= bumps; i += 1) {
     await act(async () => {
-      rerender(<Sidebar {...props({ data: snapshot(i) })} />);
+      rerender(<Sidebar {...props({ data: snapshot(i), ...unstable() })} />);
     });
   }
   await drain();
+  return collect();
+}
 
+/** Fold everything sunk so far into a Churn. */
+function collect(): Churn {
   const tallies = sunk.filter((r) => r.kind === 'render.tally');
   return {
     records: sunk.filter(
@@ -172,6 +206,14 @@ async function churnOfRefChange(bumps = 1): Promise<Churn> {
     tallies,
     tallyRenders: tallies.reduce((n, r) => n + (r.renders as number), 0),
   };
+}
+
+/** What MOUNTING the 500-ref sidebar costs — where all 500 row instances really
+ *  do render, so it is the honest place to assert the aggregation shape. */
+async function churnOfMount(): Promise<Churn> {
+  render(<Sidebar {...props()} />, { wrapper: StrictMode });
+  await drain();
+  return collect();
 }
 
 describe('acceptance (d) — 500-ref sidebar, one ref change ≤ 8 react records', () => {
@@ -200,32 +242,65 @@ describe('acceptance (d) — 500-ref sidebar, one ref change ≤ 8 react records
     }
     for (const [, n] of perComponent) expect(n).toBe(1);
 
-    // The BranchRow tally aggregates all 500 instances into a single record.
+    // A ONE-ref change now renders exactly the ONE row whose data changed — the
+    // whole point of the render-storm fix. (It was 500 instances / 1000 renders.)
     const branchTally = churn.tallies.find((r) => r.component === 'BranchRow');
-    expect(branchTally?.instances).toBe(500);
+    expect(branchTally?.instances).toBe(1);
+    expect(branchTally?.renders).toBe(2); // one real render, doubled by StrictMode
+  });
+
+  it('aggregates all 500 row instances into ONE tally record on mount', async () => {
+    // The aggregation claim itself (§9.2: one record per component, never per
+    // instance) is only observable where every instance renders — i.e. at mount.
+    const churn = await churnOfMount();
+    const branchTally = churn.tallies.filter((r) => r.component === 'BranchRow');
+    expect(branchTally).toHaveLength(1);
+    expect(branchTally[0]?.instances).toBe(500);
   });
 });
 
 /**
  * The churn budget. A RATCHET, NOT A TARGET: these numbers are what the current
- * code does, so they may only be lowered (the render-storm work that removes the
- * redundant state commits and memoises the rows should lower both). A failure
- * means the sidebar started re-rendering more per ref change than it used to.
+ * code does, so they may only be lowered. A failure means the sidebar started
+ * re-rendering more per ref change than it used to.
  *
- * Observed 2026-09-16 on one ref change: 1012 renders across 6 tallies
- * (BranchRow 1000/500 instances; the other five tallies also at 2 renders per
- * instance — RemoteRow 4/2) — i.e. exactly TWO renders per instance across the
- * board, which is ONE real render doubled by StrictMode
- * (obs/react.ts documents the 2× dev inflation). Proof this can fail: with one
- * induced extra prop change (`churnOfRefChange(2)`) it measured 2024 renders and 4
- * renders across 12 tallies: the tally flushed twice, so the second change
- * produced its own set of 6 records, the per-instance ratio stayed 2 in each, and
- * the SUM is what failed ("expected 2024 to be less than or equal to 1012"). The two forms are
- * complementary: the sum catches extra renders across windows, the per-instance
- * ratio catches several commits inside ONE window (the render-storm shape).
+ * Observed 2026-09-16, BEFORE the render-storm fix: 1012 renders across 6
+ * tallies — BranchRow 1000 renders over 500 instances, i.e. a one-ref change
+ * re-rendered every row in the sidebar.
+ *
+ * Observed 2026-09-16, AFTER it: **8 renders across 4 tallies** — BranchesSection
+ * 2/1, BranchRow 2/1, RemotesSection 2/1, TagsSection 2/1. A 126x cut, and the
+ * shape is the claim: BranchRow now reports ONE instance (the single branch whose
+ * `ahead` actually moved), and the Remote/ConfiguredRemote/Tag rows bail out
+ * entirely — they no longer report at all. The three sections still render
+ * because the snapshot they take really did change; only their rows are spared.
+ * Everything is 2 renders per instance, which is ONE real render doubled by
+ * StrictMode (obs/react.ts documents the 2x dev inflation) — hence
+ * MAX_RENDERS_PER_INSTANCE = 2, which cannot improve and must not be raised.
+ *
+ * Proof this still fails on a regression: with one induced extra prop change
+ * (`churnOfRefChange(2)`) it measures 16 renders across 8 tallies — the tally
+ * flushes twice, so the second change produces its own set of 4 records, the
+ * per-instance ratio stays 2 in each, and the SUM is what fails ("expected 16 to
+ * be less than or equal to 8"). The two forms are complementary: the sum catches
+ * extra renders across windows, the per-instance ratio catches several commits
+ * inside ONE window (the render-storm shape).
  */
-const MAX_TALLY_RENDERS = 1012;
+const MAX_TALLY_RENDERS = 8;
 const MAX_RENDERS_PER_INSTANCE = 2;
+
+/** A local-branch change must reach these — a budget over an empty set of
+ *  tallies would be vacuously green. */
+const MUST_REPORT = ['BranchRow', 'BranchesSection'];
+/** …and must NOT reach the remote rows: nothing about `origin/*` changed, so
+ *  they have no business re-rendering, and before the row memos they did.
+ *
+ *  `TagRow` and `StashRow` are deliberately NOT listed. They would pass
+ *  vacuously: the §9.4 refs-only fixture has an empty stash list and the Tags
+ *  section defaults to COLLAPSED, so neither row ever mounts here. They are
+ *  memoised the same way (TagsSection.tsx / sidebar/rows.tsx); this file just
+ *  cannot witness it, and an assertion that cannot fail is worse than none. */
+const MUST_NOT_REPORT = ['RemoteRow', 'ConfiguredRemoteRow'];
 
 describe('render churn budget — one ref change may not cost extra renders', () => {
   it('stays within the renders ratchet, at ≤2 renders per instance', async () => {
@@ -243,8 +318,38 @@ describe('render churn budget — one ref change may not cost extra renders', ()
       expect(renders / instances).toBeLessThanOrEqual(MAX_RENDERS_PER_INSTANCE);
     }
 
-    // Every instrumented sidebar component reported in — a budget over an empty
-    // set of tallies would be vacuously green.
-    expect(churn.tallies.length).toBeGreaterThanOrEqual(6);
+    const reported = new Set(churn.tallies.map((t) => t.component as string));
+    for (const c of MUST_REPORT) expect(reported).toContain(c);
+    for (const c of MUST_NOT_REPORT) expect(reported).not.toContain(c);
+
+    // The row that changed, and only that row.
+    const branchTally = churn.tallies.find((t) => t.component === 'BranchRow');
+    expect(branchTally?.instances).toBe(1);
+  });
+
+  /**
+   * NEGATIVE CONTROL for `onReveal`, the prop that made this whole budget
+   * vacuous: it was ABSENT from the fixture (⇒ `undefined` ⇒ trivially stable),
+   * so the suite was green whether `useReveal` latched `handleReveal` or handed
+   * out a fresh one per graph stream. Handing the rows a fresh function per
+   * render is exactly what an unlatched `useReveal` does, and this is what it
+   * costs: the pre-fix storm, in full.
+   */
+  it('FAILS on an unstable onReveal (the useReveal latch is load-bearing)', async () => {
+    const churn = await churnOfRefChange(1, () => ({ onReveal: () => {} }));
+    expect(churn.tallyRenders).toBeGreaterThan(MAX_TALLY_RENDERS);
+    // Every row re-renders: `rowPropsEqual` compares `onReveal` with `Object.is`.
+    const branchTally = churn.tallies.find((t) => t.component === 'BranchRow');
+    expect(branchTally?.instances).toBe(500);
+    expect(branchTally?.renders).toBe(1000);
+    expect(churn.tallyRenders).toBe(1010);
+  });
+
+  it('FAILS on an induced extra re-render (the ratchet is load-bearing)', async () => {
+    // Two prop changes instead of one: double the renders, double the tallies.
+    // Asserted explicitly so the budget above is provably not vacuous.
+    const churn = await churnOfRefChange(2);
+    expect(churn.tallyRenders).toBeGreaterThan(MAX_TALLY_RENDERS);
+    expect(churn.tallyRenders).toBe(2 * MAX_TALLY_RENDERS);
   });
 });

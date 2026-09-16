@@ -21,9 +21,12 @@
 //! such field, so a producer-supplied one is dropped as an unknown field at
 //! deserialisation, and this module is the only writer of it.
 //!
-//! **`OBS_SCHEMA_VERSION` stays 1** under the §13 row 23 pre-release carve-out:
-//! every field this amendment adds (`argsOmitted`, `argsPolicyViolation`) is
-//! optional and additive, P91 is branch-only, and no v1 corpus exists on disk.
+//! **This amendment does not move `OBS_SCHEMA_VERSION`**: every field it adds
+//! (`argsOmitted`, `argsPolicyViolation`) is optional and additive, and the
+//! version only moves when an existing field changes shape or meaning. (It now
+//! reads 2, bumped for `changedProps` — see `record.rs`'s module note; the §13
+//! row 23 pre-release carve-out that once justified 1 no longer applies, a v1
+//! corpus having been written to disk.)
 //!
 //! [`LogPayload`]: super::record::LogPayload
 

@@ -34,7 +34,8 @@ use super::metrics_keys::{is_valid_cmd_name, is_valid_counter_key, is_valid_err_
 use super::metrics_map;
 
 /// Current on-disk metrics schema. Bumped only if an EXISTING field changes
-/// shape; additive growth keeps it at 1 (mirrors `OBS_SCHEMA_VERSION`).
+/// shape; additive growth keeps it at 1. Independent of
+/// `OBS_SCHEMA_VERSION` (now 2) — same RULE, separate artefact and counter.
 pub const METRICS_SCHEMA_VERSION: u32 = 1;
 
 /// Daily buckets kept in full before the oldest folds into `lifetime` (§8).

@@ -125,3 +125,12 @@ export interface ReflogState {
   loading: boolean;
   error: string | null;
 }
+
+/** Render-storm rule (P91 follow-up): a refresh slice's progress flag is for
+ *  USER-initiated rounds only. `silent: true` runs the fetch without flipping
+ *  its `*Loading` state, so a watcher- or backend-push-driven round that finds
+ *  nothing new commits zero renders. Omitted ⇒ progress is shown (the mount
+ *  load and every direct caller keep their current behaviour). */
+export interface RefetchOpts {
+  silent?: boolean;
+}

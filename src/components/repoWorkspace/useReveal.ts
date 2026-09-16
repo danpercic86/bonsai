@@ -46,8 +46,26 @@ export function useReveal({ graph, setSelectedIndex, revealBranch, pushToast }: 
     return { byRef, byOid };
   }, [graph]);
 
+  // Render-storm fix (P91 follow-up) — DEPS-BY-REF, so `handleReveal` has ONE
+  // identity for the life of the container.
+  //
+  // It used to depend on `revealIndex`, which is rebuilt from `graph`, which
+  // `refetchGraph` re-streams on every round whose scope includes the graph
+  // (`full` / `refsOnly` / `remoteMeta` / `stash`). A `git branch foo` in a
+  // terminal therefore handed the sidebar a fresh `onReveal`, `rowPropsEqual`
+  // compared it with `Object.is`, and all 500 BranchRows plus every TagRow
+  // re-rendered — the pre-fix number, on the one scope the measured worktree
+  // storm could not witness. Same ref pattern as `useSidebarCallbacks` /
+  // `useContextMenuOpeners`, and safe for the same reason: `handleReveal` runs
+  // only from click/keyboard handlers, never during render, so it always reads
+  // the current graph.
+  const deps = { revealIndex, graph, pushToast, revealBranch, setSelectedIndex };
+  const revealRef = useRef(deps);
+  revealRef.current = deps;
+
   const handleReveal = useCallback(
     (t: RevealTarget) => {
+      const { revealIndex, graph, pushToast, revealBranch, setSelectedIndex } = revealRef.current;
       const i =
         t.kind === 'ref' ? revealIndex.byRef.get(t.name) ?? null : revealIndex.byOid.get(t.oid) ?? null;
       const label = revealTargetLabel(t);
@@ -70,7 +88,7 @@ export function useReveal({ graph, setSelectedIndex, revealBranch, pushToast }: 
       const oid = graph?.nodes[i]?.id ?? '';
       setRevealMessage(revealedMessage(label, oid, revealNonceRef.current));
     },
-    [revealIndex, graph, pushToast, revealBranch, setSelectedIndex],
+    [],
   );
 
   return { revealFlash, revealMessage, reducedMotion, handleReveal };

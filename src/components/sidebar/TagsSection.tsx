@@ -3,7 +3,7 @@
 // rollup, remote-only ghost rows and the offline "couldn't reach" line — lives in
 // one focused file. Presentational: all IPC + git logic stays in the container;
 // this only renders the precomputed TagSyncReport.
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import type { TagSyncEntry, TagSyncReport } from '../../ipc';
 import type { RevealTarget } from '../../graph/reveal';
 import { relativeDate } from '../../graph/draw';
@@ -11,6 +11,7 @@ import { buildPathTree } from '../../utils/pathTree';
 import { Tree } from '../Tree';
 import { ListFilterInput } from '../ListFilterInput';
 import { filterByName, filterItems, filterTree } from '../repoWorkspace/listFilter';
+import { rowPropsEqual } from '../../utils/structuralEqual';
 import { RefFilterMarker } from './RefFilterMarker';
 import { SectionHeader } from './SectionHeader';
 import { TagSyncBadge } from './TagSyncBadge';
@@ -24,17 +25,7 @@ const FILTER_MIN_ROWS = 6;
 /** P77 lifecycle of the live ls-remote reconciliation. */
 export type TagSyncState = 'idle' | 'checking' | 'ready' | 'unavailable';
 
-function TagRow({
-  name,
-  displayName,
-  sync,
-  remote,
-  ghost,
-  onContextMenu,
-  onReveal,
-  treeKey,
-  level = 2,
-}: {
+interface TagRowProps {
   name: string;
   displayName?: string;
   /** P77 sync verdict for this tag (undefined until state==='ready'). */
@@ -49,7 +40,19 @@ function TagRow({
   /** P-a11y §D.2: treeitem key (`tag:<name>`) + aria-level. */
   treeKey: string;
   level?: number;
-}) {
+}
+
+function TagRowImpl({
+  name,
+  displayName,
+  sync,
+  remote,
+  ghost,
+  onContextMenu,
+  onReveal,
+  treeKey,
+  level = 2,
+}: TagRowProps) {
   useRenderCount('TagRow', undefined, 'aggregate'); // §9.2 — module-local, shared key
   const item = useSidebarTreeItem({
     treeKey,
@@ -90,7 +93,12 @@ function TagRow({
   );
 }
 
-export function TagsSection({
+/** Render-storm fix (P91 follow-up): `sync` is a fresh `TagSyncEntry` off every
+ *  `list_tag_sync` report, so it is compared BY VALUE — a plain shallow memo
+ *  would never bail out once a report exists. */
+const TagRow = memo(TagRowImpl, rowPropsEqual<TagRowProps>(['sync']));
+
+function TagsSectionImpl({
   tags,
   treeMode,
   onTagContextMenu,
@@ -100,6 +108,7 @@ export function TagsSection({
   tagSyncRemote,
   tagSyncCheckedAt,
   onExpand,
+  now,
 }: {
   tags: string[];
   treeMode: boolean;
@@ -114,6 +123,10 @@ export function TagsSection({
   tagSyncCheckedAt: number | null;
   /** Fired when the section transitions collapsed → expanded (sync trigger §6). */
   onExpand(): void;
+  /** Unix SECONDS, ticked by the container (see `SidebarProps.now`). This section
+   *  is memoised, so the "last checked" age has to arrive as a prop — a
+   *  `Date.now()` in the render body froze at the last unrelated re-render. */
+  now: number;
 }) {
   useRenderCount('TagsSection', undefined, 'aggregate'); // §9.2
   // P11a: Tags start collapsed (least-used, can be long). Local/ephemeral state.
@@ -152,13 +165,21 @@ export function TagsSection({
   const showFilter = !collapsed && tags.length >= FILTER_MIN_ROWS;
   const query = showFilter ? tagFilter : '';
   const filtering = query.trim() !== '';
-  const tagsFiltered = filterByName(tags, query);
+  // Memoised alongside `tagTree` so a re-render with an unchanged query hands
+  // the rows below the same array identities (their `React.memo` needs it).
+  const tagsFiltered = useMemo(() => filterByName(tags, query), [tags, query]);
   const tagTree = useMemo(
     () => (treeMode ? buildPathTree(tags, (t) => t) : []),
     [treeMode, tags],
   );
-  const tagTreeFiltered = filterTree(tagTree, query, (t) => t);
-  const remoteOnlyFiltered = filterItems(remoteOnly, query, (e) => e.name);
+  const tagTreeFiltered = useMemo(
+    () => filterTree(tagTree, query, (t) => t),
+    [tagTree, query],
+  );
+  const remoteOnlyFiltered = useMemo(
+    () => filterItems(remoteOnly, query, (e) => e.name),
+    [remoteOnly, query],
+  );
   const noMatch =
     filtering && tagsFiltered.length === 0 && remoteOnlyFiltered.length === 0;
 
@@ -204,7 +225,7 @@ export function TagsSection({
               className="branch-muted"
               title={
                 tagSyncCheckedAt !== null
-                  ? `Last checked ${relativeDate(tagSyncCheckedAt, Math.floor(Date.now() / 1000))}`
+                  ? `Last checked ${relativeDate(tagSyncCheckedAt, now)}`
                   : undefined
               }
             >
@@ -284,3 +305,9 @@ export function TagsSection({
     </section>
   );
 }
+
+/** Render-storm fix (P91 follow-up): `tags` is an array of strings off the
+ *  branches snapshot and everything else is a scalar or a stable callback, so a
+ *  refresh round that changed nothing re-renders neither this section nor its
+ *  rows. */
+export const TagsSection = memo(TagsSectionImpl);

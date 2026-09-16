@@ -4,8 +4,16 @@
 // last-known list; these are secondary surfaces and must not block a refresh
 // round). Extracted verbatim from RepoWorkspace so the container only wires
 // them into `runRefreshRound` / the mount load.
+//
+// RENDER-STORM RULE (P91 follow-up): every fetch stores through
+// `keepIfUnchanged`, so a refresh round that found byte-identical data commits
+// NOTHING. The IPC layer hands back a fresh array on every call, so the old
+// unconditional `setX(list)` re-rendered the whole sidebar on each of the ~43
+// debounced watcher rounds a Dev session produced — and would have defeated the
+// rows' `React.memo` even after memoising them.
 import { useCallback, useRef, useState } from 'react';
 import { ipc } from '../../ipc';
+import { keepIfUnchanged } from '../../utils/structuralEqual';
 import type { RemoteInfo, StashEntry, SubmoduleInfo, WorktreeInfo } from '../../ipc';
 
 export interface UseSidebarCollections {
@@ -41,7 +49,7 @@ export function useSidebarCollections(repoId: string): UseSidebarCollections {
     try {
       const list = await ipc.listStashes(repoId);
       if (id !== stashesReqId.current) return;
-      setStashes(list);
+      keepIfUnchanged(setStashes, list);
     } catch {
       if (id !== stashesReqId.current) return;
       // Non-fatal: stashes are a secondary surface; keep the last-known list.
@@ -58,7 +66,7 @@ export function useSidebarCollections(repoId: string): UseSidebarCollections {
     try {
       const list = await ipc.listSubmodules(repoId);
       if (id !== submodulesReqId.current) return;
-      setSubmodules(list);
+      keepIfUnchanged(setSubmodules, list);
     } catch {
       if (id !== submodulesReqId.current) return;
       // Non-fatal: submodules are a secondary surface; keep the last-known list.
@@ -75,7 +83,7 @@ export function useSidebarCollections(repoId: string): UseSidebarCollections {
     try {
       const list = await ipc.listWorktrees(repoId);
       if (id !== worktreesReqId.current) return;
-      setWorktrees(list);
+      keepIfUnchanged(setWorktrees, list);
     } catch {
       if (id !== worktreesReqId.current) return;
       // Non-fatal: worktrees are a secondary surface; keep the last-known list.
@@ -92,7 +100,7 @@ export function useSidebarCollections(repoId: string): UseSidebarCollections {
     try {
       const list = await ipc.listRemotes(repoId);
       if (id !== remotesReqId.current) return;
-      setRemotes(list);
+      keepIfUnchanged(setRemotes, list);
     } catch {
       if (id !== remotesReqId.current) return;
       // Non-fatal: remotes are a secondary surface; keep the last-known list.

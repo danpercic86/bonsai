@@ -4,6 +4,20 @@
 // treeitem (roving tabindex); movement is owned by the tree root. Right-click
 // (`onContextMenu`) and double-click (checkout) behaviour is byte-preserved from
 // the original inline components — the keyboard path is additive.
+//
+// EVERY ROW IS `React.memo`d (render-storm fix, P91 follow-up). A repo with 500
+// branches used to re-render all 500 rows on every container commit — ~26k
+// BranchRow renders in one 6-minute Dev session. Two things make the memo
+// actually hold, and both are load-bearing:
+//   1. The callback props must be identity-stable across a container commit
+//      (repoWorkspace/useSidebarCallbacks.ts + the stable context-menu openers).
+//   2. The DATA prop must be compared STRUCTURALLY, not by reference: git2 +
+//      serde hand back a brand-new `BranchInfo` on every `list_branches`, so a
+//      plain shallow memo would never bail out. Hence `rowPropsEqual([...])`,
+//      which names exactly the fresh-every-round object props.
+// Rows taking only scalars (StashRow, RemoteRow, DetachedHeadRow) use the
+// default shallow comparison.
+import { memo } from 'react';
 import type { BranchInfo, RemoteInfo, WorktreeInfo } from '../../ipc';
 import type { RevealTarget } from '../../graph/reveal';
 import { relativeDate } from '../../graph/draw';
@@ -18,6 +32,7 @@ import {
 import { RefFilterMarker } from './RefFilterMarker';
 import { useSidebarTreeItem } from './useSidebarTreeItem';
 import { useRenderCount } from '../../obs/react';
+import { rowPropsEqual } from '../../utils/structuralEqual';
 
 type BranchContextMenu = (
   name: string,
@@ -40,16 +55,7 @@ export function AheadBehindBadge({ branch }: { branch: BranchInfo }) {
   );
 }
 
-export function BranchRow({
-  branch,
-  busy,
-  onCheckout,
-  onContextMenu,
-  onReveal,
-  displayName,
-  treeKey,
-  level = 2,
-}: {
+export interface BranchRowProps {
   branch: BranchInfo;
   busy: boolean;
   onCheckout(name: string): void;
@@ -62,7 +68,18 @@ export function BranchRow({
   displayName?: string;
   treeKey: string;
   level?: number;
-}) {
+}
+
+function BranchRowImpl({
+  branch,
+  busy,
+  onCheckout,
+  onContextMenu,
+  onReveal,
+  displayName,
+  treeKey,
+  level = 2,
+}: BranchRowProps) {
   useRenderCount('BranchRow', undefined, 'aggregate'); // §9.2 — one shared tally key
   const isHead = branch.isHead;
   // HEAD branch: Enter no-op (already checked out). The keyboard menu opens for
@@ -102,7 +119,10 @@ export function BranchRow({
   );
 }
 
-export function RemoteRow({
+/** `branch` is a fresh object on every `list_branches` — compare it by value. */
+export const BranchRow = memo(BranchRowImpl, rowPropsEqual<BranchRowProps>(['branch']));
+
+function RemoteRowImpl({
   name,
   displayName,
   onContextMenu,
@@ -147,19 +167,24 @@ export function RemoteRow({
   );
 }
 
+/** Scalar props only → the default shallow comparison is enough. */
+export const RemoteRow = memo(RemoteRowImpl);
+
 /** P22 §6.2: a configured-remote row (name + fetch URL), distinct from the
  *  remote-tracking-branch rows. Right-click / Enter opens the manage menu. */
-export function ConfiguredRemoteRow({
-  remote,
-  onContextMenu,
-  treeKey,
-  level = 2,
-}: {
+export interface ConfiguredRemoteRowProps {
   remote: RemoteInfo;
   onContextMenu(name: string, clientX: number, clientY: number): void;
   treeKey: string;
   level?: number;
-}) {
+}
+
+function ConfiguredRemoteRowImpl({
+  remote,
+  onContextMenu,
+  treeKey,
+  level = 2,
+}: ConfiguredRemoteRowProps) {
   useRenderCount('ConfiguredRemoteRow', undefined, 'aggregate'); // §9.2
   const item = useSidebarTreeItem({
     treeKey,
@@ -192,11 +217,18 @@ export function ConfiguredRemoteRow({
   );
 }
 
-export function StashRow({
+/** `remote` is fresh on every `list_remotes` — compare it by value. */
+export const ConfiguredRemoteRow = memo(
+  ConfiguredRemoteRowImpl,
+  rowPropsEqual<ConfiguredRemoteRowProps>(['remote']),
+);
+
+function StashRowImpl({
   index,
   oid,
   message,
   ts,
+  now,
   onContextMenu,
   onReveal,
   treeKey,
@@ -206,6 +238,11 @@ export function StashRow({
   oid: string;
   message: string;
   ts: number;
+  /** Unix SECONDS, ticked by the container (see `SidebarProps.now`). Read from a
+   *  prop, never `Date.now()`: this row is memoised, so a clock read in the
+   *  render body would freeze the age label until the row changed for some
+   *  other reason. */
+  now: number;
   onContextMenu(index: number, oid: string, clientX: number, clientY: number): void;
   /** P84: stashes aren't ref-labelled in the graph → reveal by oid. */
   onReveal?: (t: RevealTarget) => void;
@@ -214,7 +251,6 @@ export function StashRow({
 }) {
   useRenderCount('StashRow', undefined, 'aggregate'); // §9.2
   const label = `stash@{${index}}`;
-  const now = Math.floor(Date.now() / 1000);
   const item = useSidebarTreeItem({
     treeKey,
     level,
@@ -249,6 +285,15 @@ export function StashRow({
   );
 }
 
+/** Scalar props only → the default shallow comparison is enough.
+ *
+ *  KNOWN CONSEQUENCE: `now` is read in the render body, so the relative age
+ *  ("5 minutes ago") only re-reads the clock when this row actually re-renders.
+ *  The render storm used to refresh it incidentally, every few seconds. Filed as
+ *  a follow-up — the fix is an explicit slow tick, not un-memoising a row to get
+ *  a clock for free. */
+export const StashRow = memo(StashRowImpl);
+
 /** P27 §6.2: display-only badge pills for a worktree row. A row may show more
  *  than one (e.g. current + main). Reuses the P19 badge intent classes. */
 function worktreeBadges(wt: WorktreeInfo): { label: string; intent: string; title?: string }[] {
@@ -261,17 +306,14 @@ function worktreeBadges(wt: WorktreeInfo): { label: string; intent: string; titl
   return out;
 }
 
-export function WorktreeRow({
-  wt,
-  onContextMenu,
-  treeKey,
-  level = 2,
-}: {
+export interface WorktreeRowProps {
   wt: WorktreeInfo;
   onContextMenu(name: string, clientX: number, clientY: number): void;
   treeKey: string;
   level?: number;
-}) {
+}
+
+function WorktreeRowImpl({ wt, onContextMenu, treeKey, level = 2 }: WorktreeRowProps) {
   useRenderCount('WorktreeRow', undefined, 'aggregate'); // §9.2
   const item = useSidebarTreeItem({
     treeKey,
@@ -308,9 +350,12 @@ export function WorktreeRow({
   );
 }
 
+/** `wt` is fresh on every `list_worktrees` — compare it by value. */
+export const WorktreeRow = memo(WorktreeRowImpl, rowPropsEqual<WorktreeRowProps>(['wt']));
+
 /** Detached-HEAD info row (§D.2): a readable, action-less level-2 treeitem
  *  (`aria-disabled`), so keyboard nav lands on it but Enter/menu are no-ops. */
-export function DetachedHeadRow({
+function DetachedHeadRowImpl({
   oid,
   treeKey,
   level = 2,
@@ -330,6 +375,9 @@ export function DetachedHeadRow({
     </li>
   );
 }
+
+/** Scalar props only → the default shallow comparison is enough. */
+export const DetachedHeadRow = memo(DetachedHeadRowImpl);
 
 export function SkeletonRows() {
   return (

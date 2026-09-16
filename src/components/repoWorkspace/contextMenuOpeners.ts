@@ -3,6 +3,7 @@
 // state from the prebuilt item arrays in `workspaceMenus.ts`. Extracted
 // verbatim from RepoWorkspace; rebuilt each render over the current state +
 // menus so the produced handlers stay byte-identical to the old inline ones.
+import { useMemo, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { BranchInfo, SubmoduleInfo, WorktreeInfo } from '../../ipc';
 import type { ContextMenuState } from '../ContextMenu';
@@ -40,7 +41,7 @@ export interface ContextMenuOpeners {
   ) => void;
 }
 
-export function createContextMenuOpeners({
+function createContextMenuOpeners({
   setMenu,
   menus,
   submodules,
@@ -110,4 +111,41 @@ export function createContextMenuOpeners({
     handleGraphContextMenu,
     handleSidebarContextMenu,
   };
+}
+
+/**
+ * Render-storm fix (P91 follow-up) — the same openers with STABLE identities.
+ *
+ * `createContextMenuOpeners` rebuilds seven closures per render by design (it
+ * closes over the current state), and those closures are the `onContextMenu`
+ * prop of every sidebar row. Handing a row a fresh function on every container
+ * commit defeats its `React.memo` outright, so the rows can only be memoised if
+ * these are stable.
+ *
+ * The deps are held in a ref and the openers are built lazily AT CALL TIME, so
+ * each still reads the current state (they only ever run from a right-click /
+ * keyboard-menu event, never during render) while the identities never change.
+ */
+export function useContextMenuOpeners(deps: ContextMenuOpenerDeps): ContextMenuOpeners {
+  const ref = useRef(deps);
+  ref.current = deps;
+  return useMemo<ContextMenuOpeners>(
+    () => ({
+      handleStashContextMenu: (i, oid, x, y) =>
+        createContextMenuOpeners(ref.current).handleStashContextMenu(i, oid, x, y),
+      handleSubmoduleContextMenu: (n, x, y) =>
+        createContextMenuOpeners(ref.current).handleSubmoduleContextMenu(n, x, y),
+      handleWorktreeContextMenu: (n, x, y) =>
+        createContextMenuOpeners(ref.current).handleWorktreeContextMenu(n, x, y),
+      handleTagContextMenu: (n, x, y) =>
+        createContextMenuOpeners(ref.current).handleTagContextMenu(n, x, y),
+      handleRemoteContextMenu: (n, x, y) =>
+        createContextMenuOpeners(ref.current).handleRemoteContextMenu(n, x, y),
+      handleGraphContextMenu: (t, x, y) =>
+        createContextMenuOpeners(ref.current).handleGraphContextMenu(t, x, y),
+      handleSidebarContextMenu: (n, k, x, y) =>
+        createContextMenuOpeners(ref.current).handleSidebarContextMenu(n, k, x, y),
+    }),
+    [],
+  );
 }

@@ -1,4 +1,4 @@
-//! P91 §3 — the observability record schema (v1).
+//! P91 §3 — the observability record schema (v2).
 //!
 //! ONE concern: the wire/on-disk shape of a log record. No IO, no policy, no
 //! redaction — those live in `writer.rs` / `sink.rs` / `redact.rs`.
@@ -15,13 +15,24 @@
 //!     to their exact `kind` string, so a new kind is one variant + one
 //!     `#[serde(rename = "…")]`.
 //!
-//! `OBS_SCHEMA_VERSION` stays `1` for additive changes; it is bumped only when
+//! `OBS_SCHEMA_VERSION` stays put for additive changes; it is bumped only when
 //! an EXISTING field changes shape or meaning.
+//!
+//! **v1 → v2 (2026-09-16).** `RenderTally::changed_props` went from
+//! `Vec<String>` to `Option<Vec<String>>`: an ABSENT field now means "this call
+//! site tracks no props", where v1 wrote `[]` for both that and "tracked,
+//! nothing changed". That is an existing field changing both shape and meaning,
+//! so by the rule above it bumps. It was briefly left at 1 under the §13 row 23
+//! pre-release carve-out, part of whose ground was that no v1 corpus existed on
+//! disk; that ground has lapsed — a real Dev session has since written 11,848
+//! schema-1 records, 680 of them carrying the old ambiguous `[]`. A reader can
+//! now tell the two encodings apart by the header's `schema`, which is the whole
+//! point of the field.
 
 use serde::{Deserialize, Serialize};
 
 /// Record-schema version, written into the `session` header record (§6).
-pub const OBS_SCHEMA_VERSION: u32 = 1;
+pub const OBS_SCHEMA_VERSION: u32 = 2;
 
 /// Verbosity level of a record AND the Dev-mode capture threshold
 /// (`DevSettings::level`, §10). Ordered most- to least-severe; `trace`
@@ -224,8 +235,9 @@ pub enum LogPayload {
         /// `argsOmitted` would be dropped as an unknown field at deserialisation
         /// and `raw_args`' W6 rule would be unreachable in production.
         ///
-        /// Optional + additive, so `OBS_SCHEMA_VERSION` stays **1** under the §13
-        /// row 23 pre-release carve-out (P91 is branch-only; no v1 corpus on disk).
+        /// Optional + additive, so this field alone does not move
+        /// `OBS_SCHEMA_VERSION` (the version is at 2 for an unrelated reason —
+        /// see the module note).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         args_omitted: Option<u32>,
     },

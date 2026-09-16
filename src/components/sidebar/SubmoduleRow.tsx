@@ -1,19 +1,15 @@
 // P73 §2: extracted from Sidebar.tsx (over the ~500-line soft limit) so the
 // submodule row — badge copy, busy state, context-menu hand-off — lives in one
 // small file. First component in src/components/sidebar/.
+import { memo } from 'react';
 import type { SubmoduleInfo } from '../../ipc';
 import type { SubmoduleBusy } from '../repoWorkspace/types';
 import { SUBMODULE_BADGE } from './submoduleBadges';
 import { useSidebarTreeItem } from './useSidebarTreeItem';
 import { useRenderCount } from '../../obs/react';
+import { rowPropsEqual } from '../../utils/structuralEqual';
 
-export function SubmoduleRow({
-  sub,
-  submoduleBusy,
-  onContextMenu,
-  treeKey,
-  level = 2,
-}: {
+export interface SubmoduleRowProps {
   sub: SubmoduleInfo;
   /** P73 §6.1: the row with an op in flight + the participle its badge shows. */
   submoduleBusy: SubmoduleBusy | null;
@@ -21,7 +17,15 @@ export function SubmoduleRow({
   /** P-a11y §D.2: treeitem key (`submodule:<name>`) + aria-level. */
   treeKey?: string;
   level?: number;
-}) {
+}
+
+function SubmoduleRowImpl({
+  sub,
+  submoduleBusy,
+  onContextMenu,
+  treeKey,
+  level = 2,
+}: SubmoduleRowProps) {
   useRenderCount('SubmoduleRow', undefined, 'aggregate'); // §9.2
   const badge = SUBMODULE_BADGE[sub.status];
   const busy = submoduleBusy?.name === sub.name ? submoduleBusy.label : null;
@@ -65,3 +69,11 @@ export function SubmoduleRow({
     </li>
   );
 }
+
+/** Render-storm fix: `sub` is fresh on every `list_submodules` and
+ *  `submoduleBusy` is a small state object, so both are compared BY VALUE — a
+ *  shallow memo would bail out on neither. */
+export const SubmoduleRow = memo(
+  SubmoduleRowImpl,
+  rowPropsEqual<SubmoduleRowProps>(['sub', 'submoduleBusy']),
+);

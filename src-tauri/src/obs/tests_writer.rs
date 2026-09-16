@@ -71,7 +71,7 @@ fn first_line_is_a_valid_session_header() {
     assert!(name.starts_with("bonsai-") && name.ends_with(".jsonl"), "{name}");
     let rows = lines(&dir.path().join(&name));
     assert_eq!(rows[0]["kind"], "session");
-    assert_eq!(rows[0]["schema"], 1);
+    assert_eq!(rows[0]["schema"], 2);
     assert_eq!(rows[0]["redaction"], "strict");
     assert_eq!(rows[0]["devMode"], true);
     assert_eq!(rows[0]["sessionId"], "sdeadbeef");

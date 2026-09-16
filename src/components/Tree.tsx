@@ -10,7 +10,7 @@ import { useSidebarTreeItem } from './sidebar/useSidebarTreeItem';
 // keep the set (stale keys are harmless), unmount discards it.
 
 export interface TreeProps<T> {
-  nodes: TreeNode<T>[];
+  nodes: readonly TreeNode<T>[];
   /** Renders a COMPLETE <li> for a leaf (reuse existing FileRow / BranchRow /
    *  tag-row markup unchanged — Tree never inspects leaf content). `level` is the
    *  1-based aria-level for the leaf (P-a11y §D.8); file-tree callers ignore it. */
@@ -53,7 +53,7 @@ function collectLeaves<T>(node: Extract<TreeNode<T>, { kind: 'dir' }>, out: Tree
   }
 }
 
-function collectDirPrefixes<T>(nodes: TreeNode<T>[], out: string[]): void {
+function collectDirPrefixes<T>(nodes: readonly TreeNode<T>[], out: string[]): void {
   for (const n of nodes) {
     if (n.kind === 'dir') {
       out.push(n.fullPrefix);
@@ -139,7 +139,7 @@ function TreeDir<T>({
 }
 
 function renderNodes<T>(
-  nodes: TreeNode<T>[],
+  nodes: readonly TreeNode<T>[],
   props: TreeProps<T>,
   collapsed: Set<string>,
   toggle: (prefix: string) => void,

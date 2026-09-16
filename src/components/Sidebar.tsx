@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type {
   BranchesSnapshot,
   ListView,
+  RemoteBranchInfo,
   RemoteInfo,
   StashEntry,
   SubmoduleInfo,
@@ -31,6 +32,10 @@ import { useSidebarTreeNav } from './sidebar/useSidebarTreeNav';
 /** P50d: show a section's inline type-to-filter box only once the list is long
  *  enough to warrant it — keeps short lists uncluttered (contract §7). */
 const FILTER_MIN_ROWS = 6;
+
+/** One stable empty array for the no-snapshot case, so the memo below does not
+ *  mint a fresh `[]` identity on every render. */
+const NO_REMOTE_BRANCHES: readonly RemoteBranchInfo[] = Object.freeze([]);
 
 export interface SidebarProps {
   data: BranchesSnapshot | null;
@@ -110,6 +115,14 @@ export interface SidebarProps {
    *  graph (scroll + flash). Additive to double-click checkout; keyboard is
    *  intentionally out of scope. */
   onReveal?: (t: RevealTarget) => void;
+  /** Render-storm fix (P91 follow-up): the CLOCK as an explicit prop — unix
+   *  SECONDS, re-sampled by the container's 30 s `jobNow` ticker. The sections
+   *  and rows are memoised, so a `Date.now()` in a render body freezes the
+   *  relative-age labels; a ticked prop is what the memo comparators can SEE
+   *  change. 30 s is the cadence these labels already had (that same ticker
+   *  re-rendered the unmemoised Sidebar) and `relativeDate`'s finest bucket is
+   *  one minute, so a label is never more than 30 s late. */
+  now: number;
 }
 
 /** Left sidebar: branches / remotes / tags (M5 contract §4.2). Presentational
@@ -152,6 +165,7 @@ export function Sidebar({
   onAddRemote,
   onCleanupBranches,
   onReveal,
+  now,
 }: SidebarProps) {
   // P91 §9.2 surface 6 — container render churn (each mode). The observed flicker
   // site; the section/row tallies aggregate underneath this record.
@@ -206,8 +220,17 @@ export function Sidebar({
   const showBranchFilter = !branchesCollapsed && (data?.local.length ?? 0) >= FILTER_MIN_ROWS;
   const branchQuery = showBranchFilter ? branchFilter : '';
   const branchFiltering = branchQuery.trim() !== '';
-  const localFlatFiltered = filterItems(localFlat, branchQuery, (b) => b.name);
-  const localTreeFiltered = filterTree(localTree, branchQuery, (b) => b.name);
+  // Memoised like `localFlat`/`localTree` above: these five arrays are props of
+  // the memoised sections, so a fresh identity per render would re-render every
+  // section (and, before the row memos, every row) on any container commit.
+  const localFlatFiltered = useMemo(
+    () => filterItems(localFlat, branchQuery, (b) => b.name),
+    [localFlat, branchQuery],
+  );
+  const localTreeFiltered = useMemo(
+    () => filterTree(localTree, branchQuery, (b) => b.name),
+    [localTree, branchQuery],
+  );
   const branchNoMatch = branchFiltering && localFlatFiltered.length === 0;
 
   // The Remotes section counts configured remotes + tracking rows and filters
@@ -216,19 +239,32 @@ export function Sidebar({
     !remotesCollapsed && remotes.length + (data?.remote.length ?? 0) >= FILTER_MIN_ROWS;
   const remoteQuery = showRemoteFilter ? remoteFilter : '';
   const remoteFiltering = remoteQuery.trim() !== '';
-  const remotesFiltered = filterItems(remotes, remoteQuery, (r) => r.name);
-  const remoteFlatFiltered = filterItems(data?.remote ?? [], remoteQuery, (r) => r.name);
-  const remoteTreeFiltered = filterTree(remoteTree, remoteQuery, (r) => r.name);
+  const remotesFiltered = useMemo(
+    () => filterItems(remotes, remoteQuery, (r) => r.name),
+    [remotes, remoteQuery],
+  );
+  // `data.remote` directly (not `?? []`) so an absent snapshot yields ONE stable
+  // empty array instead of a fresh literal per render.
+  const remoteFlatFiltered = useMemo(
+    () => filterItems(data?.remote ?? NO_REMOTE_BRANCHES, remoteQuery, (r) => r.name),
+    [data?.remote, remoteQuery],
+  );
+  const remoteTreeFiltered = useMemo(
+    () => filterTree(remoteTree, remoteQuery, (r) => r.name),
+    [remoteTree, remoteQuery],
+  );
   const remoteNoMatch =
     remoteFiltering && remotesFiltered.length === 0 && remoteFlatFiltered.length === 0;
 
-  function closeCreate() {
+  // Both are props of the memoised BranchesSection — plain function
+  // declarations would hand it a fresh identity on every container render.
+  const closeCreate = useCallback(() => {
     setCreateOpen(false);
     setCreateValue('');
     setCreateError(null);
-  }
+  }, []);
 
-  async function submitCreate() {
+  const submitCreate = useCallback(async () => {
     const trimmed = createValue.trim();
     if (trimmed === '' || actionsDisabled) return;
     try {
@@ -237,7 +273,7 @@ export function Sidebar({
     } catch (e) {
       setCreateError(errorMessage(e));
     }
-  }
+  }, [createValue, actionsDisabled, onCreateBranch, closeCreate]);
 
   return (
     <aside className="sidebar" style={{ width }}>
@@ -319,6 +355,7 @@ export function Sidebar({
               tagSyncRemote={tagSyncRemote}
               tagSyncCheckedAt={tagSyncCheckedAt}
               onExpand={onTagsExpand}
+              now={now}
             />
 
             <section className="sidebar-section">
@@ -356,6 +393,7 @@ export function Sidebar({
                         oid={s.oid}
                         message={s.message}
                         ts={s.ts}
+                        now={now}
                         onContextMenu={onStashContextMenu}
                         onReveal={onReveal}
                         treeKey={`stash:${s.index}`}

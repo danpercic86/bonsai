@@ -37,8 +37,11 @@ import { useRepoChangeSubscription } from './repoWorkspace/useRepoChangeSubscrip
 import { useJobStatus } from './repoWorkspace/useJobStatus';
 import { useImageDiff } from './repoWorkspace/useImageDiff';
 import { useSidebarCollections } from './repoWorkspace/useSidebarCollections';
+import { useSidebarCallbacks } from './repoWorkspace/useSidebarCallbacks';
+import type { RefetchOpts } from './repoWorkspace/types';
+import { keepIfUnchanged } from '../utils/structuralEqual';
 import { useAskBonsai } from './repoWorkspace/useAskBonsai';
-import { createContextMenuOpeners } from './repoWorkspace/contextMenuOpeners';
+import { useContextMenuOpeners } from './repoWorkspace/contextMenuOpeners';
 import { useCompareMode } from './repoWorkspace/useCompareMode';
 import { useWorkspaceDialogState } from './repoWorkspace/useWorkspaceDialogState';
 import { useDiffOverlayView } from './repoWorkspace/useDiffOverlayView';
@@ -630,8 +633,9 @@ export function RepoWorkspace({
           ? await ipc.listConflicts(repoId)
           : [];
       if (id !== opStateReqId.current) return;
-      setOpState(op);
-      setConflicts(list);
+      // Render-storm rule: same op/conflict set ⇒ no commit (fresh IPC objects).
+      keepIfUnchanged(setOpState, op);
+      keepIfUnchanged(setConflicts, list);
       const slot = diffSlotRef.current;
       if (slot !== null && slot.key.startsWith('conflict:')) {
         const path = slot.key.slice('conflict:'.length);
@@ -678,13 +682,13 @@ export function RepoWorkspace({
     setConflicts([]);
   }, []);
 
-  const refetchStatus = useCallback(async () => {
+  const refetchStatus = useCallback(async (opts?: RefetchOpts) => {
     const id = ++statusReqId.current;
-    setStatusLoading(true);
+    if (opts?.silent !== true) setStatusLoading(true);
     try {
       const snapshot = await ipc.getStatus(repoId);
       if (id !== statusReqId.current) return;
-      setStatus(snapshot);
+      keepIfUnchanged(setStatus, snapshot);
       setStatusError(null);
       const slot = diffSlotRef.current;
       if (
@@ -718,7 +722,7 @@ export function RepoWorkspace({
       if (id !== statusReqId.current) return;
       reportStatusError(errorMessage(e));
     } finally {
-      if (id === statusReqId.current) setStatusLoading(false);
+      if (opts?.silent !== true && id === statusReqId.current) setStatusLoading(false);
     }
   }, [repoId, fetchDiffSlot, collapseDiffSlot, reportStatusError, diffViewModeRef, intralineRef]);
 
@@ -783,19 +787,20 @@ export function RepoWorkspace({
     }
   }, [repoId, graphFilterRef, setGraphFilterFlags, fold.setSpans]); // all hook-stable
 
-  const refetchBranches = useCallback(async () => {
+  const refetchBranches = useCallback(async (opts?: RefetchOpts) => {
     const id = ++branchesReqId.current;
-    setBranchesLoading(true);
+    if (opts?.silent !== true) setBranchesLoading(true);
     try {
       const snapshot = await ipc.listBranches(repoId);
       if (id !== branchesReqId.current) return;
-      setBranches(snapshot);
+      // This snapshot IS the Sidebar's `data` prop (500 BranchRows): no-op ⇒ no commit.
+      keepIfUnchanged(setBranches, snapshot);
       setBranchesError(null);
     } catch (e) {
       if (id !== branchesReqId.current) return;
       setBranchesError(errorMessage(e));
     } finally {
-      if (id === branchesReqId.current) setBranchesLoading(false);
+      if (opts?.silent !== true && id === branchesReqId.current) setBranchesLoading(false);
     }
   }, [repoId]);
 
@@ -816,13 +821,16 @@ export function RepoWorkspace({
     setSelectedIndex(null);
   }, []);
 
-  // P81: origin-forced tag-sync flag for the NEXT round. Set synchronously by
-  // `refresh(origin)` before the coalescer starts a round; read+cleared at the
-  // start of `runRefreshRound`. `manual`/`activation`/`focus`/`mutation` origins
-  // force an ls-remote tag-drift re-check; the `watcher` (external repo-changed)
-  // origin leaves it false → NON-forced tagSync (P77: no-op until Tags opened),
-  // so an external FS event never forces a network ls-remote (Flag 2).
-  const pendingTagForceRef = useRef(false);
+  // P81: "a USER-initiated origin has joined the NEXT round" — set synchronously
+  // by `refresh(origin)`, read+cleared at the start of `runRefreshRound`.
+  // `manual`/`activation`/`focus`/`mutation` set it; `watcher` (raw fs echo) and
+  // `external` (backend-confirmed change) leave it false. It gates two things on
+  // that one condition: the ls-remote tag-drift re-check, so an FS event never
+  // forces network I/O (P81 Flag 2), and the status/branches PROGRESS flags —
+  // flipping `statusLoading` was otherwise a guaranteed state commit, i.e. a
+  // whole-sidebar re-render, on each of the ~43 debounced watcher rounds of a
+  // Dev session, changed data or not (render-storm rule).
+  const pendingUserOriginRef = useRef(false);
 
   /** Composite post-op refresh (P1 §4.6): the canonical refresh round (P81 §2);
    *  all origins funnel through the coalescer to it. P86a: SCOPED — only the
@@ -834,8 +842,8 @@ export function RepoWorkspace({
    *  failures surface as a sticky error toast. */
   const runRefreshRound = useCallback(
     async (scope: RefreshScope): Promise<void> => {
-      const forceTagSync = pendingTagForceRef.current;
-      pendingTagForceRef.current = false;
+      const userOrigin = pendingUserOriginRef.current;
+      pendingUserOriginRef.current = false;
       const slices = slicesForScope(scope);
       try {
         if (slices.openRepo) {
@@ -856,9 +864,9 @@ export function RepoWorkspace({
           }
         }
         const tasks: Promise<void>[] = [];
-        if (slices.status) tasks.push(refetchStatus());
+        if (slices.status) tasks.push(refetchStatus({ silent: !userOrigin }));
         if (slices.graph) tasks.push(refetchGraph());
-        if (slices.branches) tasks.push(refetchBranches());
+        if (slices.branches) tasks.push(refetchBranches({ silent: !userOrigin }));
         if (slices.stashes) tasks.push(refetchStashes());
         if (slices.submodules) tasks.push(refetchSubmodules());
         if (slices.worktrees) tasks.push(refetchWorktrees());
@@ -870,7 +878,7 @@ export function RepoWorkspace({
           // once this session). P81 Flag 2 / P86a: only `full` from a forcing
           // origin (manual/focus/mutation) pays the ls-remote; `remoteMeta` and
           // watcher-driven rounds run non-forced.
-          const forced = slices.tagSyncForcable && forceTagSync;
+          const forced = slices.tagSyncForcable && userOrigin;
           tasks.push(refetchTagSync(forced ? { force: true } : undefined));
         }
         await Promise.all(tasks);
@@ -893,12 +901,12 @@ export function RepoWorkspace({
   const { refresh: coalescedRefresh } = useCoalescedRefresh(repoId, runRefreshRound);
   const refresh = useCallback(
     (origin: RefreshOrigin, scope: RefreshScope, trace?: TraceId): Promise<void> => {
-      // Forced tag-drift re-check for user-initiated origins (mutation writes,
-      // manual refresh, activation self-heal, focus rescan). Set BEFORE enqueuing
-      // so the round about to start reads it (P81 Flag 2). `watcher` (raw fs echo)
-      // and `external` (backend-confirmed change — the backend already ran the
-      // tag-sync) do NOT force a fresh ls-remote.
-      if (origin !== 'watcher' && origin !== 'external') pendingTagForceRef.current = true;
+      // Mark the round user-initiated (mutation writes, manual refresh, activation
+      // self-heal, focus rescan) → forced tag-drift re-check + visible progress.
+      // Set BEFORE enqueuing so the round about to start reads it (P81 Flag 2).
+      // `watcher` (raw fs echo) and `external` (backend-confirmed change — the
+      // backend already ran the tag-sync) stay background: no ls-remote, no spinner.
+      if (origin !== 'watcher' && origin !== 'external') pendingUserOriginRef.current = true;
       return coalescedRefresh(origin, scope, trace);
     },
     [coalescedRefresh],
@@ -1763,13 +1771,21 @@ export function RepoWorkspace({
     handleRemoteContextMenu,
     handleGraphContextMenu,
     handleSidebarContextMenu,
-  } = createContextMenuOpeners({
+  } = useContextMenuOpeners({
     setMenu,
     menus,
     submodules,
     worktrees,
     headBranch,
     graphFilter,
+  });
+
+  // The Sidebar's nine action callbacks, identity-stable across a container
+  // commit — spread at the `<Sidebar>` call site (useSidebarCallbacks.ts).
+  const sidebarCallbacks = useSidebarCallbacks({
+    setBranchesError, handleCheckoutBranch, handleCreateBranch, handleCreateStash,
+    refetchTagSync, setPendingAddSubmodule, setNewWorktreeOpen, setPendingAddRemote,
+    setStaleCleanupOpen,
   });
 
   // P39b: bisect-banner oid summaries (extracted to bisectSummaries.ts).
@@ -1840,38 +1856,29 @@ export function RepoWorkspace({
           data={branches}
           loading={branchesLoading}
           error={branchesError}
-          onDismissError={() => setBranchesError(null)}
           busy={mutating}
           opActive={opActive}
           currentBranch={headBranch?.name ?? null}
-          onCheckout={traced('click', GESTURES.branchCheckout, (name: string) => {
-            void handleCheckoutBranch(name);
-          })}
           onContextMenu={handleSidebarContextMenu}
-          onCreateBranch={traced('click', GESTURES.branchCreate, handleCreateBranch)}
           width={paneWidths.sidebar}
           listView={listView}
           stashes={stashes}
-          onCreateStash={() => void handleCreateStash('allWithUntracked')}
           onStashContextMenu={handleStashContextMenu}
           submodules={submodules}
           onSubmoduleContextMenu={handleSubmoduleContextMenu}
           submoduleBusy={submoduleBusy}
-          onNewSubmodule={() => setPendingAddSubmodule(true)}
           worktrees={worktrees}
           onWorktreeContextMenu={handleWorktreeContextMenu}
-          onNewWorktree={() => setNewWorktreeOpen(true)}
           onTagContextMenu={handleTagContextMenu}
           tagSyncReport={tagSyncReport}
           tagSyncState={tagSyncState}
           tagSyncRemote={tagSyncRemote}
           tagSyncCheckedAt={tagSyncCheckedAt}
-          onTagsExpand={() => void refetchTagSync()}
           remotes={remotes}
           onRemoteContextMenu={handleRemoteContextMenu}
-          onAddRemote={() => setPendingAddRemote(true)}
-          onCleanupBranches={() => setStaleCleanupOpen(true)}
           onReveal={handleReveal}
+          now={Math.floor(jobNow / 1000)}
+          {...sidebarCallbacks}
         />
         </RefFilterMarkerContext.Provider>
         <PaneDivider side="sidebar" onResize={onSidebarResize} onResizeEnd={onPaneResizeEnd} />
