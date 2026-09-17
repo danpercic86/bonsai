@@ -841,8 +841,9 @@ bucket, record a verdict per site, predict the post-fix residue, then verify the
   `pnpm tauri dev` then **fails outright** rather than falling back — i.e. it breaks the USER
   CHECKPOINT. Brief agents to the Playwright-managed path (`scripts/e2e-server.mjs`), never a
   hand-run dev server. `playwright.config.ts` already carries the warning. Narrative: Part 71.2.
-- **`cargo fmt --check` is NOT a gate step** and is dirty at baseline, so never read its output on a
-  diff as a regression — see `### cargo fmt has never been run on this repo`.
+- **❌ VOID as of 2026-09-17 (`8ad3c72`): `cargo fmt --check` IS a gate step and the tree IS clean.**
+  This line used to say it was not a gate step and dirty at baseline, so never to read its output on
+  a diff as a regression. All of that is now false — a fmt failure is a real regression.
 
 ### The coverage and evidence rules (earned 2026-09-14/15; narratives archive Parts 71 and 73)
 
@@ -1549,6 +1550,106 @@ the caller). Consequences:
 leaves the account listed. Removing one without the other is a partial state, and the copy has to be
 able to say which half happened. Needs a contract decision before implementation, and a
 `security-auditor` pass on the result.
+
+### ✅ FULL GATE GREEN AT `5f015be` — 2026-09-17, **9 steps now**, 374.9s, zero FAIL lines
+
+Read from the log's `gate summary` block. Log: `D:/Data/Temp/claude/bonsai-gate/gate-5f015be.log`.
+
+nextest **136.4s** (**2580 run, 2580 passed, 1 leaky, 10 skipped**) · doctests 2.9s ·
+**`cargo fmt --check` 1.8s (NEW 9th step)** · clippy 962ms · eslint 10.3s · size ratchet 714ms ·
+vitest 52.2s (**3011 / 272 files**) · tsc+build 9.9s · e2e 159.7s (**185 passed**).
+
+**The 1 leaky is the KNOWN one**, confirmed by name in the log rather than assumed:
+`bonsai-core::h_misc external_spawn::detached_spawn_ignores_nonzero_exit`. Its record across four
+greens is now 1 → 0 → 0 → 1, which is the argument for it being a detached child's timing.
+
+**Rust 2581 → 2580 is accounted for:** the single `bonsai-forge` test deleted alongside
+`clear_token_for_host`. Not drift.
+
+### 🚨 THE WRAPPER SAID 0 WHILE THE GATE SAID FAILED — the board's rule earned itself again
+
+The `8ad3c72` run: the backgrounded wrapper reported **exit 0**; the log's own summary block said
+**`✗ 1 step(s) failed`** and ELIFECYCLE reported 1. **Trusting the wrapper would have banked a red
+gate as green and reported it to the user as such.** This is the second recorded instance. The rule
+— read the `gate summary` block in the log file, never the wrapper's exit status — is not defensive
+pedantry; it is the only thing that caught this.
+
+### ❌ VOID — the rule that fmt output on a diff is not a regression
+
+That rule (formerly at `### cargo fmt has never been run on this repo`) is **dead as of `8ad3c72`**.
+The tree is now rustfmt-clean and `cargo fmt --all --check` is **gate step 3**, so a fmt failure from
+here **is** a real regression. Every earlier board line telling you to discount fmt output is
+history, not instruction.
+
+**Superseded measurements, all three kept with their dates:** 1773 hunks / 221 files (original),
+2290 (2026-09-14), and **2496 hunks across 484 of 608 Rust files (2026-09-17, the one acted on)**.
+Each was true when measured; the tree simply grew. Config is stock rustfmt with only
+`edition = "2021"` — the measured choice, since `use_small_heuristics = "Max"` benchmarked **worse**
+(2065 vs 1773).
+
+**One rustfmt quirk worth keeping:** rustfmt **reports** a leading blank line in
+`crates/bonsai-core/src/git/pr_diff_tests.rs` but does **not** remove it, so `cargo fmt --all` left
+the tree one hunk short of clean and the new gate step would have failed on a freshly formatted tree.
+Removed by hand. If a future `cargo fmt --all` leaves `--check` red, look for this shape first.
+
+### 🆕 WORK QUEUE — 20 files the reformat pushed over the 500-line limit
+
+Baseline absorbed them (`5f015be`): **18 → 38** files over limit, **3405 → 4591** excess lines.
+**Bookkeeping, not absolution** — rustfmt wraps lines, so these crossed the limit without gaining
+any complexity, and they are now genuine split candidates. Presented split per the standing rule
+(already-clean vs has-violations, with counts, user chooses):
+
+**Genuinely oversized — 12 files, 510-616 lines:** `tests/worktree_submodule/submodule_wedge_cli.rs`
+**616** · `src-tauri/src/commands/tests_diff_search_history.rs` **602** ·
+`src/git/cred_cache/tests.rs` **588** · `src-tauri/src/graph_cache/tests.rs` **568** ·
+`tests/rebase_merge/essentials_autostash_cli.rs` **567** · `tests/status_stage/branches_cli.rs`
+**553** · `src/git/hooks/tests.rs` **543** · `tests/remote/signing_cli.rs` **530** ·
+`src-tauri/src/obs/tests_metrics.rs` **522** · `src/tools/scan_tests.rs` **520** ·
+`src/git/ai_operation_preview.rs` **519** · `tests/remote/force_push_cli.rs` **516**.
+
+**Marginal — 8 files within 11 lines, will fall back under on any real cleanup:**
+`ai_resolve_cli.rs` 513 · `graph_cache.rs` 511 · `bisect/tests.rs` 510 · `detect_tests.rs` 508 ·
+`tests_writer.rs` 507 · `hooks_commit_cli.rs` 504 · `gitbin.rs` 504 · `record.rs` 503.
+
+**Only 2 of the 20 are application code** (`ai_operation_preview.rs`, `graph_cache.rs`); the other 18
+are test files, where `refactorer` can prove equivalence by identical before/after test counts.
+**NOT queued — awaiting the user.**
+
+### ✅ ALL FOUR USER DECISIONS OF 2026-09-17 ARE IMPLEMENTED
+
+1. **Dormant command DROPPED** — `871d16a`. The audit named 5 plumbing sites; **grep found 6 more,
+   and 2 of those would have broken a test rather than merely lingering**:
+   `obs/metrics_cmds.rs` declares `KNOWN_CMDS` as a **fixed-length array** (201 → 200), and
+   `src/obs/rawArgPolicy.json:138` carried an entry a test asserts is a subset of the mock-IPC
+   methods. The other 4 were doc claims that had quietly gone false (a broken intra-doc link to the
+   deleted `clear_token`; a comment naming the helper the command layer stopped calling;
+   `commands/forge.rs` claiming auth flows through a function that no longer exists).
+   **The module is `#[cfg(test)]`, not module-wide `#[allow(dead_code)]`** — the implementer's
+   blanket was overridden, then refined again when `cfg(test)` alone still left clippy red: exactly
+   one item (`_inner`) is unreachable even from the tests, since all 12 drive `_inner_with`, so the
+   allow is scoped to that **one function**. A module-wide allow would have hidden future dead code
+   in a credential-deleting module. Implementation + all 12 tests kept, so a rewire is covered.
+2. **Both dead helpers DELETED** — `871d16a`. No caller anywhere in the workspace but one test,
+   which went with them. `clear_token_for_host` was the footgun (bundled `evict_viewer` into the
+   delete). `bonsai-forge` 214 → 213.
+3. **CLAUDE.md audit trigger ADDED** — `3f78d50`, scoped to the **module**
+   (`crates/bonsai-core/src/tools/*.rs`, `src-tauri/src/commands/external.rs`,
+   `src-tauri/src/commands/tools.rs`), not to `from_settings_field` alone, because a caller change
+   can widen what gets spawned without that function appearing in the diff.
+4. **rustfmt DONE** — `8ad3c72` (+ `5f015be` baseline). User overrode the recommendation to defer.
+
+### ⏳ STILL QUEUED, none of it gating
+
+- **`ui-designer` copy pass** — the caller-prefix stutter, and the "was removed" verb that overstates
+  on a NoEntry retry (`delete_token`'s `Ok` folds not-found, which is the same mechanism that makes
+  ruling 1's retry promise real — seen from opposite ends).
+- **`P113` contract debt** — `docs/contracts/P113-settings-inline-notes.md` documents the
+  `?forgeRemoveFail` knob values and needs the new ones from both modules.
+- **Audit MEDIUM-2** — the two upstream orphan sources. Auditor's confidence on the second's
+  reachability was explicitly **medium** (reasoned from `upsert` semantics, sequence never executed
+  against a real keychain), so that increment should actually run it.
+- **The 20-file split queue** above.
+- **`git blame` noise:** use `--ignore-rev 8ad3c72`.
 
 ### ✅ FULL 8-STEP GATE GREEN AT `3948478` — 2026-09-17, 446.1s, exit 0, ZERO FAIL lines
 
