@@ -251,14 +251,8 @@ pub fn suggest_branch_name(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, MutexGuard};
+    use crate::ai::testutil::env_lock;
 
-    /// Serialize env-mutating tests: `BONSAI_CLAUDE_BIN` is process-global, so
-    /// parallel tests that touch it would race (mirrors `ai::mod` tests).
-    fn env_lock() -> MutexGuard<'static, ()> {
-        static LOCK: Mutex<()> = Mutex::new(());
-        LOCK.lock().unwrap_or_else(|e| e.into_inner())
-    }
 
     /// §7.4: `sanitize_branch_name` lowercases + kebab-ifies salvageable input
     /// and rejects the unsalvageable. Documented mapping: spaces/punctuation

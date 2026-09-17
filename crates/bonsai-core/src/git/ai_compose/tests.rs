@@ -1,15 +1,9 @@
 use super::*;
-use std::sync::{Mutex, MutexGuard};
+use crate::ai::testutil::env_lock;
 
 use crate::git::commit::create_commit;
 use crate::git::stage::stage_paths;
 
-/// Serialize env-mutating tests: `BONSAI_CLAUDE_BIN` is process-global, so
-/// parallel tests that touch it would race (mirrors `ai::mod` / ai_branch_name).
-fn env_lock() -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 /// git2-init a scratch repo with identity + autocrlf off (mirrors `ai_explain`).
 fn init_scratch() -> tempfile::TempDir {

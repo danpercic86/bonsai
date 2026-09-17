@@ -21,6 +21,18 @@ const MARKER_TICK: Duration = Duration::from_millis(1600);
 
 /// Serialize env-mutating tests: `BONSAI_CLAUDE_BIN` / `BONSAI_STUB_MODE` are
 /// process-global and the stub inherits them, so parallel tests would race.
+///
+/// **There must be exactly ONE of these in the lib test binary.** Five other
+/// modules (`assets::generate`, `git::ai_branch_name`, `git::ai_changelog`,
+/// `git::ai_compose`, `git::ai_pr_description`) used to define their own
+/// `env_lock` over their own `static LOCK`, which is not mutual exclusion at
+/// all: six independent mutexes guarding one process-global resource let tests
+/// in different modules set the env var out from under each other, and the
+/// failures looked like stub misbehaviour. The nextest `h-ai-stub` test group
+/// exists for a different reason (Windows stalls under 57 concurrent process
+/// trees) and does not serialise these — so the lock, not the runner config, is
+/// what has to be shared. `tests/common/mod.rs` carries the same rule for the
+/// integration binary.
 pub fn env_lock() -> MutexGuard<'static, ()> {
     static LOCK: Mutex<()> = Mutex::new(());
     LOCK.lock().unwrap_or_else(|e| e.into_inner())

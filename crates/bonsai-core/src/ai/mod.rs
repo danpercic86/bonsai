@@ -49,7 +49,7 @@ pub use stream::{
 };
 
 #[cfg(test)]
-mod testutil;
+pub(crate) mod testutil;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

@@ -78,22 +78,15 @@ pub fn generate_asset(
 mod tests {
     use super::*;
     use std::path::Path;
-    use std::sync::{Mutex, MutexGuard};
 
-    const CLAUDE_BIN_ENV: &str = "BONSAI_CLAUDE_BIN";
-    const STUB_MODE_ENV: &str = "BONSAI_STUB_MODE";
+    use crate::ai::testutil::{env_lock, STUB_MODE_ENV};
+    use crate::ai::CLAUDE_BIN_ENV;
 
-    /// Serialize env-mutating tests (`BONSAI_CLAUDE_BIN` / `BONSAI_STUB_MODE` are
-    /// process-global and the stub inherits them). Mirrors `ai::mod::tests`.
-    fn env_lock() -> MutexGuard<'static, ()> {
-        static LOCK: Mutex<()> = Mutex::new(());
-        LOCK.lock().unwrap_or_else(|e| e.into_inner())
-    }
 
     /// Windows runs the `.cmd` stub directly (`Command::new` routes `.cmd`
     /// through cmd.exe automatically). macOS/Linux use the POSIX `.sh` twin,
     /// with the executable bit forced on at test time — git doesn't reliably
-    /// preserve the mode bit across clones/platforms. Mirrors `ai::mod::tests`.
+    /// preserve the mode bit across clones/platforms. Mirrors `ai::testutil`.
     fn stub_path() -> std::path::PathBuf {
         let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
         if cfg!(windows) {
