@@ -21,6 +21,8 @@ import {
   FORGE_REVIEW_COMMENTS,
   FORGE_VIEWER,
 } from '../../fixtures/forge';
+import { removeAccountRejection } from './forgeRemoveFailure';
+import type { ForgeRemoveFailSeam } from './forgeRemoveFailure';
 import { PR_DIFF_STATS, PR_DIFF_STATS_EMPTY, mockPrFileDiff } from '../../fixtures/prDiff';
 import { SUPPORTED_MERGE_METHODS } from '../../types';
 import {
@@ -95,6 +97,10 @@ function offGuard(): void {
     throw err;
   }
 }
+
+/** Per-account `forgeRemoveAccount` call counter backing the `keychain-then-ok`
+ *  seam (a mock-only retry ledger; the backend needs none). */
+const removeAttempts = new Map<string, number>();
 
 export const forgeHandlers = {
   async forgeRepoContext(repoId: string): Promise<ForgeRepoContext> {
@@ -429,30 +435,17 @@ export const forgeHandlers = {
   async forgeRemoveAccount(accountId: string): Promise<void> {
     await delay(120);
     offGuard();
-    // P113 §14: `?forgeRemoveFail=1|long` — row 8 had NO reachable trigger, and
-    // it is the one outcome whose dialog deliberately stays open.
-    // FIDELITY NOTE, verified against `forge_remove_account_inner`
-    // (`src-tauri/src/commands/forge_accounts.rs:280-310`): it swallows BOTH
-    // substantive failures (`let _ = delete_token(...)`, `let _ = update(...)`),
-    // so its only reachable rejections are `settings::settings_file`'s
-    // `cannot resolve app config dir: {e}` and `task join error: {e}`. The former
-    // is mirrored verbatim — an invented keychain refusal would be fiction.
-    // `long` supplies §14's BOTH pathological halves: a ~330-char space-free path
-    // in `{e}`, and a 61-char HOST, which comes from the account store rather than
-    // this handler — so `forgeAccountStore` seeds `FORGE_ACCOUNT_LONG` for this
-    // knob; until then the long-host half was unreachable at any `{e}` length.
-    const removeFail = urlParam('forgeRemoveFail');
-    if (removeFail === '1' || removeFail === 'long') {
-      const cause =
-        removeFail === 'long'
-          ? `\\\\?\\UNC\\corp-file-cluster-07.ad.internal.example.com\\redirected-profiles$\\${'very-long-segment-'.repeat(12)}AppData\\Roaming\\com.bonsai.app\\settings.json`
-          : 'unknown path';
-      const err: AppError = {
-        kind: 'other',
-        message: `cannot resolve app config dir: ${cause}`,
-      };
-      throw err;
-    }
+    // P113 §14 + the 2026-09-17 ruling: `?forgeRemoveFail=1|long|keychain|
+    // settings|settings-no-credential|keychain-then-ok`. Every message and the
+    // fidelity reasoning live in ./forgeRemoveFailure — see that file before
+    // touching the copy.
+    const attempt = (removeAttempts.get(accountId) ?? 0) + 1;
+    removeAttempts.set(accountId, attempt);
+    const rejection = removeAccountRejection(
+      urlParam('forgeRemoveFail') as ForgeRemoveFailSeam,
+      attempt,
+    );
+    if (rejection !== null) throw rejection;
     accountStore.removeAccountById(accountId);
   },
 

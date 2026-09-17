@@ -50,18 +50,29 @@ export const FORGE_MULTI = urlParam('forge') === 'multi';
  *  same pair `?forge=auth` already uses; nothing here is invented. */
 const FORGE_LONG_HOST_CASE = urlParam('forgeRemoveFail') === 'long';
 
+/** 2026-09-17 ruling FU — the new `?forgeRemoveFail=keychain|settings|
+ *  settings-no-credential|keychain-then-ok` seams need an account to remove, and the default mock
+ *  starts with NONE. Seeding here is what makes them reachable without also
+ *  passing `?forge=auth`: a knob that needs a second knob is a knob nobody
+ *  uses. */
+const FORGE_REMOVE_FAIL_CASE = urlParam('forgeRemoveFail') !== null;
+
 /** The mock account index: accounts + host defaults + per-repo overrides. */
 class AccountStore {
   accounts: ForgeAccount[] = FORGE_MULTI
     ? [{ ...FORGE_ACCOUNT_GITHUB }, { ...FORGE_ACCOUNT_GITHUB_2 }]
-    : urlParam('forge') === 'auth' || FORGE_LONG_HOST_CASE
+    : urlParam('forge') === 'auth' || FORGE_LONG_HOST_CASE || FORGE_REMOVE_FAIL_CASE
       ? [{ ...FORGE_ACCOUNT_GITHUB }, { ...FORGE_ACCOUNT_LONG }]
       : FORGE_EXPIRED
         ? [{ ...FORGE_ACCOUNT_GITHUB, login: null, avatarUrl: null }]
         : [];
 
   hostDefaults: Record<string, string> =
-    FORGE_MULTI || urlParam('forge') === 'auth' || FORGE_EXPIRED || FORGE_LONG_HOST_CASE
+    FORGE_MULTI ||
+    urlParam('forge') === 'auth' ||
+    FORGE_EXPIRED ||
+    FORGE_LONG_HOST_CASE ||
+    FORGE_REMOVE_FAIL_CASE
       ? { 'github.com': FORGE_ACCOUNT_GITHUB.accountId }
       : {};
 

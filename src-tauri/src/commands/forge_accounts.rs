@@ -1,7 +1,7 @@
 //! P80 multi-account forge command layer: account RESOLUTION (per-repo override
 //! → owner match → host default → single → first) and the global
-//! account-management commands (add / remove / set-host-default /
-//! set-repo-account / list / sign-out-host).
+//! account-management commands (add / set-host-default / set-repo-account /
+//! list / sign-out-host). REMOVAL lives in `forge_remove_account.rs`.
 //!
 //! Split from `forge.rs` (which keeps the PR-data commands) to hold the
 //! resolution algorithm + its unit tests in a focused module (CLAUDE.md
@@ -262,51 +262,6 @@ pub async fn forge_set_token_for_host(
 ) -> Result<ForgeViewer, AppError> {
     let file = settings::settings_file(&app)?;
     forge_add_account_inner(&file, host, kind, token).await
-}
-
-/// P80: delete an account's token (by its `keychain_key`), remove the record, and
-/// clean references (promote/clear host default, drop repo overrides). Idempotent.
-/// Errors: `other`.
-#[tauri::command]
-pub async fn forge_remove_account(
-    app: tauri::AppHandle,
-    account_id: String,
-) -> Result<(), AppError> {
-    let file = settings::settings_file(&app)?;
-    forge_remove_account_inner(&file, account_id).await
-}
-
-/// Runtime-free core of `forge_remove_account`.
-pub(crate) async fn forge_remove_account_inner(
-    settings_file: &Path,
-    account_id: String,
-) -> Result<(), AppError> {
-    let file = settings_file.to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || {
-        let s = settings::load_from(&file);
-        let rec = s
-            .forge_accounts
-            .iter()
-            .find(|a| a.account_id == account_id)
-            .cloned();
-        if let Some(r) = &rec {
-            let _ = bonsai_forge::delete_token(&r.keychain_key);
-            bonsai_forge::invalidate_viewer(&r.host);
-        }
-        let _ = settings::update(&file, |s| {
-            settings::remove_forge_account(s, &account_id);
-            // OD-5 legacy mirror: drop the known-hosts entry once no account
-            // remains on that host.
-            if let Some(r) = &rec {
-                if !s.forge_accounts.iter().any(|a| a.host == r.host) {
-                    settings::remove_forge_host(s, &r.host);
-                }
-            }
-        });
-        Ok(())
-    })
-    .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// P80: set/replace the default account for `host`. Errors if `account_id` isn't
