@@ -97,10 +97,6 @@ export const forgeCommands = {
     return invoke<void>('forge_set_repo_account', { repoId, accountId });
   },
 
-  forgeClearTokenForHost(host: string): Promise<void> {
-    return invoke<void>('forge_clear_token_for_host', { host });
-  },
-
   forgeInvalidateViewer(host: string): Promise<void> {
     return invoke<void>('forge_invalidate_viewer', { host });
   },

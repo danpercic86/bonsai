@@ -342,7 +342,6 @@ pub fn run() {
             commands::forge_remove_account,
             commands::forge_set_host_default,
             commands::forge_set_repo_account,
-            commands::forge_clear_token_for_host,
             commands::forge_invalidate_viewer,
             commands::get_repo_hooks_disclosure,
             commands::ack_repo_hooks,

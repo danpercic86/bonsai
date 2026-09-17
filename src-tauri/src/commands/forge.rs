@@ -7,8 +7,8 @@
 //! AI-gated and do NOT emit `repo-changed` (`create_pr` mutates the remote, not
 //! the local repo — the panel refetches on demand).
 //!
-//! Auth (`forge_set_token` / `forge_clear_token`) goes through the crate-level
-//! `bonsai_forge::{set_token, clear_token}` entry points (the read-only `open()`
+//! Auth (`forge_set_token`) goes through the crate-level `bonsai_forge::set_token`
+//! entry point (the read-only `open()`
 //! cannot store): a pasted PAT is validated via `GET /user`, then stored in the
 //! OS keychain keyed by host. The token is NEVER logged, NEVER placed in a URL,
 //! and NEVER returned to the frontend (only the public viewer identity is).

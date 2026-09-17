@@ -20,10 +20,8 @@ import {
   FORGE_REPO_CONTEXT,
   FORGE_VIEWER,
 } from '../../fixtures/forge';
-import { clearHostRejection } from './forgeClearHostFailure';
 import { offGuard } from './forgeOffline';
 import { forgePrDiffHandlers } from './forgePrDiffHandlers';
-import type { ForgeClearHostFailSeam } from './forgeClearHostFailure';
 import { removeAccountRejection } from './forgeRemoveFailure';
 import type { ForgeRemoveFailSeam } from './forgeRemoveFailure';
 import { SUPPORTED_MERGE_METHODS } from '../../types';
@@ -429,20 +427,6 @@ export const forgeHandlers = {
     offGuard();
     if (accountId === null) delete accountStore.repoOverrides[repoId];
     else accountStore.repoOverrides[repoId] = accountId;
-  },
-
-  async forgeClearTokenForHost(host: string): Promise<void> {
-    await delay(120);
-    offGuard();
-    // `?forgeClearHostFail=` — the outcomes of the audit-MEDIUM-1 ruling. Copy
-    // and fidelity reasoning live in ./forgeClearHostFailure — see that file
-    // before touching the copy.
-    const rejection = clearHostRejection(
-      urlParam('forgeClearHostFail') as ForgeClearHostFailSeam,
-      host,
-    );
-    if (rejection !== null) throw rejection;
-    accountStore.removeAccountsForHost(host);
   },
 
   async forgeInvalidateViewer(host: string): Promise<void> {

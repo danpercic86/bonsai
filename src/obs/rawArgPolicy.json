@@ -135,6 +135,5 @@
   "forgeRemoveAccount": ["accountId"],
   "forgeSetHostDefault": ["host", "accountId"],
   "forgeSetRepoAccount": ["repoId", "accountId"],
-  "forgeClearTokenForHost": ["host"],
   "forgeInvalidateViewer": ["host"]
 }

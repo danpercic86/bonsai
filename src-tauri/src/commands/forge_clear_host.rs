@@ -1,4 +1,14 @@
-//! Sign-out-of-a-HOST — `forge_clear_token_for_host` and its runtime-free core.
+//! Sign-out-of-a-HOST — the runtime-free core of what WAS the
+//! `forge_clear_token_for_host` command.
+//!
+//! DORMANT (security audit INFO-2, 2026-09-17): the `#[tauri::command]` wrapper
+//! was removed because per-account removal (`forge_remove_account`, P80)
+//! replaced its only UI caller, and a credential-deleting command with zero
+//! callers is an unnecessary privileged surface. The logic and its tests are
+//! kept intact so it is provably correct if the host-wide sign-out is ever
+//! rewired: re-add `#[tauri::command] pub async fn forge_clear_token_for_host`
+//! over [`forge_clear_token_for_host_inner`], plus the `generate_handler!`,
+//! `IpcApi`, mock and `obs` allow-list entries.
 //!
 //! Split out of `forge_accounts.rs` (CLAUDE.md file-size discipline) for the
 //! same reason `forge_remove_account.rs` was: this is the other command in that
@@ -52,28 +62,6 @@ const SETTINGS_FAIL_SUFFIX: &str = ". The accounts may still appear until settin
 /// `e583f11` lesson — that exact false claim was the bug fixed in the sibling).
 const SETTINGS_FAIL_NO_CREDENTIAL_PREFIX: &str = "the account list could not be saved: ";
 
-/// P79 (retained): sign out ALL accounts on `host` — delete each account's
-/// keychain entry plus the legacy bare-host entry, then drop the records whose
-/// keys were deleted, the host default, and any overrides pointing at them.
-///
-/// Idempotent: a key that is no longer in the keychain is success, so this is
-/// safely re-runnable after a partial failure. Deleting the tokens IS the
-/// operation — if the keychain refuses ANY of them, nothing is changed and the
-/// accounts stay listed. Errors: `other` — the keychain refused one or more
-/// deletes (when the host has no accounts listed the copy says so instead of
-/// claiming the rows stay listed); the credentials were deleted but settings
-/// could not be saved; or
-/// (no accounts on the host, so no credential was named) settings could not be
-/// saved.
-#[tauri::command]
-pub async fn forge_clear_token_for_host(
-    app: tauri::AppHandle,
-    host: String,
-) -> Result<(), AppError> {
-    let file = settings::settings_file(&app)?;
-    forge_clear_token_for_host_inner(&file, host).await
-}
-
 /// Injectable side effects of [`forge_clear_token_for_host_inner`]. The real
 /// implementations live in [`Default`]; tests substitute failing ones because
 /// the keychain is process-global and `settings::update` cannot be made to fail
@@ -100,7 +88,25 @@ impl Default for ClearHostDeps {
     }
 }
 
-/// Runtime-free core of `forge_clear_token_for_host`.
+/// P79 (retained): sign out ALL accounts on `host` — delete each account's
+/// keychain entry plus the legacy bare-host entry, then drop the records whose
+/// keys were deleted, the host default, and any overrides pointing at them.
+///
+/// Idempotent: a key that is no longer in the keychain is success, so this is
+/// safely re-runnable after a partial failure. Deleting the tokens IS the
+/// operation — if the keychain refuses ANY of them, nothing is changed and the
+/// accounts stay listed. Errors: `other` — the keychain refused one or more
+/// deletes (when the host has no accounts listed the copy says so instead of
+/// claiming the rows stay listed); the credentials were deleted but settings
+/// could not be saved; or
+/// (no accounts on the host, so no credential was named) settings could not be
+/// saved.
+// DORMANT: the only thing that called this was the removed `#[tauri::command]`
+// wrapper, and the 12 tests all drive `_inner_with` directly so they can inject
+// failures. Kept as the documented rewire entry point — it is the one line a
+// restored wrapper calls. Allow is scoped to this fn on purpose: a module-wide
+// one would also hide future dead code in a credential-deleting module.
+#[allow(dead_code)]
 pub(crate) async fn forge_clear_token_for_host_inner(
     settings_file: &Path,
     host: String,
@@ -133,7 +139,8 @@ pub(crate) async fn forge_clear_token_for_host_inner_with(
         // accounts, and its refusal blocks identically: it is the ONLY path that
         // ever sweeps bare-host entries, so a PAT left there is exactly as
         // orphaned as a per-account one — and nothing else in the UI names it.
-        // (This is why `bonsai_forge::clear_token_for_host` is no longer called:
+        // (This is why the deleted `bonsai_forge::clear_token_for_host` was not
+        // used, and why it was removed outright:
         // it bundles `evict_viewer` into the delete, and evicting the cached
         // viewer on a failure path would show a still-connected account as
         // disconnected. The viewer eviction now happens only on success.)

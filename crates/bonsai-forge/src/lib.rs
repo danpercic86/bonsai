@@ -66,8 +66,8 @@ fn build_provider(
 /// Resolve the [`ForgeTarget`] for the repo at `workdir` from its `origin`
 /// remote. An unparseable origin yields an `Unknown`-kind target with empty
 /// fields (friendly `repo_context`; data methods reject); no `origin` remote at
-/// all ⇒ [`AppError::NoRemote`]. Shared by [`open`], [`set_token`], and
-/// [`clear_token`] so all three resolve identity identically.
+/// all ⇒ [`AppError::NoRemote`]. Shared by [`open`] and [`set_token`] so both
+/// resolve identity identically.
 fn resolve_target(workdir: &Path) -> Result<ForgeTarget, AppError> {
     let remotes = bonsai_core::git::remote::list_remotes(workdir)?;
     let origin = remotes
@@ -253,20 +253,6 @@ pub fn set_token(workdir: &Path, token: &str) -> Result<ForgeViewer, AppError> {
     Ok(viewer)
 }
 
-/// Sign out the forge account for the repo at `workdir`: delete the host's PAT
-/// from the keychain and evict the cached viewer (P62b). Idempotent — clearing
-/// when nothing is stored is `Ok(())`, and an unparseable origin (empty host)
-/// has no keychain entry, so it is a no-op success. No `origin` remote ⇒
-/// [`AppError::NoRemote`].
-pub fn clear_token(workdir: &Path) -> Result<(), AppError> {
-    let target = resolve_target(workdir)?;
-    if !target.host.is_empty() {
-        auth::global().delete(&target.host)?;
-        auth::evict_viewer(&target.host);
-    }
-    Ok(())
-}
-
 /// Network-free: resolve the `(lowercased host, kind)` for the repo at `workdir`
 /// from its `origin` remote, so the command layer can key the known-hosts index
 /// after a per-repo set/clear WITHOUT a second network call. No `origin` remote
@@ -333,18 +319,6 @@ fn set_token_for_host_with(
         auth::global().set(&host_l, token)?;
     }
     Ok(viewer)
-}
-
-/// Delete the token for `host` from the keychain and evict its cached viewer.
-/// Idempotent — no repo, no network. Mirrors [`clear_token`] but keyed by an
-/// explicit host (the global Accounts sign-out path).
-pub fn clear_token_for_host(host: &str) -> Result<(), AppError> {
-    let host_l = host.to_ascii_lowercase();
-    if !host_l.is_empty() {
-        auth::global().delete(&host_l)?;
-        auth::evict_viewer(&host_l);
-    }
-    Ok(())
 }
 
 /// Drop the cached viewer for `host` WITHOUT deleting the token (the expiry
@@ -454,13 +428,5 @@ mod tests {
             set_token_for_host_with("github.com", ForgeKind::GitHub, "bad-tok", Box::new(http))
                 .unwrap_err();
         assert!(matches!(err, AppError::AuthFailed(_)), "got {err:?}");
-    }
-
-    /// `clear_token_for_host` is an idempotent no-op for an empty host (no
-    /// keychain key), and `invalidate_viewer` is infallible for an unknown host.
-    #[test]
-    fn clear_empty_host_and_invalidate_are_no_ops() {
-        clear_token_for_host("").unwrap();
-        invalidate_viewer("never-stored.example.com");
     }
 }

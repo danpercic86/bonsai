@@ -47,6 +47,15 @@ mod tools;
 mod tools_pick;
 mod forge;
 mod forge_accounts;
+// DORMANT (audit INFO-2): the `#[tauri::command]` wrapper is gone (see the
+// module doc) and nothing in the product reaches the core, so the module is
+// compiled for tests only. Deliberately `cfg(test)` rather than a module-wide
+// `#[allow(dead_code)]`: the blanket would also hide any FUTURE dead code in a
+// credential-deleting module, and this keeps the dormant deletion path out of
+// the shipped binary entirely while its 12 tests still cover the logic.
+// To rewire: drop this `cfg`, restore the `#[tauri::command]` wrapper, and
+// re-add the five plumbing sites the module doc lists.
+#[cfg(test)]
 mod forge_clear_host;
 mod forge_remove_account;
 mod git_env;
@@ -158,7 +167,6 @@ pub use profiles::*;
 pub use external::*;
 pub use forge::*;
 pub use forge_accounts::*;
-pub use forge_clear_host::*;
 pub use forge_remove_account::*;
 pub use git_env::*;
 pub use obs::*;

@@ -101,9 +101,6 @@ export interface IpcApiForge {
   /** P80: pin (`accountId`) or clear (`null` ⇒ inherit) a repo's account
    *  override. Rejects AppError (`noRepo` | `other`). */
   forgeSetRepoAccount(repoId: string, accountId: string | null): Promise<void>;
-  /** P79: sign out ALL accounts on a host — delete their tokens + records +
-   *  defaults + overrides. Idempotent. Rejects AppError (`other`). */
-  forgeClearTokenForHost(host: string): Promise<void>;
   /** P79: evict a host's cached viewer WITHOUT deleting the token (expiry flow).
    *  Infallible. */
   forgeInvalidateViewer(host: string): Promise<void>;

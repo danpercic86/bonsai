@@ -20,7 +20,7 @@
 //! never actually arrive.
 
 /// Every `IpcApi` method name, sorted (binary search below depends on it).
-pub(super) const KNOWN_CMDS: [&str; 201] = [
+pub(super) const KNOWN_CMDS: [&str; 200] = [
     "abortMerge",
     "ackRepoHooks",
     "activateProfile",
@@ -93,7 +93,6 @@ pub(super) const KNOWN_CMDS: [&str; 201] = [
     "forceRefreshTag",
     "forgeAddAccount",
     "forgeClearToken",
-    "forgeClearTokenForHost",
     "forgeClosePr",
     "forgeCommitStatuses",
     "forgeCreatePr",
