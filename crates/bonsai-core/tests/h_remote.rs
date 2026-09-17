@@ -23,6 +23,8 @@ mod remote_cli;
 mod remote_mgmt_cli;
 #[path = "remote/signing_cli.rs"]
 mod signing_cli;
+#[path = "remote/signing_oracle_cli.rs"]
+mod signing_oracle_cli;
 #[path = "remote/stale_cli.rs"]
 mod stale_cli;
 #[path = "remote/stale_cli_2.rs"]

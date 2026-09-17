@@ -19,8 +19,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::common;
-use crate::common::{commit_fixed, file_url, git, init_repo, scratch_dir};
-use bonsai_core::error::AppError;
+use crate::common::{commit_fixed, file_url, git, init_repo};
 use bonsai_core::git::search::SpawnGitRunner;
 use bonsai_core::git::submodule::{
     add_submodule, deinit_submodule, list_submodules, update_submodule, SubmoduleInfo,
@@ -70,34 +69,6 @@ fn build_super_with_sub(url: &str) -> tempfile::TempDir {
     add_submodule(p, url, SUB_PATH).expect("add_submodule");
     git(p, &["add", "-A"]);
     commit_fixed(p, "super: add submodule");
-    dir
-}
-
-/// Superproject whose `.gitmodules` section NAME differs from the checked-out
-/// PATH (`git submodule add --name`). git keys the module gitdir on the NAME, so
-/// the cached dir is `.git/modules/<name>` while libgit2's clone would key on
-/// `<path>` — the divergence contract OPEN-1 resolves in favour of `name`.
-fn build_super_with_renamed_sub(url: &str, name: &str, path: &str) -> tempfile::TempDir {
-    let dir = init_repo();
-    let p = dir.path();
-    std::fs::write(p.join("top.txt"), "super\n").unwrap();
-    git(p, &["add", "-A"]);
-    commit_fixed(p, "super: initial");
-    git(
-        p,
-        &[
-            "-c",
-            "protocol.file.allow=always",
-            "submodule",
-            "add",
-            "--name",
-            name,
-            url,
-            path,
-        ],
-    );
-    git(p, &["add", "-A"]);
-    commit_fixed(p, "super: add renamed submodule");
     dir
 }
 
@@ -321,149 +292,6 @@ fn reconnect_works_offline() {
     );
 }
 
-// -------------------------------------------------------- criterion 6
-
-/// Criterion 6 — refusal A: a workdir holding files but no `.git` link is NEVER
-/// clobbered. The refusal is fail-closed: the stray file is byte-identical, no
-/// gitlink was written, and the row is still `Uninitialized`.
-///
-/// NOTE the message asserted here is the §7 AMENDED user-facing copy ("The
-/// folder already has files in it..."), not §9.6's original `no .git link`
-/// wording — the amendment is the implemented contract.
-#[test]
-fn reconnect_refuses_non_empty_workdir() {
-    require_git!();
-    let (_sub, url, _v1, _v2) = build_sub();
-    let dir = build_super_with_sub(&url);
-    let p = dir.path();
-    let (_module_dir, sentinel) = wedge(p, SUB_PATH, SUB_PATH);
-
-    let sub_wd = p.join(SUB_PATH);
-    let stray = sub_wd.join("keepme.txt");
-    std::fs::write(&stray, "USER DATA - DO NOT DELETE\n").expect("write stray file");
-    let before = std::fs::read(&stray).expect("read stray file");
-
-    match update_submodule(p, SUB_PATH) {
-        Err(AppError::Git(m)) => {
-            assert!(
-                m.contains("The folder already has files in it."),
-                "got: {m}"
-            );
-            assert!(
-                m.contains(SUB_PATH),
-                "the message must name the path, got: {m}"
-            );
-            assert!(
-                !m.to_lowercase().contains("reinitialize"),
-                "no raw libgit2 prose, got: {m}"
-            );
-        }
-        other => panic!("a non-empty workdir must be refused, got {other:?}"),
-    }
-
-    assert_eq!(
-        std::fs::read(&stray).expect("stray survives"),
-        before,
-        "the user's file must be byte-identical after the refusal"
-    );
-    assert!(
-        !sub_wd.join(".git").exists(),
-        "no gitlink may be written on a refusal"
-    );
-    assert!(
-        !sub_wd.join(".git.bonsai-tmp").exists(),
-        "no atomic-write residue on a refusal"
-    );
-    assert_sentinel_intact(&sentinel);
-    assert_eq!(
-        only(p).status,
-        SubmoduleStatus::Uninitialized,
-        "row unchanged after refusal"
-    );
-    assert_eq!(
-        cli_status_char(p, SUB_PATH),
-        '-',
-        "git still reports the wedge"
-    );
-}
-
-// -------------------------------------------------------- criterion 7
-
-/// Criterion 7 — refusal B: the cached gitdir's `origin` points somewhere else,
-/// so ownership cannot be proven. Both urls are quoted and nothing is written.
-#[test]
-fn reconnect_refuses_url_mismatch() {
-    require_git!();
-    let (_sub, url, _v1, _v2) = build_sub();
-    let (_other, other_url, _o1, _o2) = build_sub();
-    let dir = build_super_with_sub(&url);
-    let p = dir.path();
-    let (module_dir, sentinel) = wedge(p, SUB_PATH, SUB_PATH);
-
-    git(&module_dir, &["remote", "set-url", "origin", &other_url]);
-
-    match update_submodule(p, SUB_PATH) {
-        Err(AppError::Git(m)) => {
-            assert!(
-                m.contains(&other_url) && m.contains(&url),
-                "the refusal must quote BOTH urls, got: {m}"
-            );
-            assert!(
-                m.contains("Bonsai has cached data for a different remote URL"),
-                "got: {m}"
-            );
-        }
-        other => panic!("a url mismatch must be refused, got {other:?}"),
-    }
-
-    assert!(
-        !p.join(SUB_PATH).join(".git").exists(),
-        "no gitlink on a refusal"
-    );
-    assert_eq!(
-        std::fs::read_dir(p.join(SUB_PATH)).unwrap().count(),
-        0,
-        "the workdir is still empty"
-    );
-    assert_sentinel_intact(&sentinel);
-    assert_eq!(
-        only(p).status,
-        SubmoduleStatus::Uninitialized,
-        "row unchanged after refusal"
-    );
-}
-
-// ------------------------------------------ cosmetic-url tolerance (§8.1)
-
-/// `urls_equivalent` normalization: a trailing `/` plus a `.git` suffix on the
-/// CONFIGURED url must NOT be read as a mismatch — the reconnect still happens.
-#[test]
-fn reconnect_tolerates_url_cosmetic_difference() {
-    require_git!();
-    let (_sub, url, _v1, v2) = build_sub();
-    let dir = build_super_with_sub(&url);
-    let p = dir.path();
-    let (_module_dir, sentinel) = wedge(p, SUB_PATH, SUB_PATH);
-
-    // Cosmetically different, semantically identical: `<url>.git/`.
-    let cosmetic = format!("{url}.git/");
-    let key = format!("submodule.{SUB_PATH}.url");
-    git(p, &["config", "--local", &key, &cosmetic]);
-    git(p, &["config", "-f", ".gitmodules", &key, &cosmetic]);
-    assert_ne!(cosmetic, url, "precondition: the strings really differ");
-
-    update_submodule(p, SUB_PATH).expect("a cosmetic url difference must not block the reconnect");
-
-    assert_sentinel_intact(&sentinel);
-    let row = only(p);
-    assert_eq!(row.status, SubmoduleStatus::UpToDate, "row after reconnect");
-    assert_eq!(
-        row.wt_oid.as_deref(),
-        Some(v2.as_str()),
-        "workdir at the pinned v2"
-    );
-}
-
 // ------------------------------------------ deinit → update (§8.1, real path)
 
 /// The real-world route that produced the reported bug: `deinit` keeps
@@ -512,105 +340,10 @@ fn reconnect_after_deinit_reinitializes() {
     );
 }
 
-// ---------------------------------------- renamed submodule (name != path)
-
-/// OPEN-1: for a renamed submodule (`.gitmodules` section name != checked-out
-/// path) the cached gitdir git itself writes is `<modules>/<name>`. With a DECOY
-/// `<modules>/<path>` also present (a valid repo pointing at a DIFFERENT url),
-/// `name` must win — picking `path` would surface a url-mismatch refusal
-/// instead of repairing.
-#[test]
-fn reconnect_renamed_submodule_prefers_name_keyed_gitdir() {
-    require_git!();
-    let (_sub, url, _v1, v2) = build_sub();
-    let (_other, other_url, _o1, _o2) = build_sub();
-    let name = "renamed-sub";
-    let dir = build_super_with_renamed_sub(&url, name, SUB_PATH);
-    let p = dir.path();
-
-    // Precondition: git keyed the cache on the NAME, not the path.
-    assert!(
-        p.join(".git")
-            .join("modules")
-            .join(name)
-            .join("HEAD")
-            .exists(),
-        "precondition: the cached gitdir is name-keyed"
-    );
-    let (_module_dir, sentinel) = wedge(p, name, SUB_PATH);
-
-    // Decoy path-keyed gitdir for a DIFFERENT remote.
-    let decoy = p.join(".git").join("modules").join(SUB_PATH);
-    std::fs::create_dir_all(&decoy).expect("mkdir decoy");
-    git(&decoy, &["init", "-b", "main"]);
-    git(&decoy, &["remote", "add", "origin", &other_url]);
-
-    update_submodule(p, name).expect("the name-keyed gitdir must be the one reconnected");
-
-    assert_sentinel_intact(&sentinel);
-    assert_eq!(read_lf(&p.join(SUB_PATH).join("lib.txt")), "sub v2\n");
-    let row = only(p);
-    assert_eq!(row.name, name, "the row is the renamed section");
-    assert_eq!(row.path, SUB_PATH);
-    assert_eq!(row.status, SubmoduleStatus::UpToDate, "row after reconnect");
-    assert_eq!(
-        row.wt_oid.as_deref(),
-        Some(v2.as_str()),
-        "workdir at the pinned v2"
-    );
-    // The gitlink resolves into the NAME-keyed dir.
-    let resolved = git(&p.join(SUB_PATH), &["rev-parse", "--absolute-git-dir"]).replace('\\', "/");
-    assert!(
-        resolved.ends_with(&format!("/.git/modules/{name}")),
-        "must resolve into the name-keyed gitdir, got: {resolved}"
-    );
-}
-
-/// The leftover-data refusal (§7 row 16) names the **path**-keyed folder, because
-/// libgit2 keys the init it fails on `sm->path`. With `name != path` a name-keyed
-/// message would send the user to a folder that does not exist.
-#[test]
-fn leftover_data_refusal_names_path_keyed_folder_for_renamed_submodule() {
-    require_git!();
-    let (_sub, url, _v1, _v2) = build_sub();
-    let name = "renamed-sub";
-    let super_dir = build_super_with_renamed_sub(&url, name, SUB_PATH);
-
-    // Fresh clone: registered in `.gitmodules`, never cloned → no cached gitdir.
-    let parent = scratch_dir();
-    git(
-        parent.path(),
-        &["clone", &file_url(super_dir.path()), "work"],
-    );
-    let work = parent.path().join("work");
-    assert!(
-        !work.join(".git").join("modules").exists(),
-        "precondition: nothing cached in the fresh clone"
-    );
-
-    // Forge a "looks like a repo, cannot be opened" dir under the PATH key —
-    // exactly what an aborted libgit2 clone leaves behind.
-    let garbage = work.join(".git").join("modules").join(SUB_PATH);
-    std::fs::create_dir_all(garbage.join("objects")).expect("mkdir objects");
-    std::fs::create_dir_all(garbage.join("refs")).expect("mkdir refs");
-    std::fs::write(garbage.join("HEAD"), "ref: refs/heads/main\n").expect("write HEAD");
-    std::fs::write(garbage.join("config"), "[core\nnot valid ini\n").expect("write config");
-
-    let err = match update_submodule(&work, name) {
-        Err(e) => e.to_string(),
-        Ok(()) => panic!("an unopenable module gitdir must not silently succeed"),
-    };
-    assert!(
-        !err.to_lowercase().contains("reinitialize"),
-        "the raw libgit2 message must never reach the UI, got: {err}"
-    );
-    assert!(
-        err.contains(&format!("\".git/modules/{SUB_PATH}\"")),
-        "the refusal must name the PATH-keyed folder, got: {err}"
-    );
-    assert!(
-        !err.contains(&format!("\".git/modules/{name}\"")),
-        "it must NOT name the (nonexistent) name-keyed folder, got: {err}"
-    );
-    assert!(garbage.exists(), "Bonsai must not delete the folder itself");
-}
+// The refusal paths and the renamed-submodule (name != path) cases live in their
+// own files (~500-line limit), declared here as child modules so they share
+// `require_git!`, the constants and the wedge fixtures above.
+#[path = "submodule_wedge_refusals_cli.rs"]
+mod submodule_wedge_refusals_cli;
+#[path = "submodule_wedge_renamed_cli.rs"]
+mod submodule_wedge_renamed_cli;
