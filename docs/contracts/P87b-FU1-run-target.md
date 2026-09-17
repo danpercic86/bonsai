@@ -40,12 +40,19 @@ for everything user-visible). This file supplies only what §3.6 commissioned.
 or change an op's success/error, and it must cost nothing when nobody is subscribed. One optional
 string, on `started` only.
 
+>
+> **Counts re-measured 2026-09-17 (`wc -l`).** Two of the four had drifted: `activity_tests.rs`
+> **285 → 299** and `activity_target_tests.rs` **267 → 273**. `activity.rs` (437) and
+> `activity_target.rs` (108) were exact. **Part of this drift is not code growth:** the repo-wide
+> `cargo fmt` of `8ad3c72` wrapped lines across 484 files, so any line-count claim written before
+> that commit is suspect on formatting alone. Prefer measuring to citing.
+
 | File | Change | Shipped size |
 |---|---|---|
 | `crates/bonsai-core/src/git/activity.rs` | `+ ActivityTarget` newtype + cap const beside `activity_line`; `GitActivityEvent.target`; `ActivityEmitter::new` takes the target | **437** (was 353; estimate said ~430) |
 | `crates/bonsai-core/src/git/activity_target.rs` | **NEW** — `resolve_activity_target()` + `configured_upstream()`. The only git2 in this feature | **108** (estimate ~110) |
-| `crates/bonsai-core/src/git/activity_target_tests.rs` | **NEW** — fixture-repo table tests | **267** (estimate ~150 — the §4 table needs one fixture repo per row, and the estimate did not price the fixture builders) |
-| `crates/bonsai-core/src/git/activity_tests.rs` | `+` newtype tests (§6) | 285 |
+| `crates/bonsai-core/src/git/activity_target_tests.rs` | **NEW** — fixture-repo table tests | **273** as measured 2026-09-17 (was recorded 267; estimate ~150 — the §4 table needs one fixture repo per row, and the estimate did not price the fixture builders) |
+| `crates/bonsai-core/src/git/activity_tests.rs` | `+` newtype tests (§6) | **299** as measured 2026-09-17 (was recorded 285) |
 | `crates/bonsai-core/src/git/mod.rs` | `+ pub mod activity_target;` | — |
 | `src-tauri/src/commands/activity.rs` | `with_activity` gains a `target` param; `+ activity_target()` helper | ~+30 |
 | `src-tauri/src/commands/{remotes,staging,merge}.rs` | one line each, at the 7 call sites in §5.2 | — |

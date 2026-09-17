@@ -116,6 +116,15 @@ P91 §6.11.6 wrongly claimed for `--warn`.
 loses the in-place retry and adds a state transition on the failure path, which is the path least
 worth complicating.
 
+> **❌ SUPERSEDED 2026-09-17 — every claim in the paragraph below is now false.** The backend defect
+> it defers to was fixed (`e583f11`): `forge_remove_account_inner` moved to
+> `src-tauri/src/commands/forge_remove_account.rs` and **propagates** both failures instead of
+> swallowing them, so this path is **live, not near-unreachable**, and reachable from the real
+> Settings UI rather than mock-only. The paragraph's own prediction held exactly — the path became
+> live **with no UI change required** — which is why it is preserved here rather than deleted.
+> Current copy is ruled by `P114-forge-failure-copy-ui.md`; current seams by
+> `P113-FU-forge-mock-seams.md`. Do not read the next paragraph as guidance.
+
 **Do not over-invest in this path (noted 2026-09-14).** `forge_remove_account_inner`
 (`src-tauri/src/commands/forge_accounts.rs:280-310`) swallows both substantive failures
 (`let _ = delete_token`, `let _ = settings::update`), so the only rejections that reach the frontend
@@ -812,6 +821,17 @@ that is broken on one surface and correct on another.
 ---
 
 ## 14. Harness states and mock fixtures
+
+> **⚠ PARTIALLY SUPERSEDED 2026-09-17 — `docs/contracts/P113-FU-forge-mock-seams.md` is the current
+> seam reference.** Three specifics in this section have drifted: `?forgeRemoveFail` is no longer a
+> single `1` knob but a **six-value** one (`1`, `long`, `keychain`, `settings`,
+> `settings-no-credential`, `keychain-then-ok`), and `1` is a **legacy key, not "outcome 1"** — seam
+> keys and outcome numbers are separate namespaces, and conflating them is the mistake the FU file
+> exists to prevent. Row 8's "near-unreachable" premise is void (see the superseded note in §3.3).
+> The **pathological** figures below (~300-char, 60-char) are this document's estimates; the source
+> comments say **~330** (`forgeRemoveFailure.ts:61`) and **61** (`forgeAccountStore.ts:49`) —
+> prefer the source. Also note a seeding widening: `?forgeRemoveFail=<any value>` now seeds accounts
+> without also needing `?forge=auth`, which changed behaviour for the pre-existing `1` too.
 
 All ten are reachable in a plain browser (`pnpm dev`, `VITE_MOCK_IPC=1`). Existing knobs cover four;
 four new knobs are required. **Sites 11-15 (§17.3) need two more:** an MCP failure knob for

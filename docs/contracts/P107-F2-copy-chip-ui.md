@@ -246,9 +246,14 @@ branch combobox prevents. Add one knob, matching the house `query()` pattern
 |---|---|---|
 | default (existing) | `src/staged-change.ts` → `conflict`, others `clean` | the danger chip, unchanged |
 | **`?wtCopyPreviewFail=1`** (new) | `previewWorktreeCopy` rejects with `{ kind:'git', message:'could not read the target tree' }` after the existing 120 ms delay | `previewFailed` → the `unknown` chip on **every** checked row, plus the existing `--warning-strong` note under the list |
-| `?wtCopyPreviewFail=1` + check all four candidates, incl. `.env.local` and the 240-char path case | as above | chip/​toggle alignment with a truncating path; both themes; both densities |
+| `?wtCopyPreviewFail=1` + check all four candidates, incl. `.env.local` and the 240-char path case | as above | chip/toggle alignment with a truncating path; both themes; both densities |
 
 Everything in §4 is AI-gate verifiable in the harness. No USER CHECKPOINT item.
+
+> **Audit note (2026-09-17).** The last table row above contained a literal `\u{200b}` (ZERO WIDTH
+> SPACE) after the slash in `chip/toggle` — a soft-break hint for the narrow table cell, not part of
+> any copy sample or example string. It was removed; the line's meaning is unchanged. Contract text
+> carries no invisible characters (see `ui-reference.md` §0).
 
 ---
 

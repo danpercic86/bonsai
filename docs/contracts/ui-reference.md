@@ -4,6 +4,22 @@ Feel: GitButler-clean minimalism; GitKraken-style commit graph as the centerpiec
 the default. All values below are canonical — implement as CSS custom properties in
 `src/styles.css` and reuse everywhere.
 
+## 0. Contract text conventions (invisible characters)
+
+Added 2026-09-17 after a literal ZERO WIDTH SPACE was found in `P107-F2-copy-chip-ui.md` §5 and in
+`P87b-FU1-run-target.md` §8–§9.
+
+- **Copy samples, example strings, code spans, and fixture values in any UI contract must contain
+  no invisible characters** — none of `U+200B`–`U+200F`, `U+202A`–`U+202E`, `U+2060`,
+  `U+2066`–`U+2069`, `U+FEFF`. A reader copies these strings straight into a component or a
+  fixture, so an invisible character in the spec ships as a defect that review cannot see.
+- **When a zero-width or bidi character is itself the subject matter**, write it as the escape
+  `\u{200b}` or as the prose name `U+200B` — never as the literal glyph.
+- Need a line-break hint in a narrow table cell? Rewrite the phrase or let it wrap. Never a
+  zero-width space.
+- The same applies to UI strings in `src/`: user-facing copy is plain text; if a break opportunity
+  is genuinely required in rendered markup, use `<wbr>` in JSX, not an invisible codepoint.
+
 ## 1. Layout geometry
 
 ```
@@ -2497,6 +2513,25 @@ toast raised from the Settings surface is an inline note. **15** call sites swep
   `role="alert"`, and the section announcer stays silent for that outcome so one event yields one
   utterance. This is not an exception: it is inline, not a toast. Precedent: `confirmRemove` in
   `SettingsAccountsSection` keeps the Remove dialog open on failure for in-place retry.
+- **Who owns the sentence, and the verb it may use (P114, SIGNED 2026-09-17).** Full contract:
+  `docs/contracts/P114-forge-failure-copy-ui.md`. Three rules, general to every failure string on
+  this surface. **(1) Outcome owns the sentence.** A backend returning a bare *cause* is prefixed by
+  its caller; a backend returning an *outcome* — which half of a two-step operation happened — owns
+  the whole capitalised sentence and the caller renders it **verbatim**. A caller that does not know
+  **This carves out of §5's toast-copy shape rather than overturning it**: §5's caller-supplied
+  `Couldn't <verb> <target>.` prefix still governs single-step failures; only two-step outcomes drop
+  it. A caller that does not know
+  which half succeeded cannot write a truthful lead clause: `Could not remove {host}: the credential
+  was removed…` is that impossibility on screen, and it shipped. **(2) State, not act.** Describe
+  the end state ("the credential is no longer in the OS keychain"), never the act ("was removed") —
+  `delete_token` folds `NoEntry` into success, so on the retry that the copy itself recommends,
+  act-shaped wording is false while state-shaped wording stays true. **(3) Cause last.** Human
+  sentence, then the action, then `Details: {e}`. `role="alert"` reads the node in one utterance, so
+  the actionable words must precede any `os error 5` or absolute path; the raw cause is permitted
+  only as trailing detail, never truncated or hidden. House vocabulary: "the OS keychain" (never a
+  platform-specific name — one string, three OSes), "credential" not "token"/"PAT", contraction
+  form **"Couldn't"**, ≤2 human sentences plus the `Details:` fragment, and a retry cue **only**
+  where the operation is provably idempotent.
 - **Standing state vs action outcome — the two warn shapes are not interchangeable.** A standing
   state that must be noticed on arrival is a **bordered banner** (`.forge-reauth-banner`,
   `.error-banner`). The result of an action the user just took is a **barred note**

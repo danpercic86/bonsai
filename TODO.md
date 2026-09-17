@@ -1551,6 +1551,157 @@ leaves the account listed. Removing one without the other is a partial state, an
 able to say which half happened. Needs a contract decision before implementation, and a
 `security-auditor` pass on the result.
 
+## 🔻 2026-09-17 PHASE 2 — "do all the remaining work". IN PROGRESS
+
+### ✅ P114 forge failure copy — CONTRACT SIGNED, implementation in flight
+
+`docs/contracts/P114-forge-failure-copy-ui.md` + one `ui-reference.md` §12.14 bullet. **Seven ruled
+variants plus two wrappers, not the five I counted** — I was counting consts, not outcomes.
+
+**The rule that solves the verb problem generally: STATE, NOT ACT.** Copy says *"is no longer in the
+OS keychain"*, **never** *"was removed"* — because the `NoEntry` fold makes an act-verb false on
+exactly the retry the copy recommends. Two more rules: **outcome owns the sentence** (the caller's
+`Could not remove ${host}: ` prefix is **dropped**; the backend string renders verbatim, which kills
+both the stutter and the self-contradiction in one move rather than patching each string), and
+**cause last** behind `Details: `. Vocabulary fixed: "the OS keychain" never platform-specific,
+"credential" never token/PAT, ≤2 sentences, retry cue **only where provably idempotent**.
+
+**Two calls I took rather than escalate:** (1) **include the two non-outcome wrappers** — without
+them a bare lowercase `cannot resolve app config dir: …` reaches a dialog; (2) **keep `Details: `**,
+a first use in this app, on the stated a11y ground that cause-last is required for a one-utterance
+`role="alert"`. `.dialog-error` already has `overflow-wrap: anywhere` and contrast is 7.62:1 dark /
+6.01:1 light.
+
+**Found beyond the brief:** the dropped prefix interpolated `host` **while the dialog labels by
+`login`** — the sentence and its own dialog title disagreed about the subject; C5 stated its failure
+twice; a contraction split (4× "Could not" vs 1× "Couldn't" in one file, sweep filed); and **the mock
+handlers hold FULL literals, not halves** — which is why guard hardening is folded into the
+implementation (the `include_str!` guards check prefix and suffix each *appear*, not that they belong
+to the **same literal**).
+
+### ✅ CONTRACT HYGIENE — architect verified P87b, and hit a tool limit honestly
+
+**The deviation is the lead item and it was the right call.** The `architect` agent had **no `Edit`
+tool and no `Bash`** this session — `Write` is full-file-replace only, so there was no way to prove
+the untouched bytes of a 1301-line file survived. Rather than retype a contract whose **own binding
+rule forbids embedding bidi/zero-width characters**, it wrote two small companion files and named the
+stale ranges for an Edit-capable pass. **I did those edits myself** (see below). An agent that
+reports a blocked tool beats one that retypes 1301 lines and hopes.
+
+New: `docs/contracts/P113-FU-forge-mock-seams.md` (219 lines, both seam tables with per-line
+citations) and `docs/contracts/P87b-FU1-hygiene-2026-09-17.md` (110 lines). Both verified free of the
+hostile character set after writing.
+
+**🚨 CORRECTION TO MY OWN CLAIM — the `?forgeClearHostFail=` seams are FULLY INERT, not
+"console-only".** I told the user and two agents they were reachable via
+`ipc.forgeClearTokenForHost(host)` from the devtools console. **There is no such frontend symbol.** I
+verified: a case-insensitive grep over `src/` returns **only a doc comment** at
+`forgeClearHostFailure.ts:88`. The claim was true this morning and **I made it false myself** in
+`871d16a` by dropping the IPC binding — then kept repeating it. The module is kept alive solely by
+`forge_clear_host_tests.rs`'s `include_str!`. `accountStore.removeAccountsForHost`
+(`forgeAccountStore.ts:144`) likewise has no caller.
+
+**P87b verdicts (architect measured; I re-measured the counts with `wc -l`):** §3 ranges CLOSED
+(`2aa1e06`) · §4 unborn-HEAD rationale CLOSED, now correctly says LOAD-BEARING · §8 seams CLOSED for
+scope · §8's `MOCK_LONG_TARGET` CLOSED · **§8/§9 hostile characters CLOSED** (`f00fad3`) — a
+codepoint scan of the whole active contracts dir found **zero** hits in either P87b file ·
+**§1 counts: 2 of 4 still drifted**, `activity_tests.rs` **285 → 299**, `activity_target_tests.rs`
+**267 → 273** (`activity.rs` 437 and `activity_target.rs` 108 exact). **Part of that drift is not
+code growth** — `8ad3c72` wrapped lines across 484 files, so *any* line-count claim written before
+that commit is suspect on formatting alone.
+
+**Attribution method worth keeping:** with `Bash` disabled the agent could not run `git log`, so it
+attributed via `docs/history/todo-archive-2026-09.md:4312`, which records `2aa1e06`'s subject as
+*"P87b hygiene that was mostly already done"* — **which the verification confirmed was literally
+true.** Corrections dated 2026-09-10 map to no hash in any readable document and were **left
+unclaimed rather than guessed**.
+
+### ✅ THE OWED EDIT PASS — done by the orchestrator, since the architect could not
+
+- `P113-settings-inline-notes.md` §3.3 — a **`❌ SUPERSEDED`** block over the paragraph claiming
+  `forge_remove_account_inner` swallows both failures and that row 8 is "near-unreachable". All four
+  of its claims are false post-`e583f11`. **Preserved rather than deleted, because its own
+  prediction held exactly** — the path became live *with no UI change required*, which is what it
+  predicted.
+- `P113` §14 — a **`⚠ PARTIALLY SUPERSEDED`** block: `?forgeRemoveFail` is now **six** values, `1` is
+  a **legacy key and NOT "outcome 1"** (seam keys and outcome numbers are separate namespaces), the
+  pathological figures should be read from source (**~330** / **61**, not ~300 / 60), and the
+  seeding widening now applies to `1` too.
+- `P87b-FU1-run-target.md` — both counts corrected with a measurement note, placed **above** the
+  table after a first attempt split it mid-table.
+
+### 🆕 THREE ITEMS THE HYGIENE PASS SURFACED — queued, not yet done
+
+1. **`P87b-FU1-FU4-git-dock-ui.md` F-F(a) is OPEN and its precondition has FLIPPED.**
+   `repoState.ts:89` already has `RepoKind = 'default' | 'detached' | 'unborn'`, so the
+   "fix when a fixture exists" condition is satisfied and `Commit main` on unborn is **live**
+   (`status.ts:145`, `stash.ts:148`, `merge.ts:83` pass `'main'` unconditionally). **Trap, verified at
+   source:** `repoState.ts:335-336` returns `branchName: 'main', unborn: true`, so **`?? null` does
+   NOT fix it** — the mock needs the same explicit `unborn || detached → null` guard as the Rust
+   resolver.
+2. **`forgeAccountStore.ts:51`'s `FORGE_LONG_HOST_CASE` is dead** — `:58`'s
+   `urlParam('forgeRemoveFail') !== null` subsumes `=== 'long'`. (A reviewer flagged the same
+   subsumption earlier and judged it merely redundant; the architect judged it dead. Check its other
+   uses before deleting.)
+3. **Guard asymmetry:** the remove seams have a **fourth** pin enumerating every value
+   (`SettingsAccountsSection.remove.test.tsx:115-137`); the clear-host seams have **no vitest
+   equivalent**.
+
+### ⏳ STILL RUNNING / QUEUED
+
+- `refactorer` batch 1 of 3: five oversized `crates/bonsai-core/tests/` files. Batches 2 (bonsai-core
+  `src`, 4 files incl. 1 app file) and 3 (`src-tauri`, 3 files) to follow.
+- `ui-designer`: the **U+200B at `P107-F2-copy-chip-ui.md:249`** — the only hostile-character hit in
+  the active contracts dir, in a file that agent owns. (Three more under `docs/contracts/archive/`,
+  out of scope as history.)
+- **MEDIUM-2, deliberately LAST.** Held until P114's copy rules landed so its new strings follow them
+  rather than predate them. **See the ruling below — my first plan was unsafe.**
+
+### 🚨 MY FIRST MEDIUM-2 RULING WOULD HAVE DELETED WORKING CREDENTIALS
+
+I was about to rule: when `forge_add_account_inner`'s settings write fails, delete the token just
+stored. **That is wrong in exactly the direction this whole day has been fixing.**
+`store_token(&aid, …)` **overwrites** whatever is under that key, and `aid` is derived
+deterministically from `(kind, host, login)` — so on a **re-add** of an existing account with a
+failing settings write, an unconditional rollback deletes the user's **previously working**
+credential while the old record still points at `aid`. Record with no token, `connected: false`. A
+new orphan direction created by the fix.
+
+**The ruling, with the discriminator: read settings BEFORE `store_token` and roll back only if no
+record already had `keychain_key == aid`.**
+- No prior record with that key → new token, safe to delete; copy says the credential was not kept.
+- **Prior three-part record (`keychain_key == aid`) → the store UPDATED a live credential. DO NOT
+  DELETE.** Copy says the credential was updated but the details could not be saved.
+- Prior **legacy** record (`keychain_key == bare host`) → the `aid` token is new and unreferenced;
+  safe to delete.
+- Rollback delete itself fails → `Err` naming the asymmetry, with an honest retry cue (a re-add
+  stores under the same `aid`, so a later successful write references it). **Never interpolate
+  `keychain_key`** — the audit established keys are never shown or logged.
+- Verify `TokenStore::set` really is overwrite-semantics at source before relying on any of this.
+
+**Ordering ruling for the legacy re-key:** settings write **first**, *then* delete the superseded
+bare-host key. Delete-then-fail leaves a still-legacy record pointing at a key that no longer exists.
+A failed delete there must **not** fail the add — the account works; that is what the backstop is for.
+
+**Backstop:** in `forge_remove_account_inner_with`, if the record being removed is the **last** on its
+host, add the bare-host key to the delete set (dedup when `keychain_key == host`) **before the write,
+fail-closed**, exactly like `clear_host`'s N+1. `NoEntry` folds to `Ok`, so it is a no-op for
+modern-only hosts. **This changes outcome 1 slightly** — a legacy orphan refusal now blocks removal
+of a modern account on that host. That is the clear-host ruling applied consistently and must be said
+out loud in the commit.
+
+**Also pin:** `migrate_forge_hosts_to_accounts` must not re-create a bare-host record for a host that
+still has an `aid` record. It skips hosts already in `forge_accounts`, so it should not — but the fix
+makes a legacy re-add *delete* a key, and the migration re-runs on every load, so this needs a test
+rather than an argument.
+
+**Closing the auditor's own stated MEDIUM confidence with an EXECUTION, not another reasoning pass:**
+a DI seam (`AddAccountDeps { store_token, delete_token, update_settings }`) makes all three outcomes
+red-testable without a keychain, plus **one `#[ignore]`d test against the real store** using a
+throwaway host (`bonsai-test-<uuid>.invalid`, **never** a `github.com`-shaped key) with guarded
+cleanup, running the exact legacy→re-add sequence and asserting the bare-host key is gone. To be run
+once on this machine with the output recorded.
+
 ### ✅ FULL GATE GREEN AT `5f015be` — 2026-09-17, **9 steps now**, 374.9s, zero FAIL lines
 
 Read from the log's `gate summary` block. Log: `D:/Data/Temp/claude/bonsai-gate/gate-5f015be.log`.
