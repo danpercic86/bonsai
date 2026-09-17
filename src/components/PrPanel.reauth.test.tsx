@@ -65,6 +65,42 @@ describe('PrPanel — P79 reauth + disconnect', () => {
     expect(pushToast).not.toHaveBeenCalled();
   });
 
+  /** P114 Addendum B — the `Could not connect: ${message}` toast is GONE. The
+   *  inline `role="alert"` banner (`ForgeConnect`) IS the notification, so the
+   *  absence of the toast is the fix: `forgeSetToken` rejects with BOTH
+   *  cause-shaped (`authFailed`) and outcome-shaped messages, no single prefix
+   *  can be right for both, and telling them apart at runtime is the string
+   *  sniffing P114 rejected. It was also a DOUBLE announcement. */
+  it('a failing reconnect renders the message inline and raises NO toast', async () => {
+    vi.spyOn(ipc, 'forgeRepoContext').mockResolvedValue(CTX);
+    vi.spyOn(ipc, 'forgeListPrs').mockRejectedValue(AUTH_FAILED);
+    vi.spyOn(ipc, 'forgeInvalidateViewer').mockResolvedValue(undefined);
+    vi.spyOn(ipc, 'forgeSetToken').mockRejectedValue({
+      kind: 'other',
+      message:
+        "The credential in the OS keychain is up to date, but the account details couldn't be saved. Details: access denied",
+    } satisfies AppError);
+
+    const { pushToast } = renderPanel();
+
+    const token = await screen.findByLabelText('Personal access token');
+    fireEvent.change(token, { target: { value: 'ghp_nope' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
+
+    // Verbatim, in the banner's own live region — one utterance.
+    const banner = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>('.pr-error[role="alert"]');
+      if (el === null) throw new Error('the failure must render inline');
+      return el;
+    });
+    expect(banner).toHaveTextContent(
+      "The credential in the OS keychain is up to date, but the account details couldn't be saved.",
+    );
+    expect(banner.textContent).not.toContain('Could not connect');
+    // The deletion itself: no toast, not a reworded one.
+    expect(pushToast).not.toHaveBeenCalled();
+  });
+
   it('P80: kebab "Reset to host default" clears the override (no confirm) under an override', async () => {
     vi.spyOn(ipc, 'forgeRepoContext').mockResolvedValue({ ...CTX, accountSource: 'override' });
     vi.spyOn(ipc, 'forgeListPrs').mockResolvedValue({ items: [], page: 1, hasNext: false });

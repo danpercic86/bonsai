@@ -44,7 +44,13 @@ mod worktree;
 // P112 §6: the external-tool picker surface. `tools_pick` is the testable
 // validate-then-write half of `pick_external_tool`, split from the dialog.
 mod forge;
+// Test-only recorder/scratch helpers shared by the two commands that carry the
+// `AddAccountDeps` seam (add-account and the per-repo set-token that delegates
+// to it), so there is exactly one definition of "the same deps".
+#[cfg(test)]
+mod forge_account_test_support;
 mod forge_accounts;
+mod forge_add_account;
 mod tools;
 mod tools_pick;
 // DORMANT (audit INFO-2): the `#[tauri::command]` wrapper is gone (see the
@@ -58,6 +64,9 @@ mod tools_pick;
 #[cfg(test)]
 mod forge_clear_host;
 mod forge_remove_account;
+// The per-repo Connect field, split from `forge.rs`; delegates its whole local
+// transaction to `forge_add_account`.
+mod forge_set_token;
 mod git_env;
 mod obs;
 mod obs_delete;
@@ -143,7 +152,9 @@ pub use discard::*;
 pub use external::*;
 pub use forge::*;
 pub use forge_accounts::*;
+pub use forge_add_account::*;
 pub use forge_remove_account::*;
+pub use forge_set_token::*;
 pub use git_env::*;
 pub use health::*;
 pub use history::*;

@@ -8,9 +8,11 @@
  *  a `format!` literal in `forge_remove_account.rs` is edited without updating
  *  `src/ipc/mock/handlers/forgeRemoveFailure.ts`.
  *
- *  All three land in the dialog's own `.dialog-error` — `confirmRemove`
- *  (`SettingsAccountsSection.tsx:137-149`) never clears `removeTarget` on
- *  rejection, so the dialog stays open and Remove is retryable in place. */
+ *  All three land in the dialog's own `.dialog-error` — `confirmRemove` never
+ *  clears `removeTarget` on rejection, so the dialog stays open and Remove is
+ *  retryable in place. Outcome R4 (P114 Addendum A) is the exception and is
+ *  covered below: it is a SUCCESS carrying a leftover, so it closes the dialog,
+ *  refetches, and renders a section-level `--warn` note instead. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
@@ -19,9 +21,11 @@ import type { ForgeAccount } from '../../ipc';
 import {
   REMOVE_CONFIG_DIR_FAIL_MESSAGE,
   REMOVE_KEYCHAIN_FAIL_MESSAGE,
+  REMOVE_LEGACY_LEFTOVER_MESSAGE,
   REMOVE_SETTINGS_FAIL_MESSAGE,
   REMOVE_SETTINGS_FAIL_NO_CREDENTIAL_MESSAGE,
   REMOVE_TASK_JOIN_FAIL_MESSAGE,
+  removeAccountLeftover,
   removeAccountRejection,
 } from '../../ipc/mock/handlers/forgeRemoveFailure';
 import { SettingsAccountsSection } from './SettingsAccountsSection';
@@ -99,7 +103,9 @@ describe('Accounts — remove-account failure copy', () => {
     vi.spyOn(ipc, 'forgeRemoveAccount').mockImplementation(() => {
       attempt += 1;
       const rejection = removeAccountRejection('keychain-then-ok', attempt);
-      return rejection === null ? Promise.resolve() : Promise.reject(rejection);
+      return rejection === null
+        ? Promise.resolve({ leftover: null })
+        : Promise.reject(rejection);
     });
     const dialog = await attemptRemove();
     // P114 rule 1: verbatim — no `Could not remove <host>: ` prefix.
@@ -107,6 +113,57 @@ describe('Accounts — remove-account failure copy', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(attempt).toBe(2);
+  });
+});
+
+/** Outcome R4 (P114 Addendum A) — the account WAS removed and the host's
+ *  leftover legacy credential was refused. It is a SUCCESS with a payload, so
+ *  the dialog must CLOSE, the list must refetch, and the sentence must render
+ *  as a section-level `--warn` note plus the announcer — never in the dialog's
+ *  `.dialog-error`, which stays open for a retry that is impossible here. */
+describe('Accounts — remove leaves a legacy leftover (outcome R4)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(ipc, 'openUrl').mockResolvedValue(undefined);
+  });
+
+  it('closes the dialog, refetches, and reports the leftover as a warn note', async () => {
+    const list = vi
+      .spyOn(ipc, 'forgeListAccounts')
+      .mockResolvedValueOnce([GH_ACCOUNT])
+      .mockResolvedValue([]);
+    vi.spyOn(ipc, 'forgeRemoveAccount').mockResolvedValue({
+      leftover: REMOVE_LEGACY_LEFTOVER_MESSAGE,
+    });
+    await attemptRemove();
+    // The dialog CLOSES: its subject no longer exists, and its Remove button
+    // would be a silent no-op on a second click.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // And the list REFETCHES, so the removed row cannot linger behind it.
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    // The message renders VERBATIM in the `--warn` recipe (`--warning`, not
+    // `--danger`: nothing was lost), at SECTION level — the host group has just
+    // been emptied and unmounted, so a note keyed to it would clear with it.
+    const note = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>('.settings-row-note--warn');
+      if (el === null) throw new Error('the leftover must render as a warn note');
+      return el;
+    });
+    expect(note).toHaveTextContent(REMOVE_LEGACY_LEFTOVER_MESSAGE);
+    expect(document.querySelector('.dialog-error')).toBeNull();
+    // One utterance, from the same `report` call that wrote the note.
+    const live = document.querySelector<HTMLElement>('[role="status"][aria-live="polite"]');
+    expect(live?.textContent).toBe(REMOVE_LEGACY_LEFTOVER_MESSAGE);
+  });
+
+  it('reports NO note when the removal leaves nothing behind', async () => {
+    vi.spyOn(ipc, 'forgeListAccounts')
+      .mockResolvedValueOnce([GH_ACCOUNT])
+      .mockResolvedValue([]);
+    vi.spyOn(ipc, 'forgeRemoveAccount').mockResolvedValue({ leftover: null });
+    await attemptRemove();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(document.querySelector('.settings-row-note--warn')).toBeNull();
   });
 });
 
@@ -125,6 +182,20 @@ describe('removeAccountRejection — mock seams', () => {
     expect(removeAccountRejection('task-join', 1)?.message).toBe(REMOVE_TASK_JOIN_FAIL_MESSAGE);
     expect((removeAccountRejection('long', 1)?.message ?? '').length).toBeGreaterThan(300);
     expect(removeAccountRejection('keychain', 9)?.message).toBe(REMOVE_KEYCHAIN_FAIL_MESSAGE);
+    // P114 Addendum A: the legacy seam is NOT a rejection any more — the sweep
+    // is best effort, so the removal succeeds and the leftover rides the
+    // fulfilled value.
+    expect(removeAccountRejection('legacy-keychain', 9)).toBeNull();
+    expect(removeAccountLeftover('legacy-keychain')).toBe(REMOVE_LEGACY_LEFTOVER_MESSAGE);
+    expect(removeAccountLeftover(null)).toBeNull();
+    expect(removeAccountLeftover('keychain')).toBeNull();
+    // It must not reuse the account-credential copy (a different key), must
+    // carry no retry cue (there is nothing left to retry), and must name the
+    // bare HOST rather than the login (nothing named `login` is left behind).
+    expect(REMOVE_LEGACY_LEFTOVER_MESSAGE).not.toBe(REMOVE_KEYCHAIN_FAIL_MESSAGE);
+    expect(REMOVE_LEGACY_LEFTOVER_MESSAGE).not.toContain('try again');
+    expect(REMOVE_LEGACY_LEFTOVER_MESSAGE).not.toContain('Nothing was changed');
+    expect(REMOVE_LEGACY_LEFTOVER_MESSAGE).toContain('for github.com');
     expect(removeAccountRejection('settings', 9)?.message).toBe(REMOVE_SETTINGS_FAIL_MESSAGE);
     expect(removeAccountRejection('settings-no-credential', 9)?.message).toBe(
       REMOVE_SETTINGS_FAIL_NO_CREDENTIAL_MESSAGE,

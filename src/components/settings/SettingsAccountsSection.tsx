@@ -6,13 +6,15 @@
 //
 // P113 — this section raises NO toasts: Settings renders inside
 // `.dialog-overlay` (z-index 100) and `.toast-stack` is 90, so a toast raised
-// here is unclickable, not merely dim (ui-reference §12.14). Its five outcomes
+// here is unclickable, not merely dim (ui-reference §12.14). Its six outcomes
 // go to three kinds of home: the raising HOST's group slot, the section slot in
 // the `accounts.add` row (which renders in all four pane states, so the
-// just-connected host needs no group yet), and — for the remove failure — a
-// `.dialog-error` inside the confirm dialog, which deliberately STAYS OPEN on
-// failure so Remove can be retried in place. A host-group note there would sit
-// behind a second overlay, reproducing the very defect one layer up.
+// just-connected host needs no group yet — and which also carries the remove's
+// P114 R4 leftover, whose host group has just been emptied), and — for the
+// remove FAILURES — a `.dialog-error` inside the confirm dialog, which
+// deliberately STAYS OPEN on failure so Remove can be retried in place. A
+// host-group note there would sit behind a second overlay, reproducing the very
+// defect one layer up.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ipc } from '../../ipc';
@@ -30,10 +32,15 @@ import { SettingsRow } from './SettingsRow';
 import { useOutcomeNotes } from './useOutcomeNotes';
 
 /** The section slot: outcomes with no host group to land in (the global add
- *  form's token-page failure, and the connect success whose group does not exist
- *  until `refetch` resolves — and may never, if `refetch` fails). */
-const ADD_SLOT = 'accounts.add';
-const ADD_OUTCOME_ID = 'accounts-add-outcome';
+ *  form's token-page failure, the connect success whose group does not exist
+ *  until `refetch` resolves — and may never, if `refetch` fails — and the
+ *  remove's R4 leftover, whose host group has just been emptied and unmounted).
+ *
+ *  Named for the SECTION, not for the `accounts.add` row it happens to render
+ *  in (P114 §A.2): it is a cross-host slot carrying host-independent outcomes.
+ *  The string value is unchanged — this is a rename with no DOM change. */
+const SECTION_SLOT = 'accounts.add';
+const SECTION_OUTCOME_ID = 'accounts-add-outcome';
 
 export function SettingsAccountsSection() {
   const { notes, announce, begin, report } = useOutcomeNotes();
@@ -77,7 +84,7 @@ export function SettingsAccountsSection() {
    *  `null` host is the global add form, which has no group yet. */
   const openUrl = useCallback(
     (url: string, host: string | null) => {
-      const slot = host ?? ADD_SLOT;
+      const slot = host ?? SECTION_SLOT;
       begin(slot);
       void ipc.openUrl(url).catch((e: unknown) => {
         // §12.2 A1: `errorMessage(e)` is raw keychain/OS text appended to a
@@ -88,7 +95,7 @@ export function SettingsAccountsSection() {
         // a failure that names neither host nor login announces no subject at
         // all — a sighted user reads it off the note's placement, which is not
         // an accessible carrier of meaning. `host` is null for the global add
-        // form (`slot` is then ADD_SLOT), where no host has been chosen yet and
+        // form (`slot` is then SECTION_SLOT), where no host has been chosen yet and
         // the bare string is the accurate one.
         report(
           slot,
@@ -134,11 +141,28 @@ export function SettingsAccountsSection() {
     // The `begin` equivalent for this slot: clearing FIRST is what makes a
     // retried failure a real `null → text` change, so the alert fires again.
     setRemoveError(null);
+    // §12.14: a note clears when ANY operation reporting into its slot begins,
+    // and since the R4 leftover reports into the SECTION slot, this operation
+    // is one of them.
+    begin(SECTION_SLOT);
     void ipc.forgeRemoveAccount(accountId).then(
-      () => {
+      (outcome) => {
         setRemoving(false);
         setRemoveTarget(null);
         refetch();
+        // P114 R4 — the removal SUCCEEDED and a leftover legacy credential for
+        // the host stayed behind. It arrives on the FULFILLED value, so it is
+        // never routed through the dialog's `.dialog-error`: that container
+        // stays open for in-place retry, and there is nothing left to retry
+        // (the account is gone, and a second Remove would be a silent no-op on
+        // a dialog titled with an account that no longer exists).
+        //
+        // SECTION slot, not the host group: R4's precondition is
+        // "last account on the host", so after `refetch` that group has
+        // unmounted and a note there would clear with it, leaving the announcer
+        // as the only carrier. `'error'` tone renders `--warn` (not `--danger`)
+        // — nothing was lost. Rendered VERBATIM (P114 rule 1).
+        if (outcome.leftover !== null) report(SECTION_SLOT, 'error', outcome.leftover);
       },
       (e: unknown) => {
         // NOTE: `removeTarget` is deliberately NOT cleared — the dialog stays
@@ -231,7 +255,7 @@ export function SettingsAccountsSection() {
             begin(host);
             // The section slot, not a host slot: the new host's group does not
             // exist until `refetch` resolves, and may never if it fails.
-            report(ADD_SLOT, 'success', `Connected to ${host} as ${login}.`);
+            report(SECTION_SLOT, 'success', `Connected to ${host} as ${login}.`);
           }}
           onOpenUrl={(url) => openUrl(url, null)}
         />
@@ -242,9 +266,9 @@ export function SettingsAccountsSection() {
         rowLabel="Add a token for a host"
         hint={
           <SettingsOutcomeNote
-            slot={ADD_SLOT}
-            id={ADD_OUTCOME_ID}
-            outcome={notes.get(ADD_SLOT) ?? null}
+            slot={SECTION_SLOT}
+            id={SECTION_OUTCOME_ID}
+            outcome={notes.get(SECTION_SLOT) ?? null}
           />
         }
       >
@@ -252,7 +276,7 @@ export function SettingsAccountsSection() {
           type="button"
           className="btn-secondary settings-toggle-btn"
           disabled={addOpen}
-          aria-describedby={`${settingsRowHelpId('accounts.add')} ${ADD_OUTCOME_ID}`}
+          aria-describedby={`${settingsRowHelpId('accounts.add')} ${SECTION_OUTCOME_ID}`}
           onClick={() => setAddOpen(true)}
         >
           Add a token for a host

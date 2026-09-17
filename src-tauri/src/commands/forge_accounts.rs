@@ -1,8 +1,8 @@
 //! P80 multi-account forge command layer: account RESOLUTION (per-repo override
 //! → owner match → host default → single → first) and the global
-//! account-management commands (add / set-host-default / set-repo-account /
-//! list). REMOVAL lives in `forge_remove_account.rs`, sign-out-of-a-HOST in
-//! `forge_clear_host.rs`.
+//! account-management commands (set-host-default / set-repo-account / list).
+//! ADD lives in `forge_add_account.rs`, REMOVAL in `forge_remove_account.rs`,
+//! sign-out-of-a-HOST in `forge_clear_host.rs`.
 //!
 //! Split from `forge.rs` (which keeps the PR-data commands) to hold the
 //! resolution algorithm + its unit tests in a focused module (CLAUDE.md
@@ -196,73 +196,6 @@ pub(crate) async fn forge_list_accounts_inner(
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
-}
-
-/// P80: validate a pasted PAT against `host`/`kind` directly (no repo), learn the
-/// login, store it under a three-part keychain key, and upsert the account; if
-/// the host has no default yet, make this the default. Azure DevOps ⇒
-/// `forgeUnsupported` (OD-6). Errors: `authFailed` | `forgeUnsupported` |
-/// `forgeRateLimited` | `networkError` | `other`.
-#[tauri::command]
-pub async fn forge_add_account(
-    app: tauri::AppHandle,
-    host: String,
-    kind: ForgeKind,
-    token: String,
-) -> Result<ForgeViewer, AppError> {
-    let file = settings::settings_file(&app)?;
-    forge_add_account_inner(&file, host, kind, token).await
-}
-
-/// Runtime-free core of `forge_add_account` (also backs the `forge_set_token_for_host`
-/// back-compat alias).
-pub(crate) async fn forge_add_account_inner(
-    settings_file: &Path,
-    host: String,
-    kind: ForgeKind,
-    token: String,
-) -> Result<ForgeViewer, AppError> {
-    let file = settings_file.to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || {
-        let viewer = bonsai_forge::validate_host_token(&host, kind, &token)?;
-        let host_l = host.to_ascii_lowercase();
-        let login = viewer.login.clone();
-        let aid = settings::account_id(kind, &host_l, Some(&login));
-        // Store under the three-part key ONLY after successful validation.
-        bonsai_forge::store_token(&aid, &token)?;
-        let rec = settings::ForgeAccountRecord {
-            account_id: aid.clone(),
-            keychain_key: aid.clone(),
-            host: host_l.clone(),
-            kind,
-            login: Some(login.clone()),
-            avatar_url: viewer.avatar_url.clone(),
-        };
-        let _ = settings::update(&file, |s| {
-            settings::upsert_forge_account(s, rec.clone());
-            if !s.forge_host_defaults.iter().any(|d| d.host == host_l) {
-                settings::set_host_default(s, &host_l, &aid);
-            }
-            // OD-5: keep the legacy known-hosts index mirrored for one release.
-            settings::upsert_forge_host(s, &host_l, kind, Some(login.clone()));
-        });
-        Ok(viewer)
-    })
-    .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
-}
-
-/// P79 back-compat alias for [`forge_add_account`] — same behavior, kept so
-/// existing callers/mocks keep working.
-#[tauri::command]
-pub async fn forge_set_token_for_host(
-    app: tauri::AppHandle,
-    host: String,
-    kind: ForgeKind,
-    token: String,
-) -> Result<ForgeViewer, AppError> {
-    let file = settings::settings_file(&app)?;
-    forge_add_account_inner(&file, host, kind, token).await
 }
 
 /// P80: set/replace the default account for `host`. Errors if `account_id` isn't

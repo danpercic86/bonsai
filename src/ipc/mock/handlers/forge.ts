@@ -8,6 +8,9 @@
 //                   {kind:'authFailed'} once, driving the P79 reauth flow (§4).
 //   token incl. 'bad' in forgeSetToken(ForHost) → throws {kind:'authFailed'}
 //                   (mirrors compose's '#fail'), storing/flipping nothing.
+//   ?forgeSetTokenFail=rolled-back|kept|rollback-failed → the per-repo Connect
+//                   field's settings write fails; same copy as ?forgeAddFail
+//                   because the backend delegates to the same core.
 // P79: a module-level `accounts` index backs the global Accounts settings
 // section; forgeSetToken*/clear* keep it in sync so both views agree.
 // Spread into mockIpc via forgeHandlers.
@@ -22,7 +25,9 @@ import {
 } from '../../fixtures/forge';
 import { offGuard } from './forgeOffline';
 import { forgePrDiffHandlers } from './forgePrDiffHandlers';
-import { removeAccountRejection } from './forgeRemoveFailure';
+import { addAccountRejection } from './forgeAddFailure';
+import type { ForgeAddFailSeam } from './forgeAddFailure';
+import { removeAccountLeftover, removeAccountRejection } from './forgeRemoveFailure';
 import type { ForgeRemoveFailSeam } from './forgeRemoveFailure';
 import { SUPPORTED_MERGE_METHODS } from '../../types';
 import {
@@ -39,6 +44,7 @@ import type {
   CreatePrInput,
   ForgeAccount,
   ForgeKind,
+  ForgeRemoveOutcome,
   ForgeRepoContext,
   ForgeViewer,
   IpcApi,
@@ -260,6 +266,20 @@ export const forgeHandlers = {
       const err: AppError = { kind: 'authFailed', message: 'mock: token rejected by GET /user' };
       throw err;
     }
+    // Audit MEDIUM-2, live occurrence: `?forgeSetTokenFail=rolled-back|kept|
+    // rollback-failed`. The backend DELEGATES this command's whole local
+    // transaction to the account ADD, so the harness reuses the SAME rejection
+    // helper — identical copy by construction, no second set of strings to
+    // drift. See ./forgeAddFailure before touching any of it.
+    // Placed AFTER the validation-shaped 'bad'-token sentinel above (the
+    // position is load-bearing, not incidental): the real
+    // `forge_set_token_inner` validates FIRST and only reaches these post-store
+    // outcomes once `validate_repo_token` has succeeded, so a 'bad' token plus
+    // `?forgeSetTokenFail=` must still surface `authFailed` — a harness that
+    // showed the kept/rolled-back copy there would verify a state the backend
+    // cannot produce.
+    const setRejection = addAccountRejection(urlParam('forgeSetTokenFail') as ForgeAddFailSeam);
+    if (setRejection !== null) throw setRejection;
     authenticated = true;
     viewerWarm = true;
     // P80 (OD-3): add/update the account AND pin it as this repo's override.
@@ -373,6 +393,15 @@ export const forgeHandlers = {
       const err: AppError = { kind: 'authFailed', message: 'mock: token rejected by GET /user' };
       throw err;
     }
+    // Audit MEDIUM-2 source A: `?forgeAddFail=rolled-back|kept|rollback-failed`
+    // — the post-validation seams the command used to swallow. Every message
+    // and the fidelity reasoning live in ./forgeAddFailure; see that file
+    // before touching the copy. Placed AFTER every validation-shaped rejection
+    // (Azure, and the 'bad'-token sentinel above) and BEFORE the store, which
+    // is exactly where the backend can first fail these ways: the real command
+    // only reaches them once `validate_host_token` has succeeded.
+    const addRejection = addAccountRejection(urlParam('forgeAddFail') as ForgeAddFailSeam);
+    if (addRejection !== null) throw addRejection;
     // A distinct login per host lets the harness add a SECOND github.com account.
     const login = accountStore.accounts.some((a) => a.host === host && a.login === FORGE_VIEWER.login)
       ? `${FORGE_VIEWER.login}-2`
@@ -386,21 +415,22 @@ export const forgeHandlers = {
     return forgeHandlers.forgeAddAccount(host, kind, token);
   },
 
-  async forgeRemoveAccount(accountId: string): Promise<void> {
+  async forgeRemoveAccount(accountId: string): Promise<ForgeRemoveOutcome> {
     await delay(120);
     offGuard();
-    // P113 §14 + the 2026-09-17 ruling: `?forgeRemoveFail=1|long|keychain|
-    // settings|settings-no-credential|task-join|keychain-then-ok`. Every message and the
-    // fidelity reasoning live in ./forgeRemoveFailure — see that file before
-    // touching the copy.
+    // P113 §14 + the 2026-09-17 rulings: `?forgeRemoveFail=1|long|keychain|
+    // settings|settings-no-credential|task-join|keychain-then-ok|legacy-keychain`.
+    // Every message and the fidelity reasoning live in ./forgeRemoveFailure —
+    // see that file before touching the copy. `legacy-keychain` is NOT a
+    // rejection (P114 Addendum A): the account leaves the list and the leftover
+    // comes back on the fulfilled value.
     const attempt = (removeAttempts.get(accountId) ?? 0) + 1;
     removeAttempts.set(accountId, attempt);
-    const rejection = removeAccountRejection(
-      urlParam('forgeRemoveFail') as ForgeRemoveFailSeam,
-      attempt,
-    );
+    const seam = urlParam('forgeRemoveFail') as ForgeRemoveFailSeam;
+    const rejection = removeAccountRejection(seam, attempt);
     if (rejection !== null) throw rejection;
     accountStore.removeAccountById(accountId);
+    return { leftover: removeAccountLeftover(seam) };
   },
 
   async forgeSetHostDefault(host: string, accountId: string): Promise<void> {

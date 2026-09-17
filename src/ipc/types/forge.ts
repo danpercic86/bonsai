@@ -54,6 +54,17 @@ export interface ForgeAccount {
   /** P80: whether this account is the host's default (repos inherit it). */
   isHostDefault: boolean;
 }
+/** P114 Addendum A: what a SUCCESSFUL `forgeRemoveAccount` reports back. The
+ *  account was removed; `leftover` is the whole warn-note sentence when the
+ *  host's legacy bare-host credential could not also be swept (the sweep is
+ *  best effort), and `null` otherwise. A FULFILLED value, not a rejection —
+ *  the removal succeeded, so an `Err` here would be mis-counted as a failure by
+ *  every generic layer (obs `ipc.result`, the DEV toast guard, retry wrappers)
+ *  and would keep the Remove dialog open on an account that no longer exists.
+ *  Rendered VERBATIM (P114 rule 1). */
+export interface ForgeRemoveOutcome {
+  leftover: string | null;
+}
 /** One row in a PR list. */
 export interface PrSummary {
   number: number;

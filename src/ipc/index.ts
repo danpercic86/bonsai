@@ -101,6 +101,7 @@ export type {
   FileStatus,
   ForgeAccount,
   ForgeKind,
+  ForgeRemoveOutcome,
   ForgeRepoContext,
   ForgeViewer,
   FrontmatterField,

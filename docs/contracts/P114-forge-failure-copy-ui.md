@@ -77,11 +77,11 @@ must be written to survive it.
 | --- | --- |
 | Name the OS keychain? | **Yes**, as "the OS keychain". It is where the user's PAT physically is, it is the thing that refused, and it is the only place they could clean up by hand. Never "keyring", never a platform-specific name (Credential Manager / Keychain Access) — one string ships to three OSes. |
 | "credential" or "token"? | **"credential"** in user-facing copy (singular per account; plural for a host). "token" only where the user chose the word themselves — the add-account flow's "personal access token" field. Never "PAT" on screen. |
-| Retry cue? | **Every outcome gets one, because every outcome is safely retryable by design** (nothing is mutated on keychain refusal; the delete is idempotent). Phrase it as **the correct next action**, never as a promise about what will happen: "so you can try again" / "Try again to finish removing it". |
+| Retry cue? | **Every outcome in §4 gets one, because every §4 outcome is safely retryable by design** (nothing is mutated on keychain refusal; the delete is idempotent). Phrase it as **the correct next action**, never as a promise about what will happen: "so you can try again" / "Try again to finish removing it". **Carve-out (Addendum A): R4 gets NO cue** — it is the one outcome where the removal *succeeded*, so there is no target left to retry and a cue would be false. The test is idempotence, not tone. |
 | Partial failure (one half landed)? | **State what is true of each half, succeeded half first, in one sentence joined by "but"**, then the action. Never a lead clause that denies the whole operation. |
 | Where does the interpolated cause go? | **Last**, after all human sentences, introduced by `Details: `. The plain-language sentence and the action must be spoken before any `os error 5` / absolute path. This is the copy analogue of "no raw libgit2 text": the raw cause is permitted **only** as trailing detail, and is never truncated or hidden. **`Details: ` is a first use** — the in-app precedent is P113's `Couldn't load your accounts. ${listError}` (bare cause after a period). Justified: in a single `role="alert"` utterance a bare `io error: write C:\…` after a period is indistinguishable from a third sentence, and the lead-in is the audible boundary. If the orchestrator prefers strict consistency, the fallback is to drop `Details: ` and keep `… try again. {e}`; everything else in the table is unchanged. |
 | Contraction style | **"Couldn't"**, not "Could not". Pins the P113 error-banner precedent (`Couldn't load your accounts.`). The four surviving `Could not …` strings in `SettingsAccountsSection.tsx` (L97, L98, L124, and the L225 comment) are a **follow-up sweep**, not part of this increment. |
-| Sentence budget | ≤ 2 human sentences + the `Details: ` fragment. §12.14's outcome notes are one-line; a dialog error may run to two because it must carry both halves of a partial failure and the action. |
+| Sentence budget | ≤ 2 human sentences + the `Details: ` fragment. §12.14's outcome notes are one-line; a dialog error may run to two because it must carry both halves of a partial failure and the action. **Carve-out (Addendum A): R4 is a two-sentence note**, the only one. It earns the second sentence for the same reason a dialog error does — it carries both halves of a partial outcome — plus a third obligation no other note has: naming a fix that lives outside the app. `overflow-wrap: anywhere` is already on `.settings-row-note--warn` (§12.14), so the length is safe there. Do not generalise this to other notes. |
 
 ## 4. Copy table — rendered form is what is signed off
 
@@ -136,6 +136,8 @@ the container prefix is gone, so const text and rendered text are identical.
 
 **Count correction:** the brief says five strings; there are **seven** ruled outcome variants
 (3 + 4), plus the two non-outcome wrappers N1/N2 that Rule 1 pulls into scope. Nine strings total.
+**Updated by Addendum A (2026-09-17): ten live strings + one retired** — R4 is added,
+`LEGACY_KEYCHAIN_FAIL_HEAD` is retired.
 
 ## 5. Q3 answer — does the settings-save outcome need a retry cue?
 
@@ -215,12 +217,263 @@ rule lives. `KEYCHAIN_FAIL_NO_ACCOUNT_SUFFIX` becomes `KEYCHAIN_FAIL_NO_ACCOUNT_
 **Harness states** (no new fixtures needed; existing seams already cover them):
 `?forgeRemoveFail=keychain` (R1), `=settings` (R2), `=settings-no-credential` (R3), `=1` (N1),
 `=long` (§14 pathological cause), `=keychain-then-ok` (the honest-retry path end to end).
-`?forgeClearHostFail=` renders C4–C7 **console-only** — the clear-host copy **cannot be seen in the
-harness UI** because the command is unreachable. That is a documentation-only verification, not a
-USER CHECKPOINT to open; do not add a control to make it visible.
+`?forgeClearHostFail=` is **fully inert** (orchestrator correction, 2026-09-17): the command was
+dropped from the invoke surface and its module is `#[cfg(test)]`, so C4–C7 are **not console-reachable
+either** — they are verified by the cross-language guard test alone. An earlier revision of this line
+said "console-only"; that was wrong. Documentation-only verification, not a USER CHECKPOINT to open;
+do not add a control to make it visible.
 
 **Ambiguity flagged for the orchestrator:** rows N1/N2 extend scope beyond the five strings named in
 the brief. My recommendation is to include them — without them, "the caller renders verbatim" is not
 total and a bare lowercase `cannot resolve app config dir: …` reaches the dialog. If the orchestrator
 wants a minimal diff instead, the fallback is for `SettingsAccountsSection` to keep a prefix
 **only** on those two paths, which requires string sniffing and is worse; say so before choosing it.
+
+---
+
+# Addendum A (2026-09-17) — the best-effort legacy sweep, outcome R4
+
+User ruling, on the security auditor's reasoning: the legacy bare-host sweep in
+`forge_remove_account` becomes **best effort**. Fail-closed can permanently strand a user — the
+account's own token is already gone on a retry (`NoEntry → Ok`) while the legacy key refuses again,
+leaving a listed, disconnected, **unremovable** account fixable only by hand in the OS credential
+store. So the removal completes and the leftover is reported honestly.
+
+## A.1 The row is retired, and why
+
+**`LEGACY_KEYCHAIN_FAIL_HEAD` (`forge_remove_account.rs:55`) is REMOVED, not reworded.** Its text —
+*"Nothing was changed — the account is still listed, so you can try again."* — is false under
+best effort in all three clauses: something *was* changed, the account is *not* still listed, and
+there is nothing to try again. It was added after this contract's signature and never had a row
+here; it gets one now, as retired. Three-part change (§A.6): Rust const deleted, mock
+`LEGACY_KEYCHAIN_FAIL_TEXT` / `REMOVE_LEGACY_KEYCHAIN_FAIL_MESSAGE`
+(`forgeRemoveFailure.ts:94,108`) replaced, guard fragment swapped.
+
+The dormant `forge_clear_host` sibling **C5 still encodes fail-closed** ("Nothing was changed, so you
+can try again") and is **out of scope** — that command is unreachable (see §8) and the ruling was
+about `forge_remove_account`. Named here so it is not rediscovered as a contradiction: if
+`forge_clear_token_for_host` is ever rewired, C5 must be re-ruled against Addendum A first.
+
+## A.2 Shape first — this outcome must NOT land in `.dialog-error`
+
+**Design requirement (the mechanism is the architect's call — three options ranked below).** R4 must
+be **distinguishable from a failure at the IPC boundary, without inspecting the message text.**
+Reporting a *success* through the remove dialog's `.dialog-error` produces a defect the copy cannot
+fix, because `confirmRemove` (`SettingsAccountsSection.tsx:143-154`) deliberately keeps the dialog
+open on `Err` for in-place retry:
+
+- the dialog is titled with `removeLabel` — an account that **no longer exists**;
+- its destructive **Remove** button is live, and a second click hits `rec == None → Ok` and closes
+  the dialog **silently**, reporting nothing about the leftover that is still there;
+- the error path does **not** `refetch()`, so the list behind the dialog still shows the removed
+  row until something else refreshes it — a second untruth on the same screen.
+
+R2/R3 tolerate that container because a retry there is real and useful. Here it is impossible.
+
+**Ranked options — FLAGGED for the architect/orchestrator. The copy (§A.3), the caller behaviour
+(below) and the mock ordering (§A.5) are identical under all three; only the routing check moves.**
+
+1. **RECOMMENDED — return `Ok` with a payload.** The command resolves with a small result struct
+   carrying the leftover message (e.g. `leftover: Option<String>`; the architect names the type and
+   field). This is the only option in which a success is typed as a success: an `Err` that means
+   success is counted as a failure by every generic layer above it — `src/obs/types.ts`'s
+   `ipc.result` / `error` / `anomaly` payloads, §12.14's DEV `console.error` guard, any future retry
+   wrapper — and it is exactly the act/state lie rejected at the const-name level, relocated to the
+   transport. Cost: `forgeRemoveAccount`'s return type changes for all callers.
+2. **Fallback — a distinguishable error kind**, if the architect wants the minimal diff. Routing on
+   kind has a house precedent (`isAppError(e) && e.kind === 'authFailed'`, `PrPanel.tsx:258`);
+   proposed name `forgeLeftoverCredential`. Accepts the mis-classification above knowingly.
+3. **Last resort — `.dialog-error`, like R2.** The increment then knowingly ships a dialog naming a
+   deleted account with a live Remove button whose second click is a silent no-op. If this is chosen,
+   file that as a defect in `TODO.md` rather than leaving it implicit.
+
+**Caller behaviour in `confirmRemove` (options 1 and 2):**
+
+1. R4 detected (fulfilled-value field, or `e.kind`) → `setRemoving(false)`,
+   `setRemoveTarget(null)` (**close** the dialog), `refetch()` (the row is genuinely gone), and
+   report the message through a `SettingsOutcomeNote` in its **`--warn`** tone (`--warning`, not
+   `--danger`: nothing was lost) plus the section announcer, written from the same `report(...)`
+   call — the §12.14 "result of the action you just took" shape. No new component, no new token.
+2. Any other rejection → unchanged (`setRemoveError(errorMessage(e))`, dialog stays open).
+
+**Which note slot — this is load-bearing, and the host-group slot is WRONG.** R4's precondition is
+`last_on_host`, so after `refetch()` that host has no accounts and `remove_forge_host`
+(`forge_remove_account.rs:199-204`) has dropped its settings entry: the `SettingsAccountGroup`
+unmounts, and §12.14 clears a note on unmount. `report(host, …)` (the `setDefault` shape at
+`SettingsAccountsSection.tsx:124`) would therefore leave **only the announcer** — the sighted user
+sees nothing, which is the placement-is-not-a-carrier failure §12.14 already rules out.
+
+Use the **existing section-level slot**, `ADD_SLOT` (`SettingsAccountsSection.tsx:234`, rendered as
+the `accounts.add` row's `hint` at :244-249). It exists for precisely this reason — its own comment
+at :232 reads "the section slot, not a host slot: the new host's group does not exist until
+`refetch` resolves". Always mounted, `:empty`-collapsed, `aria-describedby`-composed, contrast and
+tint already verified. **No new slot, no new element.**
+
+**One ambiguity, flagged rather than decided:** `ADD_SLOT` currently lives in the hint of the row
+labelled *"Add a token for a host"*, so a **removal** outcome would render under an add control.
+My recommendation is to **rename the constant to `SECTION_SLOT`** (and `ADD_OUTCOME_ID` to
+`SECTION_OUTCOME_ID`) with **no DOM or placement change** — it is already a cross-host section slot
+carrying a host-independent outcome, and the label mismatch is cosmetic against the cost of a second
+slot with its own live-region arithmetic. The alternative, if the orchestrator finds the mismatch
+unacceptable, is a dedicated always-mounted section note **above** the group list, which then needs
+the §12.14 parent-`gap`/`:empty` check on its container and a second `aria-describedby` target with
+no control to attach to. Say which before implementing.
+
+## A.3 Copy — outcome R4
+
+**R4 — the account was removed; a leftover legacy credential for the host was refused**
+(`LEGACY_LEFTOVER_HEAD`)
+
+- **Proposed:** `The account is no longer listed, but a leftover credential for {host} is still in
+  the OS keychain. Bonsai can't remove it — clear it there by hand if you want it gone. Details: {e}`
+- "clear it **there**", not "clear it from the OS keychain": the phrase is named once and referred
+  back to, so the second sentence does not echo the first.
+
+Why each clause is the way it is:
+
+- **Succeeded half first, joined by "but"** (Rule 3, partial-failure row), and **state-shaped both
+  halves** (Rule 2): "is no longer listed" / "is still in the OS keychain", never "was removed" /
+  "couldn't be removed". This string can never re-render on a retry, so Rule 2 buys no truth here —
+  it is applied for consistency, at no cost.
+- **`{host}`, not `login`.** §7 finding 1 forbids `host` as a *subject in the remove dialog*; this
+  message is no longer in that dialog, its subject is the leftover, and the leftover **is** keyed to
+  the bare host. `login` would be wrong: nothing named `login` is left behind. `r.host` is in scope
+  at the `format!` site.
+- **No retry cue** — §12.14 permits one only where the operation is provably idempotent, and
+  retrying is not merely non-idempotent here, it is **impossible**: the account is gone, so a second
+  Remove has no target and would never reach the sweep.
+- **It points at the OS keychain, and that is deliberate.** Options were (a) state the fact only,
+  (b) point at the OS keychain. **(b), because the house rule is "errors say what happened and what
+  to do next"**, and this is the one outcome where the next step exists but is outside the app.
+  Omitting it leaves the user with an unexplained fact and no exit. "the OS keychain" is already the
+  sanctioned, platform-neutral vocabulary (Rule 3), so the clause costs one phrase and names no
+  platform. `Bonsai can't remove it` is doing real work: it pre-empts the reasonable belief that
+  some button in the app would finish the job.
+- **`Details: {e}` last**, `CAUSE_LEAD` shared (Rule 3).
+- Two human sentences + the fragment — at budget, not over.
+
+**Const name: `LEGACY_LEFTOVER_HEAD`, and the absence of `FAIL` is intentional.** Every sibling is
+`*_FAIL_HEAD` because the command failed; here it **succeeded**. Naming this one `..._FAIL_...`
+would repeat the act/state lie at the identifier level and would mislead the next reader into
+routing it with the failures. Mock mirror: `LEGACY_LEFTOVER_TEXT` /
+`REMOVE_LEGACY_LEFTOVER_MESSAGE`.
+
+## A.4 Combination truth conditions (P114 §5 style)
+
+The sweep now records its refusal instead of returning early, so two failures can coexist. Ruling:
+
+- **legacy refused + account-key refused (R1):** **R1 wins.** R1 is actionable and its "Nothing was
+  changed — the account is still listed" is still true (the settings write never ran).
+- **legacy refused + settings write failed (R2/R3):** **R2/R3 wins.** It is the actionable one, and
+  the legacy fact is **not lost**: the account record still exists, so the recommended retry runs
+  the sweep again and surfaces R4 on the attempt that finally succeeds.
+- **legacy refused + everything else succeeded:** **R4**, the only case where R4 is returned.
+- **legacy refused + task panic (N2):** N2 wins; state is unknown and N2 is the one message that
+  promises nothing.
+
+So R4 is returned **only** from the tail of a fully successful removal, which is precisely what
+makes its first clause true. Implementer: the refusal must be captured (e.g. `Option<String>`) and
+returned **after** `update_settings` succeeds — never with `?`.
+
+## A.5 Harness state
+
+Repurpose the existing seam key **`?forgeRemoveFail=legacy-keychain`**: the mock must now **remove
+the account from its list first, then reject** with `REMOVE_LEGACY_LEFTOVER_MESSAGE` under the new
+kind. That ordering is the fixture's whole point — it is what lets the harness show the dialog
+closing, the row disappearing and the warn note appearing in one pass. Its `forgeRemoveFailure.ts`
+header comment (lines 26-33, which currently documents the fail-closed behaviour and calls
+`"Nothing was changed"` "literally true") must be rewritten in the same edit. `LEGACY_HOST =
+'github.com'` stays — it is the seeded account's host, so the rendered sentence names a real row.
+No new fixture, no other seam touched.
+
+## A.6 Every string is a THREE-part change
+
+Restating §8 with the current guard behaviour, because it now constrains the *text itself*:
+`mock_copy_mirrors_the_rust_copy` `include_str!`s the mock handler and asserts each whole Rust HEAD
+(+ `CAUSE_LEAD`) appears as **one quoted literal on a non-comment line, exactly once**. So for
+**every** row added, changed or retired here:
+
+1. the Rust const (`forge_remove_account.rs`),
+2. the TS mirror in `forgeRemoveFailure.ts` — **one whole literal**, never a composed fragment, and
+   never only inside a comment (a comment occurrence does not satisfy the guard, and a *second*
+   occurrence breaks the exactly-once match),
+3. the guard's fragment list, plus any test asserting the old text.
+
+A retired const must be removed from all three, or the guard fails on a literal with no const.
+
+---
+
+# Addendum B (2026-09-17) — the toast double-framing in PrPanel and ChecksPanel
+
+Scope extension: these two panels call the **same** backend command as the Settings surface, so
+Rule 1 already governs them; P114 simply never looked here.
+
+## B.1 The defect
+
+`src/components/PrPanel.tsx:247` and `src/components/checksPanel/ChecksPanel.tsx:85` both do:
+
+```
+setConnectError(errorMessage(e));                                 // correct — verbatim
+pushToast('error', `Could not connect: ${errorMessage(e)}`);      // the defect
+```
+
+Rendered with an outcome-shaped message that is the prefix-stutter class removed from the Settings
+dialog: `Could not connect: The credential in the OS keychain is up to date, but the account
+details couldn't be saved…`. `src/ipc/mock/handlers/forgeAddFailure.ts:22` already documents this
+in a comment; nobody acted on it.
+
+## B.2 Ruling — **the toast goes away entirely.** Not the prefix, not the message: the toast.
+
+The deciding argument is Rule 1's own, and it is not about width. `forgeSetToken` rejects with
+**both** classes of message: cause-shaped ones (`authFailed`, rate-limited, network) where §5's
+`Couldn't <verb> <target>.` prefix is *correct*, and outcome-shaped ones
+(`?forgeSetTokenFail=rolled-back|kept|rollback-failed`) where it is *false*. A single call site
+cannot pick correctly, and telling them apart at runtime means **string sniffing** — which P114 §8
+already rejected as "worse". So:
+
+- "drop the prefix" is wrong: the cause-shaped rejections would surface bare and lowercase in a
+  toast, breaking §5.
+- "keep the prefix" is wrong: the outcome-shaped ones stutter, breaking Rule 1.
+- Removing the toast is correct for **both** classes, and costs nothing, because the inline
+  `connectError` render **is** the notification. Precedent, in the same file:
+  `PrPanel.tsx:252-256` — "the reauth banner IS the notification (OD-3)".
+
+Length is supporting evidence only: a two-sentence outcome + `Details: {e}` with an absolute path
+does not belong in a 360px auto-dismissing toast with no `overflow-wrap: anywhere` guarantee, and
+the user would lose it before reading it.
+
+## B.3 Caller change (exact)
+
+- **Delete** `PrPanel.tsx:247` — the `pushToast('error', ...)` line. Nothing else in that handler
+  changes; `setConnectError(errorMessage(e))` on :246 stays.
+- **Delete** `ChecksPanel.tsx:85` — same line, same rule. `setConnectError` on :84 stays.
+- **Do not remove the `pushToast` prop** from either panel — verified, not assumed:
+  `ChecksPanel.tsx:93` (`Could not open the check page: …`) and five other `PrPanel` call sites
+  (`:177, :214, :285, :305, :311`) still use it legitimately (single-step failures and one success,
+  §5 prefix correct). §12.14's "delete the capability where it is no longer needed" does not apply
+  here; remove the **call**, not the parameter.
+- **Rewrite the comment at `src/ipc/mock/handlers/forgeAddFailure.ts:22`** in the same edit — it
+  documents the toast double-framing as a live defect, and would read as a stale accusation once
+  the toast is gone.
+- Remove any test asserting `Could not connect` for these two paths; replace with an assertion that
+  the inline banner shows the message **and** that no toast is raised (the absence is the fix).
+
+**A11y verified — no live-region gap.** `ForgeConnect.tsx:223-225` renders the `error` prop in
+`<div className="error-banner error-banner-dismissible pr-error" role="alert">`, so the failure is
+still announced once after the toast is gone. Both panels pass the state in (`PrPanel.tsx:384`,
+`ChecksPanel.tsx:138`). Had it not been a live region, this ruling would have had to add
+`role="alert"`; it does not. One utterance before, one utterance after — and today's two
+(toast + banner) are in fact a **double** announcement, which is an additional reason to delete.
+
+## B.4 Findings beyond the brief
+
+1. **`forgeSetToken`/`forgeAddAccount` outcome copy now exists in Rust that this signed table does
+   not cover** (`forge_set_token.rs`, `forge_add_account.rs`, and the `rolled-back|kept|
+   rollback-failed` seams). It reads as rule-conformant, but it is **unsigned copy**. Flagged for a
+   follow-up pass; deliberately not re-ruled here.
+2. **The add-account callers are clean of the stutter.** `SettingsAccountAddForm.tsx:44-52` maps by
+   `e.kind` to its own written sentences with no prefix, and `SettingsAccountCard.tsx:96` renders
+   `errorMessage(e)` bare. No change needed — but `addError`'s fall-through must keep rendering
+   outcome messages verbatim if it is ever edited.
+3. **`ChecksPanel.tsx` has no `connectError` clear on success-then-reopen** beyond
+   `setConnectError(null)` at submit; matches the §12.14 clear-at-start rule. No defect.

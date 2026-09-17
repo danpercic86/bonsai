@@ -3,6 +3,7 @@ import type {
   CreatePrInput,
   ForgeAccount,
   ForgeKind,
+  ForgeRemoveOutcome,
   ForgeRepoContext,
   ForgeViewer,
   MergePrInput,
@@ -92,9 +93,11 @@ export interface IpcApiForge {
   /** P79 back-compat alias for {@link forgeAddAccount} (same behavior). */
   forgeSetTokenForHost(host: string, kind: ForgeKind, token: string): Promise<ForgeViewer>;
   /** P80: delete an account's token (by its keychain key), remove the record, and
-   *  clean references (host default, repo overrides). Idempotent. Rejects
-   *  AppError (`other`). */
-  forgeRemoveAccount(accountId: string): Promise<void>;
+   *  clean references (host default, repo overrides). Idempotent. Resolves with
+   *  the removal's outcome: `leftover` carries the P114 R4 sentence when the
+   *  host's legacy bare-host credential could not also be swept (best effort —
+   *  it does NOT fail the removal). Rejects AppError (`other`). */
+  forgeRemoveAccount(accountId: string): Promise<ForgeRemoveOutcome>;
   /** P80: set/replace the default account for `host`. Rejects AppError (`other`)
    *  if `accountId` isn't on the host. */
   forgeSetHostDefault(host: string, accountId: string): Promise<void>;

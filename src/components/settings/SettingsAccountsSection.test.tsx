@@ -169,7 +169,7 @@ describe('SettingsAccountsSection — P80', () => {
 
   it('Remove account → confirm names the account + fallback, then calls forgeRemoveAccount(accountId)', async () => {
     vi.spyOn(ipc, 'forgeListAccounts').mockResolvedValue([GH_ACCOUNT]);
-    const remove = vi.spyOn(ipc, 'forgeRemoveAccount').mockResolvedValue(undefined);
+    const remove = vi.spyOn(ipc, 'forgeRemoveAccount').mockResolvedValue({ leftover: null });
     renderSection();
 
     const kebab = await screen.findByRole('button', { name: /Actions for octocat/i });
@@ -244,7 +244,7 @@ describe('SettingsAccountsSection — inline outcomes (P113)', () => {
     expect(document.querySelectorAll('.toast')).toHaveLength(0);
   });
 
-  // A5's other half: the global add form has NO host yet (`host ?? ADD_SLOT`), so
+  // A5's other half: the global add form has NO host yet (`host ?? SECTION_SLOT`), so
   // this one string keeps the subject-less wording — the fallback is required,
   // not defensive.
   it('a token-page failure raised by the GLOBAL add form lands in the section slot', async () => {

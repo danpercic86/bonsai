@@ -82,7 +82,6 @@ export function ChecksPanel({
       (e: unknown) => {
         setConnecting(false);
         setConnectError(errorMessage(e));
-        pushToast('error', `Could not connect: ${errorMessage(e)}`);
       },
     );
   }

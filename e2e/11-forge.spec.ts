@@ -130,7 +130,13 @@ test.describe('11 forge @forge', () => {
       await expect(
         page.getByRole('alert').filter({ hasText: 'token rejected by GET /user' }).first(),
       ).toBeVisible();
-      await expect(errorToast(page, /Could not connect/)).toBeVisible();
+      // P114 Addendum B: the inline `role="alert"` banner above IS the
+      // notification — the `Could not connect: …` toast that double-framed it
+      // is gone, and its ABSENCE is the fix.
+      // Filtered, deliberately: bare `errorToast(page)` asserts zero error
+      // toasts of ANY kind at that instant, so an unrelated toast would
+      // false-fail this and send the next reader hunting the wrong defect.
+      await expect(errorToast(page, /Could not connect/)).toHaveCount(0);
       // The connect form is still there (nothing flipped).
       await expect(token).toBeVisible();
     });

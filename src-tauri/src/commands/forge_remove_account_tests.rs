@@ -7,7 +7,7 @@
 use super::*;
 use bonsai_forge::ForgeKind;
 
-fn acct(id: &str, host: &str) -> settings::ForgeAccountRecord {
+pub(super) fn acct(id: &str, host: &str) -> settings::ForgeAccountRecord {
     settings::ForgeAccountRecord {
         account_id: id.to_string(),
         keychain_key: id.to_string(),
@@ -19,7 +19,7 @@ fn acct(id: &str, host: &str) -> settings::ForgeAccountRecord {
 }
 
 /// Seed a settings file holding one GitHub account, in a fresh temp dir.
-fn seed(dir: &std::path::Path) -> std::path::PathBuf {
+pub(super) fn seed(dir: &std::path::Path) -> std::path::PathBuf {
     let file = dir.join("settings.json");
     let mut s = settings::Settings::default();
     settings::upsert_forge_account(&mut s, acct("a", "github.com"));
@@ -49,7 +49,7 @@ fn scratch_root() -> std::path::PathBuf {
 
 /// RAII scratch dir: `TempDir`'s `Drop` cleans up even when an assert panics
 /// (the earlier explicit `remove_dir_all` after the asserts leaked on failure).
-fn scratch_dir() -> tempfile::TempDir {
+pub(super) fn scratch_dir() -> tempfile::TempDir {
     let root = scratch_root();
     std::fs::create_dir_all(&root).expect("create scratch root");
     tempfile::Builder::new()
@@ -58,6 +58,22 @@ fn scratch_dir() -> tempfile::TempDir {
         .expect("scratch dir")
 }
 
+/// Records every key `delete_token` is asked to remove, in order.
+pub(super) fn recording_deletes(
+    log: &std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    refuse: Option<&'static str>,
+) -> DeleteTokenFn {
+    let log = std::sync::Arc::clone(log);
+    Box::new(move |key| {
+        log.lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .push(key.to_string());
+        match refuse {
+            Some(k) if k == key => Err(AppError::Other("access denied".into())),
+            _ => Ok(()),
+        }
+    })
+}
 /// Outcome 2: the key is not in the keychain (`delete_token` returns `Ok(())`
 /// for that case — `crates/bonsai-forge/src/auth.rs:53`), so the removal
 /// SUCCEEDS and the record + legacy host mirror are cleaned.
@@ -79,18 +95,24 @@ fn missing_key_is_success_and_removes_the_record() {
     assert!(s.forge_hosts.is_empty(), "legacy mirror dropped");
 }
 
-/// Outcome 1: the keychain refuses ⇒ `Err`, and NOTHING else changed — the
-/// record and the legacy host mirror both survive so the row stays visible and
-/// Remove is retryable.
+/// Outcome 1: the keychain refuses the ACCOUNT's own key ⇒ `Err`, and NOTHING
+/// else changed — the record and the legacy host mirror both survive so the row
+/// stays visible and Remove is retryable.
+///
+/// Refuses ONLY `"a"`, not every key: since the source-B reorder the bare-host
+/// sweep is attempted first, and a blanket refusal would report the LEGACY
+/// outcome instead. That is the distinction this test exists to pin, so it must
+/// fail the one key it is about.
 #[test]
 fn failing_delete_errors_and_changes_nothing() {
     let dir = scratch_dir();
     let file = seed(dir.path());
+    let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let r = tauri::async_runtime::block_on(forge_remove_account_inner_with(
         &file,
         "a".to_string(),
         RemoveAccountDeps {
-            delete_token: Box::new(|_| Err(AppError::Other("access denied".into()))),
+            delete_token: recording_deletes(&log, Some("a")),
             ..RemoveAccountDeps::default()
         },
     ));
@@ -99,6 +121,11 @@ fn failing_delete_errors_and_changes_nothing() {
     assert_eq!(
         msg,
         "Couldn't remove the account's credential from the OS keychain. Nothing was changed — the account is still listed, so you can try again. Details: access denied"
+    );
+    assert_eq!(
+        log.lock().unwrap_or_else(|p| p.into_inner()).clone(),
+        vec!["github.com".to_string(), "a".to_string()],
+        "the unreferenced leftover was swept first, then the refused account key"
     );
     let s = settings::load_from(&file);
     assert_eq!(s.forge_accounts.len(), 1, "record must survive");
@@ -210,8 +237,18 @@ fn mock_code(src: &str) -> String {
 fn mock_copy_mirrors_the_rust_copy() {
     const MOCK: &str = include_str!("../../../src/ipc/mock/handlers/forgeRemoveFailure.ts");
     let code = mock_code(MOCK);
+    // Owned before the loop so the array can hold `&str` uniformly.
+    let legacy = LEGACY_LEFTOVER_HEAD.replace("{host}", "${LEGACY_HOST}");
     for (name, head) in [
         ("KEYCHAIN_FAIL_HEAD", KEYCHAIN_FAIL_HEAD),
+        (
+            "LEGACY_LEFTOVER_HEAD",
+            // The mock fills the `{host}` placeholder from its own
+            // `LEGACY_HOST` const, so the guard compares the same rendered
+            // shape (the `forge_clear_host` convention, whose mock uses
+            // `${host}`).
+            legacy.as_str(),
+        ),
         ("SETTINGS_FAIL_HEAD", SETTINGS_FAIL_HEAD),
         (
             "SETTINGS_FAIL_NO_CREDENTIAL_HEAD",

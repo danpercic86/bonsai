@@ -42,7 +42,8 @@ use crate::github::GitHubProvider;
 use crate::gitlab::GitLabProvider;
 
 /// Construct the concrete [`ForgeProvider`] for `target` over `http`. Shared by
-/// [`open`] and [`validate_token`] so both resolve the SAME provider for a host.
+/// [`open_with_key`] and [`validate_token`] so both resolve the SAME provider
+/// for a host.
 ///
 /// GitLab hosts get [`GitLabProvider`]; Bitbucket hosts get
 /// [`BitbucketProvider`]; Azure DevOps hosts get [`AzureDevOpsProvider`]; GitHub
@@ -66,8 +67,8 @@ fn build_provider(
 /// Resolve the [`ForgeTarget`] for the repo at `workdir` from its `origin`
 /// remote. An unparseable origin yields an `Unknown`-kind target with empty
 /// fields (friendly `repo_context`; data methods reject); no `origin` remote at
-/// all ⇒ [`AppError::NoRemote`]. Shared by [`open`] and [`set_token`] so both
-/// resolve identity identically.
+/// all ⇒ [`AppError::NoRemote`]. Shared by [`open_with_key`] and the validate
+/// entry points so every path resolves identity identically.
 fn resolve_target(workdir: &Path) -> Result<ForgeTarget, AppError> {
     let remotes = bonsai_core::git::remote::list_remotes(workdir)?;
     let origin = remotes
@@ -88,32 +89,6 @@ fn resolve_target(workdir: &Path) -> Result<ForgeTarget, AppError> {
         project: None,
         web_url: String::new(),
     }))
-}
-
-/// Open a forge provider for the repo at `workdir`.
-///
-/// Reads the `origin` remote, detects the provider, looks up a stored token
-/// (keychain, no network), and returns a boxed [`ForgeProvider`] over a real
-/// [`ReqwestTransport`]. An origin that is not a recognized `owner/repo` URL
-/// yields an `Unknown`-kind provider: `repo_context()` returns a friendly
-/// identity, but any DATA method returns [`AppError::ForgeUnsupported`]. No
-/// `origin` remote at all ⇒ [`AppError::NoRemote`].
-///
-/// Tests build providers directly with a fake `HttpTransport` + explicit token,
-/// bypassing this function.
-pub fn open(workdir: &Path) -> Result<Box<dyn ForgeProvider>, AppError> {
-    let target = resolve_target(workdir)?;
-
-    // Presence-only token lookup (never network). A keychain read error
-    // degrades to unauthenticated rather than failing open().
-    let token = if target.host.is_empty() {
-        None
-    } else {
-        auth::global().get(&target.host).unwrap_or(None)
-    };
-
-    let transport = ReqwestTransport::new()?;
-    Ok(build_provider(target, token, Box::new(transport)))
 }
 
 /// P80: open a forge provider for the repo at `workdir` using an EXPLICIT
@@ -210,8 +185,8 @@ pub fn delete_token(keychain_key: &str) -> Result<(), AppError> {
 
 /// Validate a candidate `token` against `target` using `http`, returning the
 /// authenticated viewer on success. Stores NOTHING — the caller persists only
-/// after this returns `Ok`. Split out from [`set_token`] so the validate path
-/// is unit-tested with a fake transport (no network, no keychain). Rejects
+/// after this returns `Ok`. Split out from the entry points so the validate
+/// path is unit-tested with a fake transport (no network, no keychain). Rejects
 /// [`AppError::ForgeUnsupported`] for an unsupported origin and
 /// [`AppError::AuthFailed`] for a token the forge rejects.
 ///
@@ -228,29 +203,6 @@ pub(crate) fn validate_token(
     // makes ONE best-effort profile call for a display name (P72 — the profile
     // endpoint needs a scope the Code-scoped PAT the UI asks for lacks).
     build_provider(target, Some(token.to_string()), http).viewer()
-}
-
-/// Validate a pasted PAT for the repo at `workdir` and, on success, persist it
-/// in the OS keychain keyed by host (P62b auth plumbing — the read-only
-/// [`open`] cannot store).
-///
-/// Flow: resolve the target from `origin` → build a provider with the CANDIDATE
-/// token over a real [`ReqwestTransport`] → `viewer()` (per-provider: `GET /user`,
-/// or for Azure DevOps the repository endpoint, see `validate_token`) to
-/// validate → on success `TokenStore::set(host, token)` and return the viewer
-/// (already cached by `viewer()`). A rejected token ⇒ [`AppError::AuthFailed`]
-/// and NOTHING is stored; a non-GitHub origin ⇒ [`AppError::ForgeUnsupported`].
-/// The token is NEVER logged or placed in a URL (the transport redacts it).
-pub fn set_token(workdir: &Path, token: &str) -> Result<ForgeViewer, AppError> {
-    let target = resolve_target(workdir)?;
-    let host = target.host.clone();
-    let transport = ReqwestTransport::new()?;
-    let viewer = validate_token(target, token, Box::new(transport))?;
-    // Persist ONLY after successful validation (never store a rejected token).
-    if !host.is_empty() {
-        auth::global().set(&host, token)?;
-    }
-    Ok(viewer)
 }
 
 /// Network-free: resolve the `(lowercased host, kind)` for the repo at `workdir`
@@ -271,54 +223,6 @@ pub fn resolve_forge_host(workdir: &Path) -> Result<(String, ForgeKind), AppErro
 pub fn resolve_forge_identity(workdir: &Path) -> Result<(String, String, ForgeKind), AppError> {
     let target = resolve_target(workdir)?;
     Ok((target.host, target.owner, target.kind))
-}
-
-/// Validate `token` against `host`/`kind` DIRECTLY (no repo), and on success
-/// store it in the keychain keyed by `host` + warm the viewer cache. Builds a
-/// repo-less [`ForgeTarget`] (`owner`/`repo` empty). GitHub/GitLab/Bitbucket
-/// validate via their identity endpoint (`GET /user` or equivalent), which needs
-/// no owner/repo. Azure DevOps validates on a REPOSITORY endpoint ⇒ cannot
-/// validate repo-less: returns [`AppError::ForgeUnsupported`] (OD-2). A rejected
-/// token ⇒ [`AppError::AuthFailed`] and NOTHING is stored. Returns the viewer.
-pub fn set_token_for_host(
-    host: &str,
-    kind: ForgeKind,
-    token: &str,
-) -> Result<ForgeViewer, AppError> {
-    let transport = ReqwestTransport::new()?;
-    set_token_for_host_with(host, kind, token, Box::new(transport))
-}
-
-/// Transport-injected core of [`set_token_for_host`] (unit-tested offline). The
-/// Azure and auth-failed branches return BEFORE touching the keychain.
-fn set_token_for_host_with(
-    host: &str,
-    kind: ForgeKind,
-    token: &str,
-    http: Box<dyn HttpTransport>,
-) -> Result<ForgeViewer, AppError> {
-    // OD-2: Azure DevOps has no repo-less identity endpoint under the
-    // Code-scoped PAT, so add-for-host-without-a-repo is unsupported.
-    if kind == ForgeKind::AzureDevOps {
-        return Err(AppError::ForgeUnsupported(
-            "Azure DevOps accounts must be added from an open Azure DevOps repository".to_string(),
-        ));
-    }
-    let host_l = host.to_ascii_lowercase();
-    let target = ForgeTarget {
-        kind,
-        host: host_l.clone(),
-        owner: String::new(),
-        repo: String::new(),
-        project: None,
-        web_url: String::new(),
-    };
-    // Validate first; store ONLY after success (never persist a rejected token).
-    let viewer = validate_token(target, token, http)?;
-    if !host_l.is_empty() {
-        auth::global().set(&host_l, token)?;
-    }
-    Ok(viewer)
 }
 
 /// Drop the cached viewer for `host` WITHOUT deleting the token (the expiry
@@ -402,15 +306,20 @@ mod tests {
         assert!(matches!(err, AppError::ForgeUnsupported(_)), "got {err:?}");
     }
 
-    /// Adding a token for an Azure DevOps host with no repo ⇒ `ForgeUnsupported`
-    /// (OD-2), returned BEFORE any transport or keychain access.
+    /// Validating a token for an Azure DevOps host with no repo ⇒
+    /// `ForgeUnsupported` (OD-6), returned BEFORE any transport access.
+    ///
+    /// Ported from the retired `set_token_for_host_with` (audit INFO-1 deleted
+    /// the bare-host storing entry points) onto the surviving repo-less
+    /// validate seam, which carries the same Azure guard: the coverage is about
+    /// the guard, not about who stores afterwards.
     #[test]
-    fn set_token_for_host_azure_is_unsupported() {
+    fn validate_host_token_azure_is_unsupported() {
         let http = CannedTransport {
             status: 200,
             body: "{}",
         };
-        let err = set_token_for_host_with(
+        let err = validate_host_token_with(
             "dev.azure.com",
             ForgeKind::AzureDevOps,
             "tok",
@@ -420,16 +329,17 @@ mod tests {
         assert!(matches!(err, AppError::ForgeUnsupported(_)), "got {err:?}");
     }
 
-    /// A rejected token for a host ⇒ `AuthFailed`; nothing is stored (the store
-    /// call is never reached because validation returns Err first).
+    /// A rejected token for a repo-less host ⇒ `AuthFailed`, so the command
+    /// layer never reaches its keychain store. Ported from the retired
+    /// `set_token_for_host_with` (audit INFO-1).
     #[test]
-    fn set_token_for_host_bad_is_auth_failed() {
+    fn validate_host_token_bad_is_auth_failed() {
         let http = CannedTransport {
             status: 401,
             body: "{}",
         };
         let err =
-            set_token_for_host_with("github.com", ForgeKind::GitHub, "bad-tok", Box::new(http))
+            validate_host_token_with("github.com", ForgeKind::GitHub, "bad-tok", Box::new(http))
                 .unwrap_err();
         assert!(matches!(err, AppError::AuthFailed(_)), "got {err:?}");
     }

@@ -7,11 +7,12 @@
 //! AI-gated and do NOT emit `repo-changed` (`create_pr` mutates the remote, not
 //! the local repo — the panel refetches on demand).
 //!
-//! Auth (`forge_set_token`) goes through the crate-level `bonsai_forge::set_token`
-//! entry point (the read-only `open()`
-//! cannot store): a pasted PAT is validated via `GET /user`, then stored in the
-//! OS keychain keyed by host. The token is NEVER logged, NEVER placed in a URL,
-//! and NEVER returned to the frontend (only the public viewer identity is).
+//! Auth is NOT here: `forge_set_token` (the per-repo Connect field) lives in
+//! `forge_set_token.rs`, next to the account ADD it now delegates its
+//! keychain/settings transaction to. A pasted PAT is validated first, then
+//! stored under a three-part account key. The token is NEVER logged, NEVER
+//! placed in a URL, and NEVER returned to the frontend (only the public viewer
+//! identity is).
 
 use super::shared::*;
 
@@ -249,73 +250,6 @@ pub(crate) async fn forge_list_review_comments_inner(
     tauri::async_runtime::spawn_blocking(move || {
         let key = crate::commands::resolved_key(&workdir, &file)?;
         bonsai_forge::open_with_key(&workdir, key.as_deref())?.list_review_comments(number)
-    })
-    .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
-}
-
-/// Validate a pasted PAT (`GET /user`) and, on success, store it in the OS
-/// keychain keyed by the origin's host; returns the authenticated viewer. A
-/// rejected token stores NOTHING. The token is never logged, never placed in a
-/// URL, and never echoed back. Errors: `noRepo` | `authFailed` |
-/// `forgeUnsupported` | `noRemote` | `forgeRateLimited` | `networkError` |
-/// `git` | `other`.
-#[tauri::command]
-pub async fn forge_set_token(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-    repo_id: String,
-    token: String,
-) -> Result<ForgeViewer, AppError> {
-    let file = settings::settings_file(&app)?;
-    forge_set_token_inner(state.inner(), &file, &repo_id, token).await
-}
-
-/// Runtime-free core of `forge_set_token`.
-///
-/// P80 (OD-3): validate the pasted PAT for the origin host, learn the login,
-/// store the token under a three-part keychain key, upsert the account (setting
-/// it as the host default if none exists), AND pin it as this repo's override so
-/// the newly-connected account is what the repo uses. The legacy known-hosts
-/// index is kept mirrored (OD-5). Done inside the SAME `spawn_blocking`.
-pub(crate) async fn forge_set_token_inner(
-    state: &AppState,
-    settings_file: &std::path::Path,
-    repo_id: &str,
-    token: String,
-) -> Result<ForgeViewer, AppError> {
-    let workdir = repo_path(state, repo_id)?;
-    let file = settings_file.to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || {
-        let (viewer, host, kind) = bonsai_forge::validate_repo_token(&workdir, &token)?;
-        if host.is_empty() {
-            // Unparseable origin: no host to key an account by; token can't be
-            // stored under an account. Return the validated viewer unchanged.
-            return Ok(viewer);
-        }
-        let login = viewer.login.clone();
-        let aid = settings::account_id(kind, &host, Some(&login));
-        // Store ONLY after successful validation (never persist a rejected token).
-        bonsai_forge::store_token(&aid, &token)?;
-        let workdir_str = workdir.to_string_lossy().to_string();
-        let rec = settings::ForgeAccountRecord {
-            account_id: aid.clone(),
-            keychain_key: aid.clone(),
-            host: host.clone(),
-            kind,
-            login: Some(login.clone()),
-            avatar_url: viewer.avatar_url.clone(),
-        };
-        let _ = settings::update(&file, |s| {
-            settings::upsert_forge_account(s, rec.clone());
-            if !s.forge_host_defaults.iter().any(|d| d.host == host) {
-                settings::set_host_default(s, &host, &aid);
-            }
-            settings::set_repo_override(s, &workdir_str, &aid);
-            // OD-5: keep the legacy known-hosts index mirrored for one release.
-            settings::upsert_forge_host(s, &host, kind, Some(login.clone()));
-        });
-        Ok(viewer)
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?

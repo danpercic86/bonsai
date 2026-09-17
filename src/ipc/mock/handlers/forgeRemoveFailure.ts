@@ -23,6 +23,17 @@
 // Reachable rejections:
 //   - `cannot resolve app config dir: {e}` — from `settings::settings_file` in
 //     the outer command, before the core runs (seam key `'1'`).
+//   Audit MEDIUM-2 source B: removal attempts N+1 keys — when this is the LAST
+//     account on its host, the legacy bare-host key a P79-era token can still
+//     sit under is attempted FIRST, then the account's own `keychain_key`. That
+//     sweep is BEST EFFORT (P114 Addendum A, user ruling 2026-09-17): a refusal
+//     there does NOT block the removal, because fail-closed could permanently
+//     strand a user with a listed, disconnected, unremovable account. So the
+//     `'legacy-keychain'` seam is NOT in the rejection switch below — it is an
+//     outcome R4, carried on the FULFILLED value by `removeAccountLeftover`,
+//     and the account leaves the list first. It needs its own copy because it
+//     must name the leftover (keyed to the bare host), and it carries no retry
+//     cue: the account is gone, so a second Remove never reaches the sweep.
 //   Outcome 1. the keychain refused the delete — no settings or UI state
 //     changed, so the row stays listed and Remove is retryable in place.
 //   Outcome 3. the credential WAS deleted but `settings::update` failed — a
@@ -45,6 +56,7 @@ export type ForgeRemoveFailSeam =
   | '1'
   | 'long'
   | 'keychain'
+  | 'legacy-keychain'
   | 'settings'
   | 'settings-no-credential'
   | 'task-join'
@@ -76,7 +88,13 @@ const TASK_JOIN_CAUSE = 'task 42 panicked with message "boom"';
  *  utterance speaks the action first. Backtick literals because every one
  *  contains an apostrophe, and the guard compares the Rust const byte-for-byte
  *  against this source, where a backslash-escaped quote would not match. */
+/** The host named by the legacy-leftover head (the Rust const carries a literal
+ *  `{host}` placeholder, filled at the `format!` site). `github.com` is the host
+ *  of the mock's seeded account, so the rendered sentence names the row the user
+ *  is actually removing. */
+const LEGACY_HOST = 'github.com';
 const KEYCHAIN_FAIL_TEXT = `Couldn't remove the account's credential from the OS keychain. Nothing was changed — the account is still listed, so you can try again. Details: `;
+const LEGACY_LEFTOVER_TEXT = `The account is no longer listed, but a leftover credential for ${LEGACY_HOST} is still in the OS keychain. Bonsai can't remove it — clear it there by hand if you want it gone. Details: `;
 const SETTINGS_FAIL_TEXT = `The credential is no longer in the OS keychain, but the account list couldn't be saved. Try again to finish removing it. Details: `;
 const SETTINGS_FAIL_NO_CREDENTIAL_TEXT = `The account list couldn't be saved. Try again to finish removing it. Details: `;
 const CONFIG_DIR_FAIL_TEXT = `Couldn't remove the account — Bonsai can't reach its settings folder. Details: `;
@@ -84,6 +102,15 @@ const TASK_JOIN_FAIL_TEXT = `Couldn't remove the account. It may or may not have
 
 /** Outcome 1 — the keychain refused the delete. */
 export const REMOVE_KEYCHAIN_FAIL_MESSAGE = `${KEYCHAIN_FAIL_TEXT}${KEYCHAIN_CAUSE}`;
+
+/** Outcome R4 (P114 Addendum A) — the account WAS removed; the host's leftover
+ *  legacy (bare-host) entry was refused. NOT a rejection: the sweep is best
+ *  effort, so this rides the FULFILLED value as `{ leftover }` and the caller
+ *  closes the dialog, refetches, and renders it as a section-level `--warn`
+ *  note. Its own head because it must name the leftover, which is keyed to the
+ *  bare host — and it carries no retry cue, because there is nothing left to
+ *  retry. */
+export const REMOVE_LEGACY_LEFTOVER_MESSAGE = `${LEGACY_LEFTOVER_TEXT}${KEYCHAIN_CAUSE}`;
 
 /** Outcome 3 — the credential is gone; only the list write failed. */
 export const REMOVE_SETTINGS_FAIL_MESSAGE = `${SETTINGS_FAIL_TEXT}${SETTINGS_CAUSE}`;
@@ -133,4 +160,15 @@ export function removeAccountRejection(seam: ForgeRemoveFailSeam, attempt: numbe
     default:
       return null;
   }
+}
+
+/**
+ * The R4 leftover (if any) a SUCCESSFUL `forgeRemoveAccount` call reports for
+ * `seam`. The removal lands first — the account leaves the list — and the
+ * leftover comes back on the fulfilled value, which is what lets the harness
+ * show the dialog closing, the row disappearing and the warn note appearing in
+ * one pass (P114 §A.5, adapted to the `Ok`-with-payload shape).
+ */
+export function removeAccountLeftover(seam: ForgeRemoveFailSeam): string | null {
+  return seam === 'legacy-keychain' ? REMOVE_LEGACY_LEFTOVER_MESSAGE : null;
 }

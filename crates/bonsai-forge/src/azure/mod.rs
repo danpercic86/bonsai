@@ -161,7 +161,7 @@ impl ForgeProvider for AzureDevOpsProvider {
         let token = self.require_token()?;
 
         // VALIDATE: a 401/203 here is a genuine credential failure; nothing is
-        // cached and (in `lib.rs::set_token`) nothing is stored.
+        // cached and (in the command layer) nothing is stored.
         let resp = rest::get(
             self.transport(),
             &rest::repository_url(org, project, repo),

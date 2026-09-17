@@ -1,5 +1,5 @@
 import { invoke } from './invoke';
-import type { CommitStatus, CreatePrInput, FileDiff, ForgeAccount, ForgeKind, ForgeRepoContext, ForgeViewer, MergePrInput, PrDetail, PrDiffStats, PrListQuery, PrPage, ReviewComment } from '../types';
+import type { CommitStatus, CreatePrInput, FileDiff, ForgeAccount, ForgeKind, ForgeRemoveOutcome, ForgeRepoContext, ForgeViewer, MergePrInput, PrDetail, PrDiffStats, PrListQuery, PrPage, ReviewComment } from '../types';
 
 export const forgeCommands = {
 
@@ -85,8 +85,8 @@ export const forgeCommands = {
     return invoke<ForgeViewer>('forge_set_token_for_host', { host, kind, token });
   },
 
-  forgeRemoveAccount(accountId: string): Promise<void> {
-    return invoke<void>('forge_remove_account', { accountId });
+  forgeRemoveAccount(accountId: string): Promise<ForgeRemoveOutcome> {
+    return invoke<ForgeRemoveOutcome>('forge_remove_account', { accountId });
   },
 
   forgeSetHostDefault(host: string, accountId: string): Promise<void> {

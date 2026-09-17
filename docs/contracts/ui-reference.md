@@ -2532,6 +2532,43 @@ toast raised from the Settings surface is an inline note. **15** call sites swep
   platform-specific name — one string, three OSes), "credential" not "token"/"PAT", contraction
   form **"Couldn't"**, ≤2 human sentences plus the `Details:` fragment, and a retry cue **only**
   where the operation is provably idempotent.
+- **(4) A partial success whose remainder is outside the app's reach — phrase it, and do not report
+  it as a failure (P114 Addendum A, 2026-09-17).** When the action the user asked for **completed**
+  and a side effect the app also attempts did not — the best-effort legacy keychain sweep is the
+  house case — the sentence is: **succeeded half first in state form, `but`, the remaining fact in
+  state form, then one clause naming where the fix lives, then `Details: {e}`.** Three rules make it
+  honest. **No retry cue** — not merely non-idempotent, the operation has no target left, so a cue
+  would be a lie (rule 3's idempotence test decides this, not tone). **Name the outside place**,
+  using the sanctioned platform-neutral vocabulary ("the OS keychain"), and say plainly that Bonsai
+  can't do it — "errors say what happened and what to do next" still binds, and a user told only
+  the fact has no exit; the clause also pre-empts hunting for a button that does not exist. Name the
+  outside place **once** and refer back to it ("clear it there by hand"), or the two sentences echo.
+  **Do not route it through the failure container.** A dialog that stays open for in-place retry
+  becomes a lie the copy cannot fix — it names a target that no longer exists and offers a
+  destructive button whose second click is a silent no-op. So the requirement on the IPC shape is:
+  **an outcome like this must be distinguishable from a failure at the boundary, without inspecting
+  the message text** — preferably as a **fulfilled** value carrying the remainder, because an `Err`
+  that means success is mis-counted as a failure by every generic layer above it (obs `ipc.result` /
+  `error` payloads, the DEV toast guard, any retry wrapper) and repeats the act/state lie at the
+  transport. The mechanism is the architect's call; the requirement is not. The caller then closes
+  the dialog, refetches, and reports through a `SettingsOutcomeNote` in the **`--warn`** tone plus
+  the section announcer: `--warning` because nothing was lost (§12.3.4). A success reported in
+  `--danger` through `role="alert"` is a tone lie even when every word is true. **Slot it at
+  SECTION level, never in the row/group the action just destroyed** — the note whose subject no
+  longer exists unmounts with it (a note clears on unmount), leaving the announcer as the only
+  carrier, which is the placement-is-not-a-carrier failure again. This note is also the one
+  permitted **two-sentence** note; do not generalise that.
+- **Copy pinned across languages is a THREE-part change** (P114 §A.6). Each user-facing backend
+  string lives as a Rust const, a **whole** literal in the mock handler, and a fragment in the
+  cross-language guard, which matches the complete literal **exactly once** against comment-stripped
+  mock source. So a mirror inside a comment does not count, a second occurrence breaks the match, and
+  a retired const must be deleted from all three. Reword copy in three places or not at all.
+- **A toast that duplicates an inline error is deleted, not reworded — and the test is the caller's
+  ignorance, not the width** (P114 Addendum B). Where a command rejects with **both** cause-shaped
+  and outcome-shaped messages, no single `pushToast` prefix can be right for both, and telling them
+  apart at runtime is string sniffing. If the failure already renders inline in a `role="alert"`
+  container, remove the toast: it was also a double announcement. Keep the `pushToast` prop for the
+  site's other, single-step failures — remove the call, not the capability.
 - **Standing state vs action outcome — the two warn shapes are not interchangeable.** A standing
   state that must be noticed on arrival is a **bordered banner** (`.forge-reauth-banner`,
   `.error-banner`). The result of an action the user just took is a **barred note**
