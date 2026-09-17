@@ -13,6 +13,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::common;
+use crate::common::{git, git_ok, init_repo};
 use bonsai_core::error::AppError;
 use bonsai_core::git::commit::{amend_commit, create_commit};
 use bonsai_core::git::exec::{GitExec, GitOutput, SpawnGitExec};
@@ -21,8 +23,6 @@ use bonsai_core::git::signing::{
     VerifyResults, VerifyStatus,
 };
 use bonsai_core::git::stage::stage_paths;
-use crate::common;
-use crate::common::{git, git_ok, init_repo};
 
 macro_rules! require_git {
     () => {
@@ -64,22 +64,34 @@ fn resolve_signing_none_follows_gpgsign_and_override_wins() {
     assert!(!resolve_signing(&off, None).sign, "unset gpgsign ⇒ off");
     let (_d, on) = isolated_config(&[("commit.gpgsign", "true")]);
     assert!(resolve_signing(&on, None).sign, "gpgsign=true ⇒ on");
-    assert!(!resolve_signing(&on, Some(false)).sign, "Some(false) overrides true");
+    assert!(
+        !resolve_signing(&on, Some(false)).sign,
+        "Some(false) overrides true"
+    );
     let (_d, off) = isolated_config(&[("commit.gpgsign", "false")]);
-    assert!(resolve_signing(&off, Some(true)).sign, "Some(true) overrides false");
+    assert!(
+        resolve_signing(&off, Some(true)).sign,
+        "Some(true) overrides false"
+    );
 }
 
 #[test]
 fn resolve_signing_format_and_key() {
-    let (_d, cfg) =
-        isolated_config(&[("gpg.format", "ssh"), ("user.signingkey", "  /keys/id_ed25519  ")]);
+    let (_d, cfg) = isolated_config(&[
+        ("gpg.format", "ssh"),
+        ("user.signingkey", "  /keys/id_ed25519  "),
+    ]);
     let r = resolve_signing(&cfg, None);
     assert_eq!(r.format, SignFormat::Ssh);
     assert_eq!(r.key.as_deref(), Some("/keys/id_ed25519"), "trimmed");
 
     let (_d, cfg) = isolated_config(&[("user.signingkey", "   ")]);
     let r = resolve_signing(&cfg, None);
-    assert_eq!(r.format, SignFormat::Openpgp, "unset gpg.format ⇒ openpgp default");
+    assert_eq!(
+        r.format,
+        SignFormat::Openpgp,
+        "unset gpg.format ⇒ openpgp default"
+    );
     assert_eq!(r.key, None, "whitespace key ⇒ None");
 }
 
@@ -88,7 +100,10 @@ fn resolve_signing_format_and_key() {
 fn wire_shapes_match_ts_mirror() {
     // SignFormat — lowercase.
     assert_eq!(serde_json::to_value(SignFormat::Ssh).unwrap(), "ssh");
-    assert_eq!(serde_json::to_value(SignFormat::Openpgp).unwrap(), "openpgp");
+    assert_eq!(
+        serde_json::to_value(SignFormat::Openpgp).unwrap(),
+        "openpgp"
+    );
 
     // SigningStatus — camelCase; `key` omitted when None.
     let s = serde_json::to_value(SigningStatus {
@@ -114,10 +129,22 @@ fn wire_shapes_match_ts_mirror() {
 
     // VerifyStatus — camelCase.
     assert_eq!(serde_json::to_value(VerifyStatus::Good).unwrap(), "good");
-    assert_eq!(serde_json::to_value(VerifyStatus::GoodUnknown).unwrap(), "goodUnknown");
-    assert_eq!(serde_json::to_value(VerifyStatus::ExpiredKey).unwrap(), "expiredKey");
-    assert_eq!(serde_json::to_value(VerifyStatus::CannotCheck).unwrap(), "cannotCheck");
-    assert_eq!(serde_json::to_value(VerifyStatus::Unsigned).unwrap(), "unsigned");
+    assert_eq!(
+        serde_json::to_value(VerifyStatus::GoodUnknown).unwrap(),
+        "goodUnknown"
+    );
+    assert_eq!(
+        serde_json::to_value(VerifyStatus::ExpiredKey).unwrap(),
+        "expiredKey"
+    );
+    assert_eq!(
+        serde_json::to_value(VerifyStatus::CannotCheck).unwrap(),
+        "cannotCheck"
+    );
+    assert_eq!(
+        serde_json::to_value(VerifyStatus::Unsigned).unwrap(),
+        "unsigned"
+    );
 
     // CommitVerification — camelCase; signer/key omitted when None.
     let cv = serde_json::to_value(CommitVerification {
@@ -141,7 +168,10 @@ fn wire_shapes_match_ts_mirror() {
     assert_eq!(cv2["key"], "KEY");
 
     // VerifyResults wraps `verifications`.
-    let vr = serde_json::to_value(VerifyResults { verifications: vec![] }).unwrap();
+    let vr = serde_json::to_value(VerifyResults {
+        verifications: vec![],
+    })
+    .unwrap();
     assert!(vr["verifications"].is_array());
 }
 
@@ -168,9 +198,19 @@ fn verify_commits_wholesale_failure_degrades_to_cannot_check() {
     let oids = vec!["a".repeat(40), "b".repeat(40)];
     let r = verify_commits(&FailExec, Path::new("."), &oids).expect("degrade, never Err");
     assert_eq!(r.verifications.len(), 2);
-    assert!(r.verifications.iter().all(|v| v.status == VerifyStatus::CannotCheck));
-    assert!(r.verifications.iter().all(|v| v.signer.is_none() && v.key.is_none()));
-    assert_eq!(r.verifications[0].oid, "a".repeat(40), "order + oid preserved");
+    assert!(r
+        .verifications
+        .iter()
+        .all(|v| v.status == VerifyStatus::CannotCheck));
+    assert!(r
+        .verifications
+        .iter()
+        .all(|v| v.signer.is_none() && v.key.is_none()));
+    assert_eq!(
+        r.verifications[0].oid,
+        "a".repeat(40),
+        "order + oid preserved"
+    );
 }
 
 // ---- oracle helpers ----------------------------------------------------------
@@ -190,10 +230,24 @@ fn setup_ssh_signing(dir: &Path, gpgsign: bool) -> String {
     let fwd = |p: PathBuf| p.to_string_lossy().replace('\\', "/");
     let key = fwd(dir.join("id_ed25519"));
     let out = Command::new("ssh-keygen")
-        .args(["-t", "ed25519", "-N", "", "-C", "test@example.com", "-f", &key, "-q"])
+        .args([
+            "-t",
+            "ed25519",
+            "-N",
+            "",
+            "-C",
+            "test@example.com",
+            "-f",
+            &key,
+            "-q",
+        ])
         .output()
         .expect("ssh-keygen");
-    assert!(out.status.success(), "keygen: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "keygen: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let pubtext = std::fs::read_to_string(dir.join("id_ed25519.pub")).expect("pub key");
     let mut it = pubtext.split_whitespace();
@@ -204,8 +258,18 @@ fn setup_ssh_signing(dir: &Path, gpgsign: bool) -> String {
 
     git(dir, &["config", "gpg.format", "ssh"]);
     git(dir, &["config", "user.signingkey", &key]);
-    git(dir, &["config", "gpg.ssh.allowedSignersFile", &fwd(signers)]);
-    git(dir, &["config", "commit.gpgsign", if gpgsign { "true" } else { "false" }]);
+    git(
+        dir,
+        &["config", "gpg.ssh.allowedSignersFile", &fwd(signers)],
+    );
+    git(
+        dir,
+        &[
+            "config",
+            "commit.gpgsign",
+            if gpgsign { "true" } else { "false" },
+        ],
+    );
     key
 }
 
@@ -247,13 +311,30 @@ fn oracle_ssh_sign_creates_verifiable_commit() {
     stage_write(d, "a.txt", "alpha\n");
     let res = create_commit(d, "signed subject", Some(true), false).expect("signed commit");
 
-    assert_eq!(git(d, &["rev-parse", "HEAD"]), res.oid, "HEAD moved to the signed commit");
+    assert_eq!(
+        git(d, &["rev-parse", "HEAD"]),
+        res.oid,
+        "HEAD moved to the signed commit"
+    );
     assert_ne!(res.oid, base);
     assert_eq!(res.branch.as_deref(), Some("main"));
-    assert!(cat(d, &res.oid).contains("gpgsig"), "signed commit must carry a gpgsig header");
-    assert!(git_ok(d, &["verify-commit", &res.oid]), "git verify-commit must pass");
-    assert_eq!(git(d, &["log", "--format=%G?", "-1", &res.oid]), "G", "%G? must be Good");
-    assert!(git(d, &["reflog", "-1"]).contains("commit:"), "reflog records the commit");
+    assert!(
+        cat(d, &res.oid).contains("gpgsig"),
+        "signed commit must carry a gpgsig header"
+    );
+    assert!(
+        git_ok(d, &["verify-commit", &res.oid]),
+        "git verify-commit must pass"
+    );
+    assert_eq!(
+        git(d, &["log", "--format=%G?", "-1", &res.oid]),
+        "G",
+        "%G? must be Good"
+    );
+    assert!(
+        git(d, &["reflog", "-1"]).contains("commit:"),
+        "reflog records the commit"
+    );
 }
 
 #[test]
@@ -268,8 +349,16 @@ fn oracle_ssh_amend_preserves_author_and_resigns() {
 
     setup_ssh_signing(d, false);
     let res = amend_commit(d, "amended subject", Some(true), false).expect("amend");
-    assert_eq!(git(d, &["log", "--format=%an <%ae>", "-1"]), orig_author, "author preserved");
-    assert_eq!(git(d, &["log", "--format=%at", "-1"]), orig_adate, "author date preserved");
+    assert_eq!(
+        git(d, &["log", "--format=%an <%ae>", "-1"]),
+        orig_author,
+        "author preserved"
+    );
+    assert_eq!(
+        git(d, &["log", "--format=%at", "-1"]),
+        orig_adate,
+        "author date preserved"
+    );
     assert_eq!(git(d, &["log", "--format=%s", "-1"]), "amended subject");
     assert!(cat(d, &res.oid).contains("gpgsig"), "amend must re-sign");
 }
@@ -284,7 +373,10 @@ fn config_gates_decide_signing() {
     // (a) sign=None + gpgsign=false ⇒ UNSIGNED (byte-identical: no gpgsig header).
     stage_write(d, "a.txt", "a\n");
     let a = create_commit(d, "a", None, false).expect("a").oid;
-    assert!(!cat(d, &a).contains("gpgsig"), "None + gpgsign=false ⇒ unsigned");
+    assert!(
+        !cat(d, &a).contains("gpgsig"),
+        "None + gpgsign=false ⇒ unsigned"
+    );
 
     // (b) commit.gpgsign=true + sign=None ⇒ SIGNED.
     git(d, &["config", "commit.gpgsign", "true"]);
@@ -295,7 +387,10 @@ fn config_gates_decide_signing() {
     // (c) sign=Some(false) overrides gpgsign=true ⇒ UNSIGNED.
     stage_write(d, "c.txt", "c\n");
     let c = create_commit(d, "c", Some(false), false).expect("c").oid;
-    assert!(!cat(d, &c).contains("gpgsig"), "Some(false) overrides ⇒ unsigned");
+    assert!(
+        !cat(d, &c).contains("gpgsig"),
+        "Some(false) overrides ⇒ unsigned"
+    );
 }
 
 #[test]
@@ -336,7 +431,9 @@ fn oracle_verify_signed_and_unsigned() {
 
     setup_ssh_signing(d, false); // allowed_signers names the committer ⇒ trusted
     stage_write(d, "a.txt", "alpha\n");
-    let signed = create_commit(d, "signed", Some(true), false).expect("signed").oid;
+    let signed = create_commit(d, "signed", Some(true), false)
+        .expect("signed")
+        .oid;
 
     let res = verify_commits(&SpawnGitExec, d, &[base.clone(), signed.clone()]).expect("verify");
     assert_eq!(res.verifications.len(), 2, "both oids resolvable");
@@ -359,7 +456,9 @@ fn oracle_verify_trust_unavailable_never_errs() {
     let d = dir.path();
     setup_ssh_signing(d, false);
     stage_write(d, "a.txt", "a\n");
-    let signed = create_commit(d, "signed", Some(true), false).expect("signed").oid;
+    let signed = create_commit(d, "signed", Some(true), false)
+        .expect("signed")
+        .oid;
     // Drop the allowed-signers file ⇒ git cannot establish trust for the SSH
     // signature. The invariant under test: verify_commits still returns Ok (never
     // hard-fails) with a non-`good` verdict — the exact `%G?` is git's call
@@ -370,7 +469,11 @@ fn oracle_verify_trust_unavailable_never_errs() {
     let res = verify_commits(&SpawnGitExec, d, std::slice::from_ref(&signed)).expect("never Err");
     assert_eq!(res.verifications.len(), 1);
     let v = &res.verifications[0];
-    assert_ne!(v.status, VerifyStatus::Good, "trust cannot be established ⇒ not Good");
+    assert_ne!(
+        v.status,
+        VerifyStatus::Good,
+        "trust cannot be established ⇒ not Good"
+    );
     assert!(
         matches!(
             v.status,
@@ -413,10 +516,15 @@ fn oracle_verify_bogus_and_empty_omitted() {
     assert_eq!(res.verifications[0].oid, real);
     assert_eq!(res.verifications[0].status, VerifyStatus::Unsigned);
     assert!(
-        res.verifications.iter().all(|v| v.status != VerifyStatus::CannotCheck),
+        res.verifications
+            .iter()
+            .all(|v| v.status != VerifyStatus::CannotCheck),
         "the real oid must NOT degrade to CannotCheck because of the ghost oid"
     );
 
     // Empty request ⇒ empty result (no spawn path also covered by the unit test).
-    assert!(verify_commits(&SpawnGitExec, d, &[]).expect("empty").verifications.is_empty());
+    assert!(verify_commits(&SpawnGitExec, d, &[])
+        .expect("empty")
+        .verifications
+        .is_empty());
 }

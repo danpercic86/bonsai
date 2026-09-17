@@ -10,7 +10,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 fn counting_fill(counter: Arc<AtomicUsize>) -> FillFn {
     Box::new(move |_repo, _url| {
         counter.fetch_add(1, Ordering::SeqCst);
-        FillOutcome::Filled { username: "u".to_string(), password: "p".to_string() }
+        FillOutcome::Filled {
+            username: "u".to_string(),
+            password: "p".to_string(),
+        }
     })
 }
 
@@ -19,7 +22,10 @@ fn counting_fill(counter: Arc<AtomicUsize>) -> FillFn {
 fn versioned_fill(counter: Arc<AtomicUsize>) -> FillFn {
     Box::new(move |_repo, _url| {
         let n = counter.fetch_add(1, Ordering::SeqCst) + 1;
-        FillOutcome::Filled { username: "u".to_string(), password: format!("p{n}") }
+        FillOutcome::Filled {
+            username: "u".to_string(),
+            password: format!("p{n}"),
+        }
     })
 }
 
@@ -52,8 +58,14 @@ fn poll_until_value(cache: &Arc<CredCache>, url: &str, want: &str) -> bool {
 fn classify_boundaries() {
     let ttl = Duration::from_millis(200);
     let refresh = Duration::from_millis(100);
-    assert_eq!(classify(Duration::from_millis(0), ttl, refresh), Freshness::Fresh);
-    assert_eq!(classify(Duration::from_millis(99), ttl, refresh), Freshness::Fresh);
+    assert_eq!(
+        classify(Duration::from_millis(0), ttl, refresh),
+        Freshness::Fresh
+    );
+    assert_eq!(
+        classify(Duration::from_millis(99), ttl, refresh),
+        Freshness::Fresh
+    );
     assert_eq!(
         classify(Duration::from_millis(100), ttl, refresh),
         Freshness::StaleButValid
@@ -62,8 +74,14 @@ fn classify_boundaries() {
         classify(Duration::from_millis(199), ttl, refresh),
         Freshness::StaleButValid
     );
-    assert_eq!(classify(Duration::from_millis(200), ttl, refresh), Freshness::Expired);
-    assert_eq!(classify(Duration::from_millis(500), ttl, refresh), Freshness::Expired);
+    assert_eq!(
+        classify(Duration::from_millis(200), ttl, refresh),
+        Freshness::Expired
+    );
+    assert_eq!(
+        classify(Duration::from_millis(500), ttl, refresh),
+        Freshness::Expired
+    );
 }
 
 // 2. miss then hit.
@@ -75,12 +93,18 @@ fn miss_then_hit() {
         Duration::from_secs(60),
         Duration::from_secs(48),
     );
-    let r1 = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
+    let r1 = cache
+        .resolve(None, "https://host.com/a", false)
+        .into_option()
+        .expect("some");
     assert_eq!(counter.load(Ordering::SeqCst), 1);
     assert!(!r1.from_cache);
     assert_eq!(r1.creds, ("u".to_string(), "p".to_string()));
 
-    let r2 = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
+    let r2 = cache
+        .resolve(None, "https://host.com/a", false)
+        .into_option()
+        .expect("some");
     assert_eq!(counter.load(Ordering::SeqCst), 1, "hit must not re-fill");
     assert!(r2.from_cache);
 }
@@ -94,11 +118,17 @@ fn ttl_expiry_refills() {
         Duration::from_millis(80),
         Duration::from_millis(60),
     );
-    cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
+    cache
+        .resolve(None, "https://host.com/a", false)
+        .into_option()
+        .expect("some");
     assert_eq!(counter.load(Ordering::SeqCst), 1);
 
     std::thread::sleep(Duration::from_millis(140)); // past ttl
-    let r = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
+    let r = cache
+        .resolve(None, "https://host.com/a", false)
+        .into_option()
+        .expect("some");
     assert_eq!(counter.load(Ordering::SeqCst), 2, "expired entry re-fills");
     assert!(!r.from_cache);
 }
@@ -112,14 +142,23 @@ fn stale_while_revalidate_swaps_value() {
         Duration::from_millis(600), // ttl
         Duration::from_millis(80),  // refresh_age
     );
-    let r1 = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
+    let r1 = cache
+        .resolve(None, "https://host.com/a", false)
+        .into_option()
+        .expect("some");
     assert_eq!(r1.creds.1, "p1");
     assert_eq!(counter.load(Ordering::SeqCst), 1);
 
     std::thread::sleep(Duration::from_millis(120)); // into stale-but-valid window
-    let r2 = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
+    let r2 = cache
+        .resolve(None, "https://host.com/a", false)
+        .into_option()
+        .expect("some");
     assert!(r2.from_cache);
-    assert_eq!(r2.creds.1, "p1", "stale read returns the OLD value immediately");
+    assert_eq!(
+        r2.creds.1, "p1",
+        "stale read returns the OLD value immediately"
+    );
 
     // Wait on store COMPLETION (the refreshed value becoming observable),
     // not the call-counter — the counter bumps at fill START, before the
@@ -129,7 +168,10 @@ fn stale_while_revalidate_swaps_value() {
         "background refresh did not store the new value in time"
     );
 
-    let r3 = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
+    let r3 = cache
+        .resolve(None, "https://host.com/a", false)
+        .into_option()
+        .expect("some");
     assert_eq!(r3.creds.1, "p2", "next read sees the refreshed value");
     assert!(r3.from_cache);
 }
@@ -143,7 +185,10 @@ fn single_flight_one_fill_for_concurrent_resolves() {
         Box::new(move |_repo, _url| {
             counter.fetch_add(1, Ordering::SeqCst);
             std::thread::sleep(Duration::from_millis(150)); // widen the race window
-            FillOutcome::Filled { username: "u".to_string(), password: "p".to_string() }
+            FillOutcome::Filled {
+                username: "u".to_string(),
+                password: "p".to_string(),
+            }
         })
     };
     let cache = CredCache::new(fill, Duration::from_secs(60), Duration::from_secs(48));
@@ -152,12 +197,21 @@ fn single_flight_one_fill_for_concurrent_resolves() {
     for _ in 0..8 {
         let c = Arc::clone(&cache);
         handles.push(std::thread::spawn(move || {
-            c.resolve(None, "https://host.com/a", false).into_option().map(|r| r.creds)
+            c.resolve(None, "https://host.com/a", false)
+                .into_option()
+                .map(|r| r.creds)
         }));
     }
-    let results: Vec<_> = handles.into_iter().map(|h| h.join().expect("join")).collect();
+    let results: Vec<_> = handles
+        .into_iter()
+        .map(|h| h.join().expect("join"))
+        .collect();
 
-    assert_eq!(counter.load(Ordering::SeqCst), 1, "single-flight: exactly one fill");
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        1,
+        "single-flight: exactly one fill"
+    );
     for r in results {
         assert_eq!(r, Some(("u".to_string(), "p".to_string())));
     }
@@ -172,8 +226,14 @@ fn different_keys_independent_fills() {
         Duration::from_secs(60),
         Duration::from_secs(48),
     );
-    cache.resolve(None, "https://host-a.com/x", false).into_option().expect("some");
-    cache.resolve(None, "https://host-b.com/x", false).into_option().expect("some");
+    cache
+        .resolve(None, "https://host-a.com/x", false)
+        .into_option()
+        .expect("some");
+    cache
+        .resolve(None, "https://host-b.com/x", false)
+        .into_option()
+        .expect("some");
     assert_eq!(counter.load(Ordering::SeqCst), 2);
 }
 
@@ -186,13 +246,23 @@ fn bypass_evict_and_refill() {
         Duration::from_secs(60),
         Duration::from_secs(48),
     );
-    let r1 = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
+    let r1 = cache
+        .resolve(None, "https://host.com/a", false)
+        .into_option()
+        .expect("some");
     assert_eq!(r1.creds.1, "p1");
     assert_eq!(counter.load(Ordering::SeqCst), 1);
 
     cache.evict(None, "https://host.com/a");
-    let r2 = cache.resolve(None, "https://host.com/a", true).into_option().expect("some");
-    assert_eq!(counter.load(Ordering::SeqCst), 2, "bypass forces a fresh fill");
+    let r2 = cache
+        .resolve(None, "https://host.com/a", true)
+        .into_option()
+        .expect("some");
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        2,
+        "bypass forces a fresh fill"
+    );
     assert!(!r2.from_cache);
     assert_eq!(r2.creds.1, "p2");
 }
@@ -208,17 +278,26 @@ fn fill_failure_returns_none_no_entry() {
             if n == 0 {
                 FillOutcome::NoCredentials // first call: helper had nothing
             } else {
-                FillOutcome::Filled { username: "u".to_string(), password: "p".to_string() }
+                FillOutcome::Filled {
+                    username: "u".to_string(),
+                    password: "p".to_string(),
+                }
             }
         })
     };
     let cache = CredCache::new(fill, Duration::from_secs(60), Duration::from_secs(48));
 
-    assert!(cache.resolve(None, "https://host.com/a", false).into_option().is_none());
+    assert!(cache
+        .resolve(None, "https://host.com/a", false)
+        .into_option()
+        .is_none());
     assert_eq!(counter.load(Ordering::SeqCst), 1);
 
     // No entry stored + in_flight cleared -> a following resolve still works.
-    let r = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
+    let r = cache
+        .resolve(None, "https://host.com/a", false)
+        .into_option()
+        .expect("some");
     assert_eq!(counter.load(Ordering::SeqCst), 2);
     assert!(!r.from_cache);
 }
@@ -237,7 +316,10 @@ fn git_unavailable_fill_is_passed_through_and_not_cached() {
             if n == 0 {
                 FillOutcome::GitUnavailable("program not found".to_string())
             } else {
-                FillOutcome::Filled { username: "u".to_string(), password: "p".to_string() }
+                FillOutcome::Filled {
+                    username: "u".to_string(),
+                    password: "p".to_string(),
+                }
             }
         })
     };
@@ -259,7 +341,10 @@ fn git_unavailable_fill_is_passed_through_and_not_cached() {
         .into_option()
         .expect("re-fill after a launch failure");
     assert_eq!(counter.load(Ordering::SeqCst), 2);
-    assert!(!r.from_cache, "a GitUnavailable outcome must not have been cached");
+    assert!(
+        !r.from_cache,
+        "a GitUnavailable outcome must not have been cached"
+    );
 }
 
 // 8. warm: pre-fill an empty key; a Fresh key does not re-fill.
@@ -275,22 +360,41 @@ fn warm_prefills_then_resolve_is_warm() {
     wait_until(&counter, 1);
     assert_eq!(counter.load(Ordering::SeqCst), 1, "warm scheduled a fill");
 
-    let r = cache.resolve(None, "https://host.com/a", false).into_option().expect("some");
+    let r = cache
+        .resolve(None, "https://host.com/a", false)
+        .into_option()
+        .expect("some");
     assert!(r.from_cache);
     assert_eq!(counter.load(Ordering::SeqCst), 1, "resolve finds it warm");
 
     cache.warm(None, "https://host.com/a"); // already Fresh -> no-op
     std::thread::sleep(Duration::from_millis(40));
-    assert_eq!(counter.load(Ordering::SeqCst), 1, "warm on Fresh key does not re-fill");
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        1,
+        "warm on Fresh key does not re-fill"
+    );
 }
 
 // 9. key normalization table (host-only, useHttpPath OFF).
 #[test]
 fn normalize_key_table() {
-    assert_eq!(normalize_key("https://Host.COM/a/b.git?x=1#f", false), "https://host.com");
-    assert_eq!(normalize_key("https://user:pw@host.com/a", false), "https://host.com");
-    assert_eq!(normalize_key("https://host.com/other", false), "https://host.com");
-    assert_eq!(normalize_key("https://host.com:8443/a", false), "https://host.com:8443");
+    assert_eq!(
+        normalize_key("https://Host.COM/a/b.git?x=1#f", false),
+        "https://host.com"
+    );
+    assert_eq!(
+        normalize_key("https://user:pw@host.com/a", false),
+        "https://host.com"
+    );
+    assert_eq!(
+        normalize_key("https://host.com/other", false),
+        "https://host.com"
+    );
+    assert_eq!(
+        normalize_key("https://host.com:8443/a", false),
+        "https://host.com:8443"
+    );
     assert_eq!(normalize_key("HTTPS://HOST.com", false), "https://host.com");
     // non-`://` fallback -> lowercased input.
     assert_eq!(
@@ -387,7 +491,8 @@ fn key_for_honors_host_scoped_use_http_path() {
     {
         let mut cfg = repo.config().expect("config");
         // Unscoped OFF locally (override any global default), host-scoped ON.
-        cfg.set_bool("credential.useHttpPath", false).expect("unscoped off");
+        cfg.set_bool("credential.useHttpPath", false)
+            .expect("unscoped off");
         cfg.set_bool("credential.https://azdo.example.test.useHttpPath", true)
             .expect("set scoped");
     }
@@ -417,7 +522,10 @@ fn panicking_fill_does_not_wedge_key() {
             if n == 0 {
                 panic!("boom: simulated filler panic on first call");
             }
-            FillOutcome::Filled { username: "u".to_string(), password: "p".to_string() }
+            FillOutcome::Filled {
+                username: "u".to_string(),
+                password: "p".to_string(),
+            }
         })
     };
     let cache = CredCache::new(fill, Duration::from_secs(60), Duration::from_secs(48));
@@ -428,12 +536,17 @@ fn panicking_fill_does_not_wedge_key() {
     let first = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         c.resolve(None, "https://host.com/a", false).into_option()
     }));
-    assert!(first.is_err(), "the filler panic must propagate out of resolve");
+    assert!(
+        first.is_err(),
+        "the filler panic must propagate out of resolve"
+    );
     assert_eq!(counter.load(Ordering::SeqCst), 1);
 
     // Must NOT hang: `in_flight` was cleared by the drop-guard, so this does
     // a fresh fill and returns creds.
-    let second = cache.resolve(None, "https://host.com/a", false).into_option();
+    let second = cache
+        .resolve(None, "https://host.com/a", false)
+        .into_option();
     assert_eq!(
         second.map(|r| r.creds),
         Some(("u".to_string(), "p".to_string())),
@@ -461,7 +574,10 @@ fn poisoned_lock_recovers_instead_of_panicking() {
         panic!("deliberate poison");
     })
     .join();
-    assert!(cache.state.lock().is_err(), "mutex must actually be poisoned");
+    assert!(
+        cache.state.lock().is_err(),
+        "mutex must actually be poisoned"
+    );
 
     // The cache keeps working through the recovering lock helpers.
     let r = cache

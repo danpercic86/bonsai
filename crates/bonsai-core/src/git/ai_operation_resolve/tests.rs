@@ -6,9 +6,7 @@
 //! Extracted verbatim from the former inline `mod tests`; shared fixtures live
 //! in `test_support`.
 
-use super::test_support::{
-    expect_proposed, expect_unsupported, linear_repo, merge_repo, oid,
-};
+use super::test_support::{expect_proposed, expect_unsupported, linear_repo, merge_repo, oid};
 use super::*;
 
 // ------------------------------------------------------- §11.3 undoLastCommit
@@ -23,8 +21,12 @@ fn undo_last_commit_targets_head_parent() {
 
     // keepChanges=true → Mixed, Caution, no worktree warning.
     let op = expect_proposed(
-        resolve_intent(&repo, AiOpIntent::UndoLastCommit { keep_changes: true }, None)
-            .expect("Ok"),
+        resolve_intent(
+            &repo,
+            AiOpIntent::UndoLastCommit { keep_changes: true },
+            None,
+        )
+        .expect("Ok"),
     );
     match &op.op {
         SafeOp::Reset {
@@ -44,7 +46,9 @@ fn undo_last_commit_targets_head_parent() {
     let op = expect_proposed(
         resolve_intent(
             &repo,
-            AiOpIntent::UndoLastCommit { keep_changes: false },
+            AiOpIntent::UndoLastCommit {
+                keep_changes: false,
+            },
             None,
         )
         .expect("Ok"),
@@ -69,8 +73,7 @@ fn undo_last_merge_requires_merge_head() {
     let repo = git2::Repository::open(p).expect("open");
     let short_m: String = m.chars().take(7).collect();
 
-    let op =
-        expect_proposed(resolve_intent(&repo, AiOpIntent::UndoLastMerge, None).expect("Ok"));
+    let op = expect_proposed(resolve_intent(&repo, AiOpIntent::UndoLastMerge, None).expect("Ok"));
     match &op.op {
         SafeOp::Reset {
             target_oid, mode, ..
@@ -85,14 +88,18 @@ fn undo_last_merge_requires_merge_head() {
         "undoLastMerge is always Destructive (OQ2)"
     );
     assert!(
-        op.preview.dropped_commits.iter().any(|c| c.short == short_m),
+        op.preview
+            .dropped_commits
+            .iter()
+            .any(|c| c.short == short_m),
         "the merge commit leaves the branch"
     );
     // No upstream yet → no shared-history warning.
     assert!(op.preview.worktree_warning.is_none());
 
     // Add an upstream → the shared-history warning appears.
-    repo.remote("origin", "https://example.invalid/x.git").expect("remote");
+    repo.remote("origin", "https://example.invalid/x.git")
+        .expect("remote");
     repo.reference(
         &format!("refs/remotes/origin/{head_branch}"),
         oid(&m),
@@ -110,11 +117,16 @@ fn undo_last_merge_requires_merge_head() {
         )
         .expect("merge cfg");
     }
-    let op =
-        expect_proposed(resolve_intent(&repo, AiOpIntent::UndoLastMerge, None).expect("Ok"));
-    let warn = op.preview.worktree_warning.expect("upstream warning present");
+    let op = expect_proposed(resolve_intent(&repo, AiOpIntent::UndoLastMerge, None).expect("Ok"));
+    let warn = op
+        .preview
+        .worktree_warning
+        .expect("upstream warning present");
     assert!(warn.contains("rewrites history"), "got: {warn}");
-    assert!(warn.contains(&format!("origin/{head_branch}")), "got: {warn}");
+    assert!(
+        warn.contains(&format!("origin/{head_branch}")),
+        "got: {warn}"
+    );
 
     // A non-merge HEAD → Unsupported.
     let (dir2, _a2, _b2) = linear_repo();
@@ -258,8 +270,8 @@ fn discard_filters_to_tracked_modified() {
             AiOpIntent::DiscardChanges {
                 paths: vec![
                     "a.txt".to_string(),
-                    "b.txt".to_string(),        // tracked but clean → dropped
-                    "no-such.txt".to_string(),  // unknown → dropped
+                    "b.txt".to_string(),       // tracked but clean → dropped
+                    "no-such.txt".to_string(), // unknown → dropped
                 ],
             },
             None,
@@ -284,7 +296,10 @@ fn discard_filters_to_tracked_modified() {
         )
         .expect("Ok"),
     );
-    assert!(reason.contains("uncommitted changes to discard"), "got: {reason}");
+    assert!(
+        reason.contains("uncommitted changes to discard"),
+        "got: {reason}"
+    );
 }
 
 // ------------------------------ §11.8 op-in-progress blocks ALL mutating intents
@@ -301,8 +316,7 @@ fn op_in_progress_blocks_all_mutating_intents() {
     // presence of .git/MERGE_HEAD (no real conflict needed).
     {
         let repo = git2::Repository::open(p).expect("open");
-        std::fs::write(repo.path().join("MERGE_HEAD"), format!("{a}\n"))
-            .expect("write MERGE_HEAD");
+        std::fs::write(repo.path().join("MERGE_HEAD"), format!("{a}\n")).expect("write MERGE_HEAD");
     }
     let repo = git2::Repository::open(p).expect("reopen");
     assert_eq!(
@@ -319,9 +333,7 @@ fn op_in_progress_blocks_all_mutating_intents() {
             commit: short_a,
             keep_changes: true,
         },
-        AiOpIntent::RevertCommit {
-            commit: a.clone(),
-        },
+        AiOpIntent::RevertCommit { commit: a.clone() },
         AiOpIntent::SwitchBranch {
             branch: "whatever".to_string(),
         },
@@ -347,9 +359,8 @@ fn op_in_progress_blocks_all_mutating_intents() {
 
     for intent in intents {
         let label = format!("{intent:?}");
-        let reason = expect_unsupported(
-            resolve_intent(&repo, intent, None).expect("Ok(Unsupported)"),
-        );
+        let reason =
+            expect_unsupported(resolve_intent(&repo, intent, None).expect("Ok(Unsupported)"));
         assert!(
             reason.contains("in-progress"),
             "{label} must be blocked by the op-in-progress guard, got: {reason}"

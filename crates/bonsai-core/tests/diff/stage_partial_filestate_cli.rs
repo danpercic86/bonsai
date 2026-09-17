@@ -5,11 +5,11 @@
 //! Moved verbatim out of `stage_partial_cli.rs`; see that module for the
 //! oracle rules and `stage_partial_helpers` for the shared helpers.
 
-use bonsai_core::git::diff::{workdir_file_diff, LineKind};
-use bonsai_core::git::stage_partial::{stage_partial, unstage_partial, LineSelection};
 use crate::common;
 use crate::common::{commit_fixed, git, init_repo};
 use crate::stage_partial_helpers::{all_changed, repo_with, staged_bytes, write, xy};
+use bonsai_core::git::diff::{workdir_file_diff, LineKind};
+use bonsai_core::git::stage_partial::{stage_partial, unstage_partial, LineSelection};
 
 macro_rules! require_git {
     () => {
@@ -39,7 +39,11 @@ fn untracked_partial_and_full() {
         }];
         stage_partial(p, "u.txt", None, &sel).expect("stage partial untracked");
         assert_eq!(staged_bytes(p, "u.txt"), b"x\n");
-        assert_eq!(xy(p, "u.txt").as_deref(), Some("AM"), "added + still-modified");
+        assert_eq!(
+            xy(p, "u.txt").as_deref(),
+            Some("AM"),
+            "added + still-modified"
+        );
     }
     // full
     {
@@ -71,8 +75,16 @@ fn deleted_partial_and_full() {
         assert_eq!(fd.status, bonsai_core::git::status::FileStatus::Deleted);
         // Stage the deletion of "a" and "c" only; "b" stays in the index.
         let sel = vec![
-            LineSelection { kind: LineKind::Del, old_no: Some(1), new_no: None },
-            LineSelection { kind: LineKind::Del, old_no: Some(3), new_no: None },
+            LineSelection {
+                kind: LineKind::Del,
+                old_no: Some(1),
+                new_no: None,
+            },
+            LineSelection {
+                kind: LineKind::Del,
+                old_no: Some(3),
+                new_no: None,
+            },
         ];
         stage_partial(p, "f.txt", None, &sel).expect("stage partial deletion");
         assert_eq!(staged_bytes(p, "f.txt"), b"b\n");
@@ -134,6 +146,9 @@ fn unstage_committed_empty_file_restores_empty_blob() {
     unstage_partial(p, "e.txt", None, &all_changed(&staged)).expect("unstage all");
     // Index restored to HEAD's empty blob -> no staged deletion; workdir still
     // has content -> unstaged M.
-    assert!(staged_bytes(p, "e.txt").is_empty(), "index restored to empty blob");
+    assert!(
+        staged_bytes(p, "e.txt").is_empty(),
+        "index restored to empty blob"
+    );
     assert_eq!(xy(p, "e.txt").as_deref(), Some(" M"), "no staged deletion");
 }

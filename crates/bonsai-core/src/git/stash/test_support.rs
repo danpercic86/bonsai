@@ -11,7 +11,8 @@ pub(super) fn s9_init(dir: &Path) -> git2::Repository {
     let repo = git2::Repository::init(dir).expect("init repo");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     drop(cfg);
     repo
@@ -49,8 +50,15 @@ pub(super) fn s9_commit_on_ref(
         tb.insert(name, blob, 0o100644).expect("insert");
     }
     let tree = repo.find_tree(tb.write().expect("tree oid")).expect("tree");
-    repo.commit(Some(refname), &sig, &sig, &format!("{msg}\n"), &tree, &[parent])
-        .expect("commit on ref")
+    repo.commit(
+        Some(refname),
+        &sig,
+        &sig,
+        &format!("{msg}\n"),
+        &tree,
+        &[parent],
+    )
+    .expect("commit on ref")
 }
 
 pub(super) fn s9_head_oid(dir: &Path) -> String {

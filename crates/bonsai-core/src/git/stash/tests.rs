@@ -85,13 +85,23 @@ fn s9_1_round_trip_apply_keeps_stash() {
     assert!(res.created, "dirty tracked edit must stash");
 
     // Worktree returned to the committed state (stash reset both index+worktree).
-    assert_eq!(s9_read(d, "a.txt"), "base\n", "worktree must be clean after stash");
+    assert_eq!(
+        s9_read(d, "a.txt"),
+        "base\n",
+        "worktree must be clean after stash"
+    );
 
     let list = list_stashes(d).expect("list");
     assert_eq!(list.len(), 1, "one entry on the stack");
     assert_eq!(list[0].index, 0);
-    assert_eq!(list[0].base_oid, head, "base_oid must == HEAD at stash time");
-    assert!(!list[0].message.is_empty(), "default message must be non-empty");
+    assert_eq!(
+        list[0].base_oid, head,
+        "base_oid must == HEAD at stash time"
+    );
+    assert!(
+        !list[0].message.is_empty(),
+        "default message must be non-empty"
+    );
 
     let outcome = apply_stash(d, 0, false, None).expect("apply");
     assert_eq!(outcome, ApplyStashOutcome::Applied, "clean apply");
@@ -154,7 +164,10 @@ fn s9_4_include_untracked_round_trip() {
 
     let res = create_stash(d, None, StashScope::AllWithUntracked)
         .expect("create_stash include_untracked");
-    assert!(res.created, "untracked file must stash under include_untracked");
+    assert!(
+        res.created,
+        "untracked file must stash under include_untracked"
+    );
     assert!(
         !d.join("untracked.txt").exists(),
         "include_untracked must remove the untracked file from the worktree"
@@ -169,8 +182,16 @@ fn s9_4_include_untracked_round_trip() {
         d.join("untracked.txt").exists(),
         "pop must restore the stashed untracked file"
     );
-    assert_eq!(s9_read(d, "untracked.txt"), "new\n", "untracked content restored");
-    assert_eq!(list_stashes(d).expect("list").len(), 0, "clean pop drops entry");
+    assert_eq!(
+        s9_read(d, "untracked.txt"),
+        "new\n",
+        "untracked content restored"
+    );
+    assert_eq!(
+        list_stashes(d).expect("list").len(),
+        0,
+        "clean pop drops entry"
+    );
 }
 
 // ---- Row 5: Pop conflict retains (P8-lesson data safety) + apply variant
@@ -250,7 +271,11 @@ fn s9_5b_apply_conflict_retains_stash() {
     assert!(s9_read(d, "x.txt").contains("<<<<<<<"));
 
     let list = list_stashes(d).expect("list after conflicting apply");
-    assert_eq!(list.len(), 1, "apply never drops; stash retained on conflict");
+    assert_eq!(
+        list.len(),
+        1,
+        "apply never drops; stash retained on conflict"
+    );
 }
 
 // ---- Row 6: Drop re-indexes the stack ----------------------------------
@@ -271,8 +296,14 @@ fn s9_6_drop_reindexes_stack() {
 
     let before = list_stashes(d).expect("list before drop");
     assert_eq!(before.len(), 2);
-    assert!(before[0].message.contains("stash-B"), "stash@{{0}} is the newest");
-    assert!(before[1].message.contains("stash-A"), "stash@{{1}} is the oldest");
+    assert!(
+        before[0].message.contains("stash-B"),
+        "stash@{{0}} is the newest"
+    );
+    assert!(
+        before[1].message.contains("stash-A"),
+        "stash@{{1}} is the oldest"
+    );
     let survivor_oid = before[1].oid.clone();
 
     // Drop the most recent (index 0). Entries above shift down by one.
@@ -280,12 +311,18 @@ fn s9_6_drop_reindexes_stack() {
 
     let after = list_stashes(d).expect("list after drop");
     assert_eq!(after.len(), 1, "one entry survives");
-    assert_eq!(after[0].index, 0, "surviving entry re-indexed to 0 (§2.4 shift)");
+    assert_eq!(
+        after[0].index, 0,
+        "surviving entry re-indexed to 0 (§2.4 shift)"
+    );
     assert!(
         after[0].message.contains("stash-A"),
         "the survivor is the entry previously at index 1 (stash-A)"
     );
-    assert_eq!(after[0].oid, survivor_oid, "survivor identity confirmed by oid");
+    assert_eq!(
+        after[0].oid, survivor_oid,
+        "survivor identity confirmed by oid"
+    );
 }
 
 // ---- Row 7: Op-state guard (Merge in progress) -------------------------
@@ -298,12 +335,16 @@ fn s9_7_op_state_guard_blocks_all_but_drop() {
 
     s9_commit(d, "base", &[("x.txt", "base\n"), ("y.txt", "y-base\n")]);
     let base = repo
-        .find_commit(
-            repo.head().expect("HEAD").target().expect("oid"),
-        )
+        .find_commit(repo.head().expect("HEAD").target().expect("oid"))
         .expect("base");
     // topic diverges on x.txt.
-    s9_commit_on_ref(&repo, "refs/heads/topic", &base, &[("x.txt", "topic\n")], "topic edits x");
+    s9_commit_on_ref(
+        &repo,
+        "refs/heads/topic",
+        &base,
+        &[("x.txt", "topic\n")],
+        "topic edits x",
+    );
     // main diverges on x.txt (guaranteed conflict).
     s9_commit(d, "main edits x", &[("x.txt", "main\n")]);
 

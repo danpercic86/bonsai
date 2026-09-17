@@ -151,6 +151,12 @@ const steps = [
   rustTest,
   // nextest does not run doctests; cargo test already did. Only add when nextest ran.
   hasNextest && { name: 'cargo test --doc', cmd: 'cargo', args: ['test', '--workspace', '--doc'], group: 'rust', env: RUSTDOC_DENY },
+  // Adopted 2026-09-17 (user ruling) together with `rustfmt.toml` and the
+  // one-shot reformat of 484 files. Before that commit this check was dirty at
+  // baseline (2496 hunks) and so could never be a gate step; it is cheap and
+  // meaningful only because the tree is now clean. Own target dir is
+  // unnecessary -- rustfmt does not build.
+  { name: 'cargo fmt --check', cmd: 'cargo', args: ['fmt', '--all', '--check'], group: 'rust' },
   {
     name: 'cargo clippy',
     cmd: 'cargo',

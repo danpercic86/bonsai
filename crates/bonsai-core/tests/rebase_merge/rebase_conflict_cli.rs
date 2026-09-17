@@ -8,18 +8,18 @@
 
 use std::path::Path;
 
-use bonsai_core::error::AppError;
-use bonsai_core::git::conflict::{get_conflict, resolve_conflict, ConflictResolution};
-use bonsai_core::git::opstate::{read_op_state, RepoOpState};
-use bonsai_core::git::rebase::{
-    rebase_abort, rebase_branch, rebase_continue, rebase_skip, RebaseOutcome,
-};
 use crate::common;
 use crate::common::{commit_fixed, git};
 use crate::rebase_support::{
     checkout, cli_conflicted, cli_rebase_continue, cli_rebase_skip, count_ahead, git_fail,
     has_rebase_dir, head_oid, read, repo_state, require_git, rev_parse, script_conflict_one,
     script_conflict_three, script_skip_first, top_infos, tree_oid, twin_pair, write,
+};
+use bonsai_core::error::AppError;
+use bonsai_core::git::conflict::{get_conflict, resolve_conflict, ConflictResolution};
+use bonsai_core::git::opstate::{read_op_state, RepoOpState};
+use bonsai_core::git::rebase::{
+    rebase_abort, rebase_branch, rebase_continue, rebase_skip, RebaseOutcome,
 };
 
 // ============================================================ §9.4 conflict -> paused
@@ -34,9 +34,11 @@ fn conflicting_rebase_pauses_with_matching_state() {
     let onto_tip = rev_parse(b, "main");
 
     let (paths, cur, total) = match rebase_branch(b, "main").expect("rebase") {
-        RebaseOutcome::Conflicts { paths, current_step, total_steps } => {
-            (paths, current_step, total_steps)
-        }
+        RebaseOutcome::Conflicts {
+            paths,
+            current_step,
+            total_steps,
+        } => (paths, current_step, total_steps),
         other => panic!("expected Conflicts, got {other:?}"),
     };
     assert_eq!(paths, vec!["a.txt".to_string()]);
@@ -46,7 +48,11 @@ fn conflicting_rebase_pauses_with_matching_state() {
     // Twin conflicts on the same set.
     checkout(t, "topic");
     git_fail(t, &["rebase", "main"]);
-    assert_eq!(paths, cli_conflicted(t), "conflicted path sets differ from twin");
+    assert_eq!(
+        paths,
+        cli_conflicted(t),
+        "conflicted path sets differ from twin"
+    );
 
     // State is a rebase state.
     assert!(
@@ -62,19 +68,37 @@ fn conflicting_rebase_pauses_with_matching_state() {
 
     // read_op_state mirrors the paused engine's counters (§2 assertion).
     match read_op_state(b).expect("op state") {
-        RepoOpState::Rebase { head_name, onto, current_step, total_steps } => {
+        RepoOpState::Rebase {
+            head_name,
+            onto,
+            current_step,
+            total_steps,
+        } => {
             assert_eq!(head_name, Some("topic".to_string()));
             assert_eq!(onto, Some(onto_tip), "onto must be the main tip oid");
-            assert_eq!(current_step, cur, "op-state current_step must match outcome");
-            assert_eq!(total_steps, total, "op-state total_steps must match outcome");
+            assert_eq!(
+                current_step, cur,
+                "op-state current_step must match outcome"
+            );
+            assert_eq!(
+                total_steps, total,
+                "op-state total_steps must match outcome"
+            );
         }
         other => panic!("expected Rebase op state, got {other:?}"),
     }
 
     // Worktree carries conflict markers; get_conflict is non-empty.
     let cf = get_conflict(b, "a.txt").expect("get_conflict");
-    assert!(!cf.binary && !cf.too_large && !cf.missing, "expected a text marker view");
-    assert!(cf.text.contains("<<<<<<<"), "missing <<<<<<< marker: {}", cf.text);
+    assert!(
+        !cf.binary && !cf.too_large && !cf.missing,
+        "expected a text marker view"
+    );
+    assert!(
+        cf.text.contains("<<<<<<<"),
+        "missing <<<<<<< marker: {}",
+        cf.text
+    );
     assert!(cf.text.contains("======="), "missing ======= marker");
     assert!(cf.text.contains(">>>>>>>"), "missing >>>>>>> marker");
 }
@@ -91,7 +115,14 @@ fn continue_after_resolving_matches_cli_twin() {
 
     match rebase_branch(b, "main").expect("rebase") {
         RebaseOutcome::Conflicts { paths, .. } => {
-            assert_eq!(paths, vec!["a.txt".to_string(), "b.txt".to_string(), "c.txt".to_string()]);
+            assert_eq!(
+                paths,
+                vec![
+                    "a.txt".to_string(),
+                    "b.txt".to_string(),
+                    "c.txt".to_string()
+                ]
+            );
         }
         other => panic!("expected Conflicts, got {other:?}"),
     }
@@ -111,7 +142,12 @@ fn continue_after_resolving_matches_cli_twin() {
 
     let outcome = rebase_continue(b).expect("continue");
     match &outcome {
-        RebaseOutcome::Rebased { branch, head, steps, .. } => {
+        RebaseOutcome::Rebased {
+            branch,
+            head,
+            steps,
+            ..
+        } => {
             assert_eq!(branch, "topic");
             assert_eq!(steps, &1);
             assert_eq!(head, &head_oid(b));
@@ -130,7 +166,11 @@ fn continue_after_resolving_matches_cli_twin() {
     cli_rebase_continue(t);
 
     assert_eq!(tree_oid(b), tree_oid(t), "final HEAD tree must match twin");
-    assert_eq!(top_infos(b, 1), top_infos(t, 1), "replayed commit differs from twin");
+    assert_eq!(
+        top_infos(b, 1),
+        top_infos(t, 1),
+        "replayed commit differs from twin"
+    );
     assert_eq!(count_ahead(b, "main", "HEAD"), 1);
     assert_eq!(repo_state(b), git2::RepositoryState::Clean);
     assert!(!has_rebase_dir(b));
@@ -177,7 +217,11 @@ fn skip_later_conflicting_commit_matches_cli_twin() {
 
     // Second pick (topic a change) conflicts.
     match rebase_branch(b, "main").expect("rebase") {
-        RebaseOutcome::Conflicts { paths, current_step, .. } => {
+        RebaseOutcome::Conflicts {
+            paths,
+            current_step,
+            ..
+        } => {
             assert_eq!(paths, vec!["a.txt".to_string()]);
             assert_eq!(current_step, 2, "conflict is on the SECOND replayed commit");
         }
@@ -198,10 +242,22 @@ fn skip_later_conflicting_commit_matches_cli_twin() {
 
     assert_eq!(tree_oid(b), tree_oid(t), "final HEAD tree must match twin");
     // Skipped commit absent from both: only the clean t1 replayed onto main.
-    assert_eq!(count_ahead(b, "main", "HEAD"), 1, "skipped commit must be absent");
+    assert_eq!(
+        count_ahead(b, "main", "HEAD"),
+        1,
+        "skipped commit must be absent"
+    );
     assert_eq!(count_ahead(t, "main", "HEAD"), 1);
-    assert_eq!(rev_parse(b, "HEAD~1"), onto_tip, "surviving commit sits on main tip");
-    assert_eq!(top_infos(b, 1), top_infos(t, 1), "surviving commit differs from twin");
+    assert_eq!(
+        rev_parse(b, "HEAD~1"),
+        onto_tip,
+        "surviving commit sits on main tip"
+    );
+    assert_eq!(
+        top_infos(b, 1),
+        top_infos(t, 1),
+        "surviving commit differs from twin"
+    );
     assert_eq!(repo_state(b), git2::RepositoryState::Clean);
     assert!(!has_rebase_dir(b));
 }
@@ -223,7 +279,11 @@ fn skip_first_conflicting_op_works() {
     let onto_tip = rev_parse(b, "main");
 
     match rebase_branch(b, "main").expect("rebase") {
-        RebaseOutcome::Conflicts { paths, current_step, .. } => {
+        RebaseOutcome::Conflicts {
+            paths,
+            current_step,
+            ..
+        } => {
             assert_eq!(paths, vec!["a.txt".to_string()]);
             assert_eq!(current_step, 1, "conflict is on the FIRST replayed commit");
         }
@@ -242,10 +302,22 @@ fn skip_first_conflicting_op_works() {
     cli_rebase_skip(t);
 
     assert_eq!(tree_oid(b), tree_oid(t), "final HEAD tree must match twin");
-    assert_eq!(count_ahead(b, "main", "HEAD"), 1, "skipped commit must be absent");
+    assert_eq!(
+        count_ahead(b, "main", "HEAD"),
+        1,
+        "skipped commit must be absent"
+    );
     assert_eq!(count_ahead(t, "main", "HEAD"), 1);
-    assert_eq!(rev_parse(b, "HEAD~1"), onto_tip, "surviving commit sits on main tip");
-    assert_eq!(top_infos(b, 1), top_infos(t, 1), "surviving commit differs from twin");
+    assert_eq!(
+        rev_parse(b, "HEAD~1"),
+        onto_tip,
+        "surviving commit sits on main tip"
+    );
+    assert_eq!(
+        top_infos(b, 1),
+        top_infos(t, 1),
+        "surviving commit differs from twin"
+    );
     assert_eq!(repo_state(b), git2::RepositoryState::Clean);
     assert!(!has_rebase_dir(b));
 }
@@ -297,7 +369,11 @@ fn dirty_start_is_rejected_like_the_cli_then_abort_restores_byte_identically() {
         "expected a Git/CheckoutConflict rejection, got {err:?}"
     );
     // Nothing mutated; the unstaged edit is untouched (no rebase ever ran).
-    assert_eq!(repo_state(d), git2::RepositoryState::Clean, "state must stay Clean");
+    assert_eq!(
+        repo_state(d),
+        git2::RepositoryState::Clean,
+        "state must stay Clean"
+    );
     assert!(!has_rebase_dir(d), "no rebase state may be left behind");
     assert_eq!(head_oid(d), pre_head, "HEAD must not move");
     assert_eq!(
@@ -324,13 +400,32 @@ fn dirty_start_is_rejected_like_the_cli_then_abort_restores_byte_identically() {
 
     rebase_abort(d2).expect("abort");
 
-    assert_eq!(head_oid(d2), pre_head2, "branch oid must return to the pre-rebase tip");
+    assert_eq!(
+        head_oid(d2),
+        pre_head2,
+        "branch oid must return to the pre-rebase tip"
+    );
     assert_eq!(repo_state(d2), git2::RepositoryState::Clean);
     assert!(!has_rebase_dir(d2), "no rebase-merge dir after abort");
-    assert_eq!(git(d2, &["write-tree"]), tree_oid(d2), "index tree must equal HEAD tree");
-    assert!(git(d2, &["ls-files", "-u"]).is_empty(), "no conflict stages may remain");
-    assert_eq!(read(d2, "a.txt"), pre_a, "conflicted file restored to pre-rebase bytes");
-    assert_eq!(read(d2, "unrelated.txt"), pre_unrelated, "untouched file byte-identical");
+    assert_eq!(
+        git(d2, &["write-tree"]),
+        tree_oid(d2),
+        "index tree must equal HEAD tree"
+    );
+    assert!(
+        git(d2, &["ls-files", "-u"]).is_empty(),
+        "no conflict stages may remain"
+    );
+    assert_eq!(
+        read(d2, "a.txt"),
+        pre_a,
+        "conflicted file restored to pre-rebase bytes"
+    );
+    assert_eq!(
+        read(d2, "unrelated.txt"),
+        pre_unrelated,
+        "untouched file byte-identical"
+    );
 
     // Abort with no rebase in progress -> NoOperationInProgress.
     let err = rebase_abort(d2).expect_err("no rebase");

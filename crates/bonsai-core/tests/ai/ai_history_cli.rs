@@ -17,12 +17,11 @@
 //! Index build + retrieval + diff re-fetch are pure git2 (no `git` CLI), so these
 //! tests do not depend on `git` being on PATH.
 
-
+use crate::common;
 use bonsai_core::ai::RunOpts;
 use bonsai_core::error::AppError;
 use bonsai_core::git::ai_history::answer_history;
 use bonsai_core::git::history_index::build_index;
-use crate::common;
 
 const STUB_MODE_ENV: &str = "BONSAI_STUB_MODE";
 const CLAUDE_BIN_ENV: &str = "BONSAI_CLAUDE_BIN";
@@ -39,7 +38,8 @@ fn init_scratch() -> (tempfile::TempDir, git2::Repository) {
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
         cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     }
     (dir, repo)
@@ -54,8 +54,8 @@ fn mk_commit(
     msg: &str,
     t: i64,
 ) -> git2::Oid {
-    let sig =
-        git2::Signature::new("Ada Lovelace", "ada@example.com", &git2::Time::new(t, 0)).expect("sig");
+    let sig = git2::Signature::new("Ada Lovelace", "ada@example.com", &git2::Time::new(t, 0))
+        .expect("sig");
     let parent_commit = parent.map(|p| repo.find_commit(p).expect("parent"));
     let mut tb = match &parent_commit {
         Some(pc) => repo
@@ -67,7 +67,9 @@ fn mk_commit(
         let blob = repo.blob(content.as_bytes()).expect("blob");
         tb.insert(name, blob, 0o100_644).expect("insert");
     }
-    let tree = repo.find_tree(tb.write().expect("write tree")).expect("tree");
+    let tree = repo
+        .find_tree(tb.write().expect("write tree"))
+        .expect("tree");
     let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
     repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &parents)
         .expect("commit")
@@ -86,7 +88,13 @@ fn fixture_with_index() -> (tempfile::TempDir, tempfile::TempDir) {
         "wire the zebracorn subsystem",
         3000,
     );
-    let _c3 = mk_commit(&repo, Some(c2), &[("d.txt", "delta\n")], "delta cleanup", 4000);
+    let _c3 = mk_commit(
+        &repo,
+        Some(c2),
+        &[("d.txt", "delta\n")],
+        "delta cleanup",
+        4000,
+    );
     let idx = common::scratch_dir();
     build_index(dir.path(), idx.path(), |_p| {}).expect("build index");
     (dir, idx)
@@ -99,7 +107,13 @@ fn fixture_with_index() -> (tempfile::TempDir, tempfile::TempDir) {
 fn fixture_shared_term_index() -> (tempfile::TempDir, tempfile::TempDir) {
     let (dir, repo) = init_scratch();
     let c0 = mk_commit(&repo, None, &[("a.txt", "alpha\n")], "seed alpha", 1000);
-    let c1 = mk_commit(&repo, Some(c0), &[("b.txt", "beta\n")], "wire the zebracorn intake", 2000);
+    let c1 = mk_commit(
+        &repo,
+        Some(c0),
+        &[("b.txt", "beta\n")],
+        "wire the zebracorn intake",
+        2000,
+    );
     let c2 = mk_commit(
         &repo,
         Some(c1),
@@ -107,8 +121,20 @@ fn fixture_shared_term_index() -> (tempfile::TempDir, tempfile::TempDir) {
         "extend the zebracorn pipeline",
         3000,
     );
-    let c3 = mk_commit(&repo, Some(c2), &[("d.txt", "delta\n")], "tune the zebracorn cache", 4000);
-    let _c4 = mk_commit(&repo, Some(c3), &[("e.txt", "epsilon\n")], "unrelated cleanup", 5000);
+    let c3 = mk_commit(
+        &repo,
+        Some(c2),
+        &[("d.txt", "delta\n")],
+        "tune the zebracorn cache",
+        4000,
+    );
+    let _c4 = mk_commit(
+        &repo,
+        Some(c3),
+        &[("e.txt", "epsilon\n")],
+        "unrelated cleanup",
+        5000,
+    );
     let idx = common::scratch_dir();
     build_index(dir.path(), idx.path(), |_p| {}).expect("build index");
     (dir, idx)
@@ -130,8 +156,14 @@ fn answer_history_top_k_zero_retrieves_default_depth_not_one() {
     std::env::set_var(CLAUDE_BIN_ENV, common::claude_stub_path());
     std::env::remove_var(STUB_MODE_ENV);
 
-    let answer = answer_history(dir.path(), idx.path(), "why zebracorn?", 0, RunOpts::default())
-        .expect("answer (success stub, top_k = 0)");
+    let answer = answer_history(
+        dir.path(),
+        idx.path(),
+        "why zebracorn?",
+        0,
+        RunOpts::default(),
+    )
+    .expect("answer (success stub, top_k = 0)");
 
     std::env::remove_var(CLAUDE_BIN_ENV);
 
@@ -147,7 +179,10 @@ fn answer_history_top_k_zero_retrieves_default_depth_not_one() {
         answer.retrieved
     );
     assert!(
-        answer.retrieved.iter().all(|h| h.summary.contains("zebracorn")),
+        answer
+            .retrieved
+            .iter()
+            .all(|h| h.summary.contains("zebracorn")),
         "every retrieved commit matches the query term: {:?}",
         answer.retrieved
     );
@@ -168,8 +203,14 @@ fn answer_history_grounds_stdin_and_returns_retrieved() {
     std::env::set_var(STUB_MODE_ENV, "dump_stdin");
     std::env::set_var(STDIN_DUMP_ENV, &dump);
 
-    let answer = answer_history(dir.path(), idx.path(), "why zebracorn?", 20, RunOpts::default())
-        .expect("answer (dump_stdin stub)");
+    let answer = answer_history(
+        dir.path(),
+        idx.path(),
+        "why zebracorn?",
+        20,
+        RunOpts::default(),
+    )
+    .expect("answer (dump_stdin stub)");
 
     std::env::remove_var(STDIN_DUMP_ENV);
     std::env::remove_var(STUB_MODE_ENV);
@@ -177,10 +218,20 @@ fn answer_history_grounds_stdin_and_returns_retrieved() {
 
     // The stub returned the canned success envelope; the retrieved set is echoed.
     assert_eq!(answer.text, "MERGED_BODY_OK");
-    assert_eq!(answer.cost_usd, Some(0.012), "cost parsed from the stub envelope");
-    assert!(!answer.retrieved.is_empty(), "the retrieved set is populated");
+    assert_eq!(
+        answer.cost_usd,
+        Some(0.012),
+        "cost parsed from the stub envelope"
+    );
     assert!(
-        answer.retrieved.iter().any(|h| h.summary.contains("zebracorn")),
+        !answer.retrieved.is_empty(),
+        "the retrieved set is populated"
+    );
+    assert!(
+        answer
+            .retrieved
+            .iter()
+            .any(|h| h.summary.contains("zebracorn")),
         "the zebracorn commit is among the retrieved: {:?}",
         answer.retrieved
     );
@@ -197,7 +248,10 @@ fn answer_history_grounds_stdin_and_returns_retrieved() {
         payload.contains("RELEVANT COMMITS (most relevant first):"),
         "{payload}"
     );
-    assert!(payload.contains("===== TOP MATCHES IN DETAIL ====="), "{payload}");
+    assert!(
+        payload.contains("===== TOP MATCHES IN DETAIL ====="),
+        "{payload}"
+    );
     assert!(
         payload.contains("MESSAGE:") && payload.contains("CHANGES:"),
         "{payload}"
@@ -215,12 +269,21 @@ fn answer_history_no_index_fails_before_cli() {
     let _g = common::env_lock();
     let (dir, _repo) = init_scratch();
 
-    std::env::set_var(CLAUDE_BIN_ENV, "D:/nonexistent/bonsai-claude-must-not-run.exe");
+    std::env::set_var(
+        CLAUDE_BIN_ENV,
+        "D:/nonexistent/bonsai-claude-must-not-run.exe",
+    );
     std::env::remove_var(STUB_MODE_ENV);
     let missing_index = dir.path().join("no-index-here");
 
-    let err = answer_history(dir.path(), &missing_index, "anything", 20, RunOpts::default())
-        .expect_err("a missing index must fail before any CLI call");
+    let err = answer_history(
+        dir.path(),
+        &missing_index,
+        "anything",
+        20,
+        RunOpts::default(),
+    )
+    .expect_err("a missing index must fail before any CLI call");
 
     std::env::remove_var(CLAUDE_BIN_ENV);
 

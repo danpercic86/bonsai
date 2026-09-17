@@ -4,13 +4,12 @@
 //! Moved verbatim out of `diff_cli.rs`; see that module for the oracle rules
 //! and `diff_oracle` for the shared parser and fixtures.
 
-use bonsai_core::error::AppError;
-use bonsai_core::git::diff::{commit_diff, commit_file_diff, workdir_file_diff, LineKind};
-use bonsai_core::git::status::FileStatus;
 use crate::common;
 use crate::common::{commit_fixed, git, init_repo};
 use crate::diff_oracle::{assert_matches_oracle, commit_fixture, edit_line, numbered_lines};
-
+use bonsai_core::error::AppError;
+use bonsai_core::git::diff::{commit_diff, commit_file_diff, workdir_file_diff, LineKind};
+use bonsai_core::git::status::FileStatus;
 
 macro_rules! require_git {
     () => {
@@ -43,7 +42,10 @@ fn utf8_bom_non_ascii_modified() {
 
     let fd = workdir_file_diff(p, "bom.txt", None, false, false, false).expect("bom diff");
     assert_eq!(fd.status, FileStatus::Modified);
-    assert!(!fd.binary, "BOM + valid UTF-8 must not be treated as binary");
+    assert!(
+        !fd.binary,
+        "BOM + valid UTF-8 must not be treated as binary"
+    );
     // The deleted and added first lines must both retain the BOM.
     let firsts: Vec<&str> = fd.hunks[0]
         .lines
@@ -133,14 +135,23 @@ fn empty_file_added_and_file_emptied() {
     git(p, &["add", "--", "empty.txt"]);
     std::fs::write(p.join("content.txt"), "").expect("truncate content.txt");
 
-    let staged = workdir_file_diff(p, "empty.txt", None, true, false, false).expect("staged empty diff");
-    assert_eq!(staged.status, FileStatus::Added, "not the benign-race shape");
+    let staged =
+        workdir_file_diff(p, "empty.txt", None, true, false, false).expect("staged empty diff");
+    assert_eq!(
+        staged.status,
+        FileStatus::Added,
+        "not the benign-race shape"
+    );
     assert!(!staged.binary && !staged.too_large);
     assert!(staged.hunks.is_empty());
 
-    let emptied = workdir_file_diff(p, "content.txt", None, false, false, false).expect("emptied diff");
+    let emptied =
+        workdir_file_diff(p, "content.txt", None, false, false, false).expect("emptied diff");
     assert_eq!(emptied.status, FileStatus::Modified);
-    assert!(emptied.hunks[0].lines.iter().all(|l| l.kind == LineKind::Del));
+    assert!(emptied.hunks[0]
+        .lines
+        .iter()
+        .all(|l| l.kind == LineKind::Del));
     assert_matches_oracle(
         &emptied,
         p,
@@ -186,17 +197,18 @@ fn bad_oid_and_path_validation() {
     let err = commit_diff(p, "not-a-hex-oid").expect_err("garbage oid");
     assert!(matches!(err, AppError::Git(_)), "got: {err:?}");
     // Well-formed but unknown oid.
-    let err = commit_diff(p, "0123456789abcdef0123456789abcdef01234567")
-        .expect_err("unknown oid");
+    let err = commit_diff(p, "0123456789abcdef0123456789abcdef01234567").expect_err("unknown oid");
     assert!(matches!(err, AppError::Git(_)), "got: {err:?}");
 
     // Path validation (reused validate_rel_path).
-    let err = workdir_file_diff(p, "../escape", None, false, false, false).expect_err("escaping path");
+    let err =
+        workdir_file_diff(p, "../escape", None, false, false, false).expect_err("escaping path");
     assert!(
         matches!(&err, AppError::Other(m) if m.contains("invalid path")),
         "got: {err:?}"
     );
-    let err = commit_file_diff(p, &tip, "../escape", None, false, false).expect_err("escaping path (commit)");
+    let err = commit_file_diff(p, &tip, "../escape", None, false, false)
+        .expect_err("escaping path (commit)");
     assert!(
         matches!(&err, AppError::Other(m) if m.contains("invalid path")),
         "got: {err:?}"

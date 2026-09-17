@@ -5,11 +5,11 @@
 //! Moved verbatim out of `stage_partial_cli.rs`; see that module for the
 //! oracle rules and `stage_partial_helpers` for the shared helpers.
 
-use bonsai_core::git::diff::workdir_file_diff;
-use bonsai_core::git::stage_partial::{stage_partial, unstage_partial};
 use crate::common;
 use crate::common::{commit_fixed, git, init_repo};
 use crate::stage_partial_helpers::{all_changed, staged_bytes, write, xy};
+use bonsai_core::git::diff::workdir_file_diff;
+use bonsai_core::git::stage_partial::{stage_partial, unstage_partial};
 
 macro_rules! require_git {
     () => {
@@ -34,7 +34,11 @@ fn no_newline_stage() {
 
     let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     stage_partial(p, "f.txt", None, &all_changed(&fd)).expect("stage last-line change");
-    assert_eq!(staged_bytes(p, "f.txt"), b"a\nb\nd", "no phantom trailing newline");
+    assert_eq!(
+        staged_bytes(p, "f.txt"),
+        b"a\nb\nd",
+        "no phantom trailing newline"
+    );
 }
 
 // Scenario 6b: no-final-newline, UNSTAGE (index -> HEAD) the last-line change.
@@ -100,5 +104,9 @@ fn crlf_no_final_newline() {
         b"one\r\ntwo\r\nTHREE",
         "CRLF interiors kept and last line still has no trailing newline"
     );
-    assert_eq!(xy(p, "f.txt").as_deref(), Some("M "), "nothing left unstaged");
+    assert_eq!(
+        xy(p, "f.txt").as_deref(),
+        Some("M "),
+        "nothing left unstaged"
+    );
 }

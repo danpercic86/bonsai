@@ -118,7 +118,11 @@ fn record_recent_falls_back_for_unresolvable_paths() {
     let mut s = Settings::default();
     record_recent(&mut s, "D:\\Gone\\Deleted-Repo", 1);
     record_recent(&mut s, "d:\\gone\\deleted-repo", 2);
-    assert_eq!(s.recent_repos.len(), 1, "unresolvable paths use the string compare");
+    assert_eq!(
+        s.recent_repos.len(),
+        1,
+        "unresolvable paths use the string compare"
+    );
     assert_eq!(s.recent_repos[0].last_opened, 2);
 }
 
@@ -187,9 +191,15 @@ fn concurrent_updates_of_disjoint_fields_all_survive() {
     let last = ROUNDS - 1;
     let loaded = load_from(&file);
     assert_eq!(loaded.pane_widths.sidebar, SIDEBAR_MIN + (last % 10));
-    assert_eq!(loaded.mcp_token.as_deref(), Some(format!("token-{last}").as_str()));
+    assert_eq!(
+        loaded.mcp_token.as_deref(),
+        Some(format!("token-{last}").as_str())
+    );
     assert_eq!(loaded.editor_tool, format!("editor-{last}"));
-    assert_eq!(loaded.active_repo.as_deref(), Some(format!("repo-{last}").as_str()));
+    assert_eq!(
+        loaded.active_repo.as_deref(),
+        Some(format!("repo-{last}").as_str())
+    );
     assert!(!any_tmp_left(dir.path()));
 }
 
@@ -197,7 +207,11 @@ fn concurrent_updates_of_disjoint_fields_all_survive() {
 #[test]
 fn save_creates_parent_dirs() {
     let dir = tempfile::TempDir::new().expect("create temp dir");
-    let file = dir.path().join("nested").join("deeper").join("settings.json");
+    let file = dir
+        .path()
+        .join("nested")
+        .join("deeper")
+        .join("settings.json");
     save_to(&file, &Settings::default()).expect("save into nested dir");
     assert_eq!(load_from(&file), Settings::default());
 }
@@ -287,7 +301,11 @@ fn profile_color_wire_shape_is_camel_case_all_variants() {
     ];
     for (variant, wire) in cases {
         let json = serde_json::to_value(variant).expect("serialize color");
-        assert_eq!(json, serde_json::json!(wire), "{variant:?} serializes to {wire}");
+        assert_eq!(
+            json,
+            serde_json::json!(wire),
+            "{variant:?} serializes to {wire}"
+        );
         let back: ProfileColor =
             serde_json::from_value(serde_json::json!(wire)).expect("deserialize color");
         assert_eq!(back, variant, "{wire} round-trips to {variant:?}");

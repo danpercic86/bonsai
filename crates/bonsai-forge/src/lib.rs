@@ -410,9 +410,13 @@ mod tests {
             status: 200,
             body: "{}",
         };
-        let err =
-            set_token_for_host_with("dev.azure.com", ForgeKind::AzureDevOps, "tok", Box::new(http))
-                .unwrap_err();
+        let err = set_token_for_host_with(
+            "dev.azure.com",
+            ForgeKind::AzureDevOps,
+            "tok",
+            Box::new(http),
+        )
+        .unwrap_err();
         assert!(matches!(err, AppError::ForgeUnsupported(_)), "got {err:?}");
     }
 

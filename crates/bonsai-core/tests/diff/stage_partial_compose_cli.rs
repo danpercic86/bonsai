@@ -6,13 +6,13 @@
 //! Moved verbatim out of `stage_partial_cli.rs`; see that module for the
 //! oracle rules and `stage_partial_helpers` for the shared helpers.
 
-use bonsai_core::git::diff::{workdir_file_diff, LineKind};
-use bonsai_core::git::stage_partial::{stage_partial, unstage_partial, LineSelection};
 use crate::common;
 use crate::common::{commit_fixed, git, init_repo};
 use crate::stage_partial_helpers::{
     all_changed, hunk_changed, numbered_edited, repo_with, staged_bytes, write, xy,
 };
+use bonsai_core::git::diff::{workdir_file_diff, LineKind};
+use bonsai_core::git::stage_partial::{stage_partial, unstage_partial, LineSelection};
 
 macro_rules! require_git {
     () => {
@@ -39,18 +39,34 @@ fn stage_then_unstage_same_line_round_trips() {
     write(p, "f.txt", b"a\nb\nc\n"); // add "b" at new line 2
 
     // Stage exactly the added line.
-    let add_b = vec![LineSelection { kind: LineKind::Add, old_no: None, new_no: Some(2) }];
+    let add_b = vec![LineSelection {
+        kind: LineKind::Add,
+        old_no: None,
+        new_no: Some(2),
+    }];
     stage_partial(p, "f.txt", None, &add_b).expect("stage the add");
     assert_eq!(staged_bytes(p, "f.txt"), b"a\nb\nc\n", "add staged");
-    assert_eq!(xy(p, "f.txt").as_deref(), Some("M "), "fully staged, workdir clean vs index");
+    assert_eq!(
+        xy(p, "f.txt").as_deref(),
+        Some("M "),
+        "fully staged, workdir clean vs index"
+    );
 
     // Now unstage the SAME line from the staged (HEAD -> index) diff.
     let staged = workdir_file_diff(p, "f.txt", None, true, false, false).expect("staged diff");
     let staged_add = hunk_changed(&staged, 0);
     assert_eq!(staged_add.len(), 1, "one staged add to reverse");
     unstage_partial(p, "f.txt", None, &staged_add).expect("unstage the same add");
-    assert_eq!(staged_bytes(p, "f.txt"), b"a\nc\n", "index restored byte-exactly to HEAD");
-    assert_eq!(xy(p, "f.txt").as_deref(), Some(" M"), "back to a pure workdir change");
+    assert_eq!(
+        staged_bytes(p, "f.txt"),
+        b"a\nc\n",
+        "index restored byte-exactly to HEAD"
+    );
+    assert_eq!(
+        xy(p, "f.txt").as_deref(),
+        Some(" M"),
+        "back to a pure workdir change"
+    );
 }
 
 // Scenario 10: stage half, then the rest -> final index == whole-file stage.
@@ -73,7 +89,11 @@ fn compose_on_partial() {
     // Recompute against the CURRENT index and stage the remainder.
     let fd2 = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff 2");
     stage_partial(p, "f.txt", None, &all_changed(&fd2)).expect("stage remainder");
-    assert_eq!(staged_bytes(p, "f.txt"), edited, "composed == whole-file stage");
+    assert_eq!(
+        staged_bytes(p, "f.txt"),
+        edited,
+        "composed == whole-file stage"
+    );
     assert_eq!(xy(p, "f.txt").as_deref(), Some("M "));
 }
 
@@ -113,7 +133,11 @@ fn unborn_head_unstage() {
 
         let staged = workdir_file_diff(p, "f.txt", None, true, false, false).expect("staged diff");
         // Unstage just the middle added line (new_no 2).
-        let sel = vec![LineSelection { kind: LineKind::Add, old_no: None, new_no: Some(2) }];
+        let sel = vec![LineSelection {
+            kind: LineKind::Add,
+            old_no: None,
+            new_no: Some(2),
+        }];
         unstage_partial(p, "f.txt", None, &sel).expect("unstage one add (unborn)");
         assert_eq!(staged_bytes(p, "f.txt"), b"a\nc\n");
         // Sanity: staged had 3 adds.
@@ -145,11 +169,11 @@ fn noop_result_equals_index() {
     write(p, "f.txt", b"a\nB\nc\n"); // modify line 2
 
     let before = staged_bytes(p, "f.txt"); // == HEAD content
-    // Select ONLY the del half. Staging a del of "b" without the add: index
-    // becomes "a\nc\n" -> that's a change, not a noop. Instead select nothing
-    // meaningful: an Add coordinate is required, so use the del+add pair but
-    // note the true noop is "select nothing" — exercise via a Context-only
-    // selection which is ignored, leaving the index untouched.
+                                           // Select ONLY the del half. Staging a del of "b" without the add: index
+                                           // becomes "a\nc\n" -> that's a change, not a noop. Instead select nothing
+                                           // meaningful: an Add coordinate is required, so use the del+add pair but
+                                           // note the true noop is "select nothing" — exercise via a Context-only
+                                           // selection which is ignored, leaving the index untouched.
     let sel = vec![LineSelection {
         kind: LineKind::Context,
         old_no: Some(1),
@@ -157,5 +181,9 @@ fn noop_result_equals_index() {
     }];
     stage_partial(p, "f.txt", None, &sel).expect("noop stage");
     assert_eq!(staged_bytes(p, "f.txt"), before, "index blob unchanged");
-    assert_eq!(xy(p, "f.txt").as_deref(), Some(" M"), "still only workdir change");
+    assert_eq!(
+        xy(p, "f.txt").as_deref(),
+        Some(" M"),
+        "still only workdir change"
+    );
 }

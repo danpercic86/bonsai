@@ -35,8 +35,15 @@ fn open_non_repo_and_subfolder_are_not_repos() {
     std::fs::create_dir_all(&sub).expect("mkdir nested");
 
     let opened = open(&state, &sub).expect("open subfolder");
-    assert!(!opened.info.is_repo, "a subfolder is not itself a workdir root");
-    assert_eq!(repo_count(&state), 1, "subfolder open adds no entry, root untouched");
+    assert!(
+        !opened.info.is_repo,
+        "a subfolder is not itself a workdir root"
+    );
+    assert_eq!(
+        repo_count(&state),
+        1,
+        "subfolder open adds no entry, root untouched"
+    );
 }
 
 /// BUG-1 (fixed) probe: opening a repo whose directory name is NON-ASCII, then
@@ -65,8 +72,13 @@ fn open_dedupes_non_ascii_case_variant() {
         eprintln!("skipping: case-sensitive FS, non-ASCII variant is a distinct path");
         return;
     }
-    let again = open(&state, &variant).expect("re-open case variant").repo_id;
-    assert_eq!(again, first, "non-ASCII case variant dedupes to the same id");
+    let again = open(&state, &variant)
+        .expect("re-open case variant")
+        .repo_id;
+    assert_eq!(
+        again, first,
+        "non-ASCII case variant dedupes to the same id"
+    );
     assert_eq!(repo_count(&state), 1, "no duplicate entry");
 }
 
@@ -94,7 +106,10 @@ fn init_repo_creates_and_is_idempotent() {
     let path = path_string(dir.path());
 
     let workdir = block_on(init_repo(path.clone())).expect("init");
-    assert!(git2::Repository::open(&workdir).is_ok(), "init produced a real repo");
+    assert!(
+        git2::Repository::open(&workdir).is_ok(),
+        "init produced a real repo"
+    );
 
     let again = block_on(init_repo(path)).expect("re-init opens the existing repo");
     assert_eq!(
@@ -112,7 +127,10 @@ fn init_repo_creates_and_is_idempotent() {
 #[test]
 fn active_repo_field_round_trips() {
     let state = AppState::default();
-    assert!(state.active_repo.lock().unwrap().is_none(), "none by default");
+    assert!(
+        state.active_repo.lock().unwrap().is_none(),
+        "none by default"
+    );
 
     *state.active_repo.lock().unwrap() = Some("repo-x".to_string());
     assert_eq!(state.active_repo.lock().unwrap().as_deref(), Some("repo-x"));
@@ -132,9 +150,21 @@ fn repo_health_sections_and_no_repo() {
 
     let health = block_on(get_repo_health_inner(&state, &id)).expect("health");
     assert!(health.stats.data.is_some(), "{:?}", health.stats.error);
-    assert!(health.branches.data.is_some(), "{:?}", health.branches.error);
-    assert!(health.working_state.data.is_some(), "{:?}", health.working_state.error);
-    assert!(health.structure.data.is_some(), "{:?}", health.structure.error);
+    assert!(
+        health.branches.data.is_some(),
+        "{:?}",
+        health.branches.error
+    );
+    assert!(
+        health.working_state.data.is_some(),
+        "{:?}",
+        health.working_state.error
+    );
+    assert!(
+        health.structure.data.is_some(),
+        "{:?}",
+        health.structure.error
+    );
 
     let err = block_on(get_repo_health_inner(&state, MISSING_ID)).expect_err("no repo");
     assert!(matches!(err, AppError::NoRepo), "{err:?}");
@@ -155,7 +185,9 @@ fn job_status_both_jobs_and_unknown_repo() {
     let kinds: Vec<JobKind> = jobs.iter().map(|j| j.job).collect();
     assert!(kinds.contains(&JobKind::AutoFetch) && kinds.contains(&JobKind::HealthRefresh));
     // A never-run job has no last_run and is not in backoff.
-    assert!(jobs.iter().all(|j| j.last_run_ms.is_none() && !j.in_backoff));
+    assert!(jobs
+        .iter()
+        .all(|j| j.last_run_ms.is_none() && !j.in_backoff));
 
     let err = get_job_status_inner(&state, &sched, MISSING_ID).expect_err("no repo");
     assert!(matches!(err, AppError::NoRepo), "{err:?}");
@@ -194,18 +226,31 @@ fn recents_record_and_remove_round_trip() {
 
     // record two opens (newest first), then a re-open of the first dedupes it
     // back to the front.
-    settings::update(&file, |s| settings::record_recent(s, "D:\\Repos\\alpha", 100)).expect("rec1");
-    settings::update(&file, |s| settings::record_recent(s, "D:\\Repos\\beta", 200)).expect("rec2");
-    settings::update(&file, |s| settings::record_recent(s, "D:\\Repos\\alpha", 300)).expect("rec3");
+    settings::update(&file, |s| {
+        settings::record_recent(s, "D:\\Repos\\alpha", 100)
+    })
+    .expect("rec1");
+    settings::update(&file, |s| {
+        settings::record_recent(s, "D:\\Repos\\beta", 200)
+    })
+    .expect("rec2");
+    settings::update(&file, |s| {
+        settings::record_recent(s, "D:\\Repos\\alpha", 300)
+    })
+    .expect("rec3");
 
     let recents = settings::load_from(&file).recent_repos;
     assert_eq!(recents.len(), 2, "dedupe keeps one entry per path");
-    assert_eq!(recents[0].path, "D:\\Repos\\alpha", "re-open moves it to the front");
+    assert_eq!(
+        recents[0].path, "D:\\Repos\\alpha",
+        "re-open moves it to the front"
+    );
     assert_eq!(recents[0].last_opened, 300);
 
     // remove_recent_repo's body: retain everything not matching the path.
     let after = settings::update(&file, |s| {
-        s.recent_repos.retain(|r| !r.path.eq_ignore_ascii_case("D:\\Repos\\alpha"));
+        s.recent_repos
+            .retain(|r| !r.path.eq_ignore_ascii_case("D:\\Repos\\alpha"));
     })
     .expect("remove");
     assert_eq!(after.recent_repos.len(), 1);
@@ -235,7 +280,11 @@ fn session_round_trip() {
 
     let loaded = settings::load_from(&file);
     assert_eq!(loaded.open_repos, tabs, "tabs persist in order");
-    assert_eq!(loaded.active_repo.as_deref(), Some("D:\\b"), "active tab persists");
+    assert_eq!(
+        loaded.active_repo.as_deref(),
+        Some("D:\\b"),
+        "active tab persists"
+    );
 }
 
 /// P31 §5: the three worktree-context commands resolve the repo by id
@@ -286,8 +335,8 @@ fn worktree_context_commands_round_trip() {
     .expect("save profile");
 
     // Matrix: single main row, keyed "@main", activatable, no activation yet.
-    let rows = tauri::async_runtime::block_on(list_worktree_contexts_inner(&state, id))
-        .expect("matrix");
+    let rows =
+        tauri::async_runtime::block_on(list_worktree_contexts_inner(&state, id)).expect("matrix");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].worktree_key, "@main");
     assert!(rows[0].is_main && rows[0].activatable);
@@ -348,11 +397,9 @@ fn open_repo_dedupes_canonical_path_variants() {
 
     // Same directory, different string form (trailing separator).
     let variant = format!("{}/", path_string(dir.path()));
-    let second = tauri::async_runtime::block_on(open_repo_inner(
-        &state,
-        variant,
-        |_id| Box::new(|_class| {}),
-    ))
+    let second = tauri::async_runtime::block_on(open_repo_inner(&state, variant, |_id| {
+        Box::new(|_class| {})
+    }))
     .expect("re-open via path variant");
     assert_eq!(second.repo_id, first.repo_id, "must FOCUS, not duplicate");
     assert_eq!(repo_count(&state), 1);
@@ -381,18 +428,18 @@ fn history_index_inner_seams_guard_and_report_unbuilt() {
     let state = AppState::default();
     let base = tempfile::TempDir::new().expect("create temp base dir");
 
-    let err = tauri::async_runtime::block_on(history_index_status_inner(
-        &state,
-        base.path(),
-        MISSING_ID,
-    ))
-    .expect_err("unknown id must be NoRepo");
+    let err =
+        tauri::async_runtime::block_on(history_index_status_inner(&state, base.path(), MISSING_ID))
+            .expect_err("unknown id must be NoRepo");
     assert!(matches!(err, AppError::NoRepo));
     let err = tauri::async_runtime::block_on(history_search_inner(
         &state,
         base.path(),
         MISSING_ID,
-        HistoryQuery { text: "x".to_string(), top_k: 0 },
+        HistoryQuery {
+            text: "x".to_string(),
+            top_k: 0,
+        },
     ))
     .expect_err("unknown id must be NoRepo");
     assert!(matches!(err, AppError::NoRepo));
@@ -422,7 +469,10 @@ fn history_index_inner_seams_guard_and_report_unbuilt() {
         &state,
         base.path(),
         &opened.repo_id,
-        HistoryQuery { text: "anything".to_string(), top_k: 0 },
+        HistoryQuery {
+            text: "anything".to_string(),
+            top_k: 0,
+        },
     ))
     .expect("search with a missing index is Ok(empty), not Err");
     assert!(results.hits.is_empty());

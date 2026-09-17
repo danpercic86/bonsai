@@ -82,8 +82,15 @@ fn a_confirmed_pick_writes_both_the_path_and_the_selection() {
         assert_eq!(row.id, CUSTOM_ID);
         assert_eq!(row.kind, kind);
         assert_eq!(row.source, ToolSource::Custom);
-        assert_eq!(row.label, "Portable Editor", "the label is the backend-derived stem");
-        assert_eq!(row.detail, prog.to_string_lossy(), "detail is the resolved path");
+        assert_eq!(
+            row.label, "Portable Editor",
+            "the label is the backend-derived stem"
+        );
+        assert_eq!(
+            row.detail,
+            prog.to_string_lossy(),
+            "detail is the resolved path"
+        );
         assert!(row.present);
 
         let s = settings::load_from(&file);
@@ -120,7 +127,10 @@ fn a_refused_path_mutates_nothing_and_never_echoes_it() {
     let refused = |path: &Path, os: TargetOs| {
         let err =
             commit_browsed_tool(&file, ToolKind::Editor, path, os).expect_err("must be refused");
-        assert!(matches!(err, AppError::ExternalToolFailed(_)), "wrong variant for {path:?}");
+        assert!(
+            matches!(err, AppError::ExternalToolFailed(_)),
+            "wrong variant for {path:?}"
+        );
         let msg = err.to_string();
         assert!(
             !msg.contains(&*path.to_string_lossy()),
@@ -203,7 +213,11 @@ fn a_pick_racing_an_unrelated_settings_write_loses_neither() {
         prog.to_string_lossy(),
         "the path survived the race — the pick mutates through settings::update, not load+save"
     );
-    assert_eq!(s.pane_widths.sidebar, 200 + ((ROUNDS - 1) % 10), "the other writer survived too");
+    assert_eq!(
+        s.pane_widths.sidebar,
+        200 + ((ROUNDS - 1) % 10),
+        "the other writer survived too"
+    );
 }
 
 /// §5.1 reversibility (AC18's last clause): reverting to Auto-detect is the
@@ -220,7 +234,11 @@ fn reverting_to_auto_detect_keeps_the_browsed_path_so_the_pick_is_restorable() {
     settings::update(&file, |s| s.editor_tool = String::new()).expect("revert");
     let s = settings::load_from(&file);
     assert_eq!(s.editor_tool, "");
-    assert_eq!(s.custom_editor_path, prog.to_string_lossy(), "the path survives the revert");
+    assert_eq!(
+        s.custom_editor_path,
+        prog.to_string_lossy(),
+        "the path survives the revert"
+    );
 
     settings::update(&file, |s| s.editor_tool = CUSTOM_ID.to_string()).expect("re-select");
     let s = settings::load_from(&file);

@@ -103,7 +103,14 @@ fn generate_linear_fixture(path: &Path, n: usize) {
         .expect("signature");
         let parent_refs: Vec<&git2::Commit> = parent.iter().collect();
         let oid = repo
-            .commit(None, &sig, &sig, &format!("commit {i}"), &empty_tree, &parent_refs)
+            .commit(
+                None,
+                &sig,
+                &sig,
+                &format!("commit {i}"),
+                &empty_tree,
+                &parent_refs,
+            )
             .expect("commit");
         parent = Some(repo.find_commit(oid).expect("find commit"));
     }

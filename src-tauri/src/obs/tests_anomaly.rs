@@ -6,7 +6,6 @@ use super::is_mutation_cmd;
 use super::tests_anomaly_support::*;
 use crate::obs::record::{AnomalySeverity, LogPayload};
 
-
 // ---- dup-ipc ---------------------------------------------------------------
 
 #[test]
@@ -24,7 +23,11 @@ fn dup_ipc_true_negative_intervening_mutation() {
     h.feed(ipc_call(1000, "get_status", "abc"));
     h.feed(ipc_call(1050, "commit", "x")); // mutation between
     h.feed(ipc_call(1100, "get_status", "abc"));
-    assert_eq!(h.count("dup-ipc"), 0, "a mutation between suppresses dup-ipc");
+    assert_eq!(
+        h.count("dup-ipc"),
+        0,
+        "a mutation between suppresses dup-ipc"
+    );
 }
 
 #[test]
@@ -208,7 +211,9 @@ fn orphan_trace_true_positive() {
     let mut h = H::new();
     let s = h.feed(with_trace(ipc_call(1000, "get_graph", "a"), "t1"));
     h.end();
-    let a = h.find("orphan-trace").expect("unanswered call is an orphan");
+    let a = h
+        .find("orphan-trace")
+        .expect("unanswered call is an orphan");
     assert_eq!(severity_of(a), Some(AnomalySeverity::Error));
     assert_eq!(refs_of(a), &[s]);
 }
@@ -265,7 +270,12 @@ fn non_consumed_kinds_emit_nothing() {
             gesture: "click".into(),
         },
     ));
-    h.feed(base(1001, LogPayload::IpcRecv { cmd: "get_graph".into() }));
+    h.feed(base(
+        1001,
+        LogPayload::IpcRecv {
+            cmd: "get_graph".into(),
+        },
+    ));
     h.feed(base(
         1002,
         LogPayload::Render {

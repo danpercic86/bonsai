@@ -50,7 +50,10 @@ impl FakeGitEnv {
     }
 
     fn registry_calls(&self) -> usize {
-        self.calls().iter().filter(|c| c.starts_with("reg:")).count()
+        self.calls()
+            .iter()
+            .filter(|c| c.starts_with("reg:"))
+            .count()
     }
 }
 
@@ -127,7 +130,11 @@ fn blank_override_is_ignored() {
 fn path_hit_short_circuits_registry_and_well_known() {
     let env = FakeGitEnv::default()
         .with_path_hit(r"C:\tools\git\cmd\git.exe")
-        .with_registry(HKCU, "InstallPath", r"C:\Users\dev\AppData\Local\Programs\Git")
+        .with_registry(
+            HKCU,
+            "InstallPath",
+            r"C:\Users\dev\AppData\Local\Programs\Git",
+        )
         .with_var("LOCALAPPDATA", r"C:\Users\dev\AppData\Local");
     let bin = resolve_ladder_for(&env, TargetOs::Windows);
     assert_eq!(bin.source, GitBinSource::Path);
@@ -162,7 +169,10 @@ fn hkcu_registry_hit_when_path_misses() {
     // gated to Windows. The ladder resolution above (source, path, probe order)
     // is validated on every host via the injected `TargetOs::Windows`.
     #[cfg(windows)]
-    assert_eq!(bin.bin_dir(), Some(Path::new(r"C:\Users\dev\AppData\Local\Programs\Git\cmd")));
+    assert_eq!(
+        bin.bin_dir(),
+        Some(Path::new(r"C:\Users\dev\AppData\Local\Programs\Git\cmd"))
+    );
 }
 
 // 4b. A trailing separator on InstallPath does not produce a doubled separator.
@@ -243,9 +253,7 @@ fn well_known_var_probe_order() {
     let calls = env.calls();
     let var_order: Vec<&String> = calls
         .iter()
-        .filter(|c| {
-            c.starts_with("var:") && *c != &format!("var:{GIT_BIN_ENV}")
-        })
+        .filter(|c| c.starts_with("var:") && *c != &format!("var:{GIT_BIN_ENV}"))
         .collect();
     assert_eq!(
         var_order,
@@ -310,7 +318,11 @@ fn unix_usr_bin_wins() {
 #[test]
 fn ladder_never_executes_a_candidate() {
     let env = FakeGitEnv::default()
-        .with_registry(HKCU, "InstallPath", r"C:\Users\dev\AppData\Local\Programs\Git")
+        .with_registry(
+            HKCU,
+            "InstallPath",
+            r"C:\Users\dev\AppData\Local\Programs\Git",
+        )
         .with_file(r"C:\Users\dev\AppData\Local\Programs\Git\cmd\git.exe");
     let _ = resolve_ladder_for(&env, TargetOs::Windows);
     for call in env.calls() {
@@ -341,9 +353,16 @@ fn parse_reg_query_table() {
     );
 
     // A value name that is a PREFIX of the queried one must not cross-match.
-    let prefixed = "    Install    REG_SZ    C:\\wrong\r\n    InstallPath    REG_SZ    C:\\right\r\n";
-    assert_eq!(parse_reg_query(prefixed, "InstallPath").as_deref(), Some(r"C:\right"));
-    assert_eq!(parse_reg_query(prefixed, "Install").as_deref(), Some(r"C:\wrong"));
+    let prefixed =
+        "    Install    REG_SZ    C:\\wrong\r\n    InstallPath    REG_SZ    C:\\right\r\n";
+    assert_eq!(
+        parse_reg_query(prefixed, "InstallPath").as_deref(),
+        Some(r"C:\right")
+    );
+    assert_eq!(
+        parse_reg_query(prefixed, "Install").as_deref(),
+        Some(r"C:\wrong")
+    );
 
     // Path data containing spaces is preserved verbatim.
     let spaced = "    InstallPath    REG_SZ    C:\\Program Files (x86)\\Git\r\n";
@@ -354,11 +373,23 @@ fn parse_reg_query_table() {
 
     // Misses / malformed input -> None, no panic.
     assert_eq!(parse_reg_query("", "InstallPath"), None);
-    assert_eq!(parse_reg_query("ERROR: The system was unable to find", "InstallPath"), None);
-    assert_eq!(parse_reg_query("    InstallPath    REG_DWORD    0x1\r\n", "InstallPath"), None);
-    assert_eq!(parse_reg_query("    InstallPath    REG_SZ    \r\n", "InstallPath"), None);
+    assert_eq!(
+        parse_reg_query("ERROR: The system was unable to find", "InstallPath"),
+        None
+    );
+    assert_eq!(
+        parse_reg_query("    InstallPath    REG_DWORD    0x1\r\n", "InstallPath"),
+        None
+    );
+    assert_eq!(
+        parse_reg_query("    InstallPath    REG_SZ    \r\n", "InstallPath"),
+        None
+    );
     assert_eq!(parse_reg_query("InstallPath", "InstallPath"), None);
-    assert_eq!(parse_reg_query("random \u{fffd} garbage \0 output", "InstallPath"), None);
+    assert_eq!(
+        parse_reg_query("random \u{fffd} garbage \0 output", "InstallPath"),
+        None
+    );
 }
 
 // 11. bin_dir(): Some for Registry / WellKnown / Override-with-parent; None for

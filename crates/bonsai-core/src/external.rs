@@ -458,7 +458,11 @@ pub fn reveal_in_file_manager(
     os: TargetOs,
     path: &Path,
 ) -> Result<(), AppError> {
-    launch_first(runner, std::slice::from_ref(&reveal_spec(os, path)), "file manager")
+    launch_first(
+        runner,
+        std::slice::from_ref(&reveal_spec(os, path)),
+        "file manager",
+    )
 }
 
 /// Open `path` in the selected editor (`None` ⇒ VS Code auto-detect). Validates

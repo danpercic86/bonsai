@@ -49,7 +49,10 @@ pub(super) fn turn_line(text: &str) -> String {
 /// actual write failure arrives later as [`Msg::WriteErr`].
 pub(super) fn send_write(writer: &mut Option<WriteTx>, text: String) -> std::io::Result<()> {
     let closed = || {
-        std::io::Error::new(std::io::ErrorKind::BrokenPipe, "Claude's stdin is already closed")
+        std::io::Error::new(
+            std::io::ErrorKind::BrokenPipe,
+            "Claude's stdin is already closed",
+        )
     };
     let Some(tx) = writer.as_ref() else {
         return Err(closed());
@@ -123,7 +126,11 @@ fn read_capped_line<R: BufRead>(reader: &mut R, cap: usize, buf: &mut Vec<u8>) -
                 let dropped = n + discard_to_newline(reader);
                 return Line::TooLong(dropped);
             }
-            Line::Text(String::from_utf8_lossy(buf).trim_end_matches(['\n', '\r']).to_string())
+            Line::Text(
+                String::from_utf8_lossy(buf)
+                    .trim_end_matches(['\n', '\r'])
+                    .to_string(),
+            )
         }
     }
 }

@@ -25,7 +25,9 @@ use std::sync::Arc;
 use bonsai_core::error::AppError;
 
 use super::raw_args;
-use super::record::{LogLevel, LogPayload, LogRecord, LogSource, RedactionMode, OBS_SCHEMA_VERSION};
+use super::record::{
+    LogLevel, LogPayload, LogRecord, LogSource, RedactionMode, OBS_SCHEMA_VERSION,
+};
 use super::redact::{self, Redactor};
 use super::strict;
 
@@ -322,7 +324,9 @@ impl LogWriter {
             .into_iter()
             .filter(|(n, _)| session_group(n) == group)
             .collect();
-        let over = mine.len().saturating_sub(self.cfg.limits.max_parts as usize);
+        let over = mine
+            .len()
+            .saturating_sub(self.cfg.limits.max_parts as usize);
         let mut evicted = Vec::new();
         for (name, size) in mine.drain(..over) {
             if name == self.active {

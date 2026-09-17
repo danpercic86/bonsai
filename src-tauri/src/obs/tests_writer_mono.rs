@@ -15,7 +15,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use super::record::{LogLevel, LogPayload, LogRecord, LogSource, RedactionMode};
-use super::writer::{LogWriter, Limits, WriterConfig};
+use super::writer::{Limits, LogWriter, WriterConfig};
 
 /// Ms the test sleeps before writing, so "stamped" is distinguishable from
 /// "left 0" — at session start `elapsed()` is legitimately 0 ms. `Instant` is

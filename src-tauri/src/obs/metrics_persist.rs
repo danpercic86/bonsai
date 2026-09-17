@@ -44,8 +44,8 @@ use std::sync::atomic::Ordering;
 
 use bonsai_core::error::AppError;
 
-use crate::obs::metrics_purge::ClearMode;
 use super::{metrics_file, MetricsFile, MetricsState};
+use crate::obs::metrics_purge::ClearMode;
 use crate::obs::writer;
 use crate::perf::PerfCounters;
 

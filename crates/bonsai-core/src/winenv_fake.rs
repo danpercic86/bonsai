@@ -13,7 +13,9 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use super::{PathRehydration, WinEnv, PATH_VALUE, SYSTEM_PATH_KEY, USER_PATH_KEY, VOLATILE_ENV_KEY};
+use super::{
+    PathRehydration, WinEnv, PATH_VALUE, SYSTEM_PATH_KEY, USER_PATH_KEY, VOLATILE_ENV_KEY,
+};
 
 /// Fixed registry values + fixed process vars + recorded reads/writes.
 #[derive(Default)]

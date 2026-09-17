@@ -46,7 +46,10 @@ pub struct SessionRepos {
 impl SessionRepos {
     /// Build a per-session selection state seeded with `seed` (the focused
     /// tab's repoId, or `None`), reading open tabs via `list_open`.
-    pub fn new(seed: Option<String>, list_open: Box<dyn Fn() -> Vec<OpenRepo> + Send + Sync>) -> Self {
+    pub fn new(
+        seed: Option<String>,
+        list_open: Box<dyn Fn() -> Vec<OpenRepo> + Send + Sync>,
+    ) -> Self {
         SessionRepos {
             selected: Mutex::new(seed),
             list_open,

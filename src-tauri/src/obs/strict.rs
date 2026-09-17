@@ -100,7 +100,9 @@ fn is_path_shaped(run: &str) -> bool {
         .next()
         .and_then(|f| f.rsplit_once('.'))
         .is_some_and(|(stem, ext)| {
-            !stem.is_empty() && (1..=12).contains(&ext.len()) && ext.chars().all(|c| c.is_ascii_alphanumeric())
+            !stem.is_empty()
+                && (1..=12).contains(&ext.len())
+                && ext.chars().all(|c| c.is_ascii_alphanumeric())
         });
     rooted || seps >= 2 || has_ext
 }
@@ -136,7 +138,10 @@ fn classify_run(run: &str, r: &Redactor) -> String {
     if let Some(idx) = run.find("://") {
         let scheme = &run[..idx];
         let after = &run[idx + 3..];
-        let host = after.split(['/', '?', '#', '@']).next_back().unwrap_or(after);
+        let host = after
+            .split(['/', '?', '#', '@'])
+            .next_back()
+            .unwrap_or(after);
         // `user@host` — the host is the segment after the last `@`.
         let host = after.split('@').next_back().unwrap_or(host);
         let host = host.split(['/', '?', '#']).next().unwrap_or(host);

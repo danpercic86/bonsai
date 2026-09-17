@@ -132,4 +132,3 @@ pub(crate) async fn ai_analyze_diff_inner(
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
-

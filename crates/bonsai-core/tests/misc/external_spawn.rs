@@ -28,7 +28,9 @@ struct FakeRunner {
 }
 impl FakeRunner {
     fn new() -> FakeRunner {
-        FakeRunner { seen: RefCell::new(Vec::new()) }
+        FakeRunner {
+            seen: RefCell::new(Vec::new()),
+        }
     }
 }
 impl CommandRunner for FakeRunner {
@@ -59,7 +61,11 @@ fn launch_first_delivers_spec_unchanged() {
     let seen = runner.seen.borrow();
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].args, vec![path.display().to_string()]);
-    assert_eq!(seen[0].cwd, safe_cwd(), "LOW-1: the neutral cwd survives the seam");
+    assert_eq!(
+        seen[0].cwd,
+        safe_cwd(),
+        "LOW-1: the neutral cwd survives the seam"
+    );
 }
 
 /// `resolve_program` resolves an existing program to a path (hit) — no spawn
@@ -77,9 +83,15 @@ fn resolve_program_hit_and_miss() {
     }
     let miss = resolve_program("bonsai-definitely-not-a-real-tool-xyz123");
     if cfg!(windows) {
-        assert!(miss.is_err(), "a nonsense program name must fail to resolve");
+        assert!(
+            miss.is_err(),
+            "a nonsense program name must fail to resolve"
+        );
     } else {
-        assert!(miss.is_ok(), "non-Windows defers not-found to spawn(), not resolve_program");
+        assert!(
+            miss.is_ok(),
+            "non-Windows defers not-found to spawn(), not resolve_program"
+        );
     }
 }
 
@@ -117,7 +129,10 @@ fn nonzero_exit_rung_falls_through_to_next_rung() {
     let err = launch_first(&runner, &only_failing, "editor")
         .expect_err("a non-zero exit must fail when we wait for it");
     let msg = err.to_string();
-    assert!(msg.contains("status 1"), "error names the exit status: {msg}");
+    assert!(
+        msg.contains("status 1"),
+        "error names the exit status: {msg}"
+    );
 
     let with_fallback = vec![exit_spec(1, true), exit_spec(0, true)];
     launch_first(&runner, &with_fallback, "editor")

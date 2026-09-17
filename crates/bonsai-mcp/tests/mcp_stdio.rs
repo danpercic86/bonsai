@@ -221,7 +221,8 @@ impl McpClient {
         // (C: is critically full). No such constraint on macOS/Linux, so
         // leave TMP/TEMP untouched there.
         #[cfg(windows)]
-        cmd.env("TMP", "D:\\Data\\Temp").env("TEMP", "D:\\Data\\Temp");
+        cmd.env("TMP", "D:\\Data\\Temp")
+            .env("TEMP", "D:\\Data\\Temp");
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
@@ -265,10 +266,7 @@ impl McpClient {
             "clientInfo": { "name": "bonsai-mcp-test", "version": "0.0.0" }
         });
         let resp = self.request("initialize", params);
-        assert!(
-            resp.get("result").is_some(),
-            "initialize failed: {resp}"
-        );
+        assert!(resp.get("result").is_some(), "initialize failed: {resp}");
         // Notification: no id, no response expected.
         self.write_message(&json!({
             "jsonrpc": "2.0",
@@ -287,9 +285,10 @@ impl McpClient {
 
     /// Read the next JSON message off stdout, or panic on timeout / EOF.
     fn next_message(&self) -> Value {
-        let line = self.rx.recv_timeout(READ_TIMEOUT).unwrap_or_else(|e| {
-            panic!("timed out / disconnected reading server stdout: {e}")
-        });
+        let line = self
+            .rx
+            .recv_timeout(READ_TIMEOUT)
+            .unwrap_or_else(|e| panic!("timed out / disconnected reading server stdout: {e}"));
         serde_json::from_str(&line)
             .unwrap_or_else(|e| panic!("server emitted non-JSON line ({e}): {line}"))
     }
@@ -464,7 +463,10 @@ fn get_graph_matches_in_process_compute_graph() {
     );
 
     // headIndex: Option<u32>. Absent/null on the MCP side means None.
-    let head_index = layout.get("headIndex").and_then(Value::as_u64).map(|v| v as u32);
+    let head_index = layout
+        .get("headIndex")
+        .and_then(Value::as_u64)
+        .map(|v| v as u32);
     assert_eq!(
         head_index, oracle.head_index,
         "MCP get_graph headIndex must equal compute_graph's"
@@ -484,7 +486,8 @@ fn conflict_round_trip_tree_oid_matches_cli_oracle() {
     let mut client = McpClient::connect(mcp_repo.path(), true);
 
     // merge_branch(feature) -> Conflicts { paths: ["a.txt"], .. }
-    let merge = ok_structured(&client.call_tool("bonsai_merge_branch", json!({ "name": "feature" })));
+    let merge =
+        ok_structured(&client.call_tool("bonsai_merge_branch", json!({ "name": "feature" })));
     assert_eq!(
         merge.get("kind").and_then(Value::as_str),
         Some("conflicts"),
@@ -503,7 +506,8 @@ fn conflict_round_trip_tree_oid_matches_cli_oracle() {
     );
 
     // get_conflict(a.txt) -> kind bothModified; ours/theirs = the branch versions.
-    let conflict = ok_structured(&client.call_tool("bonsai_get_conflict", json!({ "path": "a.txt" })));
+    let conflict =
+        ok_structured(&client.call_tool("bonsai_get_conflict", json!({ "path": "a.txt" })));
     assert_eq!(
         conflict.get("kind").and_then(Value::as_str),
         Some("bothModified"),
@@ -528,7 +532,8 @@ fn conflict_round_trip_tree_oid_matches_cli_oracle() {
     ok_structured(&resolve); // asserts no error / isError
 
     // commit_merge("resolve") -> CommitResult { oid, .. }
-    let commit = ok_structured(&client.call_tool("bonsai_commit_merge", json!({ "message": "resolve" })));
+    let commit =
+        ok_structured(&client.call_tool("bonsai_commit_merge", json!({ "message": "resolve" })));
     assert!(
         commit.get("oid").and_then(Value::as_str).is_some(),
         "commit_merge must return a CommitResult with an oid, got: {commit}"

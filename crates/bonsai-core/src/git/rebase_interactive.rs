@@ -85,8 +85,8 @@ pub(crate) struct InteractiveState {
 mod engine;
 mod state;
 
-pub(crate) use state::{effective_total, interactive_in_progress, read_state};
 use engine::{commit_current_op, drive, finish_interactive, restore_to_original};
+pub(crate) use state::{effective_total, interactive_in_progress, read_state};
 use state::{
     map_pick_err, read_state_raw, remove_state, validate_todos, write_state, StateReadError,
 };
@@ -96,10 +96,7 @@ use state::{
 /// Blocking. Returns the DEFAULT todo list (every commit `Pick`, OLDEST first)
 /// for the first-parent range `base..HEAD`, seeding the plan editor. Does NOT
 /// mutate anything.
-pub fn get_interactive_plan(
-    workdir: &Path,
-    base_oid: &str,
-) -> Result<Vec<RebaseTodoOp>, AppError> {
+pub fn get_interactive_plan(workdir: &Path, base_oid: &str) -> Result<Vec<RebaseTodoOp>, AppError> {
     let repo = open_workdir_repo(workdir)?;
 
     let head = read_head_info(&repo)?;
@@ -111,7 +108,8 @@ pub fn get_interactive_plan(
     }
 
     let base = repo.find_commit(
-        git2::Oid::from_str(base_oid).map_err(|_| AppError::Git("invalid commit id".to_string()))?,
+        git2::Oid::from_str(base_oid)
+            .map_err(|_| AppError::Git("invalid commit id".to_string()))?,
     )?;
     let head_commit = repo.head()?.peel_to_commit()?;
 
@@ -207,7 +205,8 @@ pub fn start_interactive_rebase(
     let sig = resolve_signature(&repo.config()?.snapshot()?)?;
 
     let onto = repo.find_commit(
-        git2::Oid::from_str(onto_oid).map_err(|_| AppError::Git("invalid commit id".to_string()))?,
+        git2::Oid::from_str(onto_oid)
+            .map_err(|_| AppError::Git("invalid commit id".to_string()))?,
     )?;
 
     validate_todos(&repo, &todos)?;
@@ -280,8 +279,8 @@ pub fn interactive_continue(workdir: &Path) -> Result<RebaseOutcome, AppError> {
 
     let sig = resolve_signature(&repo.config()?.snapshot()?)?;
     let op = state.todos[state.cursor].clone(); // the paused op
-    let pick_oid = git2::Oid::from_str(&op.oid)
-        .map_err(|_| AppError::Git("invalid commit id".to_string()))?;
+    let pick_oid =
+        git2::Oid::from_str(&op.oid).map_err(|_| AppError::Git("invalid commit id".to_string()))?;
     let pick = repo.find_commit(pick_oid)?;
 
     // HARD error -> Err, leaving the on-disk state intact (§2.7 / P3d §3.9).
@@ -359,7 +358,6 @@ pub fn interactive_abort(workdir: &Path) -> Result<(), AppError> {
     };
     restore_to_original(&repo, &state)
 }
-
 
 #[cfg(test)]
 mod tests;

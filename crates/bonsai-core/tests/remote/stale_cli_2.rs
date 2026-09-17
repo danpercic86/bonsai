@@ -11,10 +11,12 @@
 //!
 //! Scratch repos on D:. Skips (passes with a note) w/o `git`.
 
-use bonsai_core::error::AppError;
-use bonsai_core::git::stale::{delete_branches, find_stale_branches, BranchDeleteStatus, StaleReason};
 use crate::common;
 use crate::common::{commit_fixed, git, git_ok, init_repo};
+use bonsai_core::error::AppError;
+use bonsai_core::git::stale::{
+    delete_branches, find_stale_branches, BranchDeleteStatus, StaleReason,
+};
 
 macro_rules! require_git {
     () => {
@@ -61,20 +63,42 @@ fn base_protected_for_refname_oid_and_tag() {
 
         // Read-only classify: `main` absent, `feat` present as merged.
         let report = find_stale_branches(path, Some(&base)).expect("classify");
-        assert!(!report.branches.iter().any(|b| b.name == "main"),
-            "[{form}] main must never be classified stale: {:?}", report.branches);
-        let feat = report.branches.iter().find(|b| b.name == "feat")
+        assert!(
+            !report.branches.iter().any(|b| b.name == "main"),
+            "[{form}] main must never be classified stale: {:?}",
+            report.branches
+        );
+        let feat = report
+            .branches
+            .iter()
+            .find(|b| b.name == "feat")
             .unwrap_or_else(|| panic!("[{form}] feat must be listed"));
         assert_eq!(feat.reason, StaleReason::Merged, "[{form}] feat merged");
 
         // Destructive: feat deleted, main REFUSED and surviving.
         let names = vec!["feat".to_string(), "main".to_string()];
         let results = delete_branches(path, &names, Some(&base)).expect("delete");
-        let status = |n: &str| results.iter().find(|r| r.name == n).map(|r| r.status).unwrap();
-        assert_eq!(status("feat"), BranchDeleteStatus::Deleted, "[{form}] feat deleted");
-        assert_ne!(status("main"), BranchDeleteStatus::Deleted, "[{form}] main NOT deleted");
-        assert!(git_ok(path, &["rev-parse", "--verify", "refs/heads/main"]),
-            "[{form}] main ref survives");
+        let status = |n: &str| {
+            results
+                .iter()
+                .find(|r| r.name == n)
+                .map(|r| r.status)
+                .unwrap()
+        };
+        assert_eq!(
+            status("feat"),
+            BranchDeleteStatus::Deleted,
+            "[{form}] feat deleted"
+        );
+        assert_ne!(
+            status("main"),
+            BranchDeleteStatus::Deleted,
+            "[{form}] main NOT deleted"
+        );
+        assert!(
+            git_ok(path, &["rev-parse", "--verify", "refs/heads/main"]),
+            "[{form}] main ref survives"
+        );
     }
 }
 
@@ -91,8 +115,14 @@ fn deleted_row_carries_was_at_short_oid() {
     let feat = results.iter().find(|r| r.name == "feat").expect("feat row");
     assert_eq!(feat.status, BranchDeleteStatus::Deleted);
     let msg = feat.message.as_deref().unwrap_or("");
-    assert!(msg.starts_with("was at "), "message names the deleted tip: {msg:?}");
-    assert!(c0.starts_with(&msg["was at ".len()..]), "short-oid is feat's tip (C0): {msg:?}");
+    assert!(
+        msg.starts_with("was at "),
+        "message names the deleted tip: {msg:?}"
+    );
+    assert!(
+        c0.starts_with(&msg["was at ".len()..]),
+        "short-oid is feat's tip (C0): {msg:?}"
+    );
 }
 
 // -------------------------------------- F-A7-4: remote base protects local
@@ -111,12 +141,23 @@ fn remote_base_protects_local_counterpart() {
 
     let report = find_stale_branches(path, Some("origin/main")).expect("classify");
     assert_eq!(report.base, "origin/main");
-    assert!(!report.branches.iter().any(|b| b.name == "main"),
-        "local main protected under a remote base: {:?}", report.branches);
+    assert!(
+        !report.branches.iter().any(|b| b.name == "main"),
+        "local main protected under a remote base: {:?}",
+        report.branches
+    );
 
-    let results = delete_branches(path, &["main".to_string()], Some("origin/main")).expect("delete");
-    assert_ne!(results[0].status, BranchDeleteStatus::Deleted, "local main NOT deleted");
-    assert!(git_ok(path, &["rev-parse", "--verify", "refs/heads/main"]), "main survives");
+    let results =
+        delete_branches(path, &["main".to_string()], Some("origin/main")).expect("delete");
+    assert_ne!(
+        results[0].status,
+        BranchDeleteStatus::Deleted,
+        "local main NOT deleted"
+    );
+    assert!(
+        git_ok(path, &["rev-parse", "--verify", "refs/heads/main"]),
+        "main survives"
+    );
 }
 
 // -------------------------------------------- F-A7-9: dangling ref skipped
@@ -134,8 +175,10 @@ fn dangling_branch_ref_skipped_not_fatal() {
 
     // Scan still succeeds and still classifies the healthy `feat` branch.
     let report = find_stale_branches(path, Some("main")).expect("scan survives a dangling ref");
-    assert!(report.branches.iter().any(|b| b.name == "feat"),
-        "healthy branch still classified despite the dangling ref");
+    assert!(
+        report.branches.iter().any(|b| b.name == "feat"),
+        "healthy branch still classified despite the dangling ref"
+    );
 }
 
 // ------------------------------------------------- unicode + empty batch
@@ -150,13 +193,21 @@ fn unicode_branch_name_stale_and_deletable() {
     git(path, &["branch", uni, &c0]); // merged
 
     let report = find_stale_branches(path, Some("main")).expect("classify");
-    assert!(report.branches.iter().any(|b| b.name == uni),
-        "unicode branch classified stale: {:?}", report.branches.iter().map(|b| &b.name).collect::<Vec<_>>());
+    assert!(
+        report.branches.iter().any(|b| b.name == uni),
+        "unicode branch classified stale: {:?}",
+        report.branches.iter().map(|b| &b.name).collect::<Vec<_>>()
+    );
 
     let results = delete_branches(path, &[uni.to_string()], Some("main")).expect("delete");
     assert_eq!(results[0].status, BranchDeleteStatus::Deleted);
-    assert!(!git_ok(path, &["rev-parse", "--verify", &format!("refs/heads/{uni}")]),
-        "unicode branch deleted");
+    assert!(
+        !git_ok(
+            path,
+            &["rev-parse", "--verify", &format!("refs/heads/{uni}")]
+        ),
+        "unicode branch deleted"
+    );
 }
 
 /// An empty names batch is a clean no-op (never errors, deletes nothing).
@@ -167,7 +218,10 @@ fn empty_names_batch_is_noop() {
     let path = dir.path();
     let results = delete_branches(path, &[], Some("main")).expect("empty batch Ok");
     assert!(results.is_empty(), "no result rows for an empty batch");
-    assert!(git_ok(path, &["rev-parse", "--verify", "refs/heads/feat"]), "feat untouched");
+    assert!(
+        git_ok(path, &["rev-parse", "--verify", "refs/heads/feat"]),
+        "feat untouched"
+    );
 }
 
 // ------------------------------------------------------ bare / unborn errs
@@ -212,5 +266,8 @@ fn scan_is_pure_refs_and_reflog_unchanged() {
     let reflog_after = git(path, &["reflog", "show", "--format=%H %gs", "HEAD"]);
 
     assert_eq!(refs_before, refs_after, "scan must not move any ref");
-    assert_eq!(reflog_before, reflog_after, "scan must not touch the reflog");
+    assert_eq!(
+        reflog_before, reflog_after,
+        "scan must not touch the reflog"
+    );
 }

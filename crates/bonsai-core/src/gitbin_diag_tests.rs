@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 
 use super::*;
 
-
 // The cache returns a stable answer and `refresh_git_bin` re-runs the ladder.
 // (Uses the REAL host env — no mutation, only reads.)
 //
@@ -19,7 +18,11 @@ use super::*;
 fn cache_is_stable_and_refreshable() {
     let first = git_bin();
     assert_eq!(git_bin(), first, "cached read is stable");
-    assert_eq!(refresh_git_bin(), first, "refresh re-resolves to the same answer");
+    assert_eq!(
+        refresh_git_bin(),
+        first,
+        "refresh re-resolves to the same answer"
+    );
     reset_git_bin_cache();
     assert_eq!(git_bin(), first, "re-resolve after a cache clear");
 }
@@ -80,7 +83,10 @@ fn spawn_error_maps_not_found_to_git_not_found() {
         other => panic!("expected GitNotFound, got {other:?}"),
     }
 
-    let other = spawn_error("log", &std::io::Error::from(std::io::ErrorKind::Interrupted));
+    let other = spawn_error(
+        "log",
+        &std::io::Error::from(std::io::ErrorKind::Interrupted),
+    );
     if git_missing() {
         // No git on this machine: everything is honestly GitNotFound.
         assert!(matches!(other, AppError::GitNotFound(_)));
@@ -119,8 +125,5 @@ fn git_not_found_message_is_honest() {
         m.contains("because Bonsai could not start the credential helper"),
         "{m}"
     );
-    assert!(
-        m.contains("This affects HTTPS remotes"),
-        "{m}"
-    );
+    assert!(m.contains("This affects HTTPS remotes"), "{m}");
 }

@@ -102,8 +102,8 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-pub use crate::winenv_merge::{expand_segment, is_absolute_windows_path, merge_path};
 use crate::winenv_merge::is_applicable;
+pub use crate::winenv_merge::{expand_segment, is_absolute_windows_path, merge_path};
 #[cfg(windows)]
 use crate::winenv_merge::{parse_reg_query, parse_reg_values};
 

@@ -15,7 +15,8 @@ pub(super) fn init_scratch() -> tempfile::TempDir {
     let repo = git2::Repository::init(dir.path()).expect("init repo");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     dir
 }
@@ -78,7 +79,11 @@ pub(super) fn merge_repo() -> (tempfile::TempDir, String, String, String) {
 /// raw index file, and a worktree file.
 pub(super) fn snapshot(p: &Path) -> (Option<String>, Vec<u8>, Vec<u8>) {
     let repo = git2::Repository::open(p).expect("open");
-    let head = repo.head().ok().and_then(|r| r.target()).map(|o| o.to_string());
+    let head = repo
+        .head()
+        .ok()
+        .and_then(|r| r.target())
+        .map(|o| o.to_string());
     let index = std::fs::read(repo.path().join("index")).unwrap_or_default();
     let file = std::fs::read(p.join("a.txt")).unwrap_or_default();
     (head, index, file)

@@ -9,11 +9,11 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{commit_fixed, file_url, git, init_repo, scratch_dir};
 use bonsai_core::git::submodule::{
     add_submodule, list_submodules, sync_submodule, update_submodule, SubmoduleStatus,
 };
-use crate::common;
-use crate::common::{commit_fixed, file_url, git, init_repo, scratch_dir};
 
 macro_rules! require_git {
     () => {
@@ -80,7 +80,10 @@ fn failed_fresh_clone_rollback_preserves_user_files() {
 
     // Precondition: never cloned — no cached module gitdir.
     let modules = work.join(".git").join("modules").join(SUB_PATH);
-    assert!(!modules.exists(), "precondition: no cached module gitdir yet");
+    assert!(
+        !modules.exists(),
+        "precondition: no cached module gitdir yet"
+    );
 
     // The user's own file sits where the submodule will be checked out.
     let sub_wd = work.join(SUB_PATH);
@@ -103,7 +106,10 @@ fn failed_fresh_clone_rollback_preserves_user_files() {
     );
 
     // THE assertion: the user's bytes are untouched.
-    assert!(user_file.exists(), "the user's file must still exist after the refused update");
+    assert!(
+        user_file.exists(),
+        "the user's file must still exist after the refused update"
+    );
     assert_eq!(
         std::fs::read(&user_file).expect("read user file after"),
         before,
@@ -143,15 +149,30 @@ fn failed_fresh_clone_rollback_still_clears_its_own_residue() {
 
     // Repoint the submodule at a nonexistent local repo → the clone fails.
     let bogus = file_url(&work.join("does-not-exist"));
-    git(&work, &["config", "-f", ".gitmodules", "submodule.vendor/sub.url", &bogus]);
+    git(
+        &work,
+        &[
+            "config",
+            "-f",
+            ".gitmodules",
+            "submodule.vendor/sub.url",
+            &bogus,
+        ],
+    );
 
     let res = update_submodule(&work, SUB_PATH);
-    assert!(res.is_err(), "a clone from a nonexistent URL must fail: {res:?}");
+    assert!(
+        res.is_err(),
+        "a clone from a nonexistent URL must fail: {res:?}"
+    );
 
     // libgit2 keys the clone repodir on the PATH while Bonsai's cleanup keys on
     // the NAME; here both are `vendor/sub`, so probing the single key is enough.
     let dir = work.join(".git").join("modules").join(SUB_PATH);
-    assert!(!dir.exists(), "the failed clone's module gitdir must be cleaned up");
+    assert!(
+        !dir.exists(),
+        "the failed clone's module gitdir must be cleaned up"
+    );
     // The `submodule.<name>.{url,update,active}` keys written by `init` are gone
     // (git leaves the now-empty `[submodule "..."]` section header behind, which
     // is inert — a retry re-writes the keys).
@@ -165,7 +186,16 @@ fn failed_fresh_clone_rollback_still_clears_its_own_residue() {
 
     // Acceptance criterion 8: the RETRY leg — with the url repointed at the good
     // source, sync + update must now succeed. No reinit residue may block it.
-    git(&work, &["config", "-f", ".gitmodules", "submodule.vendor/sub.url", &url]);
+    git(
+        &work,
+        &[
+            "config",
+            "-f",
+            ".gitmodules",
+            "submodule.vendor/sub.url",
+            &url,
+        ],
+    );
     sync_submodule(&work, SUB_PATH).expect("sync after rollback");
     update_submodule(&work, SUB_PATH).expect("retry update after rollback must succeed");
     let row = list_submodules(&work)
@@ -173,7 +203,11 @@ fn failed_fresh_clone_rollback_still_clears_its_own_residue() {
         .into_iter()
         .find(|s| s.path == SUB_PATH)
         .expect("the submodule row");
-    assert_eq!(row.status, SubmoduleStatus::UpToDate, "row after successful retry");
+    assert_eq!(
+        row.status,
+        SubmoduleStatus::UpToDate,
+        "row after successful retry"
+    );
 }
 
 /// P73 backstop (reviewer SHOULD-FIX 2): when `.git/modules/<key>` exists but is

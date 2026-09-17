@@ -8,7 +8,6 @@ pub mod payload;
 // P68 §A: the streaming sibling of `run_claude` — pure line interpretation
 // (`stream`), process lifecycle (`session`) and the cancel/reply map
 // (`registry`), split so the NDJSON mapping is testable without a child (D12).
-pub mod registry;
 /// macOS/Linux `claude` CLI discovery ladder (spec 001): the process's own
 /// `PATH`, then the user's login-shell `PATH`, then a short list of
 /// well-known install directories. Windows keeps using
@@ -20,6 +19,7 @@ mod bin_resolve;
 /// one they advance, so the idle watchdog is asserted on ORDERING rather than on
 /// elapsed wall time.
 mod clock;
+pub mod registry;
 /// Private: [`RunControl`] is the module's whole public surface (re-exported
 /// below), and `run_claude_streaming` is the only way to drive a session.
 mod session;
@@ -49,13 +49,13 @@ pub use stream::{
 };
 
 #[cfg(test)]
-pub(crate) mod testutil;
-#[cfg(test)]
-mod tests;
+mod session_io_tests;
 #[cfg(test)]
 mod session_tests;
 #[cfg(test)]
-mod session_io_tests;
+mod tests;
+#[cfg(test)]
+pub(crate) mod testutil;
 
 use crate::error::AppError;
 use std::path::Path;
@@ -121,7 +121,6 @@ struct ClaudeEnvelope {
     subtype: Option<String>,
 }
 
-
 /// Strip a single leading/trailing ``` fence (optionally ```lang) defensively.
 /// If the trimmed text opens with a fence line and closes with a fence line, the
 /// two fence lines are removed and the inner lines returned; otherwise the text
@@ -173,7 +172,10 @@ pub fn run_claude(
     opts: RunOpts,
 ) -> Result<AiResult, AppError> {
     let bin = resolve_bin();
-    let model = opts.model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_string());
+    let model = opts
+        .model
+        .clone()
+        .unwrap_or_else(|| DEFAULT_MODEL.to_string());
 
     // BatBadBut-class caveat: on Windows `bin` typically resolves to the npm
     // `claude.cmd` shim, and argv text reaching a `.cmd` is re-expanded by
@@ -307,7 +309,11 @@ pub fn run_claude_streaming(
     ctl: &RunControl,
     on_event: &(dyn Fn(AiRunEvent) + Send + Sync),
 ) -> Result<AiResult, AppError> {
-    let deps = session::SessionDeps { ctl, on_event, clock: &clock::SystemClock };
+    let deps = session::SessionDeps {
+        ctl,
+        on_event,
+        clock: &clock::SystemClock,
+    };
     session::run(cwd, prompt, payload, opts, limits, deps)
 }
 
@@ -463,9 +469,13 @@ pub(crate) fn check_availability_within(timeout: Duration) -> AiAvailability {
                 Some(v) => format!("Claude Code {v} ready"),
                 None => "Claude Code ready".to_string(),
             };
-            AiAvailability { installed: true, logged_in: true, version, detail }
+            AiAvailability {
+                installed: true,
+                logged_in: true,
+                version,
+                detail,
+            }
         }
         _ => not_found,
     }
 }
-

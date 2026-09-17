@@ -169,7 +169,8 @@ mod tests {
         {
             let mut cfg = repo.config().expect("config");
             cfg.set_str("user.name", "Test User").expect("name");
-            cfg.set_str("user.email", "test@example.com").expect("email");
+            cfg.set_str("user.email", "test@example.com")
+                .expect("email");
             cfg.set_bool("core.autocrlf", false).expect("autocrlf");
         }
         repo
@@ -200,7 +201,9 @@ mod tests {
             let blob = repo.blob(content.as_bytes()).expect("blob");
             tb.insert(name, blob, 0o100_644).expect("insert");
         }
-        let tree = repo.find_tree(tb.write().expect("write tree")).expect("tree");
+        let tree = repo
+            .find_tree(tb.write().expect("write tree"))
+            .expect("tree");
         let parent_commits: Vec<git2::Commit> = parents
             .iter()
             .map(|p| repo.find_commit(*p).expect("parent"))
@@ -216,12 +219,40 @@ mod tests {
     fn build_graph_fixture() -> tempfile::TempDir {
         let dir = crate::testutil::scratch_dir();
         let repo = init_repo(dir.path());
-        let c0 = commit_on(&repo, "refs/heads/main", &[], &[("a.txt", "a0\n")], "root", 1000);
-        let c1 = commit_on(&repo, "refs/heads/main", &[c0], &[("a.txt", "a1\n")], "second", 2000);
+        let c0 = commit_on(
+            &repo,
+            "refs/heads/main",
+            &[],
+            &[("a.txt", "a0\n")],
+            "root",
+            1000,
+        );
+        let c1 = commit_on(
+            &repo,
+            "refs/heads/main",
+            &[c0],
+            &[("a.txt", "a1\n")],
+            "second",
+            2000,
+        );
         repo.reference("refs/heads/feature", c1, false, "branch feature")
             .expect("feature ref");
-        let c2 = commit_on(&repo, "refs/heads/main", &[c1], &[("a.txt", "a2\n")], "main work", 3000);
-        let c3 = commit_on(&repo, "refs/heads/feature", &[c1], &[("b.txt", "b\n")], "feat work", 4000);
+        let c2 = commit_on(
+            &repo,
+            "refs/heads/main",
+            &[c1],
+            &[("a.txt", "a2\n")],
+            "main work",
+            3000,
+        );
+        let c3 = commit_on(
+            &repo,
+            "refs/heads/feature",
+            &[c1],
+            &[("b.txt", "b\n")],
+            "feat work",
+            4000,
+        );
         commit_on(
             &repo,
             "refs/heads/main",

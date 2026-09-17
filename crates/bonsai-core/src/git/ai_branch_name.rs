@@ -34,7 +34,8 @@ const BRANCH_NAME_MAX_COMMITS: usize = 50;
 const BRANCH_NAME_SYSTEM_PROMPT: &str = "You are naming a git branch from a description of code changes on standard input. Propose three short, descriptive branch names in kebab-case, most fitting first, reflecting the INTENT of the change. Use an optional single type prefix (feat/, fix/, chore/, refactor/) then a hyphenated slug. Names must be valid git refs: lowercase, hyphen-separated, at most one '/', no spaces or special characters. Output ONLY the names, one per line — no numbering, no explanation, no code fences.";
 
 /// The `-p` positional prompt for branch naming (§3.3, verbatim single line).
-const BRANCH_NAME_PROMPT: &str = "Suggest branch names for the changes described on standard input.";
+const BRANCH_NAME_PROMPT: &str =
+    "Suggest branch names for the changes described on standard input.";
 
 /// Where to draw the branch-name grounding from. COMMAND INPUT (Deserialize);
 /// the TS mirror is a discriminated union (§2.2).
@@ -183,7 +184,8 @@ fn build_range_payload(workdir: &Path, from: &str, to: &str) -> Result<String, A
 
     // Net diffstat: base_tree (or empty) vs to_tree, headers only.
     let mut diff_opts = build_diff_options(&[], false);
-    let mut diff = repo.diff_tree_to_tree(Some(&base_tree), Some(&to_tree), Some(&mut diff_opts))?;
+    let mut diff =
+        repo.diff_tree_to_tree(Some(&base_tree), Some(&to_tree), Some(&mut diff_opts))?;
     apply_find_similar(&mut diff)?;
     let headers = collect_headers(&diff)?;
     let diffstat = payload::render_headers(&headers);
@@ -253,7 +255,6 @@ mod tests {
     use super::*;
     use crate::ai::testutil::env_lock;
 
-
     /// §7.4: `sanitize_branch_name` lowercases + kebab-ifies salvageable input
     /// and rejects the unsalvageable. Documented mapping: spaces/punctuation
     /// (incl. `:`) collapse to a single `-`; a single `/` is preserved (nested
@@ -278,8 +279,14 @@ mod tests {
         // intentional and creatable: `git check-ref-format refs/heads/feat/-fix`
         // accepts it, so we surface the name rather than mangling it. Locks the
         // current output (reviewer nit).
-        assert_eq!(sanitize_branch_name("feat/ fix").as_deref(), Some("feat/-fix"));
-        assert_eq!(sanitize_branch_name("feat/-fix").as_deref(), Some("feat/-fix"));
+        assert_eq!(
+            sanitize_branch_name("feat/ fix").as_deref(),
+            Some("feat/-fix")
+        );
+        assert_eq!(
+            sanitize_branch_name("feat/-fix").as_deref(),
+            Some("feat/-fix")
+        );
         // Leading/trailing junk trimmed; a dash next to a slash is dropped; a
         // double slash collapses.
         assert_eq!(
@@ -343,7 +350,13 @@ seven-branch
         // Order preserved, duplicate collapsed, junk dropped.
         assert_eq!(
             names,
-            vec!["feat/one", "fix-two", "chore/three", "refactor-four", "feat/five"]
+            vec![
+                "feat/one",
+                "fix-two",
+                "chore/three",
+                "refactor-four",
+                "feat/five"
+            ]
         );
         assert!(
             !names.iter().any(|n| n.contains('!') || n.contains('_')),
@@ -396,7 +409,10 @@ seven-branch
             cost_usd: None,
         })
         .expect("json");
-        assert_eq!(v, serde_json::json!({ "names": ["topic/x"], "costUsd": null }));
+        assert_eq!(
+            v,
+            serde_json::json!({ "names": ["topic/x"], "costUsd": null })
+        );
     }
 
     /// §7.9: the prompt/system-prompt consts MUST be single-line (Windows argv
@@ -420,7 +436,8 @@ seven-branch
         let repo = git2::Repository::init(dir.path()).expect("init repo");
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
         cfg.set_bool("core.autocrlf", false).expect("autocrlf");
         dir
     }
@@ -456,7 +473,9 @@ seven-branch
                 m, "no changes to name a branch from",
                 "empty-grounding message proves the pre-CLI bail; got: {m}"
             ),
-            other => panic!("expected AiFailed (pre-CLI), got {other:?} — a spawn would be AiUnavailable"),
+            other => panic!(
+                "expected AiFailed (pre-CLI), got {other:?} — a spawn would be AiUnavailable"
+            ),
         }
     }
 
@@ -497,7 +516,9 @@ seven-branch
                 m, "no commits in the selected range to name a branch from",
                 "empty-range message proves the pre-CLI bail; got: {m}"
             ),
-            other => panic!("expected AiFailed (pre-CLI), got {other:?} — a spawn would be AiUnavailable"),
+            other => panic!(
+                "expected AiFailed (pre-CLI), got {other:?} — a spawn would be AiUnavailable"
+            ),
         }
     }
 }

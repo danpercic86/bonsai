@@ -50,13 +50,20 @@ fn browsed(kind: ToolKind, shape: CustomKindShape, target: &str) -> PickedTool {
 /// — never from the repo (LOW-1).
 #[test]
 fn browsed_editor_executable_gets_one_argv_token_and_the_neutral_cwd() {
-    let tool = browsed(ToolKind::Editor, CustomKindShape::Executable, r"C:\Portable\Editor.exe");
+    let tool = browsed(
+        ToolKind::Editor,
+        CustomKindShape::Executable,
+        r"C:\Portable\Editor.exe",
+    );
     let s = spec_from(&tool, &p());
     assert_eq!(s.program, r"C:\Portable\Editor.exe");
     assert_eq!(s.args, vec!["/tmp/work".to_string()]);
     assert_eq!(s.cwd, safe_cwd());
     assert!(s.hide_console);
-    assert!(!s.wait_for_exit, "an editor session must never be waited on");
+    assert!(
+        !s.wait_for_exit,
+        "an editor session must never be waited on"
+    );
 }
 
 /// A browsed program path **containing a space** stays ONE verbatim
@@ -77,7 +84,10 @@ fn a_browsed_program_path_with_a_space_survives_as_one_verbatim_token() {
         let tool = browsed(kind, CustomKindShape::Executable, target);
         let s = spec_from(&tool, &p());
         assert_eq!(s.program, target, "{kind:?}: not split on the space");
-        assert!(!s.program.contains('"'), "{kind:?}: no shell quoting is added");
+        assert!(
+            !s.program.contains('"'),
+            "{kind:?}: no shell quoting is added"
+        );
     }
 }
 
@@ -86,7 +96,11 @@ fn a_browsed_program_path_with_a_space_survives_as_one_verbatim_token() {
 /// audit route 3's shape, reachable only for a program a human browsed to.
 #[test]
 fn browsed_terminal_executable_takes_no_args_and_the_target_as_cwd() {
-    let tool = browsed(ToolKind::Terminal, CustomKindShape::Executable, "/usr/local/bin/myterm");
+    let tool = browsed(
+        ToolKind::Terminal,
+        CustomKindShape::Executable,
+        "/usr/local/bin/myterm",
+    );
     let s = spec_from(&tool, &p());
     assert_eq!(s.program, "/usr/local/bin/myterm");
     assert!(s.args.is_empty(), "no argv token: {:?}", s.args);
@@ -105,10 +119,20 @@ fn a_browsed_bundle_launches_through_open_and_waits() {
         let tool = browsed(kind, CustomKindShape::MacBundle, bundle);
         let s = spec_from(&tool, &p());
         assert_eq!(s.program, "open");
-        assert_eq!(s.args, vec!["-a".to_string(), bundle.to_string(), "/tmp/work".to_string()]);
+        assert_eq!(
+            s.args,
+            vec![
+                "-a".to_string(),
+                bundle.to_string(),
+                "/tmp/work".to_string()
+            ]
+        );
         assert_eq!(s.args.len(), 3, "the bundle is ONE token, spaces and all");
         assert_eq!(s.cwd, safe_cwd());
-        assert!(s.wait_for_exit, "open reports 'not found' through its exit code");
+        assert!(
+            s.wait_for_exit,
+            "open reports 'not found' through its exit code"
+        );
         assert_eq!(s.hide_console, kind == ToolKind::Editor);
     }
 }
@@ -126,7 +150,12 @@ fn hide_console_follows_the_kind_for_every_recipe() {
             let tool = PickedTool {
                 kind,
                 recipe,
-                program: if matches!(recipe, Recipe::MacOpen) { "open" } else { "tool" }.to_string(),
+                program: if matches!(recipe, Recipe::MacOpen) {
+                    "open"
+                } else {
+                    "tool"
+                }
+                .to_string(),
                 open_arg: matches!(recipe, Recipe::MacOpen).then(|| "App".to_string()),
                 source: ToolSource::BuiltIn,
             };
@@ -153,7 +182,10 @@ fn the_fixed_prefix_recipes_place_the_directory_exactly_as_the_catalog_says() {
         source: ToolSource::Path,
     };
     let s = spec_from(&joined, &spacey);
-    assert_eq!(s.args, vec![format!("--working-directory={}", spacey.display())]);
+    assert_eq!(
+        s.args,
+        vec![format!("--working-directory={}", spacey.display())]
+    );
 
     let last = PickedTool {
         recipe: Recipe::DirLastArg(&["start", "--cwd"]),
@@ -163,7 +195,11 @@ fn the_fixed_prefix_recipes_place_the_directory_exactly_as_the_catalog_says() {
     let s = spec_from(&last, &spacey);
     assert_eq!(
         s.args,
-        vec!["start".to_string(), "--cwd".to_string(), spacey.display().to_string()]
+        vec![
+            "start".to_string(),
+            "--cwd".to_string(),
+            spacey.display().to_string()
+        ]
     );
 }
 
@@ -191,16 +227,28 @@ fn every_catalog_entry_launches_only_catalog_strings_and_the_target_dir() {
             Recipe::DirLastArg(f) | Recipe::DirJoinedArg(f, _) | Recipe::DirCwd(f) => f,
             Recipe::MacOpen => &["-a"],
         };
-        assert_eq!(s.program, e.program, "{}: program is the catalog literal", e.id);
+        assert_eq!(
+            s.program, e.program,
+            "{}: program is the catalog literal",
+            e.id
+        );
         for arg in &s.args {
             let is_catalog = fixed.contains(&arg.as_str())
                 || e.app_name.is_some_and(|a| a == arg)
                 || arg == "-a";
             let is_target = arg == &d || arg.ends_with(&d);
-            assert!(is_catalog || is_target, "{}: stray argv token {arg:?}", e.id);
+            assert!(
+                is_catalog || is_target,
+                "{}: stray argv token {arg:?}",
+                e.id
+            );
         }
         // The cwd is either the neutral one or the target — never anything else.
-        assert!(s.cwd == safe_cwd() || s.cwd == dir, "{}: unexpected cwd", e.id);
+        assert!(
+            s.cwd == safe_cwd() || s.cwd == dir,
+            "{}: unexpected cwd",
+            e.id
+        );
     }
 }
 
@@ -217,7 +265,10 @@ fn every_catalog_entry_launches_only_catalog_strings_and_the_target_dir() {
 ///   * under `--release` the body's assertions pin the degradation
 ///     (`open -a "" <dir>`, which fails at spawn and falls through the ladder).
 #[test]
-#[cfg_attr(debug_assertions, should_panic(expected = "a MacOpen selection always carries"))]
+#[cfg_attr(
+    debug_assertions,
+    should_panic(expected = "a MacOpen selection always carries")
+)]
 fn a_mac_open_selection_without_an_app_argument_debug_asserts_then_degrades() {
     let tool = PickedTool {
         kind: ToolKind::Editor,
@@ -231,7 +282,10 @@ fn a_mac_open_selection_without_an_app_argument_debug_asserts_then_degrades() {
     #[cfg(not(debug_assertions))]
     {
         assert_eq!(s.program, "open");
-        assert_eq!(s.args, vec!["-a".to_string(), String::new(), "/tmp/work".to_string()]);
+        assert_eq!(
+            s.args,
+            vec!["-a".to_string(), String::new(), "/tmp/work".to_string()]
+        );
     }
     // Debug: the line above never returns, but the binding must still be used.
     #[cfg(debug_assertions)]
@@ -248,8 +302,14 @@ fn a_selection_is_the_only_candidate_on_every_os() {
     let ed = browsed(ToolKind::Editor, CustomKindShape::Executable, "/opt/ed");
     let term = browsed(ToolKind::Terminal, CustomKindShape::Executable, "/opt/term");
     for os in [TargetOs::Windows, TargetOs::MacOs, TargetOs::Linux] {
-        assert_eq!(editor_ladder(os, Some(&ed), &p()), vec![spec_from(&ed, &p())]);
-        assert_eq!(terminal_ladder(os, Some(&term), &p()), vec![spec_from(&term, &p())]);
+        assert_eq!(
+            editor_ladder(os, Some(&ed), &p()),
+            vec![spec_from(&ed, &p())]
+        );
+        assert_eq!(
+            terminal_ladder(os, Some(&term), &p()),
+            vec![spec_from(&term, &p())]
+        );
     }
 }
 

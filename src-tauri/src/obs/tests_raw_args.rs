@@ -325,7 +325,12 @@ fn w6_args_omitted_reaches_disk_on_a_real_record() {
 /// serde folds to "absent").
 #[test]
 fn w6_a_malformed_args_omitted_never_becomes_a_record() {
-    for bad in [json!(-1), json!("2"), json!(1.5), json!(u64::from(u32::MAX) + 1)] {
+    for bad in [
+        json!(-1),
+        json!("2"),
+        json!(1.5),
+        json!(u64::from(u32::MAX) + 1),
+    ] {
         let wire = ipc_call_wire(bad.clone());
         assert!(
             serde_json::from_value::<LogRecord>(wire).is_err(),

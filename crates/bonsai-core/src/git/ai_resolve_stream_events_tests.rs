@@ -59,7 +59,11 @@ fn run_events_renumber_sessions_into_one_sequence() {
     }
     assert_eq!(out[1].text.as_deref(), Some("hello"), "payload preserved");
     assert_eq!(out[2].cost_usd, Some(0.01));
-    assert_eq!(out[4].partial_text.as_deref(), Some("HALF"), "partial echo carried over");
+    assert_eq!(
+        out[4].partial_text.as_deref(),
+        Some("HALF"),
+        "partial echo carried over"
+    );
     assert_eq!(events.max_turn(), 2, "max turn across batches");
 }
 
@@ -137,7 +141,10 @@ fn stream_log_off_still_lets_tool_and_denial_lines_through() {
         ],
         "the chatty line is suppressed; tool, denial and metrics survive"
     );
-    assert!(out[0].notable && out[1].notable, "the flag must survive relabelling");
+    assert!(
+        out[0].notable && out[1].notable,
+        "the flag must survive relabelling"
+    );
     for (i, ev) in out.iter().enumerate() {
         assert_eq!(ev.seq, i as u64, "gap-free after suppression: {ev:?}");
     }

@@ -5,14 +5,13 @@
 //! Moved verbatim out of `diff_cli.rs`; see that module for the oracle rules
 //! and `diff_oracle` for the shared parser and fixtures.
 
-use bonsai_core::git::diff::{commit_diff, commit_file_diff, workdir_file_diff, LineKind};
-use bonsai_core::git::status::FileStatus;
 use crate::common;
 use crate::common::{commit_fixed, git, init_repo};
 use crate::diff_oracle::{
     assert_matches_oracle, commit_fixture, edit_line, numbered_lines, numstat,
 };
-
+use bonsai_core::git::diff::{commit_diff, commit_file_diff, workdir_file_diff, LineKind};
+use bonsai_core::git::status::FileStatus;
 
 macro_rules! require_git {
     () => {
@@ -117,7 +116,8 @@ fn root_commit() {
     assert_eq!(cd.files[0].additions, 4);
     assert_eq!(cd.files[0].deletions, 0);
 
-    let fd = commit_file_diff(dir.path(), &root, "first.txt", None, false, false).expect("root file diff");
+    let fd = commit_file_diff(dir.path(), &root, "first.txt", None, false, false)
+        .expect("root file diff");
     assert_eq!(fd.status, FileStatus::Added);
     assert_matches_oracle(
         &fd,
@@ -198,12 +198,21 @@ fn unborn_staged() {
     std::fs::write(dir.path().join("seed.txt"), numbered_lines(3)).expect("write seed.txt");
     git(dir.path(), &["add", "--", "seed.txt"]);
 
-    let fd = workdir_file_diff(dir.path(), "seed.txt", None, true, false, false).expect("unborn staged diff");
+    let fd = workdir_file_diff(dir.path(), "seed.txt", None, true, false, false)
+        .expect("unborn staged diff");
     assert_eq!(fd.status, FileStatus::Added);
     assert!(fd.hunks[0].lines.iter().all(|l| l.kind == LineKind::Add));
     assert_matches_oracle(
         &fd,
         dir.path(),
-        &["diff", "--cached", "--no-color", "-U3", "-M", "--", "seed.txt"],
+        &[
+            "diff",
+            "--cached",
+            "--no-color",
+            "-U3",
+            "-M",
+            "--",
+            "seed.txt",
+        ],
     );
 }

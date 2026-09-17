@@ -13,8 +13,8 @@
 //! - stash tips excluded whenever `seed_refs` is `Some`.
 
 use bonsai_core::graph::{
-    compute_graph, compute_graph_with, graph_seed, stream_graph_from_repo, GraphChunk,
-    GraphFilter, GraphLayout, RefKind,
+    compute_graph, compute_graph_with, graph_seed, stream_graph_from_repo, GraphChunk, GraphFilter,
+    GraphLayout, RefKind,
 };
 
 // ---- fixture helpers (mirrors src/graph/tests.rs) --------------------------
@@ -114,8 +114,7 @@ fn merge_fixture(keep_side_ref: bool) -> (tempfile::TempDir, git2::Repository, [
 
 /// Multi-branch fixture: base `b0`; `x1 <- x2` (branch `x`); `y1` (branch `y`,
 /// checked out); `z1` (branch `z`, tag `v1`). All branch from `b0`.
-fn multi_branch_fixture(
-) -> (tempfile::TempDir, git2::Repository, [git2::Oid; 5]) {
+fn multi_branch_fixture() -> (tempfile::TempDir, git2::Repository, [git2::Oid; 5]) {
     let (dir, repo) = init_repo();
     let b0 = commit(&repo, "b0", &[], 1);
     let x1 = commit(&repo, "x1", &[b0], 2);
@@ -285,7 +284,10 @@ fn first_parent_with_merged_ref_present_keeps_its_line() {
     assert_eq!(got.len(), 4, "all four commits still walked");
     // The merge edge m→s1 is gone; s1's own first-parent edge s1→a0 remains.
     let m_row = got.iter().position(|i| *i == m.to_string()).expect("m row") as u32;
-    let s_row = got.iter().position(|i| *i == s1.to_string()).expect("s row") as u32;
+    let s_row = got
+        .iter()
+        .position(|i| *i == s1.to_string())
+        .expect("s row") as u32;
     let a0_row = got.iter().position(|i| *i == a0.to_string()).expect("a0") as u32;
     let a1_row = got.iter().position(|i| *i == a1.to_string()).expect("a1") as u32;
     let pairs: Vec<(u32, u32)> = l.edges.iter().map(|e| (e.from, e.to)).collect();
@@ -357,13 +359,11 @@ fn all_stale_seed_refs_fall_back_to_full_graph() {
 fn partially_stale_seed_refs_apply_the_valid_subset() {
     let (dir, _repo, _oids) = multi_branch_fixture();
     let just_x = compute_graph_with(dir.path(), &seeds(&["refs/heads/x"])).expect("solo x");
-    let with_stale =
-        compute_graph_with(dir.path(), &seeds(&["refs/heads/x", "refs/heads/nope"]))
-            .expect("partial stale");
+    let with_stale = compute_graph_with(dir.path(), &seeds(&["refs/heads/x", "refs/heads/nope"]))
+        .expect("partial stale");
     assert_eq!(with_stale, just_x, "stale names are simply ignored");
 
-    let seed = graph_seed(dir.path(), &seeds(&["refs/heads/x", "refs/heads/nope"]))
-        .expect("seed");
+    let seed = graph_seed(dir.path(), &seeds(&["refs/heads/x", "refs/heads/nope"])).expect("seed");
     assert!(seed.seed_refs_applied);
 }
 

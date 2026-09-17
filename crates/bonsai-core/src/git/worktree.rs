@@ -143,9 +143,7 @@ pub(crate) fn build_linked_row(
         // The git CLI writes the reason with a trailing newline; normalize to a
         // clean wire value (trim, drop when empty).
         git2::WorktreeLockStatus::Locked(r) => {
-            let reason = r
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty());
+            let reason = r.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
             (true, reason)
         }
         git2::WorktreeLockStatus::Unlocked => (false, None),
@@ -413,9 +411,7 @@ fn is_dirty(repo: &git2::Repository) -> Result<bool, AppError> {
     let mut opts = git2::StatusOptions::new();
     opts.include_untracked(true).include_ignored(false);
     let statuses = repo.statuses(Some(&mut opts))?;
-    Ok(statuses
-        .iter()
-        .any(|e| e.status() != git2::Status::CURRENT))
+    Ok(statuses.iter().any(|e| e.status() != git2::Status::CURRENT))
 }
 
 /// Find linked worktree `name`, mapping blank → `InvalidName` and not-found →
@@ -450,7 +446,6 @@ pub fn unlock_worktree(workdir: &Path, name: &str) -> Result<(), AppError> {
     wt.unlock()?; // not-locked → libgit2 Git error
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests;

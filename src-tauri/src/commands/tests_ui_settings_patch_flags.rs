@@ -317,7 +317,10 @@ fn set_ui_settings_patch_dev_is_partial() {
         serde_json::from_str(r#"{ "dev": { "enabled": true } }"#).expect("partial dev");
     apply_patch(&mut s, patch);
     assert!(s.dev.enabled);
-    assert!(!s.dev.include_raw_names, "omitted sub-field takes its default");
+    assert!(
+        !s.dev.include_raw_names,
+        "omitted sub-field takes its default"
+    );
 }
 
 /// P91 §10 back-compat: a settings.json written before P91 loads with Dev mode

@@ -50,7 +50,10 @@ fn a_pathext_match_wins_over_an_extension_less_shim_in_the_same_directory() {
     let dir = scratch.path();
     std::fs::write(dir.join("code"), b"#!/usr/bin/env sh\n").expect("write the POSIX shim");
     std::fs::write(dir.join("code.cmd"), b"@echo off\r\n").expect("write the cmd shim");
-    assert_chose(resolve_in("code", &path_var(dir), PATHEXT), dir.join("code.cmd"));
+    assert_chose(
+        resolve_in("code", &path_var(dir), PATHEXT),
+        dir.join("code.cmd"),
+    );
 }
 
 #[test]
@@ -75,7 +78,10 @@ fn an_extension_less_program_still_resolves_as_the_last_resort() {
     let scratch = scratch_dir();
     let dir = scratch.path();
     std::fs::write(dir.join("tool"), b"MZ").expect("write the extension-less program");
-    assert_chose(resolve_in("tool", &path_var(dir), PATHEXT), dir.join("tool"));
+    assert_chose(
+        resolve_in("tool", &path_var(dir), PATHEXT),
+        dir.join("tool"),
+    );
 }
 
 #[test]
@@ -85,7 +91,10 @@ fn pathext_order_decides_between_two_extension_hits() {
     std::fs::write(dir.join("thing.cmd"), b"@echo off\r\n").expect("write .cmd");
     std::fs::write(dir.join("thing.exe"), b"MZ").expect("write .exe");
     // .EXE precedes .CMD in PATHEXT.
-    assert_chose(resolve_in("thing", &path_var(dir), PATHEXT), dir.join("thing.exe"));
+    assert_chose(
+        resolve_in("thing", &path_var(dir), PATHEXT),
+        dir.join("thing.exe"),
+    );
 }
 
 #[test]
@@ -123,7 +132,10 @@ fn the_bare_name_in_an_earlier_dir_beats_an_extension_hit_in_a_later_one() {
     let mut var = path_var(first.path());
     var.push(";");
     var.push(second.path().as_os_str());
-    assert_chose(resolve_in("thing", &var, PATHEXT), first.path().join("thing"));
+    assert_chose(
+        resolve_in("thing", &var, PATHEXT),
+        first.path().join("thing"),
+    );
 }
 
 #[test]

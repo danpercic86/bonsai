@@ -205,8 +205,7 @@ fn a_patch_json_carrying_a_browsed_path_is_silently_ignored() {
     };
     apply_patch(&mut s, patch);
     assert_eq!(
-        s.custom_editor_path,
-        r"C:\Portable\Editor.exe",
+        s.custom_editor_path, r"C:\Portable\Editor.exe",
         "an injected key wrote a browsed path"
     );
     assert_eq!(s.custom_terminal_path, r"C:\Portable\Term.exe");
@@ -355,7 +354,13 @@ fn no_settings_echo_can_carry_a_program_path() {
         );
     }
     let text = serde_json::to_string(&ui).expect("serialize the read DTO");
-    assert!(!text.contains("Portable"), "the echo carried a browsed path");
+    assert!(
+        !text.contains("Portable"),
+        "the echo carried a browsed path"
+    );
     // The SELECTION is echoed, which is what the picker renders.
-    assert_eq!(obj.get("editorTool").and_then(|v| v.as_str()), Some("custom"));
+    assert_eq!(
+        obj.get("editorTool").and_then(|v| v.as_str()),
+        Some("custom")
+    );
 }

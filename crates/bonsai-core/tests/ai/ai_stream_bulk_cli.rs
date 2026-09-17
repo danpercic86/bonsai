@@ -31,12 +31,12 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::common;
+use crate::common::{commit_fixed, git, init_repo};
 use bonsai_core::ai::{AiRunEvent, AiRunEventKind, AiRunRegistry, RunControl, RunLimits, RunOpts};
 use bonsai_core::error::AppError;
 use bonsai_core::git::ai_resolve_stream::{resolve_conflicts_streaming, StreamResolveOpts};
 use bonsai_core::git::merge::{merge_branch, MergeOutcome};
-use crate::common;
-use crate::common::{commit_fixed, git, init_repo};
 
 const CLAUDE_BIN_ENV: &str = "BONSAI_CLAUDE_BIN";
 const ECHO_MODE_ENV: &str = "BONSAI_ECHO_MODE";
@@ -75,7 +75,10 @@ impl Sink {
         self.0.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
     fn texts(&self) -> Vec<String> {
-        self.events().iter().filter_map(|e| e.text.clone()).collect()
+        self.events()
+            .iter()
+            .filter_map(|e| e.text.clone())
+            .collect()
     }
     fn kinds(&self) -> Vec<AiRunEventKind> {
         self.events().iter().map(|e| e.kind).collect()
@@ -153,7 +156,10 @@ fn bulk_conflict(files: &[&str]) -> tempfile::TempDir {
     match merge_branch(d, "topic", false).expect("merge") {
         MergeOutcome::Conflicts { paths, .. } => {
             for rel in files {
-                assert!(paths.iter().any(|p| p == rel), "expected {rel} to conflict: {paths:?}");
+                assert!(
+                    paths.iter().any(|p| p == rel),
+                    "expected {rel} to conflict: {paths:?}"
+                );
             }
         }
         other => panic!("expected Conflicts, got {other:?}"),
@@ -208,7 +214,8 @@ fn bulk_payload_with_a_mid_run_question_completes_and_attributes_every_path() {
             handle.is_finished()
         );
         // The human answer — arbitrarily late, and the watchdog is paused (D3).
-        reg.reply(&run_id, "keep the German plural form".to_string()).expect("reply accepted");
+        reg.reply(&run_id, "keep the German plural form".to_string())
+            .expect("reply accepted");
         handle.join().expect("session thread must not panic")
     })
     .expect("a bulk run with a question must complete");
@@ -218,14 +225,20 @@ fn bulk_payload_with_a_mid_run_question_completes_and_attributes_every_path() {
     for (i, rel) in files.iter().enumerate() {
         assert_eq!(batch.proposals[i].path, *rel);
         assert!(
-            batch.proposals[i].proposed_text.starts_with(&format!("ECHO {rel} bytes=")),
+            batch.proposals[i]
+                .proposed_text
+                .starts_with(&format!("ECHO {rel} bytes=")),
             "unexpected body: {:?}",
             batch.proposals[i].proposed_text
         );
     }
     assert!(batch.failed.is_empty(), "{:?}", batch.failed);
     assert_eq!(batch.turns, 2, "one question + one answer = two turns");
-    assert_eq!(batch.cost_usd, Some(0.0263), "the LAST result's cost within a run (A10)");
+    assert_eq!(
+        batch.cost_usd,
+        Some(0.0263),
+        "the LAST result's cost within a run (A10)"
+    );
 
     // The payload really did arrive in full: the helper echoes the byte count it
     // read, and it must match what we sent (the "batch 1/1: 3 files (N B)" log line
@@ -272,7 +285,13 @@ fn bulk_payload_with_a_mid_run_question_completes_and_attributes_every_path() {
     let kinds = sink.kinds();
     assert_eq!(kinds.first(), Some(&AiRunEventKind::Started));
     assert_eq!(kinds.last(), Some(&AiRunEventKind::Done));
-    assert_eq!(kinds.iter().filter(|k| **k == AiRunEventKind::Started).count(), 1);
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|k| **k == AiRunEventKind::Started)
+            .count(),
+        1
+    );
     for (i, ev) in sink.events().iter().enumerate() {
         assert_eq!(ev.seq, i as u64, "gap-free monotonic seq: {ev:?}");
         assert_eq!(ev.run_id, run_id);
@@ -333,7 +352,10 @@ fn cancel_works_while_a_bulk_payload_is_in_flight() {
         .filter(|e| e.kind == AiRunEventKind::Cancelled)
         .collect::<Vec<_>>();
     assert_eq!(cancelled.len(), 1);
-    assert!(cancelled[0].partial_text.is_some(), "the partial echo is always present (D2)");
+    assert!(
+        cancelled[0].partial_text.is_some(),
+        "the partial echo is always present (D2)"
+    );
 }
 
 /// A reply queued while the run was NOT awaiting must never answer a LATER
@@ -374,9 +396,18 @@ fn a_stale_reply_never_answers_the_next_batchs_question() {
         let s = sink.clone();
         move |ev: AiRunEvent| s.push(ev)
     };
-    let asked =
-        || sink.events().iter().filter(|e| e.kind == AiRunEventKind::AwaitingInput).count();
-    let answered = || sink.texts().iter().filter(|t| t.starts_with("» answered (")).count();
+    let asked = || {
+        sink.events()
+            .iter()
+            .filter(|e| e.kind == AiRunEventKind::AwaitingInput)
+            .count()
+    };
+    let answered = || {
+        sink.texts()
+            .iter()
+            .filter(|t| t.starts_with("» answered ("))
+            .count()
+    };
 
     let batch = thread::scope(|scope| {
         let handle = scope.spawn(move || {
@@ -392,8 +423,12 @@ fn a_stale_reply_never_answers_the_next_batchs_question() {
         );
         // TWO answers for ONE question: the session consumes the first and the
         // second is left in the channel.
-        reply_tx.send("answer for batch 1".to_string()).expect("queue reply 1");
-        reply_tx.send("a stray second click".to_string()).expect("queue reply 2");
+        reply_tx
+            .send("answer for batch 1".to_string())
+            .expect("queue reply 1");
+        reply_tx
+            .send("a stray second click".to_string())
+            .expect("queue reply 2");
 
         assert!(
             wait_until(|| asked() >= 2, Duration::from_secs(60)),
@@ -408,9 +443,14 @@ fn a_stale_reply_never_answers_the_next_batchs_question() {
             "batch 2's question was answered by batch 1's leftover text: {:?}",
             sink.texts()
         );
-        assert!(awaiting.load(Ordering::Relaxed), "the run must still be blocked on the user");
+        assert!(
+            awaiting.load(Ordering::Relaxed),
+            "the run must still be blocked on the user"
+        );
 
-        reply_tx.send("answer for batch 2".to_string()).expect("queue reply 3");
+        reply_tx
+            .send("answer for batch 2".to_string())
+            .expect("queue reply 3");
         // Never let the scope block forever if the batch geometry ever drifts: a
         // hung run is cancelled so the assertions below report the problem.
         if !wait_until(|| handle.is_finished(), Duration::from_secs(60)) {
@@ -460,7 +500,11 @@ fn a_missing_result_block_fails_only_its_own_path() {
     assert_eq!(batch.proposals.len(), 2, "{:?}", batch.proposals);
     assert_eq!(batch.failed.len(), 1);
     assert_eq!(batch.failed[0].path, "i18n/fr.json");
-    assert!(batch.failed[0].reason.contains("no result block"), "{:?}", batch.failed[0]);
+    assert!(
+        batch.failed[0].reason.contains("no result block"),
+        "{:?}",
+        batch.failed[0]
+    );
     assert_eq!(sink.kinds().last(), Some(&AiRunEventKind::Done));
 }
 
@@ -494,9 +538,11 @@ fn an_oversized_request_is_split_into_sequential_batches_under_one_run_id() {
     reg.finish(&run_id);
 
     let texts = sink.texts();
-    let batch_lines: Vec<&String> =
-        texts.iter().filter(|t| t.starts_with("batch ")).collect();
-    assert!(batch_lines.len() >= 2, "the cap must have split the run: {batch_lines:?}");
+    let batch_lines: Vec<&String> = texts.iter().filter(|t| t.starts_with("batch ")).collect();
+    assert!(
+        batch_lines.len() >= 2,
+        "the cap must have split the run: {batch_lines:?}"
+    );
     // Every path is still resolved, exactly once.
     assert_eq!(batch.proposals.len(), 3, "{:?}", batch.proposals);
     let mut got: Vec<&str> = batch.proposals.iter().map(|p| p.path.as_str()).collect();
@@ -510,11 +556,21 @@ fn an_oversized_request_is_split_into_sequential_batches_under_one_run_id() {
 
     // ONE Started, ONE terminal event, gap-free seq across every batch.
     let kinds = sink.kinds();
-    assert_eq!(kinds.iter().filter(|k| **k == AiRunEventKind::Started).count(), 1, "{kinds:?}");
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|k| **k == AiRunEventKind::Started)
+            .count(),
+        1,
+        "{kinds:?}"
+    );
     assert_eq!(kinds.first(), Some(&AiRunEventKind::Started));
     assert_eq!(kinds.last(), Some(&AiRunEventKind::Done));
     assert_eq!(
-        kinds.iter().filter(|k| **k == AiRunEventKind::TurnEnd).count(),
+        kinds
+            .iter()
+            .filter(|k| **k == AiRunEventKind::TurnEnd)
+            .count(),
         batch_lines.len(),
         "one turn per batch: {kinds:?}"
     );

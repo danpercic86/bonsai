@@ -6,8 +6,8 @@
 //! `super::*` still reaches the private items without widening their
 //! visibility (the `external_tests` / `session_drain_tests` convention).
 
-use super::*;
 use super::tests::settings_path;
+use super::*;
 
 /// Below-min and above-max clamp to their bounds on each graph knob and on
 /// the auto-fetch interval; in-range values pass through (P11 §2.1/§2.4).
@@ -422,7 +422,10 @@ fn graph_minimap_always_show_pref_default_and_roundtrip() {
     let json = r#"{ "version": 1, "recentRepos": [] }"#;
     std::fs::write(&file, json).expect("write pre-spec-005 settings.json");
     let loaded = load_from(&file);
-    assert!(!loaded.graph_minimap_always_show, "legacy file → default false");
+    assert!(
+        !loaded.graph_minimap_always_show,
+        "legacy file → default false"
+    );
     assert_eq!(loaded.version, SETTINGS_VERSION);
 
     let s = Settings {

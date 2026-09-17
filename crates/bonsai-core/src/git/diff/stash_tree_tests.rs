@@ -13,7 +13,8 @@ fn st_init(dir: &Path) -> git2::Repository {
             .expect("init repo");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     drop(cfg);
     repo
@@ -53,7 +54,10 @@ fn stash_diff_lists_untracked_files_as_adds() {
     let diff = commit_diff(dir, &entry.oid).expect("stash diff");
     let mut paths: Vec<&str> = diff.files.iter().map(|f| f.path.as_str()).collect();
     paths.sort();
-    assert_eq!(paths, ["brand-new.txt", "nested/also-new.txt", "tracked.txt"]);
+    assert_eq!(
+        paths,
+        ["brand-new.txt", "nested/also-new.txt", "tracked.txt"]
+    );
 
     let added = diff
         .files
@@ -102,7 +106,11 @@ fn tracked_only_stash_diff_lists_tracked_changes() {
     std::fs::write(dir.join("tracked.txt"), "edited\n").expect("modify");
     std::fs::write(dir.join("left-behind.txt"), "untracked\n").expect("new file");
 
-    assert!(create_stash(dir, None, StashScope::All).expect("stash").created);
+    assert!(
+        create_stash(dir, None, StashScope::All)
+            .expect("stash")
+            .created
+    );
 
     let entry = list_stashes(dir).expect("list").remove(0);
     let diff = commit_diff(dir, &entry.oid).expect("stash diff");

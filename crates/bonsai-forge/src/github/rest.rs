@@ -18,7 +18,10 @@ const API_BASE: &str = "https://api.github.com";
 /// token is present (read paths work anonymously for public repos).
 pub fn base_headers(token: Option<&str>) -> Vec<(String, String)> {
     let mut headers = vec![
-        ("Accept".to_string(), "application/vnd.github+json".to_string()),
+        (
+            "Accept".to_string(),
+            "application/vnd.github+json".to_string(),
+        ),
         ("X-GitHub-Api-Version".to_string(), "2022-11-28".to_string()),
         ("User-Agent".to_string(), "Bonsai".to_string()),
     ];
@@ -268,7 +271,9 @@ mod tests {
     fn base_headers_omit_auth_without_token() {
         let h = base_headers(None);
         assert!(!h.iter().any(|(k, _)| k == "Authorization"));
-        assert!(h.iter().any(|(k, v)| k == "Accept" && v == "application/vnd.github+json"));
+        assert!(h
+            .iter()
+            .any(|(k, v)| k == "Accept" && v == "application/vnd.github+json"));
         assert!(h.iter().any(|(k, v)| k == "User-Agent" && v == "Bonsai"));
     }
 
@@ -322,7 +327,10 @@ mod tests {
         // 403 with remaining==0 ⇒ rate limited, carrying the reset hint.
         let err = map_status(&resp(
             403,
-            vec![("X-RateLimit-Remaining", "0"), ("X-RateLimit-Reset", "1700000000")],
+            vec![
+                ("X-RateLimit-Remaining", "0"),
+                ("X-RateLimit-Reset", "1700000000"),
+            ],
         ))
         .unwrap();
         match err {

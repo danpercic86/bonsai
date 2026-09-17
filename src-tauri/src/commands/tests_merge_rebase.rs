@@ -80,7 +80,9 @@ fn merge_branch_clean_happy() {
     };
     assert_eq!(head_oid(dir.path()), oid);
     let repo = git2::Repository::open(dir.path()).expect("open");
-    let mc = repo.find_commit(git2::Oid::from_str(&oid).unwrap()).unwrap();
+    let mc = repo
+        .find_commit(git2::Oid::from_str(&oid).unwrap())
+        .unwrap();
     assert_eq!(mc.parent_count(), 2);
     assert_eq!(mc.parent_id(0).unwrap().to_string(), m_tip);
     assert_eq!(mc.parent_id(1).unwrap().to_string(), f_tip);
@@ -106,8 +108,14 @@ fn merge_conflict_pause_trio_and_abort() {
     }
 
     // commit_merge with unresolved conflicts → UnresolvedConflicts.
-    let err = block_on(commit_merge_inner(&state, &id, "merge msg".into(), None, None))
-        .expect_err("unresolved must block");
+    let err = block_on(commit_merge_inner(
+        &state,
+        &id,
+        "merge msg".into(),
+        None,
+        None,
+    ))
+    .expect_err("unresolved must block");
     assert!(matches!(err, AppError::UnresolvedConflicts(_)), "{err:?}");
 
     // list_conflicts / get_conflict content trio.
@@ -117,7 +125,11 @@ fn merge_conflict_pause_trio_and_abort() {
     assert!(entries[0].has_ours && entries[0].has_theirs && entries[0].has_base);
     let file = block_on(get_conflict_inner(&state, &id, "a.txt".into())).expect("get");
     assert!(!file.binary && !file.too_large && !file.missing);
-    assert!(file.text.contains("<<<<<<<") && file.text.contains(">>>>>>>"), "{}", file.text);
+    assert!(
+        file.text.contains("<<<<<<<") && file.text.contains(">>>>>>>"),
+        "{}",
+        file.text
+    );
     assert_eq!(file.ours, "main\n");
     assert_eq!(file.theirs, "feature\n");
 
@@ -141,14 +153,29 @@ fn resolve_conflict_ours_then_theirs() {
     let (dir, id, _c0) = fixture_repo(&state);
     diverge(&state, &id, dir.path(), true);
     block_on(merge_branch_inner(&state, &id, "feature".into(), None)).expect("merge");
-    block_on(resolve_conflict_inner(&state, &id, "a.txt".into(), ConflictResolution::Ours))
-        .expect("resolve ours");
+    block_on(resolve_conflict_inner(
+        &state,
+        &id,
+        "a.txt".into(),
+        ConflictResolution::Ours,
+    ))
+    .expect("resolve ours");
     assert_eq!(read(dir.path(), "a.txt"), "main\n");
-    assert!(block_on(list_conflicts_inner(&state, &id)).expect("list").is_empty());
-    let res = block_on(commit_merge_inner(&state, &id, "merged (ours)".into(), None, None))
-        .expect("commit merge");
+    assert!(block_on(list_conflicts_inner(&state, &id))
+        .expect("list")
+        .is_empty());
+    let res = block_on(commit_merge_inner(
+        &state,
+        &id,
+        "merged (ours)".into(),
+        None,
+        None,
+    ))
+    .expect("commit merge");
     let repo = git2::Repository::open(dir.path()).expect("open");
-    let mc = repo.find_commit(git2::Oid::from_str(&res.oid).unwrap()).unwrap();
+    let mc = repo
+        .find_commit(git2::Oid::from_str(&res.oid).unwrap())
+        .unwrap();
     assert_eq!(mc.parent_count(), 2);
     assert_eq!(
         block_on(get_op_state_inner(&state, &id)).expect("op state"),
@@ -160,10 +187,17 @@ fn resolve_conflict_ours_then_theirs() {
     let (dir, id, _c0) = fixture_repo(&state);
     diverge(&state, &id, dir.path(), true);
     block_on(merge_branch_inner(&state, &id, "feature".into(), None)).expect("merge");
-    block_on(resolve_conflict_inner(&state, &id, "a.txt".into(), ConflictResolution::Theirs))
-        .expect("resolve theirs");
+    block_on(resolve_conflict_inner(
+        &state,
+        &id,
+        "a.txt".into(),
+        ConflictResolution::Theirs,
+    ))
+    .expect("resolve theirs");
     assert_eq!(read(dir.path(), "a.txt"), "feature\n");
-    assert!(block_on(list_conflicts_inner(&state, &id)).expect("list").is_empty());
+    assert!(block_on(list_conflicts_inner(&state, &id))
+        .expect("list")
+        .is_empty());
 }
 
 /// resolve_conflict_text stages hand-merged content; a path-traversal relpath
@@ -183,14 +217,30 @@ fn resolve_conflict_text_happy_and_traversal() {
     ))
     .expect_err("traversal must be rejected");
     assert!(matches!(err, AppError::InvalidName(_)), "{err:?}");
-    assert!(!dir.path().parent().unwrap().join("evil").exists(), "nothing written outside");
+    assert!(
+        !dir.path().parent().unwrap().join("evil").exists(),
+        "nothing written outside"
+    );
 
-    block_on(resolve_conflict_text_inner(&state, &id, "a.txt".into(), "hand merged\n".into()))
-        .expect("resolve text");
+    block_on(resolve_conflict_text_inner(
+        &state,
+        &id,
+        "a.txt".into(),
+        "hand merged\n".into(),
+    ))
+    .expect("resolve text");
     assert_eq!(read(dir.path(), "a.txt"), "hand merged\n");
-    assert!(block_on(list_conflicts_inner(&state, &id)).expect("list").is_empty());
-    block_on(commit_merge_inner(&state, &id, "merged by hand".into(), None, None))
-        .expect("commit merge");
+    assert!(block_on(list_conflicts_inner(&state, &id))
+        .expect("list")
+        .is_empty());
+    block_on(commit_merge_inner(
+        &state,
+        &id,
+        "merged by hand".into(),
+        None,
+        None,
+    ))
+    .expect("commit merge");
 }
 
 /// P68 #7 / H1: ai_apply_resolution re-reads the sides and REFUSES a body with a
@@ -214,16 +264,37 @@ fn ai_apply_resolution_gates_novel_but_writes_clean() {
     ))
     .expect_err("novel body must be gated");
     assert!(matches!(err, AppError::AiNeedsReview(_)), "{err:?}");
-    assert!(read(dir.path(), "a.txt").contains("<<<<<<<"), "worktree stays conflicted");
-    assert_eq!(block_on(list_conflicts_inner(&state, &id)).expect("list").len(), 1);
+    assert!(
+        read(dir.path(), "a.txt").contains("<<<<<<<"),
+        "worktree stays conflicted"
+    );
+    assert_eq!(
+        block_on(list_conflicts_inner(&state, &id))
+            .expect("list")
+            .len(),
+        1
+    );
 
     // A recombination of existing side lines passes the gate and writes stage-0.
-    block_on(ai_apply_resolution_inner(&state, &id, "a.txt".into(), "main\nfeature\n".into()))
-        .expect("clean body writes");
+    block_on(ai_apply_resolution_inner(
+        &state,
+        &id,
+        "a.txt".into(),
+        "main\nfeature\n".into(),
+    ))
+    .expect("clean body writes");
     assert_eq!(read(dir.path(), "a.txt"), "main\nfeature\n");
-    assert!(block_on(list_conflicts_inner(&state, &id)).expect("list").is_empty());
-    block_on(commit_merge_inner(&state, &id, "merged by ai".into(), None, None))
-        .expect("commit merge");
+    assert!(block_on(list_conflicts_inner(&state, &id))
+        .expect("list")
+        .is_empty());
+    block_on(commit_merge_inner(
+        &state,
+        &id,
+        "merged by ai".into(),
+        None,
+        None,
+    ))
+    .expect("commit merge");
 }
 
 /// Clean rebase replays feature onto main (Rebased, 1 step, new parent = main
@@ -237,14 +308,21 @@ fn rebase_branch_clean_happy() {
 
     let out = block_on(rebase_branch_inner(&state, &id, main)).expect("rebase");
     match out {
-        RebaseOutcome::Rebased { branch, head, steps, warnings } => {
+        RebaseOutcome::Rebased {
+            branch,
+            head,
+            steps,
+            warnings,
+        } => {
             assert_eq!(branch, "feature");
             assert_eq!(steps, 1);
             assert!(warnings.is_empty());
             assert_ne!(head, f_tip, "commit rewritten");
             assert_eq!(head, head_oid(dir.path()));
             let repo = git2::Repository::open(dir.path()).expect("open");
-            let hc = repo.find_commit(git2::Oid::from_str(&head).unwrap()).unwrap();
+            let hc = repo
+                .find_commit(git2::Oid::from_str(&head).unwrap())
+                .unwrap();
             assert_eq!(hc.parent_id(0).unwrap().to_string(), m_tip);
         }
         other => panic!("expected Rebased, got {other:?}"),
@@ -262,7 +340,11 @@ fn rebase_conflict_then_continue() {
 
     let out = block_on(rebase_branch_inner(&state, &id, main)).expect("rebase");
     match &out {
-        RebaseOutcome::Conflicts { paths, current_step, total_steps } => {
+        RebaseOutcome::Conflicts {
+            paths,
+            current_step,
+            total_steps,
+        } => {
             assert_eq!(paths, &vec!["a.txt".to_string()]);
             assert_eq!((*current_step, *total_steps), (1, 1));
         }
@@ -273,14 +355,21 @@ fn rebase_conflict_then_continue() {
         RepoOpState::Rebase { .. }
     ));
 
-    block_on(resolve_conflict_text_inner(&state, &id, "a.txt".into(), "resolved\n".into()))
-        .expect("resolve");
+    block_on(resolve_conflict_text_inner(
+        &state,
+        &id,
+        "a.txt".into(),
+        "resolved\n".into(),
+    ))
+    .expect("resolve");
     let out = block_on(rebase_continue_inner(&state, &id)).expect("continue");
     match out {
         RebaseOutcome::Rebased { branch, head, .. } => {
             assert_eq!(branch, "feature");
             let repo = git2::Repository::open(dir.path()).expect("open");
-            let hc = repo.find_commit(git2::Oid::from_str(&head).unwrap()).unwrap();
+            let hc = repo
+                .find_commit(git2::Oid::from_str(&head).unwrap())
+                .unwrap();
             assert_eq!(hc.parent_id(0).unwrap().to_string(), m_tip);
             assert_eq!(read(dir.path(), "a.txt"), "resolved\n");
         }
@@ -305,7 +394,10 @@ fn rebase_abort_and_no_op_errors() {
             "skip" => block_on(rebase_skip_inner(&state, &id)).unwrap_err(),
             _ => block_on(rebase_abort_inner(&state, &id)).unwrap_err(),
         };
-        assert!(matches!(err, AppError::NoOperationInProgress(_)), "{op}: {err:?}");
+        assert!(
+            matches!(err, AppError::NoOperationInProgress(_)),
+            "{op}: {err:?}"
+        );
     }
 
     let (main, f_tip, _m_tip) = diverge(&state, &id, dir.path(), true);
@@ -348,7 +440,9 @@ fn interactive_plan_and_reword() {
         RebaseOutcome::Rebased { head, steps, .. } => {
             assert_eq!(steps, 2);
             let repo = git2::Repository::open(dir.path()).expect("open");
-            let hc = repo.find_commit(git2::Oid::from_str(&head).unwrap()).unwrap();
+            let hc = repo
+                .find_commit(git2::Oid::from_str(&head).unwrap())
+                .unwrap();
             assert_eq!(hc.summary().expect("summary"), Some("second change"));
             assert_eq!(
                 hc.parent(0).unwrap().summary().expect("summary"),

@@ -125,7 +125,13 @@ pub(crate) async fn ai_explain_line_inner(
     }
     let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        ai_line::explain_line(&workdir, &path, line_no, at_oid.as_deref(), RunOpts::default())
+        ai_line::explain_line(
+            &workdir,
+            &path,
+            line_no,
+            at_oid.as_deref(),
+            RunOpts::default(),
+        )
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -173,4 +179,3 @@ pub(crate) async fn ai_suggest_branch_name_inner(
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
-

@@ -157,9 +157,14 @@ pub fn with_repo_timed<R>(
 where
     R: Send + 'static,
 {
-    with_repo_mut_timed(op, repo_id, generation, path, perf, move |progress, repo| {
-        f(progress, repo)
-    })
+    with_repo_mut_timed(
+        op,
+        repo_id,
+        generation,
+        path,
+        perf,
+        move |progress, repo| f(progress, repo),
+    )
 }
 
 /// Explicit-deadline internal variant so timeout behaviour is testable env-free.
@@ -197,10 +202,11 @@ where
     // 2. MOVE it through the watchdog; `f` gets it by `&mut`, returns it by value.
     //    Only `f` and `repo` cross to the watchdog thread; the pool thread blocks
     //    here until it returns, so no aliasing and no `Sync` bound is needed.
-    let (returned, result) = run_with_git_timeout_owned_with(op, deadline, repo, move |progress, mut repo| {
-        let res = f(progress, &mut repo);
-        (repo, res)
-    });
+    let (returned, result) =
+        run_with_git_timeout_owned_with(op, deadline, repo, move |progress, mut repo| {
+            let res = f(progress, &mut repo);
+            (repo, res)
+        });
 
     // 3. Re-cache iff it came back (Ok OR inner Err). `None` ⇒ abandoned with the
     //    wedged worker ⇒ leave absent so the next call reopens cleanly.

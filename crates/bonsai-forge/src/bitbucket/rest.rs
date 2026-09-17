@@ -62,8 +62,9 @@ pub fn pull_requests_url(
     pagelen: u32,
     page: u32,
 ) -> String {
-    let mut url =
-        format!("{API_BASE}/repositories/{workspace}/{slug}/pullrequests?pagelen={pagelen}&page={page}");
+    let mut url = format!(
+        "{API_BASE}/repositories/{workspace}/{slug}/pullrequests?pagelen={pagelen}&page={page}"
+    );
     // Repeated `state` params (Bitbucket supports repetition); the token stays
     // in the Authorization header — this URL builder is tokenless.
     for s in state_params(state) {
@@ -241,14 +242,18 @@ mod tests {
     fn base_headers_use_bearer() {
         let none = base_headers(None);
         assert!(!none.iter().any(|(k, _)| k == "Authorization"));
-        assert!(none.iter().any(|(k, v)| k == "Accept" && v == "application/json"));
+        assert!(none
+            .iter()
+            .any(|(k, v)| k == "Accept" && v == "application/json"));
 
         let auth = base_headers(Some("bb-token"));
         assert!(auth
             .iter()
             .any(|(k, v)| k == "Authorization" && v == "Bearer bb-token"));
         // Not the PRIVATE-TOKEN header — that's GitLab.
-        assert!(!auth.iter().any(|(k, _)| k.eq_ignore_ascii_case("PRIVATE-TOKEN")));
+        assert!(!auth
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("PRIVATE-TOKEN")));
     }
 
     #[test]
@@ -280,7 +285,10 @@ mod tests {
             closed,
             "https://api.bitbucket.org/2.0/repositories/ws/repo/pullrequests?pagelen=30&page=1&state=MERGED&state=DECLINED&state=SUPERSEDED"
         );
-        assert!(closed.contains("state=MERGED"), "closed must include MERGED");
+        assert!(
+            closed.contains("state=MERGED"),
+            "closed must include MERGED"
+        );
 
         // `all` ⇒ every state fanned out (no `state=all` exists on Bitbucket).
         let all = pull_requests_url("ws", "repo", PrStateFilter::All, 30, 1);
@@ -353,6 +361,9 @@ mod tests {
         };
         let dbg = format!("{req:?}");
         assert!(!dbg.contains("bb-SUPERSECRET"), "token leaked: {dbg}");
-        assert!(dbg.contains("<redacted>"), "expected redaction placeholder: {dbg}");
+        assert!(
+            dbg.contains("<redacted>"),
+            "expected redaction placeholder: {dbg}"
+        );
     }
 }

@@ -118,7 +118,9 @@ fn scan_counts(wt_root: &Path) -> Result<(u32, u32), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assets::profiles::{activate_profile_for_worktree, save_profile, ContextProfile, ProfileTarget};
+    use crate::assets::profiles::{
+        activate_profile_for_worktree, save_profile, ContextProfile, ProfileTarget,
+    };
     use crate::assets::taxonomy::descriptors;
 
     /// Scratch git fixture: main repo (committed CLAUDE.md) + two linked
@@ -237,7 +239,11 @@ mod tests {
 
         let y = by_key("feature-y");
         assert!(!y.activatable && y.locked);
-        assert!(y.blocked_reason.as_deref().unwrap().contains("pinned for QA"));
+        assert!(y
+            .blocked_reason
+            .as_deref()
+            .unwrap()
+            .contains("pinned for QA"));
         assert_eq!((y.drifted_count, y.missing_count), (0, 0), "scan skipped");
 
         let x = by_key("feature-x");

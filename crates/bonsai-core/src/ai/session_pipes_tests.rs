@@ -46,7 +46,11 @@ fn an_over_cap_line_is_dropped_once_and_the_next_line_still_parses() {
     let input = format!("before\n{over}\n{{\"type\":\"result\"}}\n");
     // cap 24: wide enough for the short lines, far below the over-long one.
     let got = lines(&input, 24);
-    assert_eq!(got.len(), 3, "exactly ONE note for the dropped line: {got:?}");
+    assert_eq!(
+        got.len(),
+        3,
+        "exactly ONE note for the dropped line: {got:?}"
+    );
     assert_eq!(got[0], "before");
     assert!(got[1].starts_with("<too long: "), "{got:?}");
     // Resynchronised on the newline: the following line is byte-identical.
@@ -60,7 +64,10 @@ fn several_over_cap_lines_in_a_row_each_cost_exactly_one_note() {
     let big = "y".repeat(40);
     let got = lines(&format!("{big}\n{big}\na\n"), 8);
     assert_eq!(got.len(), 3, "{got:?}");
-    assert!(got[0].starts_with("<too long: ") && got[1].starts_with("<too long: "), "{got:?}");
+    assert!(
+        got[0].starts_with("<too long: ") && got[1].starts_with("<too long: "),
+        "{got:?}"
+    );
     assert_eq!(got[2], "a");
 }
 
@@ -70,7 +77,10 @@ fn several_over_cap_lines_in_a_row_each_cost_exactly_one_note() {
 fn an_unterminated_over_cap_line_ends_the_reader_instead_of_spinning() {
     let got = lines(&"z".repeat(100), 8);
     assert_eq!(got.len(), 1, "{got:?}");
-    assert!(got[0].starts_with("<too long: 100>") || got[0].starts_with("<too long: "), "{got:?}");
+    assert!(
+        got[0].starts_with("<too long: 100>") || got[0].starts_with("<too long: "),
+        "{got:?}"
+    );
 }
 
 /// End to end through the real thread and the real 8 MB constant: the funnel gets
@@ -97,7 +107,15 @@ fn spawn_reader_survives_an_over_cap_line_and_keeps_the_next_one() {
     }
     assert!(saw_eof, "the reader must always signal EOF");
     assert_eq!(texts.len(), 2, "{texts:?}");
-    assert!(texts[0].contains("dropped one over-long line"), "{}", texts[0]);
-    assert!(texts[0].len() < 200, "the note itself must be short: {}", texts[0].len());
+    assert!(
+        texts[0].contains("dropped one over-long line"),
+        "{}",
+        texts[0]
+    );
+    assert!(
+        texts[0].len() < 200,
+        "the note itself must be short: {}",
+        texts[0].len()
+    );
     assert_eq!(texts[1], "{\"type\":\"result\"}");
 }

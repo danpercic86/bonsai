@@ -13,13 +13,13 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{commit_fixed, git, init_repo};
 use bonsai_core::error::AppError;
 use bonsai_core::git::commit::create_commit;
 use bonsai_core::git::exec::SpawnGitExec;
 use bonsai_core::git::remote::{push_current, PushResult};
 use bonsai_core::git::stage::stage_paths;
-use crate::common;
-use crate::common::{commit_fixed, git, init_repo};
 
 macro_rules! require_hook_git {
     () => {
@@ -105,7 +105,13 @@ fn pre_push_stdin_has_documented_ref_oid_shape() {
     let work = root.join("work");
     git(
         root,
-        &["-c", "core.autocrlf=false", "clone", &root.join("origin.git").to_string_lossy(), "work"],
+        &[
+            "-c",
+            "core.autocrlf=false",
+            "clone",
+            &root.join("origin.git").to_string_lossy(),
+            "work",
+        ],
     );
     git(&work, &["config", "user.name", "Test User"]);
     git(&work, &["config", "user.email", "test@example.com"]);
@@ -138,5 +144,10 @@ fn pre_push_stdin_has_documented_ref_oid_shape() {
     assert_eq!(tokens[1], local_oid, "local oid = the pushed HEAD");
     assert_eq!(tokens[2], "refs/heads/main", "remote ref");
     // tokens[3] = remote oid (the FIRST commit) — a 40-hex baseline check.
-    assert_eq!(tokens[3].len(), 40, "remote oid is a full sha: {:?}", tokens[3]);
+    assert_eq!(
+        tokens[3].len(),
+        40,
+        "remote oid is a full sha: {:?}",
+        tokens[3]
+    );
 }

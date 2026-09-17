@@ -47,7 +47,11 @@ fn super_with_gitmodules(raw_path: &str) -> tempfile::TempDir {
 /// panic if libgit2 dropped it entirely (which would make the case vacuous).
 fn only_submodule_row(dir: &Path) -> SubmoduleInfo {
     let rows = list_submodules(dir).expect("list_submodules");
-    assert_eq!(rows.len(), 1, "expected exactly one admitted submodule row: {rows:?}");
+    assert_eq!(
+        rows.len(),
+        1,
+        "expected exactly one admitted submodule row: {rows:?}"
+    );
     rows.into_iter().next().expect("one row")
 }
 
@@ -59,9 +63,14 @@ fn only_submodule_row(dir: &Path) -> SubmoduleInfo {
 fn list_submodules_admits_plain_relative_path() {
     let dir = super_with_gitmodules("vendor/lib");
     let row = only_submodule_row(dir.path());
-    let abs = row.abs_path.expect("plain relative path must keep a launchable abs_path");
+    let abs = row
+        .abs_path
+        .expect("plain relative path must keep a launchable abs_path");
     let wd = dir.path().to_string_lossy().replace('\\', "/");
-    assert!(abs.replace('\\', "/").starts_with(&wd), "contained under workdir: {abs}");
+    assert!(
+        abs.replace('\\', "/").starts_with(&wd),
+        "contained under workdir: {abs}"
+    );
     assert!(abs.replace('\\', "/").ends_with("vendor/lib"), "{abs}");
 }
 
@@ -131,11 +140,17 @@ fn list_submodules_nulls_forward_slash_unc_path() {
 fn list_submodules_nulls_windows_backslash_paths() {
     for (raw, why) in [
         (r"\\attacker.example\share", "a real UNC path (Prefix(UNC))"),
-        (r"\attacker.example\share", "a rooted backslash path (RootDir)"),
+        (
+            r"\attacker.example\share",
+            "a rooted backslash path (RootDir)",
+        ),
     ] {
         let dir = super_with_gitmodules(raw);
         let row = only_submodule_row(dir.path());
-        assert_eq!(row.abs_path, None, "{why} must yield abs_path: None — input {raw:?}");
+        assert_eq!(
+            row.abs_path, None,
+            "{why} must yield abs_path: None — input {raw:?}"
+        );
     }
 }
 

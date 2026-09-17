@@ -126,7 +126,11 @@ where
 /// * `(None, Err(Git ..))`  — inactivity timeout; worker abandoned, `val` leaked
 ///   with it (self-healing: the caller's cache entry stays absent → reopen).
 /// * `(None, Err(Other ..))`— worker panicked / spawn failed; `val` gone.
-pub fn run_with_git_timeout_owned<T, R, F>(op: &str, val: T, f: F) -> (Option<T>, Result<R, AppError>)
+pub fn run_with_git_timeout_owned<T, R, F>(
+    op: &str,
+    val: T,
+    f: F,
+) -> (Option<T>, Result<R, AppError>)
 where
     T: Send + 'static,
     R: Send + 'static,
@@ -332,9 +336,18 @@ mod tests {
     /// Env-override parse: unset/garbage/zero ⇒ default; a positive integer ⇒ ms.
     #[test]
     fn deadline_parse_rules() {
-        assert_eq!(deadline_from(None), Duration::from_millis(DEFAULT_INACTIVITY_MS));
-        assert_eq!(deadline_from(Some("nope")), Duration::from_millis(DEFAULT_INACTIVITY_MS));
-        assert_eq!(deadline_from(Some("0")), Duration::from_millis(DEFAULT_INACTIVITY_MS));
+        assert_eq!(
+            deadline_from(None),
+            Duration::from_millis(DEFAULT_INACTIVITY_MS)
+        );
+        assert_eq!(
+            deadline_from(Some("nope")),
+            Duration::from_millis(DEFAULT_INACTIVITY_MS)
+        );
+        assert_eq!(
+            deadline_from(Some("0")),
+            Duration::from_millis(DEFAULT_INACTIVITY_MS)
+        );
         assert_eq!(deadline_from(Some(" 800 ")), Duration::from_millis(800));
     }
 }

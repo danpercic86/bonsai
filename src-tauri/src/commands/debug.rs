@@ -20,9 +20,7 @@ pub async fn debug_perf_counters(
 
 /// Zero every perf counter (harness/test reset before a measured scenario).
 #[tauri::command]
-pub async fn debug_reset_perf_counters(
-    state: tauri::State<'_, AppState>,
-) -> Result<(), AppError> {
+pub async fn debug_reset_perf_counters(state: tauri::State<'_, AppState>) -> Result<(), AppError> {
     state.perf.reset();
     Ok(())
 }

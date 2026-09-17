@@ -210,7 +210,10 @@ fn hooks_present_refuses_and_names_them_and_the_remedies() {
             );
             assert!(m.contains("pre-commit"), "{m}");
             assert!(m.contains("commit-msg"), "{m}");
-            assert!(m.contains("--allow-hooks"), "must name the consent flag: {m}");
+            assert!(
+                m.contains("--allow-hooks"),
+                "must name the consent flag: {m}"
+            );
             assert!(m.contains("bonsai.runHooks"), "must name the opt-out: {m}");
             assert!(m.contains("nothing was committed"), "{m}");
         }
@@ -235,7 +238,10 @@ fn merge_hooks_refusal_describes_the_merge_and_leaves_nothing_behind() {
                 m.contains("nothing was merged, committed or stashed"),
                 "must state that NOTHING happened: {m}"
             );
-            assert!(m.contains("--allow-hooks"), "must name the consent flag: {m}");
+            assert!(
+                m.contains("--allow-hooks"),
+                "must name the consent flag: {m}"
+            );
             assert!(m.contains("bonsai.runHooks"), "must name the opt-out: {m}");
         }
         other => panic!("expected HooksNotPermitted, got {other:?}"),
@@ -248,9 +254,6 @@ fn merge_hooks_refusal_describes_the_merge_and_leaves_nothing_behind() {
 #[test]
 fn merge_hooks_gate_is_only_installed_when_disclosure_is_needed() {
     use bonsai_core::git::merge::MergeHookGate;
-    assert!(matches!(
-        merge_hooks_gate(true),
-        MergeHookGate::Gate(_)
-    ));
+    assert!(matches!(merge_hooks_gate(true), MergeHookGate::Gate(_)));
     assert!(matches!(merge_hooks_gate(false), MergeHookGate::Run));
 }

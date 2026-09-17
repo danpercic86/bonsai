@@ -208,8 +208,14 @@ fn revparse_commit_is_hex_gated() {
 
     // Accepted: full oid, short oid, 4-char prefix, uppercase gate-pass.
     assert!(revparse_commit(&repo, &a).is_some(), "full oid resolves");
-    assert!(revparse_commit(&repo, &short_a).is_some(), "short oid resolves");
-    assert!(revparse_commit(&repo, &a[..4]).is_some(), "4-char prefix resolves");
+    assert!(
+        revparse_commit(&repo, &short_a).is_some(),
+        "short oid resolves"
+    );
+    assert!(
+        revparse_commit(&repo, &a[..4]).is_some(),
+        "4-char prefix resolves"
+    );
 
     // Rejected by the gate (would otherwise resolve!): revspecs + refs.
     for spec in [
@@ -221,11 +227,11 @@ fn revparse_commit_is_hex_gated() {
         ":/A",
         "main",
         "refs/heads/main",
-        "abc",                       // 3 chars: too short
-        &"a".repeat(41),             // 41 chars: too long
-        "deadbeeg",                  // non-hex char
-        "",                          //
-        "	deadbeef",                // leading control char
+        "abc",           // 3 chars: too short
+        &"a".repeat(41), // 41 chars: too long
+        "deadbeeg",      // non-hex char
+        "",              //
+        "	deadbeef",     // leading control char
     ] {
         assert!(
             revparse_commit(&repo, spec).is_none(),

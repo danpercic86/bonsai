@@ -3,7 +3,6 @@
 use super::test_support::*;
 use super::*;
 
-
 /// run-now (D10): runs immediately even mid-backoff and while not due;
 /// rejects when already running; a successful run-now clears backoff.
 #[test]
@@ -158,9 +157,9 @@ fn legacy_settings_file_through_apply_config() {
     let (emit, events) = collecting_emitter();
     let repos = vec![("work".to_string(), work.clone())];
     drive_tick(&repos, &sched, 0, &emit); // baseline
-    // Far in the future: healthRefresh must STILL never run (disabled ⇒
-    // Wait{i64::MAX}); autoFetch IS due (it fails — no remote — which is
-    // fine: it proves the legacy enabled=true was applied).
+                                          // Far in the future: healthRefresh must STILL never run (disabled ⇒
+                                          // Wait{i64::MAX}); autoFetch IS due (it fails — no remote — which is
+                                          // fine: it proves the legacy enabled=true was applied).
     drive_tick(&repos, &sched, 100 * MIN, &emit);
     let statuses = job_statuses(&events);
     assert!(

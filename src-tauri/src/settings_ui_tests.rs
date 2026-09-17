@@ -7,8 +7,8 @@
 //! `super::*` still reaches the private items without widening their
 //! visibility (the `external_tests` / `session_drain_tests` convention).
 
-use super::*;
 use super::tests::settings_path;
+use super::*;
 
 /// Save/load a `Settings` with non-default `theme` + `pane_widths`
 /// round-trips exactly (P2a contract §3.4.2).
@@ -112,7 +112,10 @@ fn panel_density_roundtrips_both_variants() {
         ..Default::default()
     };
     save_to(&file_compact, &s_compact).expect("save compact");
-    assert_eq!(load_from(&file_compact).panel_density, PanelDensity::Compact);
+    assert_eq!(
+        load_from(&file_compact).panel_density,
+        PanelDensity::Compact
+    );
     let raw_compact = std::fs::read_to_string(&file_compact).expect("read compact.json");
     assert!(raw_compact.contains("\"panelDensity\": \"compact\""));
 }
@@ -126,18 +129,36 @@ fn ai_conflict_tools_roundtrips_both_variants() {
     let dir = tempfile::TempDir::new().expect("create temp dir");
 
     let file_ro = settings_path(&dir).with_file_name("readonly.json");
-    let s_ro = Settings { ai_conflict_tools: AiConflictTools::ReadOnly, ..Default::default() };
+    let s_ro = Settings {
+        ai_conflict_tools: AiConflictTools::ReadOnly,
+        ..Default::default()
+    };
     save_to(&file_ro, &s_ro).expect("save readOnly");
-    assert_eq!(load_from(&file_ro).ai_conflict_tools, AiConflictTools::ReadOnly);
+    assert_eq!(
+        load_from(&file_ro).ai_conflict_tools,
+        AiConflictTools::ReadOnly
+    );
     let raw_ro = std::fs::read_to_string(&file_ro).expect("read readonly.json");
-    assert!(raw_ro.contains("\"aiConflictTools\": \"readOnly\""), "{raw_ro}");
+    assert!(
+        raw_ro.contains("\"aiConflictTools\": \"readOnly\""),
+        "{raw_ro}"
+    );
 
     let file_none = settings_path(&dir).with_file_name("none.json");
-    let s_none = Settings { ai_conflict_tools: AiConflictTools::None, ..Default::default() };
+    let s_none = Settings {
+        ai_conflict_tools: AiConflictTools::None,
+        ..Default::default()
+    };
     save_to(&file_none, &s_none).expect("save none");
-    assert_eq!(load_from(&file_none).ai_conflict_tools, AiConflictTools::None);
+    assert_eq!(
+        load_from(&file_none).ai_conflict_tools,
+        AiConflictTools::None
+    );
     let raw_none = std::fs::read_to_string(&file_none).expect("read none.json");
-    assert!(raw_none.contains("\"aiConflictTools\": \"none\""), "{raw_none}");
+    assert!(
+        raw_none.contains("\"aiConflictTools\": \"none\""),
+        "{raw_none}"
+    );
 }
 
 /// THE no-version-bump guard for P68 (§8.3): a settings.json written before
@@ -163,13 +184,19 @@ fn old_settings_file_without_ai_run_fields_loads_defaults() {
 
     let loaded = load_from(&file);
     assert_eq!(loaded.ai_idle_timeout_secs, AI_IDLE_TIMEOUT_DEFAULT);
-    assert_eq!(loaded.ai_hard_cap_secs, 0, "0 = unbounded (locked decision)");
+    assert_eq!(
+        loaded.ai_hard_cap_secs, 0,
+        "0 = unbounded (locked decision)"
+    );
     assert_eq!(loaded.ai_max_turns, bonsai_core::ai::DEFAULT_MAX_TURNS);
     assert!(loaded.ai_stream_log);
     assert!(!loaded.ai_include_partial_messages);
     assert_eq!(loaded.ai_conflict_tools, AiConflictTools::ReadOnly);
     assert_eq!(loaded.ai_bulk_max_bytes, AI_BULK_MAX_BYTES_DEFAULT);
-    assert_eq!(loaded.ai_max_budget_usd, 0.0, "0.0 = no cap (locked decision)");
+    assert_eq!(
+        loaded.ai_max_budget_usd, 0.0,
+        "0.0 = no cap (locked decision)"
+    );
     assert_eq!(loaded.ai_dock_height, AI_DOCK_HEIGHT_DEFAULT);
     assert!(!loaded.ai_dock_collapsed);
     // Pre-existing fields are untouched by the addition.
@@ -199,11 +226,17 @@ fn clamp_ai_settings_respects_zero_sentinels_and_ranges() {
         }"#;
     std::fs::write(&file, json).expect("write settings.json");
     let loaded = load_from(&file);
-    assert_eq!(loaded.ai_idle_timeout_secs, 0, "0 = watchdog disabled, not 30");
+    assert_eq!(
+        loaded.ai_idle_timeout_secs, 0,
+        "0 = watchdog disabled, not 30"
+    );
     assert_eq!(loaded.ai_hard_cap_secs, 0, "0 = unbounded, not 60");
     assert_eq!(loaded.ai_max_turns, AI_MAX_TURNS_MIN);
     assert_eq!(loaded.ai_bulk_max_bytes, AI_BULK_MAX_BYTES_MIN);
-    assert_eq!(loaded.ai_max_budget_usd, 0.0, "a negative budget means no cap");
+    assert_eq!(
+        loaded.ai_max_budget_usd, 0.0,
+        "a negative budget means no cap"
+    );
     assert_eq!(loaded.ai_dock_height, AI_DOCK_HEIGHT_MAX);
 
     // In-range values pass through, and an over-range one is capped.
@@ -468,10 +501,13 @@ fn forge_hosts_round_trip_and_index_helpers() {
     );
 
     // remove drops exactly one host.
-    let after_remove = update(&file, |s| remove_forge_host(s, "GITHUB.COM"))
-        .expect("remove forge host");
+    let after_remove =
+        update(&file, |s| remove_forge_host(s, "GITHUB.COM")).expect("remove forge host");
     assert_eq!(after_remove.forge_hosts.len(), 2);
-    assert!(!after_remove.forge_hosts.iter().any(|r| r.host == "github.com"));
+    assert!(!after_remove
+        .forge_hosts
+        .iter()
+        .any(|r| r.host == "github.com"));
 }
 
 /// A `settings.json` with in-range `recentRepos` but out-of-range/corrupt

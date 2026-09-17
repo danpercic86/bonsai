@@ -96,14 +96,24 @@ mod tests {
         assert!(is_relevant(&git_dir.join("HEAD"), git_dir));
         assert!(is_relevant(&git_dir.join("index"), git_dir));
         assert!(is_relevant(&git_dir.join("packed-refs"), git_dir));
-        assert!(is_relevant(&git_dir.join("refs").join("heads").join("main"), git_dir));
+        assert!(is_relevant(
+            &git_dir.join("refs").join("heads").join("main"),
+            git_dir
+        ));
         // M6 §6.4: remote-tracking ref updates after a fetch must refresh.
         assert!(is_relevant(
-            &git_dir.join("refs").join("remotes").join("origin").join("main"),
+            &git_dir
+                .join("refs")
+                .join("remotes")
+                .join("origin")
+                .join("main"),
             git_dir
         ));
         // P85 A3: a real tag adoption under refs/tags/* IS relevant…
-        assert!(is_relevant(&git_dir.join("refs").join("tags").join("v1.0.0"), git_dir));
+        assert!(is_relevant(
+            &git_dir.join("refs").join("tags").join("v1.0.0"),
+            git_dir
+        ));
         // …but Bonsai's private tag-sync scratch namespace is NOT (fetch churn).
         assert!(!is_relevant(
             &git_dir.join("refs").join("bonsai-tagsync").join("v1.0.0"),
@@ -115,7 +125,10 @@ mod tests {
             &git_dir.join("refs").join("heads").join("main.lock"),
             git_dir
         ));
-        assert!(!is_relevant(&git_dir.join("objects").join("aa").join("bb"), git_dir));
+        assert!(!is_relevant(
+            &git_dir.join("objects").join("aa").join("bb"),
+            git_dir
+        ));
         assert!(!is_relevant(&git_dir.join("logs").join("HEAD"), git_dir));
         assert!(!is_relevant(&git_dir.join("FETCH_HEAD"), git_dir));
     }
@@ -144,7 +157,11 @@ mod tests {
             Some(PathClass::Refs)
         );
         assert_eq!(
-            c(git_dir.join("refs").join("remotes").join("origin").join("main")),
+            c(git_dir
+                .join("refs")
+                .join("remotes")
+                .join("origin")
+                .join("main")),
             Some(PathClass::Refs)
         );
         assert_eq!(

@@ -18,8 +18,19 @@ fn build_hook_run_args_shapes() {
     );
     // Args after `--`, no stdin (commit-msg's message-file arg).
     assert_eq!(
-        build_hook_run_args(HookName::CommitMsg, &[".git/COMMIT_EDITMSG".to_string()], None),
-        vec!["hook", "run", "--ignore-missing", "commit-msg", "--", ".git/COMMIT_EDITMSG"]
+        build_hook_run_args(
+            HookName::CommitMsg,
+            &[".git/COMMIT_EDITMSG".to_string()],
+            None
+        ),
+        vec![
+            "hook",
+            "run",
+            "--ignore-missing",
+            "commit-msg",
+            "--",
+            ".git/COMMIT_EDITMSG"
+        ]
     );
     // --to-stdin present, plus args after `--` (pre-push shape).
     let args = vec!["origin".to_string(), "https://x/y.git".to_string()];
@@ -39,7 +50,13 @@ fn build_hook_run_args_shapes() {
     // --to-stdin present, NO trailing args ⇒ no dangling `--`.
     assert_eq!(
         build_hook_run_args(HookName::PrePush, &[], Some(Path::new("/tmp/refs"))),
-        vec!["hook", "run", "--ignore-missing", "pre-push", "--to-stdin=/tmp/refs"]
+        vec![
+            "hook",
+            "run",
+            "--ignore-missing",
+            "pre-push",
+            "--to-stdin=/tmp/refs"
+        ]
     );
 }
 
@@ -48,18 +65,34 @@ fn build_hook_run_args_shapes() {
 #[test]
 fn hook_run_info_warning_shapes() {
     // Success (ran) and the absent-hook no-op ⇒ no warning.
-    let ok = HookRunInfo { ran: true, success: true, output: "out".to_string() };
-    let absent = HookRunInfo { ran: false, success: true, output: String::new() };
+    let ok = HookRunInfo {
+        ran: true,
+        success: true,
+        output: "out".to_string(),
+    };
+    let absent = HookRunInfo {
+        ran: false,
+        success: true,
+        output: String::new(),
+    };
     assert_eq!(ok.warning(HookName::PostCommit), None);
     assert_eq!(absent.warning(HookName::PostCommit), None);
     // Ran but exited non-zero ⇒ named failure with the hook's own output.
-    let failed = HookRunInfo { ran: true, success: false, output: "boom".to_string() };
+    let failed = HookRunInfo {
+        ran: true,
+        success: false,
+        output: "boom".to_string(),
+    };
     assert_eq!(
         failed.warning(HookName::PostCommit).as_deref(),
         Some("post-commit hook failed:\nboom")
     );
     // Ran, non-zero, silent ⇒ still visibly a failure.
-    let silent = HookRunInfo { ran: true, success: false, output: String::new() };
+    let silent = HookRunInfo {
+        ran: true,
+        success: false,
+        output: String::new(),
+    };
     assert_eq!(
         silent.warning(HookName::PostCommit).as_deref(),
         Some("post-commit hook failed:\n(no output)")
@@ -79,15 +112,25 @@ fn hook_run_info_warning_shapes() {
 #[test]
 fn git_infra_failure_classifier_is_narrow() {
     // git's own pre-hook failures ⇒ infra.
-    assert!(is_git_infra_failure("error: cannot find a hook named pre-commit"));
-    assert!(is_git_infra_failure("fatal: cannot run .husky/pre-commit: No such file"));
-    assert!(is_git_infra_failure("error: cannot spawn .git/hooks/pre-commit: exec failed"));
-    assert!(is_git_infra_failure("fatal: not a git repository (or any of the parent directories)"));
+    assert!(is_git_infra_failure(
+        "error: cannot find a hook named pre-commit"
+    ));
+    assert!(is_git_infra_failure(
+        "fatal: cannot run .husky/pre-commit: No such file"
+    ));
+    assert!(is_git_infra_failure(
+        "error: cannot spawn .git/hooks/pre-commit: exec failed"
+    ));
+    assert!(is_git_infra_failure(
+        "fatal: not a git repository (or any of the parent directories)"
+    ));
     // A hook's OWN output — even git-flavored — stays a rejection.
     assert!(!is_git_infra_failure("lint failed: bad code"));
     assert!(!is_git_infra_failure("error: your commit message is bad"));
     assert!(!is_git_infra_failure("fatal: pre-commit checks failed"));
-    assert!(!is_git_infra_failure("hook output\nerror: cannot find a hook named x"));
+    assert!(!is_git_infra_failure(
+        "hook output\nerror: cannot find a hook named x"
+    ));
     assert!(!is_git_infra_failure(""));
 }
 
@@ -167,7 +210,8 @@ fn init_repo(dir: &Path) -> git2::Repository {
     let repo = git2::Repository::init(dir).expect("init");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Hook Tester").expect("name");
-    cfg.set_str("user.email", "hooks@example.com").expect("email");
+    cfg.set_str("user.email", "hooks@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     drop(cfg);
     repo
@@ -316,7 +360,11 @@ fn post_commit_non_blocking() {
     let info = run_hook_nonblocking(&SpawnGitExec, dir.path(), HookName::PostCommit, &[]);
     assert!(info.ran, "post-commit ran");
     assert!(!info.success, "post-commit reported failure");
-    assert!(info.output.contains("post ran"), "captured output: {}", info.output);
+    assert!(
+        info.output.contains("post ran"),
+        "captured output: {}",
+        info.output
+    );
 }
 
 /// `core.hooksPath` pointing at a sibling dir is honoured (proves discovery
@@ -329,7 +377,11 @@ fn core_hooks_path_is_honored() {
     let dir = crate::testutil::scratch_dir();
     let repo = init_repo(dir.path());
     let alt = dir.path().join("myhooks");
-    write_hook(&alt, "pre-commit", "#!/bin/sh\necho \"alt hook\" >&2\nexit 1\n");
+    write_hook(
+        &alt,
+        "pre-commit",
+        "#!/bin/sh\necho \"alt hook\" >&2\nexit 1\n",
+    );
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("core.hooksPath", alt.to_str().expect("utf8"))
@@ -402,7 +454,10 @@ fn pre_commit_restage_is_picked_up() {
         tree.get_name("generated.txt").is_some(),
         "hook-staged file must be in the committed tree"
     );
-    assert!(tree.get_name("a.txt").is_some(), "originally-staged file present");
+    assert!(
+        tree.get_name("a.txt").is_some(),
+        "originally-staged file present"
+    );
 }
 
 /// With hooks enabled but NO hook file present, `run_hook` must NOT spawn git
@@ -486,4 +541,3 @@ fn repo_has_runnable_hooks_pre_push_only_true() {
     write_hook(&hooks_dir(&repo), "pre-push", "#!/bin/sh\nexit 0\n");
     assert!(repo_has_runnable_hooks(dir.path()));
 }
-

@@ -6,15 +6,15 @@
 
 use std::path::Path;
 
-use bonsai_core::error::AppError;
-use bonsai_core::git::conflict::{resolve_conflict, ConflictResolution};
-use bonsai_core::git::merge::{abort_merge, commit_merge, merge_branch, MergeOutcome};
 use crate::common;
 use crate::common::{commit_fixed, git, init_repo, FIXED_DATE};
 use crate::merge_support::{
     git_fail, head_oid, message, parents, repo_state, require_git, script_conflict_two_files,
     stash_count, tree_oid, twin_pair, write,
 };
+use bonsai_core::error::AppError;
+use bonsai_core::git::conflict::{resolve_conflict, ConflictResolution};
+use bonsai_core::git::merge::{abort_merge, commit_merge, merge_branch, MergeOutcome};
 
 // ============================================================ §9.7 commit_merge
 
@@ -150,7 +150,11 @@ fn abort_after_autostashed_merge_keeps_unrelated_edit_on_stash() {
         other => panic!("expected Conflicts{{stashed:true}}, got {other:?}"),
     }
     assert_eq!(repo_state(d), git2::RepositoryState::Merge);
-    assert_eq!(stash_count(d), 1, "autostash retained during the paused merge");
+    assert_eq!(
+        stash_count(d),
+        1,
+        "autostash retained during the paused merge"
+    );
     // Mid-merge, the edit is on the stash: worktree unrelated.txt is at HEAD.
     assert_eq!(
         std::fs::read_to_string(d.join("unrelated.txt")).expect("read unrelated"),
@@ -162,8 +166,15 @@ fn abort_after_autostashed_merge_keeps_unrelated_edit_on_stash() {
 
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);
     assert_eq!(head_oid(d), pre_head, "HEAD must not move");
-    assert_eq!(git(d, &["write-tree"]), tree_oid(d), "index tree must equal HEAD tree");
-    assert!(git(d, &["ls-files", "-u"]).is_empty(), "no conflict stages may remain");
+    assert_eq!(
+        git(d, &["write-tree"]),
+        tree_oid(d),
+        "index tree must equal HEAD tree"
+    );
+    assert!(
+        git(d, &["ls-files", "-u"]).is_empty(),
+        "no conflict stages may remain"
+    );
     assert_eq!(
         std::fs::read(d.join("a.txt")).expect("read a.txt"),
         pre_a,
@@ -176,7 +187,11 @@ fn abort_after_autostashed_merge_keeps_unrelated_edit_on_stash() {
         "orig\n",
         "after abort the worktree file is at HEAD; the edit is still stashed"
     );
-    assert_eq!(stash_count(d), 1, "the autostash survives the abort (stash@{{0}})");
+    assert_eq!(
+        stash_count(d),
+        1,
+        "the autostash survives the abort (stash@{{0}})"
+    );
 
     // Data-safety proof: re-applying stash@{0} restores the edit byte-exactly.
     git(d, &["stash", "pop"]);

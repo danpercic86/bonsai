@@ -97,7 +97,10 @@ pub fn create_merge_request_url(host: &str, id: &str) -> String {
 
 /// `PUT …/merge_requests/{iid}/merge` — the accept/merge endpoint.
 pub fn merge_mr_url(host: &str, id: &str, iid: u64) -> String {
-    format!("{}/projects/{id}/merge_requests/{iid}/merge", api_base(host))
+    format!(
+        "{}/projects/{id}/merge_requests/{iid}/merge",
+        api_base(host)
+    )
 }
 
 pub fn notes_url(host: &str, id: &str, iid: u64) -> String {
@@ -308,8 +311,12 @@ mod tests {
     #[test]
     fn base_headers_use_private_token() {
         let none = base_headers(None);
-        assert!(!none.iter().any(|(k, _)| k.eq_ignore_ascii_case("PRIVATE-TOKEN")));
-        assert!(none.iter().any(|(k, v)| k == "Accept" && v == "application/json"));
+        assert!(!none
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("PRIVATE-TOKEN")));
+        assert!(none
+            .iter()
+            .any(|(k, v)| k == "Accept" && v == "application/json"));
 
         let auth = base_headers(Some("glpat-xyz"));
         assert!(auth
@@ -371,7 +378,10 @@ mod tests {
         // 403 with remaining==0 ⇒ rate limited, carrying the reset hint.
         let err = map_status(&resp(
             403,
-            vec![("RateLimit-Remaining", "0"), ("RateLimit-Reset", "1700000000")],
+            vec![
+                ("RateLimit-Remaining", "0"),
+                ("RateLimit-Reset", "1700000000"),
+            ],
         ))
         .unwrap();
         match err {
@@ -405,15 +415,26 @@ mod tests {
         };
         let dbg = format!("{req:?}");
         assert!(!dbg.contains("glpat-SUPERSECRET"), "token leaked: {dbg}");
-        assert!(dbg.contains("<redacted>"), "expected redaction placeholder: {dbg}");
+        assert!(
+            dbg.contains("<redacted>"),
+            "expected redaction placeholder: {dbg}"
+        );
     }
 
     #[test]
     fn has_next_page_prefers_x_next_page_then_link_then_count() {
         // X-Next-Page present + non-empty ⇒ next.
-        assert!(has_next_page(&resp(200, vec![("X-Next-Page", "3")]), 20, 20));
+        assert!(has_next_page(
+            &resp(200, vec![("X-Next-Page", "3")]),
+            20,
+            20
+        ));
         // X-Next-Page present + empty ⇒ last page, even if the page is full.
-        assert!(!has_next_page(&resp(200, vec![("X-Next-Page", "")]), 20, 20));
+        assert!(!has_next_page(
+            &resp(200, vec![("X-Next-Page", "")]),
+            20,
+            20
+        ));
         // No X-Next-Page: a Link rel="next" ⇒ next.
         assert!(has_next_page(
             &resp(200, vec![("Link", "<https://x?page=2>; rel=\"next\"")]),

@@ -7,11 +7,13 @@ use super::*;
 use std::process::Command;
 
 pub(super) fn init(dir: &Path) -> git2::Repository {
-    let repo = git2::Repository::init_opts(dir, git2::RepositoryInitOptions::new().initial_head("main"))
-        .expect("init repo");
+    let repo =
+        git2::Repository::init_opts(dir, git2::RepositoryInitOptions::new().initial_head("main"))
+            .expect("init repo");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     drop(cfg);
     repo
@@ -31,7 +33,12 @@ pub(super) fn commit(dir: &Path, msg: &str, files: &[(&str, &str)]) -> git2::Oid
     .expect("stage");
     crate::git::commit::create_commit(dir, msg, None, false).expect("commit");
     let repo = git2::Repository::open(dir).expect("open");
-    let oid = repo.head().expect("HEAD").peel_to_commit().expect("peel").id();
+    let oid = repo
+        .head()
+        .expect("HEAD")
+        .peel_to_commit()
+        .expect("peel")
+        .id();
     oid
 }
 
@@ -54,8 +61,15 @@ pub(super) fn commit_on_ref(
         tb.insert(name, blob, 0o100644).expect("insert");
     }
     let tree = repo.find_tree(tb.write().expect("tree oid")).expect("tree");
-    repo.commit(Some(refname), &sig, &sig, &format!("{msg}\n"), &tree, &[&parent])
-        .expect("commit on ref")
+    repo.commit(
+        Some(refname),
+        &sig,
+        &sig,
+        &format!("{msg}\n"),
+        &tree,
+        &[&parent],
+    )
+    .expect("commit on ref")
 }
 
 /// Create a local branch `name` at `oid` (no checkout).

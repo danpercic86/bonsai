@@ -42,7 +42,10 @@ pub(crate) fn is_windows_reserved(component: &str) -> bool {
 /// Resolve the stash commit oid for `index` the same way `list_stashes` does:
 /// the stash stack IS the `refs/stash` reflog, and entry `index`'s `id_new()`
 /// is the stash commit oid. Missing entry → AppError::Git.
-pub(crate) fn stash_commit_oid(repo: &git2::Repository, index: usize) -> Result<git2::Oid, AppError> {
+pub(crate) fn stash_commit_oid(
+    repo: &git2::Repository,
+    index: usize,
+) -> Result<git2::Oid, AppError> {
     let reflog = repo.reflog("refs/stash")?;
     let entry = reflog
         .get(index)
@@ -422,7 +425,11 @@ pub fn pop_stash_with(
 /// `Some` + mismatch → "stash list changed" error and NOTHING is dropped —
 /// this is the wrong-target-destructive guard (a dropped stash is
 /// unrecoverable).
-pub fn drop_stash(workdir: &Path, index: usize, expected_oid: Option<&str>) -> Result<(), AppError> {
+pub fn drop_stash(
+    workdir: &Path,
+    index: usize,
+    expected_oid: Option<&str>,
+) -> Result<(), AppError> {
     let mut repo = open_workdir_repo(workdir)?;
     verify_expected_oid(&repo, index, expected_oid)?;
     repo.stash_drop(index)?;

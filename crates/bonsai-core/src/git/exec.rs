@@ -52,7 +52,11 @@ pub const MAX_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 /// counted + drained but NOT buffered. Returns `(captured, overflowed)`. Always
 /// drains to EOF so the child never blocks on a full pipe (no deadlock), while
 /// memory stays bounded past the cap.
-fn read_capped<R: Read>(mut r: R, counter: &AtomicUsize, cap: usize) -> std::io::Result<(Vec<u8>, bool)> {
+fn read_capped<R: Read>(
+    mut r: R,
+    counter: &AtomicUsize,
+    cap: usize,
+) -> std::io::Result<(Vec<u8>, bool)> {
     let mut buf = Vec::new();
     let mut overflow = false;
     let mut chunk = [0u8; 16 * 1024];
@@ -80,7 +84,12 @@ fn read_capped<R: Read>(mut r: R, counter: &AtomicUsize, cap: usize) -> std::io:
 /// Assemble the child `Command` with the never-prompt hardening + pipe wiring.
 /// Extracted so the argv/env/stdin assembly stays unit-testable without
 /// launching git (the env-hygiene invariant is asserted via `get_envs`).
-pub(crate) fn build_command(args: &[&str], cwd: &Path, stdin_present: bool, env: &[(&str, &str)]) -> Command {
+pub(crate) fn build_command(
+    args: &[&str],
+    cwd: &Path,
+    stdin_present: bool,
+    env: &[(&str, &str)],
+) -> Command {
     // P70: the program + Windows console suppression come from the shared
     // resolver, so a broken inherited PATH (MSI-relaunched app, per-user Git
     // install) still finds git. The never-prompt hardening below is unchanged.
@@ -187,10 +196,12 @@ impl GitExec for SpawnGitExec {
         if let Some(bytes) = stdin {
             let mut sh = child.stdin.take();
             let write_res = match sh.as_mut() {
-                Some(s) => s
-                    .write_all(bytes)
-                    .map_err(|e| AppError::Git(format!("failed to write `git {subcmd}` stdin: {e}"))),
-                None => Err(AppError::Git(format!("failed to open `git {subcmd}` stdin"))),
+                Some(s) => s.write_all(bytes).map_err(|e| {
+                    AppError::Git(format!("failed to write `git {subcmd}` stdin: {e}"))
+                }),
+                None => Err(AppError::Git(format!(
+                    "failed to open `git {subcmd}` stdin"
+                ))),
             };
             drop(sh); // EOF for the child
             if let Err(e) = write_res {
@@ -316,7 +327,11 @@ mod tests {
             .collect();
         assert_eq!(
             &args[..3],
-            &["-c".to_string(), "core.askpass=".to_string(), "push".to_string()],
+            &[
+                "-c".to_string(),
+                "core.askpass=".to_string(),
+                "push".to_string()
+            ],
             "argv leads with the askpass neutralizer: {args:?}"
         );
 
@@ -368,7 +383,10 @@ mod tests {
             })
             .collect();
         assert_eq!(envs.get("GIT_AUTHOR_NAME"), Some(&Some("Ada".to_string())));
-        assert_eq!(envs.get("GIT_TERMINAL_PROMPT"), Some(&Some("0".to_string())));
+        assert_eq!(
+            envs.get("GIT_TERMINAL_PROMPT"),
+            Some(&Some("0".to_string()))
+        );
         assert_eq!(envs.get("GIT_ASKPASS"), Some(&None));
     }
 
@@ -383,7 +401,11 @@ mod tests {
         let (buf, overflow) = read_capped(&data[..], &counter, 4).expect("read");
         assert!(overflow, "exceeding the cap sets the overflow flag");
         assert_eq!(buf.len(), 4, "only up-to-cap bytes are buffered");
-        assert_eq!(counter.load(Ordering::Relaxed), 10, "all bytes are counted (drained to EOF)");
+        assert_eq!(
+            counter.load(Ordering::Relaxed),
+            10,
+            "all bytes are counted (drained to EOF)"
+        );
     }
 
     /// A combined shared counter caps stdout+stderr TOGETHER, not per-stream.
@@ -428,6 +450,9 @@ mod tests {
             .expect("hash-object");
         assert!(out.success, "stderr: {}", out.stderr);
         // git blob sha1 of "hi\n" is stable.
-        assert_eq!(out.stdout.trim(), "45b983be36b73c0788dc9cbcb76cbb80fc7bb057");
+        assert_eq!(
+            out.stdout.trim(),
+            "45b983be36b73c0788dc9cbcb76cbb80fc7bb057"
+        );
     }
 }

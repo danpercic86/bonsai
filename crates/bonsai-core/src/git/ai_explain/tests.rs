@@ -88,13 +88,11 @@ fn diff_target_deserializes_each_variant() {
         other => panic!("expected WorkdirFile, got {other:?}"),
     }
 
-    let staged: AiDiffTarget =
-        serde_json::from_str(r#"{"kind":"staged"}"#).expect("staged");
+    let staged: AiDiffTarget = serde_json::from_str(r#"{"kind":"staged"}"#).expect("staged");
     assert!(matches!(staged, AiDiffTarget::Staged));
 
     // P25 B1: the two new review scopes deserialize from the exact TS union.
-    let worktree: AiDiffTarget =
-        serde_json::from_str(r#"{"kind":"worktree"}"#).expect("worktree");
+    let worktree: AiDiffTarget = serde_json::from_str(r#"{"kind":"worktree"}"#).expect("worktree");
     assert!(matches!(worktree, AiDiffTarget::Worktree));
 
     // Branch: base may be null, omitted (via #[serde(default)]), or a string.
@@ -110,8 +108,7 @@ fn diff_target_deserializes_each_variant() {
     }
 
     let branch_omitted: AiDiffTarget =
-        serde_json::from_str(r#"{"kind":"branch","name":"feature"}"#)
-            .expect("branch base omitted");
+        serde_json::from_str(r#"{"kind":"branch","name":"feature"}"#).expect("branch base omitted");
     match branch_omitted {
         AiDiffTarget::Branch { name, base } => {
             assert_eq!(name, "feature");
@@ -188,8 +185,7 @@ fn commit_payload_prefix_carries_full_message() {
     let msg = "Add greeting\n\nExplains WHY: users needed a friendly hello.";
     let oid = create_commit(p, msg, None, false).expect("commit").oid;
 
-    let (prefix, files) =
-        build_payload(p, &AiDiffTarget::Commit { oid }).expect("build payload");
+    let (prefix, files) = build_payload(p, &AiDiffTarget::Commit { oid }).expect("build payload");
 
     assert!(
         prefix.contains("MESSAGE:\n"),
@@ -203,7 +199,10 @@ fn commit_payload_prefix_carries_full_message() {
     // per-file blocks.
     let author_idx = prefix.find("\nAUTHOR ").expect("AUTHOR line");
     let msg_idx = prefix.find("\nMESSAGE:").expect("MESSAGE line");
-    assert!(msg_idx > author_idx, "MESSAGE must follow AUTHOR: {prefix:?}");
+    assert!(
+        msg_idx > author_idx,
+        "MESSAGE must follow AUTHOR: {prefix:?}"
+    );
     assert!(!files.is_empty(), "the commit changed a file");
 }
 
@@ -220,7 +219,8 @@ fn resolve_base_explicit_wins() {
     let head_commit = commit_of(&repo, &head);
     // A distinct base branch pointing at the same commit is enough to verify
     // the returned shorthand + commit come from the explicit ref.
-    repo.branch("some-base", &head_commit, true).expect("branch");
+    repo.branch("some-base", &head_commit, true)
+        .expect("branch");
 
     let (name, commit) = resolve_branch_base(&repo, "feature", Some("some-base")).expect("base");
     assert_eq!(name, "some-base");
@@ -238,7 +238,8 @@ fn resolve_base_uses_upstream() {
 
     let repo = git2::Repository::open(p).expect("open");
     let head_commit = commit_of(&repo, &head);
-    repo.branch("feature", &head_commit, true).expect("local branch");
+    repo.branch("feature", &head_commit, true)
+        .expect("local branch");
     repo.remote_with_fetch(
         "origin",
         "https://example.invalid/x.git",
@@ -254,7 +255,8 @@ fn resolve_base_uses_upstream() {
     .expect("remote-tracking ref");
     {
         let mut cfg = repo.config().expect("config");
-        cfg.set_str("branch.feature.remote", "origin").expect("remote cfg");
+        cfg.set_str("branch.feature.remote", "origin")
+            .expect("remote cfg");
         cfg.set_str("branch.feature.merge", "refs/heads/feature")
             .expect("merge cfg");
     }
@@ -364,7 +366,10 @@ fn review_payload_byte_cap() {
     // string already IS valid UTF-8, so just assert no replacement char crept
     // in at the cut and the prefix is all 'é'.
     let body = &capped[..capped.len() - TRUNCATION_NOTE.len()];
-    assert!(body.chars().all(|c| c == 'é'), "cut must be on a char boundary");
+    assert!(
+        body.chars().all(|c| c == 'é'),
+        "cut must be on a char boundary"
+    );
 }
 
 /// `AiAnalysisMode` deserializes from the exact `"explain"`/`"review"`

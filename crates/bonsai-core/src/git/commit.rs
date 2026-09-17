@@ -48,11 +48,7 @@ fn key_example(key: &str) -> &'static str {
 /// --global user.email "you@example.com"` (both missing -> both keys named in
 /// one message). Never falls back to a default identity.
 pub fn resolve_signature(cfg: &git2::Config) -> Result<git2::Signature<'static>, AppError> {
-    let read = |key: &str| {
-        cfg.get_string(key)
-            .ok()
-            .filter(|v| !v.trim().is_empty())
-    };
+    let read = |key: &str| cfg.get_string(key).ok().filter(|v| !v.trim().is_empty());
     let name = read("user.name");
     let email = read("user.email");
 
@@ -267,7 +263,8 @@ mod tests {
         {
             let mut cfg = repo.config().expect("open config");
             cfg.set_str("user.name", "Test User").expect("set name");
-            cfg.set_str("user.email", "test@example.com").expect("set email");
+            cfg.set_str("user.email", "test@example.com")
+                .expect("set email");
         }
 
         let head_message = |expect: &str| {
@@ -279,7 +276,8 @@ mod tests {
         // CRLF input (Windows textarea), incl. a trailing lone \r.
         std::fs::write(dir.path().join("a.txt"), "one\n").expect("write a.txt");
         crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");
-        let res = create_commit(dir.path(), "subject line\r\nsecond line\r", None, false).expect("commit");
+        let res = create_commit(dir.path(), "subject line\r\nsecond line\r", None, false)
+            .expect("commit");
         assert_eq!(res.summary, "subject line");
         head_message("subject line\nsecond line\n");
 
@@ -305,7 +303,8 @@ mod tests {
         {
             let mut cfg = repo.config().expect("config");
             cfg.set_str("user.name", "Test User").expect("name");
-            cfg.set_str("user.email", "test@example.com").expect("email");
+            cfg.set_str("user.email", "test@example.com")
+                .expect("email");
         }
         let err = amend_commit(dir.path(), "msg", None, false).expect_err("unborn");
         match err {
@@ -323,7 +322,8 @@ mod tests {
         {
             let mut cfg = repo.config().expect("config");
             cfg.set_str("user.name", "Orig Author").expect("name");
-            cfg.set_str("user.email", "orig@example.com").expect("email");
+            cfg.set_str("user.email", "orig@example.com")
+                .expect("email");
         }
         std::fs::write(dir.path().join("a.txt"), "one\n").expect("write");
         crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");
@@ -349,7 +349,11 @@ mod tests {
         assert_eq!(res.summary, "amended subject");
 
         let head = repo.head().expect("head").peel_to_commit().expect("peel");
-        assert_eq!(head.tree_id(), orig_tree, "message-only amend keeps the tree");
+        assert_eq!(
+            head.tree_id(),
+            orig_tree,
+            "message-only amend keeps the tree"
+        );
         assert_eq!(head.parent_count(), 0, "root commit parents preserved (0)");
         assert_eq!(head.author().email().ok(), Some("orig@example.com"));
         assert_eq!(head.committer().email().ok(), Some("new@example.com"));

@@ -405,7 +405,9 @@ mod tests {
         std::fs::write(repo_dir.join("seed.txt"), b"seed").expect("write seed");
         idx.add_path(Path::new("seed.txt")).expect("add");
         idx.write().expect("write idx");
-        let tree = repo.find_tree(idx.write_tree().expect("write tree")).expect("tree");
+        let tree = repo
+            .find_tree(idx.write_tree().expect("write tree"))
+            .expect("tree");
         let sig = git2::Signature::now("t", "t@e").expect("sig");
         let oid = repo
             .commit(Some("HEAD"), &sig, &sig, "seed", &tree, &[])

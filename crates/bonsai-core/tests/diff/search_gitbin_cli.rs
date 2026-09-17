@@ -44,7 +44,9 @@ fn init_repo(dir: &Path) {
 fn failing_run(dir: &Path, subcmd: &str) -> String {
     let args = vec![subcmd.to_string(), "--bonsai-not-a-real-option".to_string()];
     match SpawnGitRunner.run(&args, dir) {
-        Ok(out) => panic!("`git {subcmd} --bonsai-not-a-real-option` unexpectedly succeeded: {out}"),
+        Ok(out) => {
+            panic!("`git {subcmd} --bonsai-not-a-real-option` unexpectedly succeeded: {out}")
+        }
         // The spawn itself must have worked — git IS on PATH here. A
         // `GitNotFound` would mean the resolver broke, which is a different
         // (and much louder) failure than the one under test.

@@ -17,8 +17,7 @@ fn is_windows_reserved_truth_table() {
         assert!(is_windows_reserved(yes), "{yes:?} must be reserved");
     }
     for no in [
-        "NULl", "NULL2", "README", "COM", "COM0", "COM10", "LPT0", "LPT10", "NULfile",
-        "myNUL", "",
+        "NULl", "NULL2", "README", "COM", "COM0", "COM10", "LPT0", "LPT10", "NULfile", "myNUL", "",
     ] {
         assert!(!is_windows_reserved(no), "{no:?} must NOT be reserved");
     }
@@ -42,7 +41,9 @@ fn is_windows_reserved_truth_table() {
 fn rs_leaf_tree(repo: &git2::Repository, leaves: &[&str]) -> git2::Oid {
     let mut idx = git2::Index::new().expect("in-memory index");
     for p in leaves {
-        let blob = repo.blob(format!("content:{p}\n").as_bytes()).expect("blob");
+        let blob = repo
+            .blob(format!("content:{p}\n").as_bytes())
+            .expect("blob");
         let entry = make_index_entry(Path::new(p), blob, 0o100644).expect("entry");
         idx.add(&entry).expect("add");
     }
@@ -83,8 +84,15 @@ fn rs_synth_untracked_stash(
         .expect("untracked tree");
     let untracked_commit = repo
         .find_commit(
-            repo.commit(None, &sig, &sig, "untracked files on synthetic", &untracked_tree, &[base])
-                .expect("untracked commit"),
+            repo.commit(
+                None,
+                &sig,
+                &sig,
+                "untracked files on synthetic",
+                &untracked_tree,
+                &[base],
+            )
+            .expect("untracked commit"),
         )
         .expect("find untracked commit");
     let index_commit = repo
@@ -251,8 +259,15 @@ fn rs_b_apply_reserved_then_skip() {
         ),
         other => panic!("expected ReservedPaths, got {other:?}"),
     }
-    assert_eq!(s9_read(d, "tracked.txt"), "base\n", "tracked mod NOT applied");
-    assert!(!d.join("dir/keep.txt").exists(), "benign untracked NOT applied");
+    assert_eq!(
+        s9_read(d, "tracked.txt"),
+        "base\n",
+        "tracked mod NOT applied"
+    );
+    assert!(
+        !d.join("dir/keep.txt").exists(),
+        "benign untracked NOT applied"
+    );
     assert_eq!(list_stashes(d).expect("list").len(), 1, "stash retained");
 
     // Attempt 2: skip_reserved=true → applies everything but the NUL leaf.
@@ -263,8 +278,16 @@ fn rs_b_apply_reserved_then_skip() {
         ),
         other => panic!("expected AppliedSkippingReserved, got {other:?}"),
     }
-    assert_eq!(s9_read(d, "dir/keep.txt"), "keep\n", "benign untracked restored");
-    assert_eq!(s9_read(d, "tracked.txt"), "modified\n", "tracked mod restored");
+    assert_eq!(
+        s9_read(d, "dir/keep.txt"),
+        "keep\n",
+        "benign untracked restored"
+    );
+    assert_eq!(
+        s9_read(d, "tracked.txt"),
+        "modified\n",
+        "tracked mod restored"
+    );
     assert!(!d.join("dir/NUL").exists(), "reserved NUL NOT restored");
     assert_eq!(
         list_stashes(d).expect("list").len(),
@@ -286,8 +309,16 @@ fn rs_b_pop_skip_retains_stash() {
         ),
         other => panic!("expected AppliedSkippingReserved, got {other:?}"),
     }
-    assert_eq!(s9_read(d, "dir/keep.txt"), "keep\n", "benign untracked restored");
-    assert_eq!(s9_read(d, "tracked.txt"), "modified\n", "tracked mod restored");
+    assert_eq!(
+        s9_read(d, "dir/keep.txt"),
+        "keep\n",
+        "benign untracked restored"
+    );
+    assert_eq!(
+        s9_read(d, "tracked.txt"),
+        "modified\n",
+        "tracked mod restored"
+    );
     assert!(!d.join("dir/NUL").exists(), "reserved NUL NOT restored");
     assert_eq!(
         list_stashes(d).expect("list").len(),
@@ -347,7 +378,11 @@ fn apply_blocked_at_checkout_errors_instead_of_empty_conflicts() {
 
     // Stash a change (worktree reverts to base), then dirty the same file.
     std::fs::write(d.join("f.txt"), "stashed\n").expect("edit");
-    assert!(create_stash(d, None, StashScope::All).expect("stash").created);
+    assert!(
+        create_stash(d, None, StashScope::All)
+            .expect("stash")
+            .created
+    );
     std::fs::write(d.join("f.txt"), "dirty\n").expect("dirty");
 
     for (label, result) in [

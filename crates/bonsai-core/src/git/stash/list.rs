@@ -43,9 +43,9 @@ pub fn list_stashes_with(repo: &mut git2::Repository) -> Result<Vec<StashEntry>,
     let reflog = repo.reflog("refs/stash")?;
     let mut out = Vec::with_capacity(raw.len());
     for (index, message) in raw {
-        let entry = reflog.get(index).ok_or_else(|| {
-            AppError::Git(format!("stash reflog entry {index} missing"))
-        })?;
+        let entry = reflog
+            .get(index)
+            .ok_or_else(|| AppError::Git(format!("stash reflog entry {index} missing")))?;
         let stash_oid = entry.id_new();
         let commit = repo.find_commit(stash_oid)?;
         let base_oid = commit.parent_id(0)?;

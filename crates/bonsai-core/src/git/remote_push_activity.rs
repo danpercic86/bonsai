@@ -257,10 +257,7 @@ pub fn force_push_with_lease_with_activity(
 
     // --- lease baseline: the remote-tracking ref we last fetched ---
     let tracking = format!("refs/remotes/{remote_name}/{remote_branch}");
-    let expected = repo
-        .find_reference(&tracking)
-        .ok()
-        .and_then(|r| r.target());
+    let expected = repo.find_reference(&tracking).ok().and_then(|r| r.target());
     let expected = match expected {
         Some(oid) => oid,
         None => {

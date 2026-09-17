@@ -78,7 +78,9 @@ pub fn create_tag(
         ))
     })?;
     let target = repo.find_object(oid, None).map_err(|_| {
-        AppError::Git(format!("cannot create tag: commit '{target_oid}' not found"))
+        AppError::Git(format!(
+            "cannot create tag: commit '{target_oid}' not found"
+        ))
     })?;
 
     let result = match &message {

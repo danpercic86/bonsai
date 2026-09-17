@@ -68,7 +68,10 @@ fn viewer_with_nameless_profile_has_empty_login_and_is_not_cached() {
     );
     let v = p.viewer().unwrap();
     assert_eq!(v.login, "");
-    assert!(auth::cached_viewer(host).is_none(), "empty login must not be cached");
+    assert!(
+        auth::cached_viewer(host).is_none(),
+        "empty login must not be cached"
+    );
 }
 
 /// **THE REGRESSION TEST for the reported bug (P72 case c).** A PAT scoped only
@@ -88,7 +91,10 @@ fn viewer_succeeds_when_code_only_pat_is_401ed_by_the_profile_endpoint() {
     assert_eq!(v.login, "");
     assert_eq!(v.avatar_url, None);
     assert_eq!(seen.lock().unwrap().len(), 2);
-    assert!(auth::cached_viewer(host).is_none(), "empty login must not be cached");
+    assert!(
+        auth::cached_viewer(host).is_none(),
+        "empty login must not be cached"
+    );
 }
 
 /// P72 case (h): identify swallows EVERY error class — a rate limit or a
@@ -105,7 +111,9 @@ fn viewer_swallows_rate_limit_and_transport_errors_while_identifying() {
                 (PROFILE_NEEDLE, profile_status, "{}"),
             ],
         );
-        let v = p.viewer().unwrap_or_else(|e| panic!("{profile_status}: {e:?}"));
+        let v = p
+            .viewer()
+            .unwrap_or_else(|e| panic!("{profile_status}: {e:?}"));
         assert_eq!(v.login, "");
         assert_eq!(seen.lock().unwrap().len(), 2);
         assert!(auth::cached_viewer(&host).is_none());
@@ -162,7 +170,10 @@ fn viewer_203_signin_page_is_auth_failed_not_malformed() {
     match p.viewer().unwrap_err() {
         AppError::AuthFailed(m) => {
             assert!(!m.contains("malformed"), "message: {m}");
-            assert!(!m.contains("SIGNIN_MARKER"), "body echoed into message: {m}");
+            assert!(
+                !m.contains("SIGNIN_MARKER"),
+                "body echoed into message: {m}"
+            );
             assert!(m.contains("203"), "message: {m}");
         }
         other => panic!("expected AuthFailed, got {other:?}"),
@@ -181,7 +192,10 @@ fn viewer_200_with_html_body_fails_the_repo_probe() {
 fn viewer_requires_token() {
     let (p, seen) = provider_spy(None, vec![(REPO_NEEDLE, 200, REPO_OK)]);
     assert!(matches!(p.viewer(), Err(AppError::ForgeAuthRequired(_))));
-    assert!(seen.lock().unwrap().is_empty(), "no request before the auth check");
+    assert!(
+        seen.lock().unwrap().is_empty(),
+        "no request before the auth check"
+    );
 }
 
 /// P72 case (j) — the §A5 taxonomy delta: validating against a repo endpoint
@@ -195,4 +209,3 @@ fn viewer_without_project_is_unsupported_with_no_request() {
     assert!(matches!(p.viewer(), Err(AppError::ForgeUnsupported(_))));
     assert!(seen.lock().unwrap().is_empty());
 }
-

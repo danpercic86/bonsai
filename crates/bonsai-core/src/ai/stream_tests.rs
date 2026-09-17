@@ -21,7 +21,10 @@ fn log_text(raw: &str) -> String {
 #[test]
 fn init_line_logs_session_model_and_tools() {
     let raw = r#"{"type":"system","subtype":"init","session_id":"s1","model":"sonnet","tools":["Read","Grep","Glob"]}"#;
-    assert_eq!(log_text(raw), "session s1 · model sonnet · tools: Read, Grep, Glob");
+    assert_eq!(
+        log_text(raw),
+        "session s1 · model sonnet · tools: Read, Grep, Glob"
+    );
 }
 
 #[test]
@@ -60,7 +63,10 @@ fn post_turn_summary_is_a_hint_log_only() {
 
 #[test]
 fn unknown_system_subtype_degrades_to_log() {
-    assert_eq!(log_text(r#"{"type":"system","subtype":"weird"}"#), "system/weird");
+    assert_eq!(
+        log_text(r#"{"type":"system","subtype":"weird"}"#),
+        "system/weird"
+    );
     assert_eq!(log_text(r#"{"type":"system"}"#), "system/?");
 }
 
@@ -69,10 +75,16 @@ fn rate_limit_event_is_compacted_and_capped() {
     let raw = r#"{"type":"rate_limit_event","status":"ok"}"#;
     let text = log_text(raw);
     assert!(text.starts_with("rate limit: {"), "got {text}");
-    let long = format!(r#"{{"type":"rate_limit_event","note":"{}"}}"#, "x".repeat(500));
+    let long = format!(
+        r#"{{"type":"rate_limit_event","note":"{}"}}"#,
+        "x".repeat(500)
+    );
     let capped = log_text(&long);
     // "rate limit: " + <=200 chars of JSON.
-    assert_eq!(capped.chars().count(), "rate limit: ".chars().count() + MAX_RATE_LIMIT_TEXT);
+    assert_eq!(
+        capped.chars().count(),
+        "rate limit: ".chars().count() + MAX_RATE_LIMIT_TEXT
+    );
 }
 
 #[test]
@@ -83,7 +95,10 @@ fn replayed_user_message_logs_only_a_byte_count() {
     );
     let text = log_text(&raw);
     assert_eq!(text, format!("» sent {} bytes to Claude", secret.len()));
-    assert!(!text.contains("SECRET"), "content must never be logged (A11)");
+    assert!(
+        !text.contains("SECRET"),
+        "content must never be logged (A11)"
+    );
 }
 
 #[test]
@@ -106,9 +121,15 @@ fn tool_use_becomes_a_decorated_log_not_a_new_kind() {
     match classify_line(raw) {
         LineOutcome::Log(items) => {
             assert_eq!(items[0].text, "⚙ Read(src/a.rs)");
-            assert!(!items[0].assistant_text, "decoration must not feed partialText");
+            assert!(
+                !items[0].assistant_text,
+                "decoration must not feed partialText"
+            );
             // M6: what the model READ survives `ai_stream_log: false`.
-            assert!(items[0].notable, "tool lines must be exempt from log suppression");
+            assert!(
+                items[0].notable,
+                "tool lines must be exempt from log suppression"
+            );
         }
         other => panic!("expected Log, got {other:?}"),
     }
@@ -154,7 +175,10 @@ fn stream_event_logs_a_delta_or_heartbeats() {
 
 #[test]
 fn unknown_type_and_non_json_degrade_to_log_never_err() {
-    assert_eq!(log_text(r#"{"type":"brand_new_thing","x":1}"#), r#"{"type":"brand_new_thing","x":1}"#);
+    assert_eq!(
+        log_text(r#"{"type":"brand_new_thing","x":1}"#),
+        r#"{"type":"brand_new_thing","x":1}"#
+    );
     assert_eq!(log_text("not json at all"), "not json at all");
     assert_eq!(log_text("{ truncated json"), "{ truncated json");
     // A typeless object is still just a log line.
@@ -191,7 +215,11 @@ fn permission_denials_become_notable_denied_lines() {
         items[0].text,
         "⛔ denied Read(C:/Users/x/.aws/credentials) — outside this repository"
     );
-    assert!(items[1].text.contains("Glob(../../**)"), "{:?}", items[1].text);
+    assert!(
+        items[1].text.contains("Glob(../../**)"),
+        "{:?}",
+        items[1].text
+    );
     for it in &items {
         assert!(it.notable, "a denial must survive ai_stream_log: false");
         assert!(!it.assistant_text, "a denial is not model prose");
@@ -204,7 +232,11 @@ fn permission_denials_become_notable_denied_lines() {
     // Unknown shape inside the array still names the tool it can find.
     let odd = permission_denial_lines(r#"{"permission_denials":[{}]}"#);
     assert_eq!(odd.len(), 1);
-    assert!(odd[0].text.starts_with("⛔ denied tool()"), "{:?}", odd[0].text);
+    assert!(
+        odd[0].text.starts_with("⛔ denied tool()"),
+        "{:?}",
+        odd[0].text
+    );
 }
 
 /// A model stuck in a denial loop must not be able to fill the dock.
@@ -213,8 +245,15 @@ fn permission_denials_are_bounded_with_a_stated_total() {
     let one = r#"{"tool_name":"Read","tool_input":{"file_path":"/etc/passwd"}}"#;
     let raw = format!(r#"{{"permission_denials":[{}]}}"#, vec![one; 50].join(","));
     let items = permission_denial_lines(&raw);
-    assert_eq!(items.len(), MAX_DENIAL_LINES + 1, "capped, plus one summary");
-    assert!(items[MAX_DENIAL_LINES].text.contains("50 denials in total"), "{items:?}");
+    assert_eq!(
+        items.len(),
+        MAX_DENIAL_LINES + 1,
+        "capped, plus one summary"
+    );
+    assert!(
+        items[MAX_DENIAL_LINES].text.contains("50 denials in total"),
+        "{items:?}"
+    );
 }
 
 /// A denied path is model-authored text: it must not be able to forge extra
@@ -227,7 +266,11 @@ fn a_denied_path_is_control_stripped() {
     assert_eq!(items.len(), 1);
     assert!(!items[0].text.contains('\n'), "{:?}", items[0].text);
     assert!(!items[0].text.contains('\u{202e}'), "{:?}", items[0].text);
-    assert!(items[0].text.contains("Read(abgnp.exe)"), "{:?}", items[0].text);
+    assert!(
+        items[0].text.contains("Read(abgnp.exe)"),
+        "{:?}",
+        items[0].text
+    );
 }
 
 /// M3 (security audit 2026-08-18). The sentinel is attacker-reachable WITHOUT a
@@ -260,7 +303,10 @@ fn sentinel_question_strips_control_and_bidi_characters() {
     assert_eq!(q, "okfake");
     assert_eq!(strip_control_chars("a\tb\u{200f}c"), "abc");
     // Ordinary non-ASCII text is untouched — this must not mangle real questions.
-    assert_eq!(strip_control_chars("Einträge oder Eintraege?"), "Einträge oder Eintraege?");
+    assert_eq!(
+        strip_control_chars("Einträge oder Eintraege?"),
+        "Einträge oder Eintraege?"
+    );
 }
 
 #[test]
@@ -282,7 +328,10 @@ fn sentinel_matches_only_the_first_non_empty_line() {
     assert_eq!(sentinel_question("merged body"), None);
     assert_eq!(sentinel_question(""), None);
     // A bare sentinel with no question text still blocks the run.
-    assert_eq!(sentinel_question("BONSAI_NEEDS_INPUT:"), Some(String::new()));
+    assert_eq!(
+        sentinel_question("BONSAI_NEEDS_INPUT:"),
+        Some(String::new())
+    );
 }
 
 #[test]

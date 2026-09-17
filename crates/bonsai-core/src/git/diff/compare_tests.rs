@@ -11,7 +11,8 @@ fn init_scratch() -> tempfile::TempDir {
     let repo = git2::Repository::init(dir.path()).expect("init repo");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     dir
 }
@@ -237,7 +238,9 @@ fn collect_file_diffs_too_large_sibling() {
     std::fs::write(p.join("big.txt"), &big).expect("write big");
     std::fs::write(p.join("small.txt"), "small\n").expect("write small");
     stage_paths(p, &["big.txt".into(), "small.txt".into()]).expect("stage");
-    let head = create_commit(p, "add files", None, false).expect("commit").oid;
+    let head = create_commit(p, "add files", None, false)
+        .expect("commit")
+        .oid;
 
     let repo = git2::Repository::open(p).expect("open");
     let new = tree_of(&repo, &head);
@@ -328,7 +331,9 @@ fn collect_file_diff_same_path_two_hunks_still_collects() {
     std::fs::write(p.join("f.txt"), &base).expect("write");
     stage_paths(p, &["f.txt".into()]).expect("stage");
     create_commit(p, "base", None, false).expect("commit");
-    let edited = base.replace("line2\n", "LINE2\n").replace("line19\n", "LINE19\n");
+    let edited = base
+        .replace("line2\n", "LINE2\n")
+        .replace("line19\n", "LINE19\n");
     std::fs::write(p.join("f.txt"), edited).expect("edit");
 
     let repo = git2::Repository::open(p).expect("open");

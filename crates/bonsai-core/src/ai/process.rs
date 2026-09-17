@@ -40,7 +40,9 @@ pub(super) fn run_process(
     timeout: Duration,
     stdin_payload: Option<&str>,
 ) -> std::io::Result<ProcOutput> {
-    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -116,7 +118,12 @@ pub(super) fn run_process(
     let stdout_buf = out_h.join().unwrap_or_default();
     let stderr_buf = err_h.join().unwrap_or_default();
     let _ = writer.join();
-    Ok(ProcOutput { timed_out: false, success, stdout: stdout_buf, stderr: stderr_buf })
+    Ok(ProcOutput {
+        timed_out: false,
+        success,
+        stdout: stdout_buf,
+        stderr: stderr_buf,
+    })
 }
 
 /// Resolve the binary to spawn: `CLAUDE_BIN_ENV` override (tests) wins,

@@ -50,7 +50,11 @@ fn pool_guard_counts_and_releases() {
         assert!(g2.inflight() >= g1.inflight());
         assert_eq!(g2.max(), crate::obs::phase::POOL_MAX);
     }
-    assert_eq!(crate::obs::phase::pool_inflight_now(), base, "gauge must release");
+    assert_eq!(
+        crate::obs::phase::pool_inflight_now(),
+        base,
+        "gauge must release"
+    );
 }
 
 /// Dev mode off ⇒ the recorder is inactive and `finish` is a silent no-op (no
@@ -130,7 +134,9 @@ fn saturated_pool_reports_inflight_ge_max() {
     let sink = Arc::new(Sink::start(cfg(dir.path())).expect("start"));
     trace::set_active_sink(Some(Arc::clone(&sink)));
 
-    let held: Vec<PoolGuard> = (0..crate::obs::phase::POOL_MAX).map(|_| PoolGuard::enter()).collect();
+    let held: Vec<PoolGuard> = (0..crate::obs::phase::POOL_MAX)
+        .map(|_| PoolGuard::enter())
+        .collect();
     let mine = PoolGuard::enter();
     let mut rec = PhaseRecorder::start(OP_GRAPH_GET);
     rec.note_queue(1, mine.inflight(), mine.max());
@@ -174,7 +180,10 @@ fn near_timeout_reports_deadline_frac() {
         .into_iter()
         .find(|s| s["trace"] == serde_json::Value::String(my_trace.clone()))
         .expect("our span");
-    assert!(s["deadlineFrac"].as_f64().unwrap() >= 0.8, "deadlineFrac ≥ 0.8");
+    assert!(
+        s["deadlineFrac"].as_f64().unwrap() >= 0.8,
+        "deadlineFrac ≥ 0.8"
+    );
 }
 
 /// §12 row-3 acceptance (e): recorder overhead. `#[ignore]` by default so a busy
@@ -206,5 +215,8 @@ fn recorder_overhead_is_small() {
     let per = start.elapsed().as_secs_f64() / iters as f64 * 1e6; // µs
     trace::set_active_sink(None);
     sink.shutdown();
-    assert!(per < 5.0, "recorder overhead {per:.2} µs/op exceeds 5 µs budget");
+    assert!(
+        per < 5.0,
+        "recorder overhead {per:.2} µs/op exceeds 5 µs budget"
+    );
 }

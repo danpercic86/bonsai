@@ -160,7 +160,10 @@ fn resolve_batches(
             Err(e) => {
                 // D11: skip this file, keep the run.
                 events.log(format!("skipping {path}: {e}"));
-                failed.push(AiResolveFailure { path: path.clone(), reason: e.to_string() });
+                failed.push(AiResolveFailure {
+                    path: path.clone(),
+                    reason: e.to_string(),
+                });
             }
         }
     }
@@ -240,8 +243,10 @@ fn resolve_bulk(
     // `needs_review` by the SAME predicate as the single path (they cannot disagree).
     let by_path: std::collections::HashMap<&str, &ConflictSides> =
         sides.iter().map(|s| (s.path.as_str(), s)).collect();
-    let measured: Vec<(String, usize)> =
-        sides.iter().map(|s| (s.path.clone(), part_bytes(s))).collect();
+    let measured: Vec<(String, usize)> = sides
+        .iter()
+        .map(|s| (s.path.clone(), part_bytes(s)))
+        .collect();
     let (batches, oversize) = pack_batches(&measured, cfg.bulk_max_bytes);
     for f in &oversize {
         events.log(format!("skipping {}: {}", f.path, f.reason));
@@ -305,7 +310,9 @@ fn resolve_bulk(
         match parse_bulk_response(&res.text, &requested) {
             Ok(parsed) => {
                 for path in parsed.unknown {
-                    events.log(format!("ignoring a result block for an unrequested path: {path}"));
+                    events.log(format!(
+                        "ignoring a result block for an unrequested path: {path}"
+                    ));
                 }
                 for (path, body) in parsed.proposals {
                     // A proposal with no matching side is impossible by construction
@@ -346,7 +353,10 @@ fn resolve_bulk(
 fn fail_all(paths: &[String], reason: &str) -> Vec<AiResolveFailure> {
     paths
         .iter()
-        .map(|p| AiResolveFailure { path: p.clone(), reason: reason.to_string() })
+        .map(|p| AiResolveFailure {
+            path: p.clone(),
+            reason: reason.to_string(),
+        })
         .collect()
 }
 
@@ -361,7 +371,10 @@ fn run_session(
     ctl: &RunControl,
     events: &RunEvents<'_>,
 ) -> Result<AiResult, AppError> {
-    let opts = RunOpts { system_prompt: Some(system_prompt), ..cfg.opts.clone() };
+    let opts = RunOpts {
+        system_prompt: Some(system_prompt),
+        ..cfg.opts.clone()
+    };
     ai::run_claude_streaming(
         workdir,
         prompt,

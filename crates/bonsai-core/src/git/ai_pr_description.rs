@@ -195,7 +195,10 @@ fn strip_title_marker(line: &str) -> String {
         // ASCII-prefix match then guarantees `prefix.len()` IS a char boundary
         // for the tail slice.
         let pb = prefix.as_bytes();
-        if l.as_bytes().get(..pb.len()).is_some_and(|b| b.eq_ignore_ascii_case(pb)) {
+        if l.as_bytes()
+            .get(..pb.len())
+            .is_some_and(|b| b.eq_ignore_ascii_case(pb))
+        {
             return l[prefix.len()..].trim_start().to_string();
         }
     }
@@ -207,14 +210,14 @@ mod tests {
     use super::*;
     use crate::ai::testutil::env_lock;
 
-
     /// git2-init a scratch repo with identity + autocrlf off (mirrors `ai_changelog`).
     fn init_scratch() -> tempfile::TempDir {
         let dir = crate::testutil::scratch_dir();
         let repo = git2::Repository::init(dir.path()).expect("init repo");
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
         cfg.set_bool("core.autocrlf", false).expect("autocrlf");
         dir
     }
@@ -373,11 +376,17 @@ mod tests {
     fn strip_title_marker_handles_non_ascii_without_panic() {
         // A multibyte char ("ö" = 2 bytes) inside the first 3 bytes ("PR:".len())
         // — a naive `l[..3]` slice would panic on the non-char-boundary cut.
-        assert_eq!(strip_title_marker("coördinate the retries"), "coördinate the retries");
+        assert_eq!(
+            strip_title_marker("coördinate the retries"),
+            "coördinate the retries"
+        );
         // Emoji-prefixed (4-byte char at the front).
         assert_eq!(strip_title_marker("🚀 Ship the thing"), "🚀 Ship the thing");
         // A genuine label prefix is still stripped even with non-ASCII in the tail.
-        assert_eq!(strip_title_marker("PR: coördinate the retries"), "coördinate the retries");
+        assert_eq!(
+            strip_title_marker("PR: coördinate the retries"),
+            "coördinate the retries"
+        );
         // And via the full splitter (end-to-end, no panic).
         let (title, body) = split_title_body("🚀 Ship it\n\nbody");
         assert_eq!(title, "🚀 Ship it");
@@ -400,7 +409,10 @@ mod tests {
     #[test]
     fn empty_range_fails_before_cli() {
         let _g = env_lock();
-        std::env::set_var(ai::CLAUDE_BIN_ENV, "D:/nonexistent/claude-must-not-spawn.exe");
+        std::env::set_var(
+            ai::CLAUDE_BIN_ENV,
+            "D:/nonexistent/claude-must-not-spawn.exe",
+        );
 
         let (dir, _) = pr_fixture();
         let err = generate_pr_description(dir.path(), "feature", "feature", RunOpts::default())
@@ -409,10 +421,15 @@ mod tests {
 
         match err {
             AppError::AiFailed(m) => {
-                assert_eq!(m, "nothing to describe: feature has no commits beyond feature");
+                assert_eq!(
+                    m,
+                    "nothing to describe: feature has no commits beyond feature"
+                );
             }
             other => {
-                panic!("expected AiFailed (pre-CLI), got {other:?} — a spawn would be AiUnavailable")
+                panic!(
+                    "expected AiFailed (pre-CLI), got {other:?} — a spawn would be AiUnavailable"
+                )
             }
         }
     }
@@ -421,7 +438,10 @@ mod tests {
     #[test]
     fn bad_ref_maps_to_git_error() {
         let _g = env_lock();
-        std::env::set_var(ai::CLAUDE_BIN_ENV, "D:/nonexistent/claude-must-not-spawn.exe");
+        std::env::set_var(
+            ai::CLAUDE_BIN_ENV,
+            "D:/nonexistent/claude-must-not-spawn.exe",
+        );
 
         let (dir, _) = pr_fixture();
         let err = generate_pr_description(dir.path(), "no-such-ref", "feature", RunOpts::default())

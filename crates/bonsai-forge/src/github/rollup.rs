@@ -25,7 +25,10 @@ pub(crate) fn normalize_check_run(status: &str, conclusion: Option<&str>) -> Che
     match conclusion {
         Some("success") => CheckRollup::Success,
         Some("neutral") | Some("skipped") => CheckRollup::Neutral,
-        Some("failure") | Some("timed_out") | Some("cancelled") | Some("action_required")
+        Some("failure")
+        | Some("timed_out")
+        | Some("cancelled")
+        | Some("action_required")
         | Some("startup_failure") => CheckRollup::Failure,
         _ => CheckRollup::Error,
     }
@@ -47,7 +50,10 @@ mod tests {
     #[test]
     fn normalize_check_run_maps_status_and_conclusion() {
         assert_eq!(normalize_check_run("queued", None), CheckRollup::Pending);
-        assert_eq!(normalize_check_run("in_progress", None), CheckRollup::Pending);
+        assert_eq!(
+            normalize_check_run("in_progress", None),
+            CheckRollup::Pending
+        );
         assert_eq!(
             normalize_check_run("completed", Some("success")),
             CheckRollup::Success
@@ -60,7 +66,13 @@ mod tests {
             normalize_check_run("completed", Some("skipped")),
             CheckRollup::Neutral
         );
-        for c in ["failure", "timed_out", "cancelled", "action_required", "startup_failure"] {
+        for c in [
+            "failure",
+            "timed_out",
+            "cancelled",
+            "action_required",
+            "startup_failure",
+        ] {
             assert_eq!(
                 normalize_check_run("completed", Some(c)),
                 CheckRollup::Failure,

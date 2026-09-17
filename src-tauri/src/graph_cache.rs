@@ -187,10 +187,7 @@ fn classify(
             Classification::HitRedecorate
         };
     }
-    if hide == &c.hide
-        && c.tips.is_subset(tips)
-        && tips.iter().all(|t| c.node_oids.contains(t))
-    {
+    if hide == &c.hide && c.tips.is_subset(tips) && tips.iter().all(|t| c.node_oids.contains(t)) {
         return Classification::HitRedecorate;
     }
     Classification::Miss
@@ -224,7 +221,10 @@ pub fn stream_graph_cached(
     // `stream_graph` command owns one carrying queue/pool/deadline.
     let mut recorder = PhaseRecorder::start(crate::obs::phase::OP_GRAPH_GET);
     let out = stream_graph_cached_with(&mut repo, cache, perf, filter, &mut recorder, emit);
-    recorder.finish(&crate::obs::TraceMeta::root("backend"), crate::obs::phase::SpanOutcome::Ok);
+    recorder.finish(
+        &crate::obs::TraceMeta::root("backend"),
+        crate::obs::phase::SpanOutcome::Ok,
+    );
     out
 }
 
@@ -241,7 +241,15 @@ pub fn stream_graph_cached_with(
     recorder: &mut PhaseRecorder,
     emit: impl FnMut(GraphChunk) -> bool,
 ) -> Result<(), AppError> {
-    stream_graph_cached_capped(repo, cache, perf, filter, GRAPH_CACHE_MAX_NODES, recorder, emit)
+    stream_graph_cached_capped(
+        repo,
+        cache,
+        perf,
+        filter,
+        GRAPH_CACHE_MAX_NODES,
+        recorder,
+        emit,
+    )
 }
 
 /// PB-1: [`stream_graph_cached_with`] with an explicit store cap so the store
@@ -271,7 +279,9 @@ fn stream_graph_cached_capped(
     let deco_fp = deco_fingerprint(&seed.refs);
     let seed_fp = seed_fingerprint(&tips, seed.head, &hide);
 
-    let mut guard = cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut guard = cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     match classify(guard.as_ref(), filter, &tips, seed.head, &hide, deco_fp) {
         Classification::HitVerbatim => {
             perf.inc_graph_cache_hits();
@@ -403,9 +413,10 @@ fn stream_graph_cached_capped(
             // we skip the store (safe Miss next time) rather than risk a stale
             // hit. The bracket probe is an internal consistency check, not a
             // serving open, so it is not counted.
-            if !too_big && saw_done && seed_unchanged_with(repo, filter, &tips, seed.head, &hide)
-            {
-                let mut guard = cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            if !too_big && saw_done && seed_unchanged_with(repo, filter, &tips, seed.head, &hide) {
+                let mut guard = cache
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 *guard = Some(CachedGraph {
                     filter: filter.clone(),
                     seed_fp,

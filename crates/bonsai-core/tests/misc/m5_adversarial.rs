@@ -9,12 +9,10 @@
 
 use std::path::Path;
 
-use bonsai_core::error::AppError;
-use bonsai_core::git::branches::{
-    checkout_branch, create_branch, delete_branch, list_refs,
-};
 use crate::common;
 use crate::common::{commit_fixed, git, git_ok, init_repo};
+use bonsai_core::error::AppError;
+use bonsai_core::git::branches::{checkout_branch, create_branch, delete_branch, list_refs};
 
 macro_rules! require_git {
     () => {
@@ -90,13 +88,22 @@ fn exotic_valid_branch_names_round_trip() {
         checkout_branch(a.path(), "main").expect("back to main");
         git(b.path(), &["checkout", "main"]);
         delete_branch(a.path(), name).unwrap_or_else(|e| panic!("delete {name:?}: {e:?}"));
-        assert!(git_ok(b.path(), &["branch", "-d", name]), "CLI twin -d {name:?}");
         assert!(
-            !git_ok(a.path(), &["rev-parse", "--verify", &format!("refs/heads/{name}")]),
+            git_ok(b.path(), &["branch", "-d", name]),
+            "CLI twin -d {name:?}"
+        );
+        assert!(
+            !git_ok(
+                a.path(),
+                &["rev-parse", "--verify", &format!("refs/heads/{name}")]
+            ),
             "{name:?} must be gone after delete"
         );
         // Slash-named branches leave empty ref dirs; the repo must stay sane.
-        assert!(git_ok(a.path(), &["fsck", "--strict"]), "fsck after deleting {name:?}");
+        assert!(
+            git_ok(a.path(), &["fsck", "--strict"]),
+            "fsck after deleting {name:?}"
+        );
     }
 }
 
@@ -143,8 +150,14 @@ fn delete_after_true_merge_then_after_advance() {
         "fixture must end in a 2-parent merge commit, got: {merge_parents}"
     );
     delete_branch(a.path(), "topic").expect("branch merged via true merge must be deletable");
-    assert!(!git_ok(a.path(), &["rev-parse", "--verify", "refs/heads/topic"]));
-    assert!(git_ok(b.path(), &["branch", "-d", "topic"]), "CLI twin agrees");
+    assert!(!git_ok(
+        a.path(),
+        &["rev-parse", "--verify", "refs/heads/topic"]
+    ));
+    assert!(
+        git_ok(b.path(), &["branch", "-d", "topic"]),
+        "CLI twin agrees"
+    );
 
     // Part B: same history but topic then ADVANCES one commit past the merge
     // → unmerged again; twin `git branch -d` also refuses.
@@ -159,8 +172,14 @@ fn delete_after_true_merge_then_after_advance() {
     }
     let err = delete_branch(a.path(), "topic").expect_err("advanced topic must be blocked");
     assert!(matches!(err, AppError::UnmergedBranch(_)), "got {err:?}");
-    assert!(git_ok(a.path(), &["rev-parse", "--verify", "refs/heads/topic"]));
-    assert!(!git_ok(b.path(), &["branch", "-d", "topic"]), "CLI twin also refuses");
+    assert!(git_ok(
+        a.path(),
+        &["rev-parse", "--verify", "refs/heads/topic"]
+    ));
+    assert!(
+        !git_ok(b.path(), &["branch", "-d", "topic"]),
+        "CLI twin also refuses"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -194,13 +213,20 @@ fn checkout_with_staged_conflicting_change_blocked() {
     assert!(matches!(err, AppError::CheckoutConflict(_)), "got {err:?}");
 
     // Twin oracle: git checkout also refuses.
-    assert!(!git_ok(b.path(), &["checkout", "side"]), "CLI twin must refuse too");
+    assert!(
+        !git_ok(b.path(), &["checkout", "side"]),
+        "CLI twin must refuse too"
+    );
 
     // Nothing moved: HEAD, worktree, porcelain, and the INDEX are untouched.
     assert_eq!(git(a.path(), &["symbolic-ref", "HEAD"]), head_before);
     assert_eq!(read(a.path(), "file.txt"), "staged local edit\n");
     assert_eq!(common::porcelain_records(a.path()), porcelain_before);
-    assert_eq!(git(a.path(), &["write-tree"]), index_oid_before, "index must be untouched");
+    assert_eq!(
+        git(a.path(), &["write-tree"]),
+        index_oid_before,
+        "index must be untouched"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -289,10 +315,17 @@ fn ahead_behind_after_upstream_force_move() {
     git(path, &["push", "origin", "main"]);
     git(path, &["fetch", "origin"]);
     git(path, &["branch", "--set-upstream-to=origin/main", "main"]);
-    git(path, &["update-ref", "refs/remotes/origin/main", "refs/heads/alt"]);
+    git(
+        path,
+        &["update-ref", "refs/remotes/origin/main", "refs/heads/alt"],
+    );
 
     let snap = list_refs(path).expect("list_refs");
-    let main = snap.local.iter().find(|br| br.name == "main").expect("main");
+    let main = snap
+        .local
+        .iter()
+        .find(|br| br.name == "main")
+        .expect("main");
     assert_eq!(main.upstream.as_deref(), Some("origin/main"));
 
     let counts = git(

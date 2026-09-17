@@ -220,10 +220,7 @@ fn apply_partial(
     // means "file exists but is empty" (an emptied tracked file staged, or a
     // committed empty file restored) — those write an EMPTY BLOB, they are not
     // removals.
-    let head_has_path = head
-        .as_ref()
-        .and_then(|t| t.get_path(rel).ok())
-        .is_some();
+    let head_has_path = head.as_ref().and_then(|t| t.get_path(rel).ok()).is_some();
     if content.is_empty() && should_remove(dir, fd.status, head_has_path) {
         index.remove_path(rel)?;
         index.write()?;

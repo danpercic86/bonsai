@@ -8,7 +8,7 @@ use std::path::Path;
 
 use super::record::{LogLevel, LogPayload, LogRecord, LogSource, RedactionMode};
 use super::writer::{
-    list_log_files, part_name, prune, session_group, utc_stamp, LogWriter, Limits, WriterConfig,
+    list_log_files, part_name, prune, session_group, utc_stamp, Limits, LogWriter, WriterConfig,
 };
 
 /// A fixed-salt redactor so ordinal assertions are reproducible.
@@ -68,7 +68,10 @@ fn first_line_is_a_valid_session_header() {
     w.flush().expect("flush");
     drop(w);
 
-    assert!(name.starts_with("bonsai-") && name.ends_with(".jsonl"), "{name}");
+    assert!(
+        name.starts_with("bonsai-") && name.ends_with(".jsonl"),
+        "{name}"
+    );
     let rows = lines(&dir.path().join(&name));
     assert_eq!(rows[0]["kind"], "session");
     assert_eq!(rows[0]["schema"], 2);
@@ -119,14 +122,19 @@ fn rotation_drops_the_oldest_part_and_keeps_the_newest_records() {
     };
     let mut w = LogWriter::open(cfg(dir.path(), limits), test_redactor()).expect("open");
     for i in 0..200 {
-        w.write_record(rec(&format!("Component{i}"))).expect("write");
+        w.write_record(rec(&format!("Component{i}")))
+            .expect("write");
     }
     w.flush().expect("flush");
     let last_part = w.active_file().to_string();
     drop(w);
 
     let files = list_log_files(dir.path());
-    assert_eq!(files.len(), 3, "the session is bounded to max_parts: {files:?}");
+    assert_eq!(
+        files.len(),
+        3,
+        "the session is bounded to max_parts: {files:?}"
+    );
     assert_eq!(files[2].0, last_part, "the newest part is the live one");
     // The oldest part is gone — a storm session cannot grow without bound.
     assert!(
@@ -160,7 +168,8 @@ fn seq_stays_monotonic_across_a_rotation_boundary() {
     };
     let mut w = LogWriter::open(cfg(dir.path(), limits), test_redactor()).expect("open");
     for i in 0..20 {
-        w.write_record(rec(&format!("Component{i}"))).expect("write");
+        w.write_record(rec(&format!("Component{i}")))
+            .expect("write");
     }
     w.flush().expect("flush");
     drop(w);
@@ -186,7 +195,8 @@ fn pruning_keeps_the_n_most_recent_sessions() {
     }
     // A rotation part belongs to its session and must prune WITH it.
     std::fs::write(
-        dir.path().join("bonsai-2026-08-01T10-00-00-s00000000-1.jsonl"),
+        dir.path()
+            .join("bonsai-2026-08-01T10-00-00-s00000000-1.jsonl"),
         "{}\n",
     )
     .expect("seed part");
@@ -230,7 +240,8 @@ fn pruning_enforces_the_total_size_cap_oldest_first() {
 fn pruning_never_removes_the_only_session() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(
-        dir.path().join("bonsai-2026-08-01T10-00-00-s00000000.jsonl"),
+        dir.path()
+            .join("bonsai-2026-08-01T10-00-00-s00000000.jsonl"),
         vec![b'x'; 10_000],
     )
     .expect("seed");
@@ -329,7 +340,10 @@ fn raw_mode_keeps_names_but_never_credentials() {
     let text = std::fs::read_to_string(dir.path().join(name)).expect("read");
     assert!(!text.contains("hunter2"), "credential reached disk: {text}");
     assert!(text.contains("<redacted:token>"), "{text}");
-    assert!(text.contains("github.com"), "raw mode keeps the host: {text}");
+    assert!(
+        text.contains("github.com"),
+        "raw mode keeps the host: {text}"
+    );
 }
 
 /// §8.4 (increment-7c follow-up): a **persistent** rotation-open block must keep
@@ -420,15 +434,22 @@ fn a_configured_home_is_masked_out_of_every_written_field() {
     c.home_mask = Some("c:/users/jane".to_string());
     let mut w = LogWriter::open(c, test_redactor()).expect("open");
     let name = w.active_file().to_string();
-    w.write_record(rec(r"C:\Users\jane\Repos\bonsai\src\App.tsx")).expect("write");
+    w.write_record(rec(r"C:\Users\jane\Repos\bonsai\src\App.tsx"))
+        .expect("write");
     w.flush().expect("flush");
     drop(w);
 
     let path = dir.path().join(&name);
     let raw = std::fs::read_to_string(&path).expect("read log file");
-    assert!(!raw.contains("jane"), "the account name reached disk: {raw}");
+    assert!(
+        !raw.contains("jane"),
+        "the account name reached disk: {raw}"
+    );
     let rows = lines(&path);
-    assert_eq!(rows[0]["homeMasking"], true, "header must state masking is ON");
+    assert_eq!(
+        rows[0]["homeMasking"], true,
+        "header must state masking is ON"
+    );
     assert_eq!(rows[1]["component"], r"<home>\Repos\bonsai\src\App.tsx");
 }
 
@@ -442,12 +463,16 @@ fn an_unresolved_home_is_stamped_false_in_the_header() {
     c.home_mask = None;
     let mut w = LogWriter::open(c, test_redactor()).expect("open");
     let name = w.active_file().to_string();
-    w.write_record(rec(r"C:\Users\jane\Repos\bonsai")).expect("write");
+    w.write_record(rec(r"C:\Users\jane\Repos\bonsai"))
+        .expect("write");
     w.flush().expect("flush");
     drop(w);
 
     let rows = lines(&dir.path().join(&name));
-    assert_eq!(rows[0]["homeMasking"], false, "absent or true would both mislead");
+    assert_eq!(
+        rows[0]["homeMasking"], false,
+        "absent or true would both mislead"
+    );
     assert_eq!(rows[1]["component"], r"C:\Users\jane\Repos\bonsai");
 }
 
@@ -456,7 +481,11 @@ fn an_unresolved_home_is_stamped_false_in_the_header() {
 #[test]
 fn every_rotation_part_header_carries_the_masking_stamp() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let limits = Limits { part_bytes: 400, flush_bytes: 1, ..Limits::default() };
+    let limits = Limits {
+        part_bytes: 400,
+        flush_bytes: 1,
+        ..Limits::default()
+    };
     let mut c = cfg(dir.path(), limits);
     c.home_mask = Some("c:/users/jane".to_string());
     let mut w = LogWriter::open(c, test_redactor()).expect("open");
@@ -467,7 +496,10 @@ fn every_rotation_part_header_carries_the_masking_stamp() {
     drop(w);
 
     let files = list_log_files(dir.path());
-    assert!(files.len() > 1, "the tiny part cap must have rotated: {files:?}");
+    assert!(
+        files.len() > 1,
+        "the tiny part cap must have rotated: {files:?}"
+    );
     for (name, _) in files {
         let rows = lines(&dir.path().join(&name));
         assert_eq!(rows[0]["homeMasking"], true, "part {name} lost the stamp");

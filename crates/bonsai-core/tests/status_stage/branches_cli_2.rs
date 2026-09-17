@@ -6,10 +6,10 @@
 
 use std::path::Path;
 
-use bonsai_core::error::AppError;
-use bonsai_core::git::branches::{checkout_remote, delete_remote_tracking, list_refs};
 use crate::common;
 use crate::common::{commit_fixed, git, init_repo};
+use bonsai_core::error::AppError;
+use bonsai_core::git::branches::{checkout_remote, delete_remote_tracking, list_refs};
 
 macro_rules! require_git {
     () => {

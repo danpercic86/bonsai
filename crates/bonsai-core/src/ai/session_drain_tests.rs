@@ -45,7 +45,11 @@ fn session<'a>(
     on_event: &'a (dyn Fn(AiRunEvent) + Send + Sync),
     clock: &'a TestClock,
 ) -> ClaudeSession<'a> {
-    ClaudeSession::new(SessionDeps { ctl, on_event, clock })
+    ClaudeSession::new(SessionDeps {
+        ctl,
+        on_event,
+        clock,
+    })
 }
 
 /// [`session`], with the stderr-drain grace widened so a late sender cannot lose
@@ -89,7 +93,9 @@ fn stderr_arriving_after_stdout_eof_still_reaches_the_failure_message() {
     // late no longer matters — the drain waits `PATIENT_GRACE` for it.
     thread::spawn(move || {
         thread::sleep(Duration::from_millis(50));
-        let _ = tx.send(Msg::Err("error: invalid API key · please run /login".to_string()));
+        let _ = tx.send(Msg::Err(
+            "error: invalid API key · please run /login".to_string(),
+        ));
         let _ = tx.send(Msg::ErrEof);
     });
 
@@ -196,7 +202,10 @@ fn a_chatty_stderr_cannot_stall_the_drain() {
     // UNBOUNDED one, so any small constant separates pass from fail, and the
     // larger one also absorbs the scheduling jitter of the producer thread on a
     // saturated box (which is what made 500 ms marginal).
-    assert!(took < STDERR_GRACE_TOTAL + Duration::from_secs(2), "drain took {took:?}");
+    assert!(
+        took < STDERR_GRACE_TOTAL + Duration::from_secs(2),
+        "drain took {took:?}"
+    );
     // Still the load-bearing half: without the drain there is no stderr at all in
     // the message, only the generic wording.
     let m = failure(outcome);

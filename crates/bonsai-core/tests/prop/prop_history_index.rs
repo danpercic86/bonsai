@@ -168,19 +168,33 @@ fn end_to_end_build_and_search() {
         tb.insert(file, blob, 0o100_644).unwrap();
         let tree = repo.find_tree(tb.write().unwrap()).unwrap();
         let parents: Vec<&git2::Commit> = pc.iter().collect();
-        repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &parents).unwrap()
+        repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &parents)
+            .unwrap()
     };
     let c0 = mk(None, "a.txt", "alpha\n", "seed alpha", 1000);
-    let c1 = mk(Some(c0), "b.txt", "beta\n", "wire the zebracorn subsystem", 2000);
+    let c1 = mk(
+        Some(c0),
+        "b.txt",
+        "beta\n",
+        "wire the zebracorn subsystem",
+        2000,
+    );
     let _c2 = mk(Some(c1), "c.txt", "gamma\n", "delta cleanup", 3000);
 
     build_index(dir.path(), idx.path(), |_p| {}).expect("build_index");
     let res = search_history(
         dir.path(),
         idx.path(),
-        &HistoryQuery { text: "zebracorn".into(), top_k: 0 },
+        &HistoryQuery {
+            text: "zebracorn".into(),
+            top_k: 0,
+        },
     )
     .expect("search");
     assert!(!res.hits.is_empty(), "unique term retrieved");
-    assert_eq!(res.hits[0].oid, c1.to_string(), "unique-term commit ranks first");
+    assert_eq!(
+        res.hits[0].oid,
+        c1.to_string(),
+        "unique-term commit ranks first"
+    );
 }

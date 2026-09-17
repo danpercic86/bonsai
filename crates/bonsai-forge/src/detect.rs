@@ -85,9 +85,7 @@ const AZURE_HOST: &str = "dev.azure.com";
 /// True for any Azure DevOps host form (contract §3b): the modern
 /// `dev.azure.com` / `ssh.dev.azure.com`, or a legacy `{org}.visualstudio.com`.
 fn is_azure_host(host: &str) -> bool {
-    host == "dev.azure.com"
-        || host == "ssh.dev.azure.com"
-        || host.ends_with(".visualstudio.com")
+    host == "dev.azure.com" || host == "ssh.dev.azure.com" || host.ends_with(".visualstudio.com")
 }
 
 /// Parse an Azure DevOps remote (already host-lowercased, path `.git`/slash
@@ -103,7 +101,11 @@ fn detect_azure(host: &str, segs: &[&str]) -> Option<ForgeTarget> {
         if segs.len() < 4 || !segs[0].eq_ignore_ascii_case("v3") {
             return None;
         }
-        (segs[1].to_string(), segs[2].to_string(), segs[3].to_string())
+        (
+            segs[1].to_string(),
+            segs[2].to_string(),
+            segs[3].to_string(),
+        )
     } else {
         // The HTTPS forms carry a literal `_git` between project and repo.
         let git_idx = segs.iter().position(|s| *s == "_git")?;
@@ -233,10 +235,7 @@ mod tests {
         }
 
         // scp-like form.
-        for url in [
-            "git@github.com:owner/repo.git",
-            "git@github.com:owner/repo",
-        ] {
+        for url in ["git@github.com:owner/repo.git", "git@github.com:owner/repo"] {
             let got = t(url).unwrap_or_else(|| panic!("expected Some for {url}"));
             assert_eq!(got.kind, ForgeKind::GitHub, "{url}");
             assert_eq!(got.host, "github.com", "{url}");
@@ -278,7 +277,10 @@ mod tests {
         assert!(t("https://github.com/owner").is_none(), "single segment");
         assert!(t("https://github.com/").is_none(), "no path");
         assert!(t("https://github.com").is_none(), "host only");
-        assert!(t("git://github.com/owner/repo.git").is_none(), "git:// scheme");
+        assert!(
+            t("git://github.com/owner/repo.git").is_none(),
+            "git:// scheme"
+        );
         assert!(t("ftp://github.com/owner/repo").is_none(), "ftp scheme");
         assert!(t("").is_none(), "empty");
     }
@@ -385,7 +387,10 @@ mod tests {
         assert_eq!(mixed.repo, "Proj");
 
         // Single segment is still not a repo.
-        assert!(t("https://bitbucket.org/workspace").is_none(), "single segment");
+        assert!(
+            t("https://bitbucket.org/workspace").is_none(),
+            "single segment"
+        );
     }
 
     /// Azure DevOps in every remote form parses into org/project/repo with the
@@ -461,11 +466,17 @@ mod tests {
 
         // Non-Azure providers keep `project: None` (no regression).
         assert_eq!(t("https://github.com/owner/repo").unwrap().project, None);
-        assert_eq!(t("https://gitlab.com/group/sub/proj").unwrap().project, None);
+        assert_eq!(
+            t("https://gitlab.com/group/sub/proj").unwrap().project,
+            None
+        );
         assert_eq!(t("https://bitbucket.org/ws/repo").unwrap().project, None);
 
         // Negative: missing the `_git` marker / too few segments ⇒ None.
-        assert!(t("https://dev.azure.com/org/repo").is_none(), "no _git marker");
+        assert!(
+            t("https://dev.azure.com/org/repo").is_none(),
+            "no _git marker"
+        );
         assert!(
             t("https://dev.azure.com/org/project").is_none(),
             "no _git + no repo"

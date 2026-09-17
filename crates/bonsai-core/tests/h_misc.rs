@@ -14,14 +14,14 @@ mod fixture_config_equivalence;
 
 #[path = "misc/cli_crosscheck.rs"]
 mod cli_crosscheck;
-#[path = "misc/graph_adversarial.rs"]
-mod graph_adversarial;
-#[path = "misc/perf_gate.rs"]
-mod perf_gate;
-#[path = "misc/stream_perf.rs"]
-mod stream_perf;
+#[path = "misc/essentials_cli.rs"]
+mod essentials_cli;
+#[path = "misc/essentials_error_paths.rs"]
+mod essentials_error_paths;
 #[path = "misc/external_spawn.rs"]
 mod external_spawn;
+#[path = "misc/graph_adversarial.rs"]
+mod graph_adversarial;
 #[path = "misc/lifecycle_cli.rs"]
 mod lifecycle_cli;
 #[path = "misc/m3_adversarial.rs"]
@@ -30,7 +30,7 @@ mod m3_adversarial;
 mod m5_adversarial;
 #[path = "misc/m6_adversarial.rs"]
 mod m6_adversarial;
-#[path = "misc/essentials_cli.rs"]
-mod essentials_cli;
-#[path = "misc/essentials_error_paths.rs"]
-mod essentials_error_paths;
+#[path = "misc/perf_gate.rs"]
+mod perf_gate;
+#[path = "misc/stream_perf.rs"]
+mod stream_perf;

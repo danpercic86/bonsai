@@ -12,11 +12,11 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use crate::common;
+use crate::common::{commit_fixed, git, init_repo};
 use bonsai_core::git::stale::{
     delete_branches, find_stale_branches, BranchDeleteStatus, StaleReason,
 };
-use crate::common;
-use crate::common::{commit_fixed, git, init_repo};
 
 macro_rules! require_git {
     () => {
@@ -77,7 +77,10 @@ fn build_fixture() -> tempfile::TempDir {
     git(path, &["add", "-A"]);
     commit_fixed(path, "unique on gone");
     git(path, &["checkout", "main"]);
-    git(path, &["remote", "add", "origin", "https://example.invalid/x.git"]);
+    git(
+        path,
+        &["remote", "add", "origin", "https://example.invalid/x.git"],
+    );
     git(path, &["config", "branch.gone.remote", "origin"]);
     git(path, &["config", "branch.gone.merge", "refs/heads/gone"]);
 
@@ -145,7 +148,10 @@ fn find_stale_matches_git_merged_and_flags_gone() {
 
     let names: BTreeSet<String> = report.branches.iter().map(|b| b.name.clone()).collect();
     // Unmerged (no upstream) is absent.
-    assert!(!names.contains("unmerged"), "unmerged must not be listed: {names:?}");
+    assert!(
+        !names.contains("unmerged"),
+        "unmerged must not be listed: {names:?}"
+    );
     // The base and current branch are never listed.
     assert!(!names.contains("main"), "base never listed");
     assert!(!names.contains("dev"), "current branch never listed");
@@ -186,11 +192,11 @@ fn delete_branches_destructive_path_is_safe() {
     }
 
     let names: Vec<String> = [
-        "merged-a", "merged-b", "gone", // stale → deleted
-        "unmerged",                     // not stale → skipped, survives
-        BOGUS,                          // not a branch → skipped, no error
-        "main",                         // base → skippedBase
-        &current,                       // current → skippedCurrent, survives
+        "merged-a", "merged-b", "gone",     // stale → deleted
+        "unmerged", // not stale → skipped, survives
+        BOGUS,      // not a branch → skipped, no error
+        "main",     // base → skippedBase
+        &current,   // current → skippedCurrent, survives
     ]
     .iter()
     .map(|s| s.to_string())
@@ -224,7 +230,9 @@ fn delete_branches_destructive_path_is_safe() {
 
     // A partial batch never errors: no row is Failed.
     assert!(
-        results.iter().all(|r| r.status != BranchDeleteStatus::Failed),
+        results
+            .iter()
+            .all(|r| r.status != BranchDeleteStatus::Failed),
         "no row should be Failed: {results:?}"
     );
 
@@ -232,7 +240,11 @@ fn delete_branches_destructive_path_is_safe() {
     let after = local_branches(path);
     assert_eq!(
         after,
-        BTreeSet::from(["main".to_string(), "dev".to_string(), "unmerged".to_string()]),
+        BTreeSet::from([
+            "main".to_string(),
+            "dev".to_string(),
+            "unmerged".to_string()
+        ]),
         "only main, dev (current), and unmerged survive"
     );
     // Belt-and-suspenders: the unmerged and current branches definitely survive.
@@ -247,7 +259,10 @@ fn delete_branches_destructive_path_is_safe() {
     // The stale branches are truly gone.
     for gone in ["merged-a", "merged-b", "gone"] {
         assert!(
-            !common::git_ok(path, &["rev-parse", "--verify", &format!("refs/heads/{gone}")]),
+            !common::git_ok(
+                path,
+                &["rev-parse", "--verify", &format!("refs/heads/{gone}")]
+            ),
             "{gone} must be deleted"
         );
     }
@@ -293,12 +308,14 @@ fn delete_branches_rerun_is_idempotent() {
     );
     assert!(
         r2.iter()
-            .all(|r| r.status != BranchDeleteStatus::Deleted && r.status != BranchDeleteStatus::Failed),
+            .all(|r| r.status != BranchDeleteStatus::Deleted
+                && r.status != BranchDeleteStatus::Failed),
         "idempotent re-run performs no deletion and never errors: {r2:?}"
     );
     // Concretely, per §4.3 ordering, absent branches are SkippedNotStale.
     assert!(
-        r2.iter().all(|r| r.status == BranchDeleteStatus::SkippedNotStale),
+        r2.iter()
+            .all(|r| r.status == BranchDeleteStatus::SkippedNotStale),
         "absent branches classify as SkippedNotStale (safe-set check precedes not-found): {r2:?}"
     );
 

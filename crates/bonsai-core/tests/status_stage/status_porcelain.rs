@@ -154,12 +154,7 @@ fn porcelain_tuples(dir: &Path) -> BTreeSet<Tuple> {
         };
 
         if x == '?' && y == '?' {
-            set.insert((
-                "untracked".to_string(),
-                path,
-                None,
-                "untracked".to_string(),
-            ));
+            set.insert(("untracked".to_string(), path, None, "untracked".to_string()));
             continue;
         }
         if is_conflict_code(x, y) {
@@ -464,7 +459,10 @@ fn subdirectory_rename_and_empty_staged_file() {
         .iter()
         .find(|e| e.status == FileStatus::Renamed)
         .expect("staged rename entry");
-    assert_eq!(rename.path, "src/new/module.rs", "forward slashes, new path");
+    assert_eq!(
+        rename.path, "src/new/module.rs",
+        "forward slashes, new path"
+    );
     assert_eq!(rename.orig_path.as_deref(), Some("src/old/module.rs"));
     assert!(snapshot
         .staged

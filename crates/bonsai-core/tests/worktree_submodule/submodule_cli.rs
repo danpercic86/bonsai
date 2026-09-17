@@ -12,10 +12,10 @@
 use std::path::Path;
 use std::process::Command;
 
-use bonsai_core::git::search::SpawnGitRunner;
-use bonsai_core::git::submodule::{add_submodule, deinit_submodule, remove_submodule};
 use crate::common;
 use crate::common::{file_url, git, git_ok, git_raw, init_repo};
+use bonsai_core::git::search::SpawnGitRunner;
+use bonsai_core::git::submodule::{add_submodule, deinit_submodule, remove_submodule};
 
 macro_rules! require_git {
     () => {
@@ -107,17 +107,34 @@ fn oracle_add_deinit_remove_roundtrip() {
     // is not subject to that CLI guard.
     let cli_added = git_ok(
         cli.path(),
-        &["-c", "protocol.file.allow=always", "submodule", "add", &url, path],
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            &url,
+            path,
+        ],
     );
     assert!(cli_added, "real `git submodule add` should succeed");
 
     // .gitmodules + .git/config parity: both register submodule.<path>.url.
-    assert!(ours.path().join(".gitmodules").exists(), "our .gitmodules written");
-    assert_eq!(config_get(ours.path(), &url_key).as_deref(), Some(url.as_str()));
+    assert!(
+        ours.path().join(".gitmodules").exists(),
+        "our .gitmodules written"
+    );
+    assert_eq!(
+        config_get(ours.path(), &url_key).as_deref(),
+        Some(url.as_str())
+    );
     // Staged gitlink parity: both index a 160000 entry at <path> pointing at the
     // SAME upstream HEAD (both cloned the same sub-repo).
     let ours_link = staged_gitlink(ours.path(), path);
-    assert_eq!(ours_link, staged_gitlink(cli.path(), path), "gitlink oid == git");
+    assert_eq!(
+        ours_link,
+        staged_gitlink(cli.path(), path),
+        "gitlink oid == git"
+    );
     assert_eq!(ours_link, sub_head, "gitlink points at the sub-repo HEAD");
 
     // --- deinit: config cleared, worktree emptied, .gitmodules RETAINED ------
@@ -135,7 +152,10 @@ fn oracle_add_deinit_remove_roundtrip() {
         "submodule worktree emptied by deinit",
     );
     // Deinit does NOT touch the index — the gitlink is still staged.
-    assert!(staged_gitlink_opt(ours.path(), path).is_some(), "gitlink kept by deinit");
+    assert!(
+        staged_gitlink_opt(ours.path(), path).is_some(),
+        "gitlink kept by deinit"
+    );
 
     // --- remove: gitlink + .gitmodules entry gone, worktree deleted ---------
     remove_submodule(ours.path(), &SpawnGitRunner, path, true).expect("remove_submodule");

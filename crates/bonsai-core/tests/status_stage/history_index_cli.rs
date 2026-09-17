@@ -10,11 +10,11 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
+use crate::common;
+use crate::common::{commit_fixed, git, init_repo};
 use bonsai_core::git::history_index::{
     self, bm25::Bm25Index, store, tokenize, CommitDoc, HistoryQuery, IndexStore,
 };
-use crate::common;
-use crate::common::{commit_fixed, git, init_repo};
 
 macro_rules! require_git {
     () => {
@@ -36,7 +36,10 @@ fn search(index_dir: &Path, text: &str) -> history_index::HistorySearchResults {
     history_index::search_history(
         Path::new("."),
         index_dir,
-        &HistoryQuery { text: text.to_string(), top_k: 20 },
+        &HistoryQuery {
+            text: text.to_string(),
+            top_k: 20,
+        },
     )
     .expect("search_history")
 }
@@ -74,8 +77,16 @@ fn garbage_store_not_built_search_empty_then_rebuilds() {
     let garbage: Vec<(&str, Vec<u8>)> = vec![
         ("zero_byte", Vec::new()),
         ("truncated", br#"{"schema":1,"docs":{"#.to_vec()),
-        ("random_4mb", (0u32..(4 * 1024 * 1024)).map(|n| (n.wrapping_mul(2654435761) >> 15) as u8).collect()),
-        ("wrong_shape", br#"{"not":"an index","list":[1,2,3]}"#.to_vec()),
+        (
+            "random_4mb",
+            (0u32..(4 * 1024 * 1024))
+                .map(|n| (n.wrapping_mul(2654435761) >> 15) as u8)
+                .collect(),
+        ),
+        (
+            "wrong_shape",
+            br#"{"not":"an index","list":[1,2,3]}"#.to_vec(),
+        ),
         ("schema_plus_one", future_json),
     ];
 
@@ -90,14 +101,23 @@ fn garbage_store_not_built_search_empty_then_rebuilds() {
 
         // Search: empty + stale hint.
         let res = search(&idx, "ghosttoken");
-        assert!(res.hits.is_empty(), "[{label}] no hits from a garbage store");
+        assert!(
+            res.hits.is_empty(),
+            "[{label}] no hits from a garbage store"
+        );
         assert!(res.index_stale, "[{label}] stale hint offered");
 
         // Rebuild: recovers to a real index.
         let after = build(workdir, &idx);
         assert!(after.built, "[{label}] build rebuilds over garbage");
-        assert_eq!(after.indexed_commits, 2, "[{label}] both commits indexed after rebuild");
-        assert!(!search(&idx, "ghosttoken").hits.is_empty(), "[{label}] search works post-rebuild");
+        assert_eq!(
+            after.indexed_commits, 2,
+            "[{label}] both commits indexed after rebuild"
+        );
+        assert!(
+            !search(&idx, "ghosttoken").hits.is_empty(),
+            "[{label}] search works post-rebuild"
+        );
     }
 }
 
@@ -116,26 +136,44 @@ fn history_rewrite_prunes_ghost_docs() {
     assert_eq!(first.indexed_commits, 2);
     // The ghost token is findable and points at the soon-to-be-rewritten commit.
     let before = search(&idx, "ghosttoken");
-    assert_eq!(before.hits.first().map(|h| h.oid.as_str()), Some(old_head.as_str()));
+    assert_eq!(
+        before.hits.first().map(|h| h.oid.as_str()),
+        Some(old_head.as_str())
+    );
 
     // Rewrite HEAD: amend the message, dropping the ghost token.
     common::git_env(
         workdir,
         &["commit", "--amend", "-m", "beta cleaned sprocket"],
-        &[("GIT_AUTHOR_DATE", common::FIXED_DATE), ("GIT_COMMITTER_DATE", common::FIXED_DATE)],
+        &[
+            ("GIT_AUTHOR_DATE", common::FIXED_DATE),
+            ("GIT_COMMITTER_DATE", common::FIXED_DATE),
+        ],
     );
     let new_head = git(workdir, &["rev-parse", "HEAD"]);
     assert_ne!(new_head, old_head, "amend produced a new oid");
 
     let after = build(workdir, &idx);
-    assert_eq!(after.indexed_commits, 2, "still exactly 2 reachable docs (no ghost accretion)");
+    assert_eq!(
+        after.indexed_commits, 2,
+        "still exactly 2 reachable docs (no ghost accretion)"
+    );
     // The dead oid's token is gone; the new message is searchable at the new oid.
-    assert!(search(&idx, "ghosttoken").hits.is_empty(), "ghost token pruned");
+    assert!(
+        search(&idx, "ghosttoken").hits.is_empty(),
+        "ghost token pruned"
+    );
     let cleaned = search(&idx, "cleaned");
-    assert_eq!(cleaned.hits.first().map(|h| h.oid.as_str()), Some(new_head.as_str()),
-        "new message indexed at the new oid");
+    assert_eq!(
+        cleaned.hits.first().map(|h| h.oid.as_str()),
+        Some(new_head.as_str()),
+        "new message indexed at the new oid"
+    );
     // No hit ever references the dead oid.
-    assert!(!cleaned.hits.iter().any(|h| h.oid == old_head), "no dead oid surfaces");
+    assert!(
+        !cleaned.hits.iter().any(|h| h.oid == old_head),
+        "no dead oid surfaces"
+    );
 }
 
 // ------------------------------------------ adversarial VALID store: finite
@@ -153,7 +191,13 @@ fn adversarial_valid_store_is_finite_non_panic() {
     tf.insert("term".to_string(), 2u16);
     docs.insert(
         "a".repeat(40),
-        CommitDoc { summary: "s".into(), author_name: "n".into(), author_ts: 1, dl: 0, tf },
+        CommitDoc {
+            summary: "s".into(),
+            author_name: "n".into(),
+            author_ts: 1,
+            dl: 0,
+            tf,
+        },
     );
     let mut df = HashMap::new();
     df.insert("term".to_string(), 5u32); // df > n (impossible)
@@ -163,13 +207,20 @@ fn adversarial_valid_store_is_finite_non_panic() {
         tip_oids: Vec::new(),
         built_at: None,
         docs,
-        bm25: Bm25Index { n: 1, avgdl: 0.0, df }, // avgdl 0 → NaN denom internally
+        bm25: Bm25Index {
+            n: 1,
+            avgdl: 0.0,
+            df,
+        }, // avgdl 0 → NaN denom internally
     };
     history_index::store::save(&idx, &store).expect("save adversarial store");
 
     // Must not panic; every returned score is finite.
     let res = search(&idx, "term");
-    assert!(res.hits.iter().all(|h| h.score.is_finite()), "no NaN/inf score leaks: {res:?}");
+    assert!(
+        res.hits.iter().all(|h| h.score.is_finite()),
+        "no NaN/inf score leaks: {res:?}"
+    );
 }
 
 // -------------------------------------------------- concurrency: build+search
@@ -189,10 +240,20 @@ fn concurrent_build_and_search_are_safe() {
     let (w2, i2) = (workdir.clone(), idx.clone());
     let b = std::thread::spawn(move || history_index::build_index(&w1, &i1, noprog));
     let s = std::thread::spawn(move || {
-        history_index::search_history(&w2, &i2, &HistoryQuery { text: "widget".into(), top_k: 20 })
+        history_index::search_history(
+            &w2,
+            &i2,
+            &HistoryQuery {
+                text: "widget".into(),
+                top_k: 20,
+            },
+        )
     });
     assert!(b.join().expect("build join").is_ok(), "concurrent build Ok");
-    assert!(s.join().expect("search join").is_ok(), "concurrent search Ok");
+    assert!(
+        s.join().expect("search join").is_ok(),
+        "concurrent search Ok"
+    );
 
     // build || build → store still loadable afterward.
     let (w3, i3) = (workdir.clone(), idx.clone());
@@ -202,7 +263,10 @@ fn concurrent_build_and_search_are_safe() {
     let _ = b1.join().expect("b1");
     let _ = b2.join().expect("b2");
     let st = history_index::index_status(&workdir, &idx).expect("status after two builds");
-    assert!(st.built && st.indexed_commits == 2, "store intact after concurrent builds: {st:?}");
+    assert!(
+        st.built && st.indexed_commits == 2,
+        "store intact after concurrent builds: {st:?}"
+    );
 }
 
 // -------------------------------------------------- tokenizer determinism
@@ -219,7 +283,10 @@ fn tokenize_unicode_cjk_emoji_deterministic() {
     let _ = tokenize("🚀🎉  \t\n");
     let _ = tokenize("");
     // Lowercasing: no uppercase ASCII survives.
-    assert!(a.iter().all(|t| t == &t.to_lowercase()), "tokens lowercased: {a:?}");
+    assert!(
+        a.iter().all(|t| t == &t.to_lowercase()),
+        "tokens lowercased: {a:?}"
+    );
 }
 
 // -------------------------------------------------- unborn / empty repo
@@ -235,7 +302,10 @@ fn unborn_empty_repo_builds_empty_index() {
     let st = build(workdir, &idx);
     assert!(st.built, "empty repo still produces a (built) index");
     assert_eq!(st.indexed_commits, 0, "no commits → 0 docs");
-    assert!(search(&idx, "anything").hits.is_empty(), "empty index → no hits");
+    assert!(
+        search(&idx, "anything").hits.is_empty(),
+        "empty index → no hits"
+    );
 }
 
 // -------------------------------------------------- repo_key unicode/case
@@ -310,6 +380,9 @@ fn index_dir_follows_git_ignorecase_not_build_target() {
         // is case-insensitive (otherwise they are genuinely different repos).
         let shared = history_index::index_dir_for(&base, Path::new("/repos/Bonsai"), ignorecase)
             == history_index::index_dir_for(&base, Path::new("/repos/bonsai"), ignorecase);
-        assert_eq!(shared, ignorecase, "case-variant index dirs (ignorecase={value})");
+        assert_eq!(
+            shared, ignorecase,
+            "case-variant index dirs (ignorecase={value})"
+        );
     }
 }

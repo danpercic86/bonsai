@@ -11,11 +11,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use crate::common;
+use crate::common::{commit_fixed, git};
 use bonsai_core::error::AppError;
 use bonsai_core::git::clone::{clone_repo, init_repo, CloneProgress};
 use bonsai_core::git::repo::read_repo_info;
-use crate::common;
-use crate::common::{commit_fixed, git};
 
 macro_rules! require_git {
     () => {
@@ -134,7 +134,11 @@ fn clone_round_trip_and_progress() {
 
     // §5.2 #1 cross-checks: work HEAD == origin main tip (B); tree clean.
     let origin_tip = rev_parse(&bare, "main");
-    assert_eq!(rev_parse(&work, "HEAD"), origin_tip, "work HEAD != origin main");
+    assert_eq!(
+        rev_parse(&work, "HEAD"),
+        origin_tip,
+        "work HEAD != origin main"
+    );
     assert_eq!(head.oid, origin_tip, "read_repo_info oid != origin tip");
     // Compare the committed BLOB (via git object, line-ending-neutral) rather
     // than the checked-out file, whose EOLs depend on global autocrlf config.
@@ -158,7 +162,10 @@ fn clone_round_trip_and_progress() {
 
     // §5.2 #3: progress callback fired monotonically to a final full total.
     let ticks = ticks.into_inner().expect("into_inner");
-    assert!(!ticks.is_empty(), "progress callback must fire at least once");
+    assert!(
+        !ticks.is_empty(),
+        "progress callback must fire at least once"
+    );
     let mut prev = 0u32;
     for t in &ticks {
         assert!(
@@ -236,9 +243,15 @@ fn clone_into_path_with_spaces_succeeds() {
     let dest = root.join("my cloned repo");
     let out = clone_repo(&url, &dest, |_p| {}).expect("clone into spaced path");
 
-    assert!(out.contains(' '), "returned workdir path must retain the space: {out:?}");
+    assert!(
+        out.contains(' '),
+        "returned workdir path must retain the space: {out:?}"
+    );
     let info = read_repo_info(Path::new(&out)).expect("read_repo_info");
-    assert!(info.is_repo && !info.bare, "spaced-path clone must be a usable repo");
+    assert!(
+        info.is_repo && !info.bare,
+        "spaced-path clone must be a usable repo"
+    );
     assert_eq!(
         rev_parse(&dest, "HEAD"),
         rev_parse(&bare, "main"),
@@ -268,7 +281,10 @@ fn clone_into_non_empty_dir_is_io_error() {
     assert!(matches!(err, AppError::Io(_)), "got {err:?}");
 
     // The existing file survived and no .git was created.
-    assert!(dest.join("keep.txt").exists(), "existing content must survive");
+    assert!(
+        dest.join("keep.txt").exists(),
+        "existing content must survive"
+    );
     assert!(!dest.join(".git").exists(), "no repo must be created");
 }
 
@@ -298,7 +314,10 @@ fn clone_into_empty_dir_succeeds() {
 
     let out = clone_repo(&url, &dest, |_p| {}).expect("clone into empty dir");
     let info = read_repo_info(Path::new(&out)).expect("read_repo_info");
-    assert!(info.is_repo && !info.bare, "empty-dir clone must be a usable repo");
+    assert!(
+        info.is_repo && !info.bare,
+        "empty-dir clone must be a usable repo"
+    );
     assert_eq!(rev_parse(&dest, "HEAD"), rev_parse(&bare, "main"));
 }
 
@@ -355,14 +374,22 @@ fn init_on_existing_repo_is_idempotent() {
 
     let out = init_repo(&existing).expect("init on existing repo");
     // Same repo workdir returned, HEAD unchanged.
-    assert_eq!(rev_parse(&existing, "HEAD"), tip_before, "HEAD must not move");
+    assert_eq!(
+        rev_parse(&existing, "HEAD"),
+        tip_before,
+        "HEAD must not move"
+    );
     let info = read_repo_info(Path::new(&out)).expect("read_repo_info");
     assert!(info.is_repo && !info.bare);
     assert_eq!(info.head.expect("head").oid, tip_before);
 
     // A second init call is likewise idempotent.
     let out2 = init_repo(Path::new(&out)).expect("second init");
-    assert_eq!(rev_parse(&existing, "HEAD"), tip_before, "HEAD still unchanged");
+    assert_eq!(
+        rev_parse(&existing, "HEAD"),
+        tip_before,
+        "HEAD still unchanged"
+    );
     assert_eq!(
         Path::new(&out).canonicalize().ok(),
         Path::new(&out2).canonicalize().ok(),

@@ -26,21 +26,23 @@ pub(crate) use bonsai_core::git::activity::{GitActivityCategory, GitActivityReco
 // (`PrSummary`/`PrState`/`PrStateFilter`/`CommentKind`/`StatusContext`/
 // `CheckRollup`) travel inside these and are never named here. `CommitStatus`
 // is named directly by P63's `forge_commit_statuses`.
-pub(crate) use bonsai_forge::{
-    AccountSource, CommitStatus, CreatePrInput, ForgeAccount, ForgeKind, ForgeRepoContext,
-    ForgeViewer, MergePrInput, PrDetail, PrListQuery, PrPage, ReviewComment,
-};
 pub(crate) use bonsai_core::git::ai_branch_name::{self, BranchNameProposal, BranchNameSource};
 pub(crate) use bonsai_core::git::ai_changelog::{self, AiChangelog, ChangelogRange};
 pub(crate) use bonsai_core::git::ai_commit::{self, CommitMessageProposal};
 pub(crate) use bonsai_core::git::ai_compose::{self, ComposeProposal};
+pub(crate) use bonsai_forge::{
+    AccountSource, CommitStatus, CreatePrInput, ForgeAccount, ForgeKind, ForgeRepoContext,
+    ForgeViewer, MergePrInput, PrDetail, PrListQuery, PrPage, ReviewComment,
+};
 // P54b apply side. Only the names referenced by the command layer are re-exported
 // (avoids an unused-import warning, matching the P54a convention above);
 // `ComposeGroup`/`ComposeCommit` travel nested inside `ComposePlan`/`ComposeApplyResult`.
-pub(crate) use bonsai_core::git::compose_apply::{self, ComposeApplyResult, ComposePlan};
-pub(crate) use bonsai_core::git::ai_explain::{self, AiAnalysis, AiAnalysisMode, AiDiffTarget, AiDigestRange};
+pub(crate) use bonsai_core::git::ai_explain::{
+    self, AiAnalysis, AiAnalysisMode, AiDiffTarget, AiDigestRange,
+};
 pub(crate) use bonsai_core::git::ai_history::{self, HistoryAnswer};
 pub(crate) use bonsai_core::git::ai_line;
+pub(crate) use bonsai_core::git::compose_apply::{self, ComposeApplyResult, ComposePlan};
 // P55a NL→safe-op planner. Only the names the command layer NAMES are re-exported
 // (avoids an unused-import warning under -D warnings, matching the compose_apply
 // convention above); `ProposedOperation`/`SafeOp`/`OperationPreview`/`RefChange`/
@@ -58,34 +60,38 @@ pub(crate) use bonsai_core::git::blame::{self, BlameLine, FileHistoryEntry};
 // (avoids an unused-import warning under -D warnings, matching the compose_apply /
 // ai_operation convention above); `HistoryHit` travels nested inside
 // `HistorySearchResults.hits`.
-pub(crate) use bonsai_core::git::history_index::{
-    self, HistoryQuery, HistorySearchResults, IndexProgress, IndexStatus,
-};
-pub(crate) use bonsai_core::git::reflog::{self, ReflogEntry};
 pub(crate) use bonsai_core::git::branches::{
     self, BranchesSnapshot, CheckoutResult, CreateBranchHereResult, RenameBranchResult,
 };
 pub(crate) use bonsai_core::git::cherrypick::{self, CherrypickOutcome};
-pub(crate) use bonsai_core::git::clone::{clone_repo as clone_repo_core, init_repo as init_repo_core, CloneProgress};
+pub(crate) use bonsai_core::git::clone::{
+    clone_repo as clone_repo_core, init_repo as init_repo_core, CloneProgress,
+};
 pub(crate) use bonsai_core::git::commit::{
     amend_commit_with_activity, create_commit_with_activity, CommitResult,
 };
 pub(crate) use bonsai_core::git::config::{self, ConfigLevelArg, ConfigView};
-pub(crate) use bonsai_core::git::conflict::{self, ConflictEntry, ConflictFile, ConflictResolution};
+pub(crate) use bonsai_core::git::conflict::{
+    self, ConflictEntry, ConflictFile, ConflictResolution,
+};
 pub(crate) use bonsai_core::git::diff::{
     commit_diff, commit_file_diff, compare_head_diff, compare_head_file_diff, workdir_file_diff,
     CommitDiff, CompareDiff, FileDiff,
 };
-pub(crate) use bonsai_core::git::pr_diff::{self, PrDiffStats};
-pub(crate) use bonsai_core::git::image_diff::{self, ImageDiff, ImageDiffRequest};
-pub(crate) use bonsai_core::git::merge::{self, MergeOutcome};
-pub(crate) use bonsai_core::git::opstate::{read_op_state, RepoOpState};
-pub(crate) use bonsai_core::git::rebase::{self, RebaseOutcome};
-pub(crate) use bonsai_core::git::rebase_interactive::{self, RebaseTodoOp};
 pub(crate) use bonsai_core::git::discard::{
     discard_paths as discard_paths_core, discard_paths_force as discard_paths_force_core,
 };
 pub(crate) use bonsai_core::git::discard_partial::discard_partial as discard_partial_core;
+pub(crate) use bonsai_core::git::history_index::{
+    self, HistoryQuery, HistorySearchResults, IndexProgress, IndexStatus,
+};
+pub(crate) use bonsai_core::git::image_diff::{self, ImageDiff, ImageDiffRequest};
+pub(crate) use bonsai_core::git::merge::{self, MergeOutcome};
+pub(crate) use bonsai_core::git::opstate::{read_op_state, RepoOpState};
+pub(crate) use bonsai_core::git::pr_diff::{self, PrDiffStats};
+pub(crate) use bonsai_core::git::rebase::{self, RebaseOutcome};
+pub(crate) use bonsai_core::git::rebase_interactive::{self, RebaseTodoOp};
+pub(crate) use bonsai_core::git::reflog::{self, ReflogEntry};
 pub(crate) use bonsai_core::git::remote::{
     add_remote as add_remote_core, fetch_all_with_activity, force_push_with_lease_with_activity,
     list_remotes as list_remotes_core, pull_ff_with_activity, push_current_with_activity,
@@ -96,32 +102,36 @@ pub(crate) use bonsai_core::git::repo::{read_repo_info, RepoInfo};
 pub(crate) use bonsai_core::git::reset::{reset_branch as reset_branch_core, ResetMode};
 pub(crate) use bonsai_core::git::revert::{self, RevertOutcome};
 pub(crate) use bonsai_core::git::stage::{stage_paths, unstage_paths};
-pub(crate) use bonsai_core::git::stale::{self, BranchDeleteResult, StaleReport};
 pub(crate) use bonsai_core::git::stage_partial::{
     stage_partial as stage_partial_core, unstage_partial as unstage_partial_core, LineSelection,
 };
-pub(crate) use bonsai_core::git::stash::{self, ApplyStashOutcome, CreateStashResult, StashEntry, StashScope};
+pub(crate) use bonsai_core::git::stale::{self, BranchDeleteResult, StaleReport};
+pub(crate) use bonsai_core::git::stash::{
+    self, ApplyStashOutcome, CreateStashResult, StashEntry, StashScope,
+};
 pub(crate) use bonsai_core::git::status::{read_status_with, StatusSnapshot};
 pub(crate) use bonsai_core::git::submodule::{
     self, SubmoduleDeinitOutcome, SubmoduleInfo, SubmoduleRemoveOutcome,
 };
-pub(crate) use bonsai_core::git::worktree::{self, WorktreeInfo};
-pub(crate) use bonsai_core::git::worktree_copy::{self, CopyCandidate, CopyPlanEntry, CopySelection};
-pub(crate) use bonsai_core::git::tags;
 pub(crate) use bonsai_core::git::tag_sync;
+pub(crate) use bonsai_core::git::tags;
+pub(crate) use bonsai_core::git::worktree::{self, WorktreeInfo};
+pub(crate) use bonsai_core::git::worktree_copy::{
+    self, CopyCandidate, CopyPlanEntry, CopySelection,
+};
 // `stream_graph_core` is reached directly by `graph_cache.rs` (the cache-aware
 // stream path), so it is intentionally NOT re-exported here.
-pub(crate) use bonsai_core::graph::{compute_graph_with, GraphChunk, GraphFilter, GraphLayout};
-pub(crate) use bonsai_core::health::{collect_repo_health, RepoHealth};
 pub(crate) use crate::scheduler::{self, JobKind, JobOutcome, SchedulerState};
 pub(crate) use crate::settings::{
     self, clamp_ai_settings, clamp_auto_fetch, clamp_graph_prefs, clamp_health_refresh,
-    clamp_pane_widths, AiAutonomy, AiConflictTools, AutoFetch, DevSettings, GraphColorMode, GraphPrefs, GraphRefFilter, GraphSeason, GraphStyle,
-    HealthRefresh, IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction,
-    RecentRepo, ThemeChoice,
+    clamp_pane_widths, AiAutonomy, AiConflictTools, AutoFetch, DevSettings, GraphColorMode,
+    GraphPrefs, GraphRefFilter, GraphSeason, GraphStyle, HealthRefresh, IdentityProfile, ListView,
+    PaneWidths, PanelDensity, PrimaryCommitAction, RecentRepo, ThemeChoice,
 };
 pub(crate) use crate::state::{AppState, RepoEntry};
 pub(crate) use crate::watcher::spawn_watcher;
+pub(crate) use bonsai_core::graph::{compute_graph_with, GraphChunk, GraphFilter, GraphLayout};
+pub(crate) use bonsai_core::health::{collect_repo_health, RepoHealth};
 
 /// App-data base dir (`%APPDATA%/com.bonsai.app` on Windows), where the history
 /// index is persisted keyed by repo (P57 §4). Mirrors `settings::settings_file`
@@ -157,7 +167,13 @@ pub(crate) fn repo_path(state: &AppState, repo_id: &str) -> Result<std::path::Pa
 pub(crate) fn repo_path_and_graph_cache(
     state: &AppState,
     repo_id: &str,
-) -> Result<(std::path::PathBuf, std::sync::Arc<crate::graph_cache::GraphCache>), AppError> {
+) -> Result<
+    (
+        std::path::PathBuf,
+        std::sync::Arc<crate::graph_cache::GraphCache>,
+    ),
+    AppError,
+> {
     let repos = state
         .repos
         .lock()

@@ -16,12 +16,16 @@ fn linear_repo_with_bug(n: usize, bug_at: usize) -> (tempfile::TempDir, Vec<Stri
     // Pins the initial branch to "main" via `initial_head` rather than
     // relying on `init.defaultBranch` — libgit2 falls back to "master"
     // when that config is unset, which `reset_restores_original_branch` assumes.
-    let repo = git2::Repository::init_opts(dir.path(), git2::RepositoryInitOptions::new().initial_head("main"))
-        .expect("init");
+    let repo = git2::Repository::init_opts(
+        dir.path(),
+        git2::RepositoryInitOptions::new().initial_head("main"),
+    )
+    .expect("init");
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
     }
     let s = sig();
     let mut oids = Vec::new();
@@ -80,7 +84,10 @@ fn bisect_outcome_wire_shape_is_camel_case() {
         first_bad: "b".repeat(40),
     })
     .expect("json");
-    assert_eq!(v, serde_json::json!({ "kind": "found", "firstBad": "b".repeat(40) }));
+    assert_eq!(
+        v,
+        serde_json::json!({ "kind": "found", "firstBad": "b".repeat(40) })
+    );
 
     let v = serde_json::to_value(BisectOutcome::CannotDetermine {
         skipped: vec!["c".repeat(40)],
@@ -175,27 +182,31 @@ fn start_rejects_non_ancestor_good() {
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
     }
     let s = sig();
     // main: one commit.
     std::fs::write(dir.path().join("a.txt"), "a\n").expect("write");
     let mut idx = repo.index().expect("index");
-    idx.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None).expect("add");
+    idx.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
+        .expect("add");
     idx.write().expect("write");
     let tree = repo.find_tree(idx.write_tree().expect("t")).expect("ft");
-    let bad = repo.commit(Some("HEAD"), &s, &s, "bad", &tree, &[]).expect("c");
+    let bad = repo
+        .commit(Some("HEAD"), &s, &s, "bad", &tree, &[])
+        .expect("c");
     // orphan branch with a disjoint root commit.
     std::fs::write(dir.path().join("b.txt"), "b\n").expect("write");
     let mut idx2 = repo.index().expect("index");
-    idx2.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None).expect("add");
+    idx2.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
+        .expect("add");
     idx2.write().expect("write");
     let tree2 = repo.find_tree(idx2.write_tree().expect("t")).expect("ft");
     let good = repo
         .commit(Some("refs/heads/other"), &s, &s, "other", &tree2, &[])
         .expect("c2");
-    match start_bisect(dir.path(), &bad.to_string(), &[good.to_string()])
-        .expect_err("non-ancestor")
+    match start_bisect(dir.path(), &bad.to_string(), &[good.to_string()]).expect_err("non-ancestor")
     {
         AppError::Git(m) => assert!(m.contains("not an ancestor"), "got: {m}"),
         other => panic!("expected Git, got {other:?}"),
@@ -228,8 +239,7 @@ fn linear_bisect_converges() {
     let (dir, oids) = linear_repo_with_bug(n, bug_at);
     let repo = git2::Repository::open(dir.path()).expect("open");
 
-    let mut outcome =
-        start_bisect(dir.path(), &oids[n - 1], &[oids[0].clone()]).expect("start");
+    let mut outcome = start_bisect(dir.path(), &oids[n - 1], &[oids[0].clone()]).expect("start");
     let mut guard = 0;
     loop {
         guard += 1;
@@ -240,12 +250,20 @@ fn linear_bisect_converges() {
                 outcome = bisect_mark(dir.path(), !bad).expect("mark");
             }
             BisectOutcome::Found { first_bad } => {
-                assert_eq!(first_bad, oids[bug_at], "culprit is the bug-introducing commit");
+                assert_eq!(
+                    first_bad, oids[bug_at],
+                    "culprit is the bug-introducing commit"
+                );
                 // HEAD is detached at the culprit.
                 let re = git2::Repository::open(dir.path()).expect("open");
                 assert!(re.head_detached().expect("detached"));
                 assert_eq!(
-                    re.head().expect("head").peel_to_commit().expect("c").id().to_string(),
+                    re.head()
+                        .expect("head")
+                        .peel_to_commit()
+                        .expect("c")
+                        .id()
+                        .to_string(),
                     oids[bug_at]
                 );
                 break;
@@ -300,7 +318,11 @@ fn mark_and_skip_reject_when_head_moved_off_midpoint() {
 
     // Move HEAD to a DIFFERENT (clean) commit externally via a clean checkout
     // so `ensure_clean` still passes but HEAD != state.current.
-    let other = if midpoint == oids[0] { &oids[7] } else { &oids[0] };
+    let other = if midpoint == oids[0] {
+        &oids[7]
+    } else {
+        &oids[0]
+    };
     checkout_commit(&repo, git2::Oid::from_str(other).expect("oid")).expect("checkout");
 
     match bisect_mark(dir.path(), false).expect_err("head moved") {
@@ -324,7 +346,13 @@ fn mark_and_skip_reject_when_head_moved_off_midpoint() {
 fn reset_restores_original_branch() {
     let (dir, oids) = linear_repo_with_bug(6, 3);
     let repo = git2::Repository::open(dir.path()).expect("open");
-    let orig_tip = repo.head().expect("head").peel_to_commit().expect("c").id().to_string();
+    let orig_tip = repo
+        .head()
+        .expect("head")
+        .peel_to_commit()
+        .expect("c")
+        .id()
+        .to_string();
 
     start_bisect(dir.path(), &oids[5], &[oids[0].clone()]).expect("start");
     // Now HEAD is detached on some midpoint.
@@ -336,7 +364,12 @@ fn reset_restores_original_branch() {
     assert!(!re.head_detached().expect("detached"), "HEAD re-attached");
     assert_eq!(re.head().expect("head").shorthand().ok(), Some("main"));
     assert_eq!(
-        re.head().expect("head").peel_to_commit().expect("c").id().to_string(),
+        re.head()
+            .expect("head")
+            .peel_to_commit()
+            .expect("c")
+            .id()
+            .to_string(),
         orig_tip
     );
 }
@@ -393,7 +426,10 @@ fn active_bisect_blocks_user_mutations() {
     );
 
     // The bisect state is intact — the refusals mutated nothing.
-    assert!(bisect_in_progress(&repo), "bisect still active after refusals");
+    assert!(
+        bisect_in_progress(&repo),
+        "bisect still active after refusals"
+    );
 }
 
 /// Audit 2026-08-07 §3.1: the restore path shares the untracked-clobber
@@ -435,7 +471,12 @@ fn reset_refuses_untracked_collision_and_stays_retryable() {
     let re = git2::Repository::open(d).expect("open");
     assert!(!bisect_in_progress(&re));
     assert_eq!(
-        re.head().expect("head").peel_to_commit().expect("c").id().to_string(),
+        re.head()
+            .expect("head")
+            .peel_to_commit()
+            .expect("c")
+            .id()
+            .to_string(),
         oids[5]
     );
 }
@@ -453,9 +494,17 @@ fn reset_restores_detached_start() {
 
     let re = git2::Repository::open(dir.path()).expect("open");
     assert!(!bisect_in_progress(&re));
-    assert!(re.head_detached().expect("detached"), "detached start stays detached");
+    assert!(
+        re.head_detached().expect("detached"),
+        "detached start stays detached"
+    );
     assert_eq!(
-        re.head().expect("head").peel_to_commit().expect("c").id().to_string(),
+        re.head()
+            .expect("head")
+            .peel_to_commit()
+            .expect("c")
+            .id()
+            .to_string(),
         oids[5]
     );
 }

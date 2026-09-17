@@ -68,7 +68,11 @@ fn init_repo_config_is_readable_by_both_git_and_libgit2() {
     let repo = git2::Repository::open(root).expect("open fixture repo");
     let cfg = repo.config().expect("repo config");
     for (key, value) in common::FIXTURE_CONFIG {
-        assert_eq!(&cfg.get_string(key).expect("get_string"), value, "libgit2 read of {key}");
+        assert_eq!(
+            &cfg.get_string(key).expect("get_string"),
+            value,
+            "libgit2 read of {key}"
+        );
     }
 
     // The identity actually resolves into a usable signature (this is the

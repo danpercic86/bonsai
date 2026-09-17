@@ -119,7 +119,9 @@ pub(crate) fn spawn_exec_streaming(
             Some(s) => s
                 .write_all(bytes)
                 .map_err(|e| AppError::Git(format!("failed to write `git {subcmd}` stdin: {e}"))),
-            None => Err(AppError::Git(format!("failed to open `git {subcmd}` stdin"))),
+            None => Err(AppError::Git(format!(
+                "failed to open `git {subcmd}` stdin"
+            ))),
         };
         drop(sh);
         if let Err(e) = write_res {
@@ -142,7 +144,13 @@ pub(crate) fn spawn_exec_streaming(
     let stdout_tx = tx.clone();
     let stdout_join = std::thread::spawn(move || -> std::io::Result<(Vec<u8>, bool)> {
         match stdout_pipe {
-            Some(p) => read_streaming(p, GitStream::Stdout, &stdout_counter, MAX_OUTPUT_BYTES, &stdout_tx),
+            Some(p) => read_streaming(
+                p,
+                GitStream::Stdout,
+                &stdout_counter,
+                MAX_OUTPUT_BYTES,
+                &stdout_tx,
+            ),
             None => Ok((Vec::new(), false)),
         }
     });
@@ -150,7 +158,13 @@ pub(crate) fn spawn_exec_streaming(
     let stderr_tx = tx.clone();
     let stderr_join = std::thread::spawn(move || -> std::io::Result<(Vec<u8>, bool)> {
         match stderr_pipe {
-            Some(p) => read_streaming(p, GitStream::Stderr, &stderr_counter, MAX_OUTPUT_BYTES, &stderr_tx),
+            Some(p) => read_streaming(
+                p,
+                GitStream::Stderr,
+                &stderr_counter,
+                MAX_OUTPUT_BYTES,
+                &stderr_tx,
+            ),
             None => Ok((Vec::new(), false)),
         }
     });
@@ -212,7 +226,10 @@ mod tests {
     struct CollectSink(Mutex<Vec<(GitStream, String)>>);
     impl LineSink for CollectSink {
         fn line(&self, stream: GitStream, line: &str) {
-            self.0.lock().expect("lock").push((stream, line.to_string()));
+            self.0
+                .lock()
+                .expect("lock")
+                .push((stream, line.to_string()));
         }
     }
 
@@ -231,13 +248,7 @@ mod tests {
         // so it yields three complete lines through the splitter.
         let sink = CollectSink::default();
         let streamed = SpawnGitExec
-            .exec_streaming(
-                &["stripspace"],
-                cwd,
-                Some(script.as_bytes()),
-                &[],
-                &sink,
-            )
+            .exec_streaming(&["stripspace"], cwd, Some(script.as_bytes()), &[], &sink)
             .expect("exec_streaming");
         let buffered = SpawnGitExec
             .exec(&["stripspace"], cwd, Some(script.as_bytes()), &[])
@@ -246,8 +257,14 @@ mod tests {
         // Byte-identical GitOutput.
         assert_eq!(streamed.success, buffered.success);
         assert_eq!(streamed.code, buffered.code);
-        assert_eq!(streamed.stdout, buffered.stdout, "stdout must be byte-identical");
-        assert_eq!(streamed.stderr, buffered.stderr, "stderr must be byte-identical");
+        assert_eq!(
+            streamed.stdout, buffered.stdout,
+            "stdout must be byte-identical"
+        );
+        assert_eq!(
+            streamed.stderr, buffered.stderr,
+            "stderr must be byte-identical"
+        );
 
         // Per-line sink delivery on stdout (stripspace emits trailing newline, so
         // three complete lines).
@@ -291,16 +308,39 @@ mod tests {
         for i in 0..n {
             script.push_str(&format!("ln{i}\n"));
         }
-        let sink = SlowSink { seen: Mutex::new(0) };
+        let sink = SlowSink {
+            seen: Mutex::new(0),
+        };
         let streamed = SpawnGitExec
-            .exec_streaming(&["stripspace"], Path::new("."), Some(script.as_bytes()), &[], &sink)
+            .exec_streaming(
+                &["stripspace"],
+                Path::new("."),
+                Some(script.as_bytes()),
+                &[],
+                &sink,
+            )
             .expect("exec_streaming");
         let buffered = SpawnGitExec
-            .exec(&["stripspace"], Path::new("."), Some(script.as_bytes()), &[])
+            .exec(
+                &["stripspace"],
+                Path::new("."),
+                Some(script.as_bytes()),
+                &[],
+            )
             .expect("exec");
-        assert_eq!(streamed.stdout, buffered.stdout, "byte-identical under backpressure");
-        assert_eq!(*sink.seen.lock().expect("lock"), n, "every line drained to the slow sink");
-        assert!(streamed.stdout.contains(&format!("ln{}", n - 1)), "last line present");
+        assert_eq!(
+            streamed.stdout, buffered.stdout,
+            "byte-identical under backpressure"
+        );
+        assert_eq!(
+            *sink.seen.lock().expect("lock"),
+            n,
+            "every line drained to the slow sink"
+        );
+        assert!(
+            streamed.stdout.contains(&format!("ln{}", n - 1)),
+            "last line present"
+        );
     }
 
     /// The DEFAULT trait impl (a fake that only impls `exec`) delegates to `exec`
@@ -329,6 +369,9 @@ mod tests {
             .exec_streaming(&["anything"], Path::new("."), None, &[], &sink)
             .expect("default exec_streaming");
         assert_eq!(out.stdout, "buffered-only\n");
-        assert!(sink.0.lock().expect("lock").is_empty(), "default impl must not stream lines");
+        assert!(
+            sink.0.lock().expect("lock").is_empty(),
+            "default impl must not stream lines"
+        );
     }
 }

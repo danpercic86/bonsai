@@ -6,8 +6,8 @@
 //! `super::*` still reaches the private items without widening their
 //! visibility (the `external_tests` / `session_drain_tests` convention).
 
-use super::*;
 use super::tests::settings_path;
+use super::*;
 
 /// Save/load a `Settings` with non-default AI fields round-trips exactly
 /// (P13 §4.1). Also asserts the raw JSON uses the documented camelCase keys

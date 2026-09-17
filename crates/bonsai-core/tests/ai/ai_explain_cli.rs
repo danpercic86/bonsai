@@ -16,11 +16,11 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{commit_fixed, git, init_repo};
 use bonsai_core::ai::RunOpts;
 use bonsai_core::error::AppError;
 use bonsai_core::git::ai_explain::{analyze_diff, AiAnalysisMode, AiDiffTarget};
-use crate::common;
-use crate::common::{commit_fixed, git, init_repo};
 
 const STUB_BODY: &str = "MERGED_BODY_OK";
 const STUB_MODE_ENV: &str = "BONSAI_STUB_MODE";
@@ -84,7 +84,10 @@ fn commit_target_explain_and_review_both_return_stub_body() {
             RunOpts::default(),
         )
         .unwrap_or_else(|e| panic!("Commit target ({mode:?}) should succeed: {e:?}"));
-        assert_eq!(analysis.text, STUB_BODY, "mode {mode:?}: text must be the stub body");
+        assert_eq!(
+            analysis.text, STUB_BODY,
+            "mode {mode:?}: text must be the stub body"
+        );
         assert_eq!(analysis.cost_usd, Some(0.012), "mode {mode:?}: cost parsed");
     }
 }
@@ -170,8 +173,13 @@ fn worktree_target_reviews_and_empty_fails() {
     // Clean worktree → AiFailed BEFORE any CLI call (`nonzero` would surface
     // loudly if the stub actually ran).
     set_stub_mode("nonzero");
-    let err = analyze_diff(d, AiDiffTarget::Worktree, AiAnalysisMode::Review, RunOpts::default())
-        .expect_err("clean worktree must be AiFailed");
+    let err = analyze_diff(
+        d,
+        AiDiffTarget::Worktree,
+        AiAnalysisMode::Review,
+        RunOpts::default(),
+    )
+    .expect_err("clean worktree must be AiFailed");
     match err {
         AppError::AiFailed(m) => assert_eq!(m, "no changes to analyze", "got: {m}"),
         other => panic!("expected AiFailed('no changes to analyze'), got {other:?}"),
@@ -184,18 +192,30 @@ fn worktree_target_reviews_and_empty_fails() {
     write(d, "untracked.txt", "brand new\n");
 
     set_stub_mode("success");
-    let analysis =
-        analyze_diff(d, AiDiffTarget::Worktree, AiAnalysisMode::Review, RunOpts::default())
-            .unwrap_or_else(|e| panic!("Worktree review should succeed: {e:?}"));
-    assert_eq!(analysis.text, STUB_BODY, "Worktree review returns the stub body");
+    let analysis = analyze_diff(
+        d,
+        AiDiffTarget::Worktree,
+        AiAnalysisMode::Review,
+        RunOpts::default(),
+    )
+    .unwrap_or_else(|e| panic!("Worktree review should succeed: {e:?}"));
+    assert_eq!(
+        analysis.text, STUB_BODY,
+        "Worktree review returns the stub body"
+    );
 
     // The assembled payload carries all three change kinds.
     let dump = d.join("dump.txt");
     std::env::set_var(CLAUDE_BIN_ENV, stub_path());
     std::env::set_var(STUB_MODE_ENV, "dump_stdin");
     std::env::set_var(STDIN_DUMP_ENV, &dump);
-    analyze_diff(d, AiDiffTarget::Worktree, AiAnalysisMode::Review, RunOpts::default())
-        .expect("Worktree dump → Ok");
+    analyze_diff(
+        d,
+        AiDiffTarget::Worktree,
+        AiAnalysisMode::Review,
+        RunOpts::default(),
+    )
+    .expect("Worktree dump → Ok");
     std::env::remove_var(STDIN_DUMP_ENV);
     let payload = std::fs::read_to_string(&dump).expect("stub wrote stdin dump");
     for needle in ["+TWO_STAGED", "+THREE_UNSTAGED", "+brand new"] {
@@ -239,7 +259,10 @@ fn branch_target_reviews_via_stub() {
         RunOpts::default(),
     )
     .unwrap_or_else(|e| panic!("Branch review should succeed: {e:?}"));
-    assert_eq!(analysis.text, STUB_BODY, "Branch review returns the stub body");
+    assert_eq!(
+        analysis.text, STUB_BODY,
+        "Branch review returns the stub body"
+    );
 
     // Payload carries the merge-base header + the branch-only addition.
     let dump = d.join("dump.txt");

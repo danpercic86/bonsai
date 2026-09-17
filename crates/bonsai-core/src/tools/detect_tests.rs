@@ -44,8 +44,13 @@ fn windows_on_path_rung_wins_over_the_later_well_known_rung() {
         // Rung 2 would ALSO hit — the assertion is that rung 1 short-circuits.
         .var("LOCALAPPDATA", r"C:\Users\ada\AppData\Local")
         .file(r"C:\Users\ada\AppData\Local\Microsoft\WindowsApps\wt.exe");
-    let res = probe(&env, ToolKind::Terminal, "windows-terminal", TargetOs::Windows)
-        .expect("wt resolves on PATH");
+    let res = probe(
+        &env,
+        ToolKind::Terminal,
+        "windows-terminal",
+        TargetOs::Windows,
+    )
+    .expect("wt resolves on PATH");
     assert_eq!(res.source, ToolSource::Path);
     assert_eq!(res.program, r"C:\bin\wt.exe");
     assert_eq!(res.bundle, None);
@@ -56,8 +61,13 @@ fn windows_well_known_folder_rung_joins_the_env_var_host_independently() {
     let env = FakeToolEnv::new()
         .var("LOCALAPPDATA", r"C:\Users\ada\AppData\Local")
         .file(r"C:\Users\ada\AppData\Local\Microsoft\WindowsApps\wt.exe");
-    let res = probe(&env, ToolKind::Terminal, "windows-terminal", TargetOs::Windows)
-        .expect("wt resolves under LOCALAPPDATA");
+    let res = probe(
+        &env,
+        ToolKind::Terminal,
+        "windows-terminal",
+        TargetOs::Windows,
+    )
+    .expect("wt resolves under LOCALAPPDATA");
     assert_eq!(res.source, ToolSource::WellKnown);
     // Backslash-joined regardless of the host separator, so the Windows ladder
     // behaves identically under a Linux/macOS run.
@@ -117,7 +127,9 @@ fn a_windows_path_hit_without_an_extension_is_not_launchable_so_the_ladder_falls
     assert_eq!(res.program, real);
     // The rule is Windows-only: on unix an extension-less program is the norm
     // (`/usr/bin/code`), and the execute bit is the gate instead.
-    let unix = FakeToolEnv::new().on_path("code", "/usr/bin/code").exe("/usr/bin/code");
+    let unix = FakeToolEnv::new()
+        .on_path("code", "/usr/bin/code")
+        .exe("/usr/bin/code");
     let res = probe(&unix, ToolKind::Editor, "vscode", TargetOs::Linux).expect("PATH hit");
     assert_eq!(res.program, "/usr/bin/code");
 }
@@ -186,7 +198,10 @@ fn a_directory_that_is_not_a_real_bundle_is_not_detected() {
     // directory merely NAMED `*.app`. The host-level half of this is
     // `host_is_bundle_requires_an_info_plist` below.
     let env = FakeToolEnv::new().file("/Applications/Warp.app");
-    assert_eq!(probe(&env, ToolKind::Terminal, "warp", TargetOs::MacOs), None);
+    assert_eq!(
+        probe(&env, ToolKind::Terminal, "warp", TargetOs::MacOs),
+        None
+    );
 }
 
 #[test]
@@ -282,7 +297,12 @@ fn every_rung_degrades_under_a_failing_env() {
     // OnPath: PATH resolves, but the file does not exist.
     let ghost_on_path = FakeToolEnv::new().on_path("konsole", "/usr/bin/konsole");
     assert_eq!(
-        probe(&ghost_on_path, ToolKind::Terminal, "konsole", TargetOs::Linux),
+        probe(
+            &ghost_on_path,
+            ToolKind::Terminal,
+            "konsole",
+            TargetOs::Linux
+        ),
         None
     );
     // WinFolder: absent var, then an EMPTY var (which would otherwise join into
@@ -298,7 +318,12 @@ fn every_rung_degrades_under_a_failing_env() {
     );
     let empty_var = FakeToolEnv::new().var("ProgramFiles", "");
     assert_eq!(
-        probe(&empty_var, ToolKind::Terminal, "git-bash", TargetOs::Windows),
+        probe(
+            &empty_var,
+            ToolKind::Terminal,
+            "git-bash",
+            TargetOs::Windows
+        ),
         None
     );
     // AppPaths: absent key, and unparseable/garbage data.
@@ -418,8 +443,7 @@ fn host_is_bundle_requires_an_info_plist() {
         !env.is_bundle(&app),
         "a directory without Contents/Info.plist is not a bundle"
     );
-    std::fs::write(app.join("Contents").join("Info.plist"), b"<plist/>")
-        .expect("write Info.plist");
+    std::fs::write(app.join("Contents").join("Info.plist"), b"<plist/>").expect("write Info.plist");
     assert!(env.is_bundle(&app));
     // A plain FILE named `*.app` is not a bundle either.
     let file_app = scratch.path().join("Fake.app");

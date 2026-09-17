@@ -47,14 +47,26 @@ fn batch_wire_shape_is_camel_case() {
 #[test]
 fn single_system_prompt_extends_the_p13_prompt_on_one_line() {
     let p = single_system_prompt();
-    assert!(p.starts_with(SYSTEM_PROMPT), "the P13 prompt must be the prefix: {p}");
+    assert!(
+        p.starts_with(SYSTEM_PROMPT),
+        "the P13 prompt must be the prefix: {p}"
+    );
     assert!(p.ends_with(SENTINEL_CLAUSE));
     assert!(p.contains("Read, Grep, Glob"));
-    assert!(!p.contains('\n') && !p.contains('\r'), "prompt must be single-line");
+    assert!(
+        !p.contains('\n') && !p.contains('\r'),
+        "prompt must be single-line"
+    );
     // L6 (security audit 2026-08-18): the bulk test asserts the literal sentinel
     // TOKEN, this one only asserted the clause constant — so a reworded clause that
     // dropped the token would have kept this test green while `sentinel_question`
     // stopped matching, i.e. mid-run questions would silently become proposals.
-    assert!(p.contains(crate::ai::SENTINEL), "the sentinel token must reach the model: {p}");
-    assert!(p.contains("BONSAI_NEEDS_INPUT:"), "spelled out, so a renamed const is visible here");
+    assert!(
+        p.contains(crate::ai::SENTINEL),
+        "the sentinel token must reach the model: {p}"
+    );
+    assert!(
+        p.contains("BONSAI_NEEDS_INPUT:"),
+        "spelled out, so a renamed const is visible here"
+    );
 }

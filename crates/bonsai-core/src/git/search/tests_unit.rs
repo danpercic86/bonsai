@@ -100,7 +100,10 @@ fn build_log_args_metachars_stay_one_token() {
 
 #[test]
 fn effective_cap_clamps_and_defaults() {
-    assert_eq!(effective_cap(&q(SearchField::Message, "x")), MAX_SEARCH_RESULTS);
+    assert_eq!(
+        effective_cap(&q(SearchField::Message, "x")),
+        MAX_SEARCH_RESULTS
+    );
     let small = SearchQuery {
         max_results: 50,
         ..q(SearchField::Message, "x")
@@ -159,8 +162,12 @@ fn parse_log_output_truncates_at_cap_plus_one() {
 #[test]
 fn empty_text_returns_ok_without_running_git() {
     // Whitespace text short-circuits BEFORE any subprocess (PanicRunner proves it).
-    let out = search_commits(Path::new("."), &PanicRunner, &q(SearchField::Content, "   "))
-        .expect("empty ⇒ Ok");
+    let out = search_commits(
+        Path::new("."),
+        &PanicRunner,
+        &q(SearchField::Content, "   "),
+    )
+    .expect("empty ⇒ Ok");
     assert!(out.matches.is_empty());
     assert!(!out.truncated);
 }

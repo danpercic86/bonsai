@@ -4,14 +4,14 @@ use crate::ai::testutil::env_lock;
 use crate::git::commit::create_commit;
 use crate::git::stage::stage_paths;
 
-
 /// git2-init a scratch repo with identity + autocrlf off (mirrors `ai_explain`).
 fn init_scratch() -> tempfile::TempDir {
     let dir = crate::testutil::scratch_dir();
     let repo = git2::Repository::init(dir.path()).expect("init repo");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     dir
 }
@@ -39,7 +39,10 @@ fn parse_unparseable_degrades_to_unassigned() {
     let changed = v(&["a.rs", "b.rs", "c.rs"]);
     let parsed = parse_compose_response("I can't group these, sorry - no JSON here.", &changed);
     assert!(parsed.groups.is_empty(), "no groups on unparseable output");
-    assert_eq!(parsed.unassigned, changed, "all files unassigned, in input order");
+    assert_eq!(
+        parsed.unassigned, changed,
+        "all files unassigned, in input order"
+    );
     assert_eq!(parsed.notes.len(), 1, "exactly one explanatory note");
     assert!(
         parsed.notes[0].contains("could not be parsed"),
@@ -80,7 +83,10 @@ fn parse_normalizes_partition() {
 
     let notes = parsed.notes.join(" | ");
     assert!(notes.contains("dropped unknown path ghost.rs"), "{notes}");
-    assert!(notes.contains("b.rs") && notes.contains("already assigned"), "{notes}");
+    assert!(
+        notes.contains("b.rs") && notes.contains("already assigned"),
+        "{notes}"
+    );
     assert!(notes.contains("dropped an empty group"), "{notes}");
 }
 
@@ -146,7 +152,10 @@ fn parse_extracts_fenced_json() {
 #[test]
 fn compose_clean_tree_is_nothing_to_commit() {
     let _g = env_lock();
-    std::env::set_var(ai::CLAUDE_BIN_ENV, "D:/nonexistent/claude-must-not-spawn.exe");
+    std::env::set_var(
+        ai::CLAUDE_BIN_ENV,
+        "D:/nonexistent/claude-must-not-spawn.exe",
+    );
 
     let dir = init_scratch();
     let p = dir.path();
@@ -221,7 +230,10 @@ fn grounding_shape_lists_paths_and_file_blocks() {
     assert!(g.contains("+    new_line();"), "{g}");
     let list_idx = g.find("CHANGED FILES").expect("path list");
     let diffs_idx = g.find("DIFFS:").expect("diffs section");
-    assert!(list_idx < diffs_idx, "path list must precede the diffs: {g}");
+    assert!(
+        list_idx < diffs_idx,
+        "path list must precede the diffs: {g}"
+    );
 }
 
 /// §8.7: serde casing matches the TS types. `ComposeGroup` (`files`/`message`)
@@ -290,7 +302,10 @@ fn prompts_are_single_line() {
     assert_eq!(compose_prompt(Some("   ")), COMPOSE_PROMPT);
     // Multi-line free-text guidance is collapsed to one line.
     let p = compose_prompt(Some("keep tests separate\nand group docs\r\ntogether"));
-    assert!(!p.contains('\n') && !p.contains('\r'), "guidance must be collapsed: {p:?}");
+    assert!(
+        !p.contains('\n') && !p.contains('\r'),
+        "guidance must be collapsed: {p:?}"
+    );
     assert!(
         p.contains("Extra guidance: keep tests separate and group docs together"),
         "got {p:?}"

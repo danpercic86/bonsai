@@ -156,8 +156,7 @@ pub fn generate_fixture(path: &Path, spec: &FixtureSpec) -> Result<(), AppError>
             let merge_at = i + spec.merge_after;
             if merge_at <= spec.main_len {
                 pending_merges.insert(merge_at, tip);
-                if spec.keep_branch_ref_every > 0 && k.is_multiple_of(spec.keep_branch_ref_every)
-                {
+                if spec.keep_branch_ref_every > 0 && k.is_multiple_of(spec.keep_branch_ref_every) {
                     kept_refs.push((format!("refs/heads/feat-{k}"), tip));
                 }
             } else {
@@ -207,9 +206,10 @@ pub fn generate_fixture(path: &Path, spec: &FixtureSpec) -> Result<(), AppError>
         }
     }
 
-    let last_main = main_oids.last().copied().ok_or_else(|| {
-        AppError::Other("fixture: main chain is empty after generation".into())
-    })?;
+    let last_main = main_oids
+        .last()
+        .copied()
+        .ok_or_else(|| AppError::Other("fixture: main chain is empty after generation".into()))?;
     repo.reference("refs/heads/main", last_main, true, "fixture main")?;
     repo.set_head("refs/heads/main")?;
     for (name, oid) in kept_refs {

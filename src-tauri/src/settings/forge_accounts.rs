@@ -65,11 +65,7 @@ pub fn kind_wire_str(kind: bonsai_forge::ForgeKind) -> &'static str {
 /// P80: the stable account identity `kind:host:login` (lowercased throughout),
 /// or the two-part legacy/host-default marker `kind:host` when `login` is
 /// unknown. Case-insensitive, matching the keychain's lowercasing.
-pub fn account_id(
-    kind: bonsai_forge::ForgeKind,
-    host: &str,
-    login: Option<&str>,
-) -> String {
+pub fn account_id(kind: bonsai_forge::ForgeKind, host: &str, login: Option<&str>) -> String {
     let base = format!("{}:{}", kind_wire_str(kind), host.to_ascii_lowercase());
     match login {
         Some(l) if !l.is_empty() => format!("{base}:{}", l.to_ascii_lowercase()),
@@ -91,7 +87,11 @@ pub fn upsert_forge_account(s: &mut Settings, rec: ForgeAccountRecord) {
 /// promote/clear the host default if it pointed here, and drop any repo
 /// overrides pointing here. Idempotent.
 pub fn remove_forge_account(s: &mut Settings, account_id: &str) {
-    let removed = s.forge_accounts.iter().find(|r| r.account_id == account_id).cloned();
+    let removed = s
+        .forge_accounts
+        .iter()
+        .find(|r| r.account_id == account_id)
+        .cloned();
     s.forge_accounts.retain(|r| r.account_id != account_id);
     s.repo_forge_overrides
         .retain(|o| o.account_id != account_id);

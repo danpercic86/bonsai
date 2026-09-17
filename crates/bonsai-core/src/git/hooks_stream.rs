@@ -99,7 +99,11 @@ pub fn run_hook_nonblocking_streaming(
     activity: Option<&dyn GitActivityRecorder>,
 ) -> HookRunInfo {
     if matches!(plan_hook(workdir, hook), HookPlan::Skip) {
-        return HookRunInfo { ran: false, success: true, output: String::new() };
+        return HookRunInfo {
+            ran: false,
+            success: true,
+            output: String::new(),
+        };
     }
     if let Some(a) = activity {
         a.phase(GitPhaseKind::RunningHook, Some(hook.as_str()));
@@ -186,7 +190,8 @@ mod tests {
         let repo = git2::Repository::init(dir).expect("init");
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Hook Tester").expect("name");
-        cfg.set_str("user.email", "hooks@example.com").expect("email");
+        cfg.set_str("user.email", "hooks@example.com")
+            .expect("email");
         cfg.set_bool("core.autocrlf", false).expect("autocrlf");
         drop(cfg);
         repo
@@ -257,22 +262,38 @@ mod tests {
             "#!/bin/sh\necho first line\necho second line\nexit 0\n",
         );
         let rec = RecordingRecorder::default();
-        run_hook_streaming(&SpawnGitExec, dir.path(), HookName::PreCommit, &[], None, Some(&rec))
-            .expect("passing hook ⇒ Ok");
+        run_hook_streaming(
+            &SpawnGitExec,
+            dir.path(),
+            HookName::PreCommit,
+            &[],
+            None,
+            Some(&rec),
+        )
+        .expect("passing hook ⇒ Ok");
         let events = rec.snapshot();
-        assert_eq!(events.first().map(String::as_str), Some("phase:RunningHook:pre-commit"));
+        assert_eq!(
+            events.first().map(String::as_str),
+            Some("phase:RunningHook:pre-commit")
+        );
         // `git hook run` routes a hook's own stdout/stderr to the child's stderr,
         // so assert the line TEXT streamed, not which captured stream carried it.
         assert!(
-            events.iter().any(|e| e.starts_with("line:") && e.ends_with(":first line")),
+            events
+                .iter()
+                .any(|e| e.starts_with("line:") && e.ends_with(":first line")),
             "first hook line must stream: {events:?}"
         );
         assert!(
-            events.iter().any(|e| e.starts_with("line:") && e.ends_with(":second line")),
+            events
+                .iter()
+                .any(|e| e.starts_with("line:") && e.ends_with(":second line")),
             "second hook line must stream: {events:?}"
         );
         assert!(
-            events.iter().any(|e| e == "hookDone:pre-commit:Some(0):true"),
+            events
+                .iter()
+                .any(|e| e == "hookDone:pre-commit:Some(0):true"),
             "a success hook_done must be recorded: {events:?}"
         );
     }
@@ -293,9 +314,15 @@ mod tests {
             "#!/bin/sh\necho stdout-tell\necho stderr-tell >&2\nexit 3\n",
         );
         let rec = RecordingRecorder::default();
-        let streamed =
-            run_hook_streaming(&SpawnGitExec, dir.path(), HookName::PreCommit, &[], None, Some(&rec))
-                .expect_err("failing hook ⇒ HookRejected");
+        let streamed = run_hook_streaming(
+            &SpawnGitExec,
+            dir.path(),
+            HookName::PreCommit,
+            &[],
+            None,
+            Some(&rec),
+        )
+        .expect_err("failing hook ⇒ HookRejected");
         match &streamed {
             AppError::HookRejected(m) => {
                 assert!(m.starts_with("pre-commit hook failed:"), "prefix: {m}");
@@ -305,15 +332,23 @@ mod tests {
             other => panic!("expected HookRejected, got {other:?}"),
         }
         assert!(
-            rec.snapshot().iter().any(|e| e == "hookDone:pre-commit:Some(3):false"),
+            rec.snapshot()
+                .iter()
+                .any(|e| e == "hookDone:pre-commit:Some(3):false"),
             "a failed hook_done must be recorded"
         );
 
         // Byte-identity: the SAME hook through the None (buffered) path yields the
         // identical HookRejected message.
-        let buffered =
-            run_hook_streaming(&SpawnGitExec, dir.path(), HookName::PreCommit, &[], None, None)
-                .expect_err("buffered path also rejects");
+        let buffered = run_hook_streaming(
+            &SpawnGitExec,
+            dir.path(),
+            HookName::PreCommit,
+            &[],
+            None,
+            None,
+        )
+        .expect_err("buffered path also rejects");
         match (streamed, buffered) {
             (AppError::HookRejected(s), AppError::HookRejected(b)) => {
                 assert_eq!(s, b, "streamed + buffered HookRejected bodies must match");
@@ -329,7 +364,9 @@ mod tests {
     /// what crosses IPC, never the buffered `GitOutput`.
     #[test]
     fn flooding_hook_caps_events_but_keeps_full_captured_output() {
-        use crate::git::activity::{ActivityEmitter, GitActivityEvent, GitActivityKind, MAX_ACTIVITY_LINE_EVENTS};
+        use crate::git::activity::{
+            ActivityEmitter, GitActivityEvent, GitActivityKind, MAX_ACTIVITY_LINE_EVENTS,
+        };
 
         if !oracle_ready() {
             return;
@@ -365,7 +402,10 @@ mod tests {
         // event stream was capped well before it.
         match &err {
             AppError::HookRejected(m) => {
-                assert!(m.contains("floodline5999"), "full output must survive the event cap");
+                assert!(
+                    m.contains("floodline5999"),
+                    "full output must survive the event cap"
+                );
             }
             other => panic!("expected HookRejected, got {other:?}"),
         }
@@ -375,10 +415,18 @@ mod tests {
         let events = log.lock().expect("lock");
         let line_events: Vec<&str> = events
             .iter()
-            .filter(|e| matches!(e.kind, GitActivityKind::StdoutLine | GitActivityKind::StderrLine))
+            .filter(|e| {
+                matches!(
+                    e.kind,
+                    GitActivityKind::StdoutLine | GitActivityKind::StderrLine
+                )
+            })
             .filter_map(|e| e.line.as_deref())
             .collect();
-        let markers: Vec<&&str> = line_events.iter().filter(|l| l.contains("output truncated")).collect();
+        let markers: Vec<&&str> = line_events
+            .iter()
+            .filter(|l| l.contains("output truncated"))
+            .collect();
         assert_eq!(markers.len(), 1, "exactly one truncation marker");
         assert_eq!(
             line_events.len(),

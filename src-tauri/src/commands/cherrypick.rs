@@ -65,7 +65,10 @@ pub async fn cherrypick_abort(
 }
 
 /// Runtime-free core of `cherrypick_abort`.
-pub(crate) async fn cherrypick_abort_inner(state: &AppState, repo_id: &str) -> Result<(), AppError> {
+pub(crate) async fn cherrypick_abort_inner(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<(), AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || cherrypick::cherrypick_abort(&path))
         .await

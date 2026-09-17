@@ -56,7 +56,10 @@ struct BbLinks {
 
 impl BbLinks {
     fn html_href(&self) -> String {
-        self.html.as_ref().map(|l| l.href.clone()).unwrap_or_default()
+        self.html
+            .as_ref()
+            .map(|l| l.href.clone())
+            .unwrap_or_default()
     }
     fn avatar_href(&self) -> Option<String> {
         self.avatar.as_ref().map(|l| l.href.clone())
@@ -117,10 +120,16 @@ struct BbHash {
 
 impl BbEndpoint {
     fn branch_name(&self) -> String {
-        self.branch.as_ref().map(|b| b.name.clone()).unwrap_or_default()
+        self.branch
+            .as_ref()
+            .map(|b| b.name.clone())
+            .unwrap_or_default()
     }
     fn commit_hash(&self) -> String {
-        self.commit.as_ref().map(|c| c.hash.clone()).unwrap_or_default()
+        self.commit
+            .as_ref()
+            .map(|c| c.hash.clone())
+            .unwrap_or_default()
     }
 }
 

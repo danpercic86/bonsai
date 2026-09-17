@@ -17,10 +17,17 @@ fn capture_stream(
     max: usize,
 ) -> Vec<GraphChunk> {
     let mut chunks: Vec<GraphChunk> = Vec::new();
-    crate::graph::stream::stream_graph_core_with(dir, &GraphFilter::default(), first, batch, max, |c| {
-        chunks.push(c);
-        true
-    })
+    crate::graph::stream::stream_graph_core_with(
+        dir,
+        &GraphFilter::default(),
+        first,
+        batch,
+        max,
+        |c| {
+            chunks.push(c);
+            true
+        },
+    )
     .expect("stream_graph_core_with");
     chunks
 }
@@ -34,8 +41,7 @@ fn assemble(chunks: &[GraphChunk]) -> GraphLayout {
     let mut edges: Vec<GraphEdge> = Vec::new();
     // Per node: (ord, parent_row) pairs, to rebuild ordered `parents`.
     let mut parent_edges: Vec<Vec<(u16, u32)>> = Vec::new();
-    let mut oid_to_row: std::collections::HashMap<String, u32> =
-        std::collections::HashMap::new();
+    let mut oid_to_row: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     let mut meta_head_oid: Option<String> = None;
     let mut lane_count = 0u32;
     let mut head_index: Option<u32> = None;
@@ -83,7 +89,11 @@ fn assemble(chunks: &[GraphChunk]) -> GraphLayout {
                 lane_count = lane_count.max(*lane_count_so_far);
             }
             GraphChunk::Done {
-                total_rows, lane_count: lc, head_index: hi, truncated: tr, ..
+                total_rows,
+                lane_count: lc,
+                head_index: hi,
+                truncated: tr,
+                ..
             } => {
                 assert_eq!(
                     *total_rows as usize,
@@ -266,7 +276,9 @@ fn stream_unborn_repo_emits_meta_then_done() {
     let chunks = capture_stream(dir.path(), 512, 512, STREAM_MAX_COMMITS);
     assert_eq!(chunks.len(), 2, "exactly Meta + Done");
     match &chunks[0] {
-        GraphChunk::Meta { total, head_oid, .. } => {
+        GraphChunk::Meta {
+            total, head_oid, ..
+        } => {
             assert_eq!(*total, None, "v1 grows-as-you-go (OQ2)");
             assert!(head_oid.is_none(), "unborn HEAD");
         }
@@ -274,7 +286,11 @@ fn stream_unborn_repo_emits_meta_then_done() {
     }
     match &chunks[1] {
         GraphChunk::Done {
-            total_rows, lane_count, head_index, truncated, ..
+            total_rows,
+            lane_count,
+            head_index,
+            truncated,
+            ..
         } => {
             assert_eq!(*total_rows, 0);
             assert_eq!(*lane_count, 0);

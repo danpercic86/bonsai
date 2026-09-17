@@ -52,7 +52,14 @@ pub fn create_commit_with_activity(
     // pre-commit runs BEFORE write_tree (git order); a non-zero exit aborts with
     // HookRejected before anything is written or any ref moves.
     if hooks {
-        run_hook_streaming(&SpawnGitExec, workdir, HookName::PreCommit, &[], None, activity)?;
+        run_hook_streaming(
+            &SpawnGitExec,
+            workdir,
+            HookName::PreCommit,
+            &[],
+            None,
+            activity,
+        )?;
     }
 
     let mut index = repo.index()?;
@@ -192,7 +199,14 @@ pub fn amend_commit_with_activity(
 
     // pre-commit BEFORE write_tree (may re-stage); non-zero ⇒ HookRejected, abort.
     if hooks {
-        run_hook_streaming(&SpawnGitExec, workdir, HookName::PreCommit, &[], None, activity)?;
+        run_hook_streaming(
+            &SpawnGitExec,
+            workdir,
+            HookName::PreCommit,
+            &[],
+            None,
+            activity,
+        )?;
     }
 
     // Tree from the current index. NO NothingToCommit guard — a message-only

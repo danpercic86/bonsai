@@ -39,7 +39,10 @@ fn worktree_info_serializes_camel_case_keys() {
 #[test]
 fn sanitize_slug_table() {
     // Happy cases.
-    assert_eq!(sanitize_slug("feature/login").expect("slug"), "feature-login");
+    assert_eq!(
+        sanitize_slug("feature/login").expect("slug"),
+        "feature-login"
+    );
     assert_eq!(sanitize_slug("feature/x").expect("slug"), "feature-x");
     assert_eq!(sanitize_slug("feat/x").expect("slug"), "feat-x");
     assert_eq!(sanitize_slug("a//b").expect("slug"), "a-b"); // collapse runs
@@ -149,7 +152,8 @@ fn wt_init(dir: &Path) -> git2::Repository {
     let repo = git2::Repository::init(dir).expect("init repo");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     drop(cfg);
     repo

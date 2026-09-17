@@ -62,11 +62,17 @@ fn commit_survives_worktree_write_storm() {
     stop.store(true, Ordering::Relaxed);
     storm.join().expect("storm thread must not panic");
 
-    assert!(res.is_ok(), "commit must succeed during a write storm: {res:?}");
+    assert!(
+        res.is_ok(),
+        "commit must succeed during a write storm: {res:?}"
+    );
     // Repo remains healthy.
     assert!(read_status(&root).is_ok());
     assert!(compute_graph(&root).is_ok());
-    assert!(common::git_ok(&root, &["fsck", "--no-dangling"]), "git fsck clean");
+    assert!(
+        common::git_ok(&root, &["fsck", "--no-dangling"]),
+        "git fsck clean"
+    );
     drop(dir);
 }
 
@@ -111,7 +117,10 @@ fn concurrent_status_and_commit_stay_coherent() {
     // Repo is healthy after the joins.
     assert!(read_status(&root).is_ok(), "read_status ok after joins");
     assert!(compute_graph(&root).is_ok(), "compute_graph ok after joins");
-    assert!(common::git_ok(&root, &["fsck", "--no-dangling"]), "git fsck clean");
+    assert!(
+        common::git_ok(&root, &["fsck", "--no-dangling"]),
+        "git fsck clean"
+    );
     drop(dir);
 }
 

@@ -18,10 +18,19 @@ fn cred_guard_full_sequence() {
         | git2::CredentialType::SSH_KEY
         | git2::CredentialType::DEFAULT;
     let mut attempts = CredAttempts::default();
-    assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::Helper));
+    assert_eq!(
+        next_cred_method(&mut attempts, allowed),
+        Some(CredMethod::Helper)
+    );
     attempts.helper = HelperState::Done; // simulate a fresh fill (terminal)
-    assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::SshAgent));
-    assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::Default));
+    assert_eq!(
+        next_cred_method(&mut attempts, allowed),
+        Some(CredMethod::SshAgent)
+    );
+    assert_eq!(
+        next_cred_method(&mut attempts, allowed),
+        Some(CredMethod::Default)
+    );
     assert_eq!(next_cred_method(&mut attempts, allowed), None);
     assert_eq!(next_cred_method(&mut attempts, allowed), None);
 }
@@ -31,7 +40,10 @@ fn cred_guard_full_sequence() {
 fn cred_guard_ssh_only() {
     let allowed = git2::CredentialType::SSH_KEY;
     let mut attempts = CredAttempts::default();
-    assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::SshAgent));
+    assert_eq!(
+        next_cred_method(&mut attempts, allowed),
+        Some(CredMethod::SshAgent)
+    );
     assert_eq!(next_cred_method(&mut attempts, allowed), None);
 }
 
@@ -49,7 +61,10 @@ fn cred_guard_empty_allowed() {
 fn cred_guard_single_method_once() {
     let allowed = git2::CredentialType::USER_PASS_PLAINTEXT;
     let mut attempts = CredAttempts::default();
-    assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::Helper));
+    assert_eq!(
+        next_cred_method(&mut attempts, allowed),
+        Some(CredMethod::Helper)
+    );
     attempts.helper = HelperState::Done; // fresh fill (miss/bypass) is terminal
     assert_eq!(next_cred_method(&mut attempts, allowed), None);
     assert_eq!(next_cred_method(&mut attempts, allowed), None);
@@ -66,14 +81,26 @@ fn cred_state_hit_then_reject_allows_one_bypass_retry() {
         | git2::CredentialType::DEFAULT;
     let mut attempts = CredAttempts::default();
     // 1st Helper attempt returns a CACHED entry.
-    assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::Helper));
+    assert_eq!(
+        next_cred_method(&mut attempts, allowed),
+        Some(CredMethod::Helper)
+    );
     attempts.helper = HelperState::RetryAllowed;
     // Server rejects -> libgit2 re-invokes -> Helper eligible ONCE more (bypass).
-    assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::Helper));
+    assert_eq!(
+        next_cred_method(&mut attempts, allowed),
+        Some(CredMethod::Helper)
+    );
     attempts.helper = HelperState::Done; // bypass fresh fill is terminal
-    // Rejected again -> fall through to SshAgent, then Default, then None.
-    assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::SshAgent));
-    assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::Default));
+                                         // Rejected again -> fall through to SshAgent, then Default, then None.
+    assert_eq!(
+        next_cred_method(&mut attempts, allowed),
+        Some(CredMethod::SshAgent)
+    );
+    assert_eq!(
+        next_cred_method(&mut attempts, allowed),
+        Some(CredMethod::Default)
+    );
     assert_eq!(next_cred_method(&mut attempts, allowed), None);
 }
 
@@ -84,10 +111,19 @@ fn cred_state_fresh_miss_not_retried() {
         | git2::CredentialType::SSH_KEY
         | git2::CredentialType::DEFAULT;
     let mut attempts = CredAttempts::default();
-    assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::Helper));
+    assert_eq!(
+        next_cred_method(&mut attempts, allowed),
+        Some(CredMethod::Helper)
+    );
     attempts.helper = HelperState::Done; // fresh fill (from_cache=false) -> terminal
-    assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::SshAgent));
-    assert_eq!(next_cred_method(&mut attempts, allowed), Some(CredMethod::Default));
+    assert_eq!(
+        next_cred_method(&mut attempts, allowed),
+        Some(CredMethod::SshAgent)
+    );
+    assert_eq!(
+        next_cred_method(&mut attempts, allowed),
+        Some(CredMethod::Default)
+    );
     assert_eq!(next_cred_method(&mut attempts, allowed), None);
 }
 
@@ -200,11 +236,18 @@ fn map_transport_classes_to_network_error() {
         git2::ErrorClass::Http,
         git2::ErrorClass::Ssh,
     ] {
-        let e = g2err(git2::ErrorCode::GenericError, class, "failed to resolve address");
+        let e = g2err(
+            git2::ErrorCode::GenericError,
+            class,
+            "failed to resolve address",
+        );
         match map_remote_err(e, "origin") {
             AppError::NetworkError(m) => {
                 assert!(m.contains("'origin'"), "context missing: {m}");
-                assert!(m.contains("failed to resolve address"), "cause missing: {m}");
+                assert!(
+                    m.contains("failed to resolve address"),
+                    "cause missing: {m}"
+                );
             }
             other => panic!("expected NetworkError for class {class:?}, got {other:?}"),
         }
@@ -425,8 +468,12 @@ fn cred_url_control_char_is_rejected() {
     assert!(!url_has_control_char("git@github.com:owner/repo.git"));
 
     // The injection vectors: a newline or CR smuggling a second key=value line.
-    assert!(url_has_control_char("https://host.example/\nhost=evil.example"));
-    assert!(url_has_control_char("https://host.example/\rprotocol=https"));
+    assert!(url_has_control_char(
+        "https://host.example/\nhost=evil.example"
+    ));
+    assert!(url_has_control_char(
+        "https://host.example/\rprotocol=https"
+    ));
     // NUL, DEL, and tab (all in the 0x00–0x1F / 0x7F range) are rejected too.
     assert!(url_has_control_char("https://host.example/\0"));
     assert!(url_has_control_char("https://host.example/\x7f"));

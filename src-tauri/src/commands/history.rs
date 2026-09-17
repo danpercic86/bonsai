@@ -23,9 +23,11 @@ pub(crate) async fn blame_file_inner(
     at_oid: Option<String>,
 ) -> Result<Vec<BlameLine>, AppError> {
     let workdir = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || blame::blame_file(&workdir, &path, at_oid.as_deref()))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    tauri::async_runtime::spawn_blocking(move || {
+        blame::blame_file(&workdir, &path, at_oid.as_deref())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Commits that modified `path`, newest-first, best-effort following a single

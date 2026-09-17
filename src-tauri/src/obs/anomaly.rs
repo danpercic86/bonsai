@@ -250,28 +250,27 @@ pub(super) fn build_anomaly(
     ts: i64,
 ) -> LogRecord {
     LogRecord {
-            seq: 0,
-            ts,
-            mono: 0,
-            src: LogSource::Rust,
-            lvl: match severity {
-                AnomalySeverity::Error => super::record::LogLevel::Error,
-                AnomalySeverity::Warn => super::record::LogLevel::Warn,
-                AnomalySeverity::Info => super::record::LogLevel::Info,
-            },
-            trace: None,
-            span: None,
-            caused_by: None,
-            payload: LogPayload::Anomaly {
-                rule: rule.to_string(),
-                severity,
-                detail,
-                refs,
-                traces,
-            },
-        }
+        seq: 0,
+        ts,
+        mono: 0,
+        src: LogSource::Rust,
+        lvl: match severity {
+            AnomalySeverity::Error => super::record::LogLevel::Error,
+            AnomalySeverity::Warn => super::record::LogLevel::Warn,
+            AnomalySeverity::Info => super::record::LogLevel::Info,
+        },
+        trace: None,
+        span: None,
+        caused_by: None,
+        payload: LogPayload::Anomaly {
+            rule: rule.to_string(),
+            severity,
+            detail,
+            refs,
+            traces,
+        },
     }
-
+}
 
 /// The `traces` list for an anomaly implicating a single record: its own trace,
 /// if any.

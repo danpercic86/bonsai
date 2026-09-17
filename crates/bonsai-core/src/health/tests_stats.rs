@@ -155,7 +155,10 @@ fn stats_counts_and_large_files() {
             .output()
             .expect("git rev-list");
         assert!(out.status.success());
-        let cli: u32 = String::from_utf8_lossy(&out.stdout).trim().parse().expect("count");
+        let cli: u32 = String::from_utf8_lossy(&out.stdout)
+            .trim()
+            .parse()
+            .expect("count");
         assert_eq!(stats.commit_count, cli, "matches git rev-list --count");
     }
 }
@@ -176,8 +179,7 @@ fn stats_excludes_gitignored_files() {
     commit(d, "C0", &[("control.txt", "control\n")]);
 
     // .gitignore covering a single file and a whole directory.
-    std::fs::write(d.join(".gitignore"), "ignored.bin\nnode_modules/\n")
-        .expect("write .gitignore");
+    std::fs::write(d.join(".gitignore"), "ignored.bin\nnode_modules/\n").expect("write .gitignore");
 
     // A >10 MiB IGNORED file (same construction as the large-file test):
     // must NOT count nor appear in largest_files.
@@ -207,7 +209,10 @@ fn stats_excludes_gitignored_files() {
         stats.largest_files
     );
     // The only >10 MiB file is ignored → large_file_count is not bumped.
-    assert_eq!(stats.large_file_count, 0, "ignored large file must not count");
+    assert_eq!(
+        stats.large_file_count, 0,
+        "ignored large file must not count"
+    );
     // Only the two non-ignored files (control.txt + .gitignore) are counted;
     // ignored.bin and node_modules/dep.js are not.
     assert_eq!(
@@ -245,7 +250,10 @@ fn stats_capped_flags() {
     assert!(stats.commit_count_capped);
 
     let stats = collect_stats_with_caps(d, caps(REVWALK_CAP, 1)).expect("stats");
-    assert!(stats.workdir_scan_capped, "workdir cap of 1 entry overflows");
+    assert!(
+        stats.workdir_scan_capped,
+        "workdir cap of 1 entry overflows"
+    );
 }
 
 /// Unborn repo: stats section still Ok with zero commits.
@@ -257,4 +265,3 @@ fn stats_unborn_repo_ok() {
     assert_eq!(stats.commit_count, 0);
     assert!(!stats.commit_count_capped);
 }
-

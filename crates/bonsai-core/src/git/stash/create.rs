@@ -201,14 +201,26 @@ fn create_staged_stash(
     // ---- build the git-standard stash object graph (unreferenced commits) ---
     let branch = current_branch_label(repo);
     let short = short_hex(head_commit.id());
-    let summary = head_commit.summary().ok().flatten().unwrap_or("").to_string();
+    let summary = head_commit
+        .summary()
+        .ok()
+        .flatten()
+        .unwrap_or("")
+        .to_string();
     let i_msg = format!("index on {branch}: {short} {summary}");
     let default_w = format!("WIP on {branch}: {short} {summary}");
     let w_msg = message.unwrap_or(default_w.as_str());
 
     let i_oid = repo.commit(None, sig, sig, &i_msg, &index_tree, &[&head_commit])?;
     let i_commit = repo.find_commit(i_oid)?;
-    let w_oid = repo.commit(None, sig, sig, w_msg, &stash_tree, &[&head_commit, &i_commit])?;
+    let w_oid = repo.commit(
+        None,
+        sig,
+        sig,
+        w_msg,
+        &stash_tree,
+        &[&head_commit, &i_commit],
+    )?;
 
     // ---- MUTATION WINDOW (rollback on any failure) ------------------------
     // Make `w` stash@{0} (F-2). The stash stack IS the refs/stash reflog (what
@@ -257,7 +269,14 @@ fn create_staged_stash(
         // survives). Best-effort restore the index to its original staged state,
         // KEEP the stash, and tell the user where their work is.
         let index_tree_for_restore = index_tree_oid;
-        drop((head_tree, head_commit, index_tree, stash_tree, i_commit, index));
+        drop((
+            head_tree,
+            head_commit,
+            index_tree,
+            stash_tree,
+            i_commit,
+            index,
+        ));
         if let (Ok(mut idx), Ok(tree)) = (repo.index(), repo.find_tree(index_tree_for_restore)) {
             let _ = idx.read_tree(&tree);
             let _ = idx.write();
@@ -302,7 +321,11 @@ fn staged_entry_mode(index: &git2::Index, head_tree: &git2::Tree, p: &Path) -> u
 
 /// Build an in-memory `IndexEntry` for `path` pointing at `blob`. Git index
 /// paths use forward slashes; normalize so nested paths round-trip on Windows.
-pub(crate) fn make_index_entry(path: &Path, blob: git2::Oid, mode: u32) -> Result<git2::IndexEntry, AppError> {
+pub(crate) fn make_index_entry(
+    path: &Path,
+    blob: git2::Oid,
+    mode: u32,
+) -> Result<git2::IndexEntry, AppError> {
     let git_path = path
         .to_str()
         .ok_or_else(|| AppError::Git(format!("non-utf8 path {}", path.display())))?

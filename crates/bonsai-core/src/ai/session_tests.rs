@@ -44,7 +44,10 @@ const STUB_STARTUP_BUDGET: Duration = Duration::from_secs(60);
 /// Test limits: an idle window that never elapses, because the clock these tests
 /// hand the session never moves unless they move it.
 fn limits(idle_secs: u64) -> RunLimits {
-    RunLimits { idle_timeout: Duration::from_secs(idle_secs), ..RunLimits::default() }
+    RunLimits {
+        idle_timeout: Duration::from_secs(idle_secs),
+        ..RunLimits::default()
+    }
 }
 
 /// VIRTUAL idle limit for the watchdog tests (§10.1). The number is arbitrary
@@ -67,7 +70,11 @@ fn drive(
         payload,
         RunOpts::default(),
         limits,
-        SessionDeps { ctl, on_event, clock },
+        SessionDeps {
+            ctl,
+            on_event,
+            clock,
+        },
     )
 }
 
@@ -112,7 +119,11 @@ fn stream_success_emits_started_logs_turn_end_and_done() {
         .expect("stream_success should resolve");
     // §3.7: after `complete()` the shared pid must be back to 0 so a late
     // `cancel_all` cannot kill a recycled pid.
-    assert_eq!(ctl.pid.load(Ordering::Relaxed), 0, "pid must reset after completion");
+    assert_eq!(
+        ctl.pid.load(Ordering::Relaxed),
+        0,
+        "pid must reset after completion"
+    );
     reg.finish(&run_id);
 
     assert_eq!(res.text, "MERGED_STREAM_BODY");
@@ -121,7 +132,11 @@ fn stream_success_emits_started_logs_turn_end_and_done() {
 
     assert_sequence(&sink, &run_id);
     let kinds = sink.kinds();
-    assert_eq!(kinds.last(), Some(&AiRunEventKind::Done), "kinds: {kinds:?}");
+    assert_eq!(
+        kinds.last(),
+        Some(&AiRunEventKind::Done),
+        "kinds: {kinds:?}"
+    );
     assert_eq!(sink.of_kind(AiRunEventKind::TurnEnd).len(), 1);
     let done = sink.of_kind(AiRunEventKind::Done);
     assert_eq!(done[0].cost_usd, Some(0.0238));
@@ -133,7 +148,10 @@ fn stream_success_emits_started_logs_turn_end_and_done() {
         "init line missing: {:?}",
         sink.texts()
     );
-    assert!(sink.has_text("MERGED_STREAM_BODY"), "assistant text missing");
+    assert!(
+        sink.has_text("MERGED_STREAM_BODY"),
+        "assistant text missing"
+    );
     assert!(sink.has_text("summary: status=review_ready needsAction=false"));
     // A4: heartbeats never become a LOG LINE.
     assert!(!sink.has_text("thinking"), "heartbeat leaked into the log");
@@ -182,7 +200,10 @@ fn cancel_mid_run_keeps_partial_output_and_leaves_no_child() {
                 "payload",
                 // No watchdog at all, AND a clock that never moves: the ONLY thing
                 // that stops this run is cancel.
-                RunLimits { idle_timeout: Duration::ZERO, ..RunLimits::default() },
+                RunLimits {
+                    idle_timeout: Duration::ZERO,
+                    ..RunLimits::default()
+                },
                 &ctl,
                 &collect,
             )
@@ -197,7 +218,11 @@ fn cancel_mid_run_keeps_partial_output_and_leaves_no_child() {
     });
     // §3.7: after `reap()` the shared pid must be back to 0 so a late
     // `cancel_all` cannot kill a recycled pid.
-    assert_eq!(pid.load(Ordering::Relaxed), 0, "pid must reset after cancellation");
+    assert_eq!(
+        pid.load(Ordering::Relaxed),
+        0,
+        "pid must reset after cancellation"
+    );
     reg.finish(&run_id);
 
     match &outcome {
@@ -208,8 +233,16 @@ fn cancel_mid_run_keeps_partial_output_and_leaves_no_child() {
     assert_eq!(cancelled.len(), 1);
     // Present, and empty for the same reason as the watchdog test: `stream_slow`
     // is cancelled after its `init` line, before any assistant prose (A5).
-    assert_eq!(cancelled[0].partial_text.as_deref(), Some(""), "D2: the echo is always present");
-    assert!(sink.has_text("session sess-slow"), "log kept: {:?}", sink.texts());
+    assert_eq!(
+        cancelled[0].partial_text.as_deref(),
+        Some(""),
+        "D2: the echo is always present"
+    );
+    assert!(
+        sink.has_text("session sess-slow"),
+        "log kept: {:?}",
+        sink.texts()
+    );
 
     // No surviving child (§10.1). Delete-then-stay-gone rather than never-appeared:
     // a loaded box can let the stub tick once BEFORE the kill lands, which says
@@ -234,7 +267,8 @@ fn stream_ask_completes_after_a_registry_reply() {
     let res = thread::scope(|scope| {
         let handle = scope.spawn(move || drive(clock_ref, "payload", limits(10), &ctl, &collect));
         expect_awaiting(&reg, &run_id, || handle.is_finished());
-        reg.reply(&run_id, "the plural form".to_string()).expect("reply accepted");
+        reg.reply(&run_id, "the plural form".to_string())
+            .expect("reply accepted");
         handle.join().expect("session thread should not panic")
     })
     .expect("the second turn should resolve");
@@ -249,12 +283,23 @@ fn stream_ask_completes_after_a_registry_reply() {
     assert_eq!(asked.len(), 1);
     assert_eq!(asked[0].text.as_deref(), Some("which locale wins?"));
     assert_eq!(asked[0].turn, 1);
-    assert_eq!(sink.of_kind(AiRunEventKind::TurnEnd).len(), 2, "one per result line");
+    assert_eq!(
+        sink.of_kind(AiRunEventKind::TurnEnd).len(),
+        2,
+        "one per result line"
+    );
     let done = sink.of_kind(AiRunEventKind::Done);
     assert_eq!(done[0].turn, 2);
     assert_eq!(done[0].cost_usd, Some(0.0263));
-    assert!(sink.has_text("» answered (15 bytes)"), "reply log: {:?}", sink.texts());
-    assert!(!reg.is_awaiting(&run_id), "awaiting flag cleared after the reply");
+    assert!(
+        sink.has_text("» answered (15 bytes)"),
+        "reply log: {:?}",
+        sink.texts()
+    );
+    assert!(
+        !reg.is_awaiting(&run_id),
+        "awaiting flag cleared after the reply"
+    );
 }
 
 #[test]
@@ -272,7 +317,10 @@ fn turn_budget_fails_a_repeatedly_questioning_model() {
     let err = drive(
         &TestClock::new(),
         "payload",
-        RunLimits { max_turns: 1, ..limits(10) },
+        RunLimits {
+            max_turns: 1,
+            ..limits(10)
+        },
         &ctl,
         &collect,
     )
@@ -286,7 +334,10 @@ fn turn_budget_fails_a_repeatedly_questioning_model() {
         ),
         other => panic!("expected AiFailed, got {other:?}"),
     }
-    assert!(sink.of_kind(AiRunEventKind::AwaitingInput).is_empty(), "never blocks on a reply");
+    assert!(
+        sink.of_kind(AiRunEventKind::AwaitingInput).is_empty(),
+        "never blocks on a reply"
+    );
 }
 
 #[test]
@@ -306,7 +357,11 @@ fn one_shot_mode_rejects_a_question_it_cannot_answer() {
     let err = drive(
         &TestClock::new(),
         "payload\n",
-        RunLimits { interactive: false, tools: ToolPolicy::None, ..limits(10) },
+        RunLimits {
+            interactive: false,
+            tools: ToolPolicy::None,
+            ..limits(10)
+        },
         &ctl,
         &collect,
     )
@@ -342,7 +397,11 @@ fn stream_partial_fails_naming_the_missing_result_and_keeps_the_body() {
     assert!(sink.has_text("HALF_A_BODY"), "log: {:?}", sink.texts());
     let failed = sink.of_kind(AiRunEventKind::Failed);
     assert!(
-        failed[0].partial_text.as_deref().unwrap_or_default().contains("HALF_A_BODY"),
+        failed[0]
+            .partial_text
+            .as_deref()
+            .unwrap_or_default()
+            .contains("HALF_A_BODY"),
         "partialText must carry the assistant prose: {:?}",
         failed[0].partial_text
     );
@@ -364,8 +423,15 @@ fn stream_garbage_lines_degrade_to_logs_and_the_run_still_succeeds() {
         .expect("D12: unknown lines must never fail a run");
     reg.finish(&run_id);
     assert_eq!(res.text, "GARBAGE_TOLERATED");
-    assert!(sink.has_text("this is not json at all"), "log: {:?}", sink.texts());
-    assert!(sink.has_text("brand_new_event"), "unknown type kept verbatim");
+    assert!(
+        sink.has_text("this is not json at all"),
+        "log: {:?}",
+        sink.texts()
+    );
+    assert!(
+        sink.has_text("brand_new_event"),
+        "unknown type kept verbatim"
+    );
     assert_eq!(sink.kinds().last(), Some(&AiRunEventKind::Done));
 }
 
@@ -409,7 +475,10 @@ fn missing_binary_emits_failed_then_returns_ai_unavailable() {
     reg.finish(&run_id);
     assert!(matches!(err, AppError::AiUnavailable(_)), "got {err:?}");
     // Started still reached the UI first (D8), and the failure is still an event.
-    assert_eq!(sink.kinds(), vec![AiRunEventKind::Started, AiRunEventKind::Failed]);
+    assert_eq!(
+        sink.kinds(),
+        vec![AiRunEventKind::Started, AiRunEventKind::Failed]
+    );
     assert_sequence(&sink, &run_id);
 }
 

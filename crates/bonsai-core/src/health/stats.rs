@@ -9,7 +9,10 @@ use std::collections::{BinaryHeap, HashSet};
 use super::*;
 
 /// Cap-parameterized stats collector (§10.1: caps shadowable in tests).
-pub(super) fn collect_stats_with_caps(workdir: &Path, caps: StatsCaps) -> Result<StatsSection, AppError> {
+pub(super) fn collect_stats_with_caps(
+    workdir: &Path,
+    caps: StatsCaps,
+) -> Result<StatsSection, AppError> {
     let repo = open_workdir_repo(workdir)?;
 
     // --- one revwalk from HEAD (plain push_head; unborn HEAD → zero counts).
@@ -34,11 +37,7 @@ pub(super) fn collect_stats_with_caps(workdir: &Path, caps: StatsCaps) -> Result
             // (P29a review carry-forward — one bad object must not sink the
             // whole stats section).
             if let Ok(commit) = repo.find_commit(oid) {
-                let email = commit
-                    .author()
-                    .email()
-                    .unwrap_or("(non-utf8)")
-                    .to_string();
+                let email = commit.author().email().unwrap_or("(non-utf8)").to_string();
                 if commit.time().seconds() >= cutoff_30d {
                     commits_last_30d += 1;
                     authors_30d.insert(email.clone());
@@ -227,4 +226,3 @@ fn rel_fwd(path: &Path, base: &Path) -> String {
         .map(|p| p.to_string_lossy().replace('\\', "/"))
         .unwrap_or_else(|_| path.to_string_lossy().into_owned())
 }
-

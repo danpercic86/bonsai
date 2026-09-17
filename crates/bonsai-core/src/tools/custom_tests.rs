@@ -58,7 +58,10 @@ fn an_absolute_path_for_the_wrong_os_is_refused() {
     // `Path::is_absolute` is host-relative, so this is asserted against the
     // explicit `os` parameter: a `/Applications/…` string is not a Windows
     // program path and `C:\…` is not a unix one.
-    assert!(refused(Path::new("/Applications/Cursor.app"), TargetOs::Windows));
+    assert!(refused(
+        Path::new("/Applications/Cursor.app"),
+        TargetOs::Windows
+    ));
     assert!(refused(Path::new(r"C:\tools\code.exe"), TargetOs::MacOs));
     assert!(refused(Path::new(r"C:\tools\code.exe"), TargetOs::Linux));
 }
@@ -122,7 +125,10 @@ fn a_unc_share_root_is_browsable_but_never_a_detection_hit() {
     // Unix was never the moving half: `//host/share` starts with `/`.
     assert!(browsable_root(TargetOs::Linux, "//host/share/payload"));
     // …and the relaxation is scoped to shares, not to every double separator.
-    assert!(!browsable_root(TargetOs::Windows, r"\\?\C:\tools\payload.exe"));
+    assert!(!browsable_root(
+        TargetOs::Windows,
+        r"\\?\C:\tools\payload.exe"
+    ));
 }
 
 #[test]
@@ -159,7 +165,10 @@ fn the_refusal_is_category_only_and_never_echoes_the_path() {
     let secret = absent(TargetOs::Windows, "S3cret-Payload.exe");
     let err = validate_custom_program(&secret, TargetOs::Windows).expect_err("must be refused");
     let text = err.to_string();
-    assert!(!text.contains("S3cret"), "the error echoed the path: {text}");
+    assert!(
+        !text.contains("S3cret"),
+        "the error echoed the path: {text}"
+    );
     assert!(!text.contains("C:\\"), "the error echoed the path: {text}");
     assert!(!text.is_empty());
 }

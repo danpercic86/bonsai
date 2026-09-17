@@ -13,8 +13,14 @@ use crate::settings::{load_from, save_to, Settings};
 fn assert_no_browsed_path_was_invented(s: &Settings) {
     assert_eq!(s.custom_terminal_path, "", "migration wrote a browsed path");
     assert_eq!(s.custom_editor_path, "", "migration wrote a browsed path");
-    assert_ne!(s.terminal_tool, "custom", "migration selected the browsed slot");
-    assert_ne!(s.editor_tool, "custom", "migration selected the browsed slot");
+    assert_ne!(
+        s.terminal_tool, "custom",
+        "migration selected the browsed slot"
+    );
+    assert_ne!(
+        s.editor_tool, "custom",
+        "migration selected the browsed slot"
+    );
     // And the legacy input is never carried further.
     assert_eq!(s.terminal_command, "");
     assert_eq!(s.editor_command, "");
@@ -129,7 +135,10 @@ fn the_legacy_keys_are_gone_from_the_file_after_one_save() {
     // …and the next ordinary save drops the keys (`skip_serializing`).
     save_to(&file, &loaded).expect("save settings");
     let raw = std::fs::read_to_string(&file).expect("read settings.json");
-    assert!(!raw.contains("terminalCommand"), "legacy key survived: {raw}");
+    assert!(
+        !raw.contains("terminalCommand"),
+        "legacy key survived: {raw}"
+    );
     assert!(!raw.contains("editorCommand"), "legacy key survived: {raw}");
     assert!(raw.contains("\"terminalTool\": \"windows-terminal\""));
     assert!(raw.contains("\"editorTool\": \"vscode\""));

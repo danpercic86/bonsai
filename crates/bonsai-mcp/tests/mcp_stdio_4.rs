@@ -117,10 +117,7 @@ fn stage_refuses_the_whole_batch_when_one_path_is_not_in_status() {
     common::write_file(p, "new.txt", "legit\n");
 
     let mut c = McpClient::connect(p, true);
-    let (kind, _) = refusal(&c.call_tool(
-        "bonsai_stage",
-        json!({ "paths": ["new.txt", ".env"] }),
-    ));
+    let (kind, _) = refusal(&c.call_tool("bonsai_stage", json!({ "paths": ["new.txt", ".env"] })));
     assert_eq!(kind, "invalidName");
     assert!(
         common::git(p, &["diff", "--cached", "--name-only"]).is_empty(),
@@ -336,8 +333,12 @@ fn stage_accepts_a_conflicted_path_once_the_markers_are_gone() {
     }
     let repo = conflicted_repo();
     let p = repo.path();
-    common::write_file(p, "c.txt", "hand merged
-");
+    common::write_file(
+        p,
+        "c.txt",
+        "hand merged
+",
+    );
 
     let mut c = McpClient::connect(p, true);
     ok_structured(&c.call_tool("bonsai_stage", json!({ "paths": ["c.txt"] })));
@@ -371,15 +372,16 @@ fn commit_refuses_a_repo_with_runnable_hooks_without_allow_hooks() {
     let head_before = common::git(p, &["rev-parse", "HEAD"]);
 
     let mut c = McpClient::connect(p, true);
-    let (kind, message) = refusal(&c.call_tool(
-        "bonsai_commit",
-        json!({ "message": "agent commit" }),
-    ));
+    let (kind, message) =
+        refusal(&c.call_tool("bonsai_commit", json!({ "message": "agent commit" })));
     assert_eq!(
         kind, "hooksNotPermitted",
         "a refusal the model can branch on, not the untyped `other` (review          2026-09-11): {message}"
     );
-    assert!(message.contains("pre-commit"), "must name the hook: {message}");
+    assert!(
+        message.contains("pre-commit"),
+        "must name the hook: {message}"
+    );
     assert!(
         message.contains("--allow-hooks"),
         "must name the consent flag: {message}"
@@ -470,5 +472,8 @@ fn commit_is_allowed_when_only_a_pre_push_hook_exists() {
     common::git(p, &["add", "a.txt"]);
 
     let mut c = McpClient::connect(p, true);
-    ok_structured(&c.call_tool("bonsai_commit", json!({ "message": "pre-push is not a commit hook" })));
+    ok_structured(&c.call_tool(
+        "bonsai_commit",
+        json!({ "message": "pre-push is not a commit hook" }),
+    ));
 }

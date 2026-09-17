@@ -45,7 +45,9 @@ impl Keychain for OsKeychain {
     }
 
     fn set(&self, host: &str, token: &str) -> Result<(), AppError> {
-        Self::entry(host)?.set_password(token).map_err(map_keyring_err)
+        Self::entry(host)?
+            .set_password(token)
+            .map_err(map_keyring_err)
     }
 
     fn delete(&self, host: &str) -> Result<(), AppError> {
@@ -242,7 +244,11 @@ mod tests {
         for _ in 0..3 {
             assert_eq!(s.get("github.com").unwrap(), Some("tok-1".to_string()));
         }
-        assert_eq!(reads.load(Ordering::SeqCst), 1, "cache-hit must not re-read");
+        assert_eq!(
+            reads.load(Ordering::SeqCst),
+            1,
+            "cache-hit must not re-read"
+        );
     }
 
     #[test]

@@ -14,10 +14,10 @@
 
 use std::path::Path;
 
-use bonsai_core::error::AppError;
-use bonsai_core::git::blame::{blame_file, file_history, MAX_HISTORY};
 use crate::common;
 use crate::common::{git, git_env, init_repo, FIXED_DATE};
+use bonsai_core::error::AppError;
+use bonsai_core::git::blame::{blame_file, file_history, MAX_HISTORY};
 
 macro_rules! require_git {
     () => {
@@ -152,11 +152,28 @@ fn blame_matches_git_porcelain_at_head() {
     assert_eq!(lines.len(), 4, "fixture has four lines");
 
     for (i, (got, want)) in lines.iter().zip(oracle.iter()).enumerate() {
-        assert_eq!(got.final_line_no as usize, i + 1, "final line 1-based contiguous");
-        assert_eq!(got.final_line_no as usize, want.final_line, "final line matches oracle");
+        assert_eq!(
+            got.final_line_no as usize,
+            i + 1,
+            "final line 1-based contiguous"
+        );
+        assert_eq!(
+            got.final_line_no as usize, want.final_line,
+            "final line matches oracle"
+        );
         assert_eq!(got.oid, want.sha, "oid matches oracle at line {}", i + 1);
-        assert_eq!(got.author_name, want.author, "author matches oracle at line {}", i + 1);
-        assert_eq!(got.line_text, want.content, "content matches oracle at line {}", i + 1);
+        assert_eq!(
+            got.author_name,
+            want.author,
+            "author matches oracle at line {}",
+            i + 1
+        );
+        assert_eq!(
+            got.line_text,
+            want.content,
+            "content matches oracle at line {}",
+            i + 1
+        );
     }
 
     // Sanity: the three distinct authors landed on the expected lines.
@@ -212,13 +229,22 @@ fn blame_error_cases() {
     commit_as(dir, "Alice", "alice@example.com", "c1");
 
     let err = blame_file(dir, "bin.dat", None).expect_err("binary rejected");
-    assert!(matches!(err, AppError::Git(_)), "binary -> Git, got {err:?}");
+    assert!(
+        matches!(err, AppError::Git(_)),
+        "binary -> Git, got {err:?}"
+    );
 
     let err = blame_file(dir, "../escape", None).expect_err("traversal rejected");
-    assert!(matches!(err, AppError::Other(_)), "`..` -> Other, got {err:?}");
+    assert!(
+        matches!(err, AppError::Other(_)),
+        "`..` -> Other, got {err:?}"
+    );
 
     let err = blame_file(dir, "does-not-exist.txt", None).expect_err("unknown rejected");
-    assert!(matches!(err, AppError::Git(_)), "unknown -> Git, got {err:?}");
+    assert!(
+        matches!(err, AppError::Git(_)),
+        "unknown -> Git, got {err:?}"
+    );
 }
 
 /// (extra) A file with a SINGLE commit: every line is attributed to that one
@@ -324,7 +350,10 @@ fn file_history_limit_and_unknown_path() {
 
     let capped = file_history(dir, "f.txt", 2).expect("capped history");
     assert_eq!(capped.len(), 2, "limit=2 caps the result");
-    assert_eq!(capped[0].oid, all[0].oid, "newest-first preserved under cap");
+    assert_eq!(
+        capped[0].oid, all[0].oid,
+        "newest-first preserved under cap"
+    );
     assert_eq!(capped[1].oid, all[1].oid);
 
     let empty = file_history(dir, "never-existed.txt", 100).expect("unknown path ok");

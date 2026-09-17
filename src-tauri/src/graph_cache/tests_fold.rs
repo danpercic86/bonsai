@@ -13,23 +13,27 @@ fn init_repo() -> (tempfile::TempDir, git2::Repository) {
     let repo = git2::Repository::init(dir.path()).expect("init");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     (dir, repo)
 }
 
 fn commit(repo: &git2::Repository, msg: &str, parents: &[git2::Oid], t: i64) -> git2::Oid {
-    let sig = git2::Signature::new("Test User", "test@example.com", &git2::Time::new(t, 0))
-        .expect("sig");
+    let sig =
+        git2::Signature::new("Test User", "test@example.com", &git2::Time::new(t, 0)).expect("sig");
     let blob = repo.blob(msg.as_bytes()).expect("blob");
     let mut tb = repo.treebuilder(None).expect("treebuilder");
     tb.insert("f.txt", blob, 0o100_644).expect("insert");
-    let tree = repo.find_tree(tb.write().expect("write tree")).expect("tree");
+    let tree = repo
+        .find_tree(tb.write().expect("write tree"))
+        .expect("tree");
     let parent_commits: Vec<git2::Commit> = parents
         .iter()
         .map(|p| repo.find_commit(*p).expect("parent"))
         .collect();
     let refs: Vec<&git2::Commit> = parent_commits.iter().collect();
-    repo.commit(None, &sig, &sig, msg, &tree, &refs).expect("commit")
+    repo.commit(None, &sig, &sig, msg, &tree, &refs)
+        .expect("commit")
 }
 
 /// Linear chain of `n` commits, `main` on the tip, HEAD attached. Oldest first.

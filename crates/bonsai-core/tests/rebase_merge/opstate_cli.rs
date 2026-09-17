@@ -8,10 +8,10 @@
 
 use std::path::Path;
 
+use crate::common;
 use bonsai_core::git::commit::create_commit;
 use bonsai_core::git::opstate::{read_op_state, RepoOpState};
 use bonsai_core::git::stage::stage_paths;
-use crate::common;
 
 /// git2-init a repo with ONE commit (so HEAD/oids exist). Returns (dir, head_oid).
 fn seeded() -> (tempfile::TempDir, String) {
@@ -21,7 +21,8 @@ fn seeded() -> (tempfile::TempDir, String) {
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
         cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     }
     std::fs::write(p.join("a.txt"), "a\n").expect("write");
@@ -83,7 +84,12 @@ fn rebase_msgnum_banana_missing_end() {
     std::fs::write(rm.join("msgnum"), "banana\n").expect("msgnum");
     std::fs::write(rm.join("head-name"), "refs/heads/topic\n").expect("head-name");
     match read_op_state(p).expect("must not error") {
-        RepoOpState::Rebase { head_name, current_step, total_steps, .. } => {
+        RepoOpState::Rebase {
+            head_name,
+            current_step,
+            total_steps,
+            ..
+        } => {
             assert_eq!(head_name.as_deref(), Some("topic"));
             assert_eq!(current_step, 0, "non-numeric msgnum → 0, not a panic");
             assert_eq!(total_steps, 0, "missing end → 0");
@@ -104,7 +110,12 @@ fn rebase_non_utf8_head_name() {
     std::fs::write(rm.join("msgnum"), "1\n").expect("msgnum");
     std::fs::write(rm.join("end"), "3\n").expect("end");
     match read_op_state(p).expect("must not error") {
-        RepoOpState::Rebase { head_name, current_step, total_steps, .. } => {
+        RepoOpState::Rebase {
+            head_name,
+            current_step,
+            total_steps,
+            ..
+        } => {
             assert_eq!(head_name, None, "undecodable head-name → None");
             assert_eq!(current_step, 1);
             assert_eq!(total_steps, 3);
@@ -125,7 +136,10 @@ fn impossible_merge_and_rebase_combo() {
     std::fs::write(rm.join("msgnum"), "1\n").expect("msgnum");
     let state = read_op_state(p).expect("must classify or error, not panic");
     assert!(
-        matches!(state, RepoOpState::Merge { .. } | RepoOpState::Rebase { .. }),
+        matches!(
+            state,
+            RepoOpState::Merge { .. } | RepoOpState::Rebase { .. }
+        ),
         "expected one of the two conflicting states, got {state:?}"
     );
 }

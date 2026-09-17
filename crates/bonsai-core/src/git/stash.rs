@@ -39,12 +39,12 @@ pub use list::{list_stashes, list_stashes_with};
 // sibling test modules reach them (and `Path`) through `use super::*`, so
 // re-export them here under `cfg(test)` to keep that path resolving.
 #[cfg(test)]
-use std::path::Path;
-#[cfg(test)]
 pub(crate) use self::{
     apply::{escape_pathspec, is_windows_reserved, stash_commit_oid, stash_path_sets},
     create::make_index_entry,
 };
+#[cfg(test)]
+use std::path::Path;
 
 /// One stash stack entry. Wire: camelCase.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -65,7 +65,11 @@ pub struct StashEntry {
 
 /// Result of apply/pop. Wire: tagged "kind", camelCase (same recipe as MergeOutcome).
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ApplyStashOutcome {
     /// Clean apply/pop. (Pop additionally dropped the entry.)
     Applied,

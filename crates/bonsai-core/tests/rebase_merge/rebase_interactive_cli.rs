@@ -15,15 +15,15 @@
 //! All scratch repos live under `D:\Data\Temp\bonsai-scratch`. Each test skips
 //! (passes with a note) if `git` is not on PATH.
 
-use bonsai_core::git::rebase::RebaseOutcome;
-use bonsai_core::git::rebase_interactive::{
-    get_interactive_plan, start_interactive_rebase, RebaseAction, RebaseTodoOp,
-};
 use crate::common;
 use crate::common::{commit_fixed, git, init_repo};
 use crate::rebase_interactive_support::{
     author_of, count_ahead, has_bonsai_dir, msg_of, repo_state, require_git, rev,
     script_three_disjoint, script_two_disjoint, symbolic_head, tree_files, tree_of, write,
+};
+use bonsai_core::git::rebase::RebaseOutcome;
+use bonsai_core::git::rebase_interactive::{
+    get_interactive_plan, start_interactive_rebase, RebaseAction, RebaseTodoOp,
 };
 
 // ============================================================ reorder
@@ -43,7 +43,12 @@ fn reorder_swaps_top_two_commits() {
     todos.swap(1, 2); // [c1, c2, c3] -> [c1, c3, c2]
 
     match start_interactive_rebase(d, &base, todos).expect("start") {
-        RebaseOutcome::Rebased { branch, head, steps, .. } => {
+        RebaseOutcome::Rebased {
+            branch,
+            head,
+            steps,
+            ..
+        } => {
             assert_eq!(branch, "topic");
             assert_eq!(steps, 3);
             assert_eq!(head, rev(d, "HEAD"));
@@ -52,7 +57,11 @@ fn reorder_swaps_top_two_commits() {
     }
 
     // Disjoint files -> final tree unchanged; only ORDER differs.
-    assert_eq!(tree_of(d, "HEAD"), orig_tree, "final tree must match original");
+    assert_eq!(
+        tree_of(d, "HEAD"),
+        orig_tree,
+        "final tree must match original"
+    );
     assert_eq!(msg_of(d, "HEAD~2"), "c1");
     assert_eq!(msg_of(d, "HEAD~1"), "c3", "swapped: c3 now precedes c2");
     assert_eq!(msg_of(d, "HEAD"), "c2");
@@ -65,7 +74,11 @@ fn reorder_swaps_top_two_commits() {
     );
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);
     assert!(!has_bonsai_dir(d));
-    assert_eq!(symbolic_head(d), "refs/heads/topic", "HEAD re-attached to topic");
+    assert_eq!(
+        symbolic_head(d),
+        "refs/heads/topic",
+        "HEAD re-attached to topic"
+    );
 }
 
 // ============================================================ squash
@@ -91,10 +104,22 @@ fn squash_combines_two_into_one() {
         other => panic!("expected Rebased, got {other:?}"),
     }
 
-    assert_eq!(count_ahead(d, &base, "HEAD"), 1, "commit count dropped by one");
-    assert_eq!(tree_of(d, "HEAD"), orig_tree, "combined tree == original tree");
+    assert_eq!(
+        count_ahead(d, &base, "HEAD"),
+        1,
+        "commit count dropped by one"
+    );
+    assert_eq!(
+        tree_of(d, "HEAD"),
+        orig_tree,
+        "combined tree == original tree"
+    );
     assert_eq!(msg_of(d, "HEAD"), "combined squash", "combined message");
-    assert_eq!(author_of(d, "HEAD"), orig_c1_author, "squash keeps the predecessor's author (N3)");
+    assert_eq!(
+        author_of(d, "HEAD"),
+        orig_c1_author,
+        "squash keeps the predecessor's author (N3)"
+    );
     assert_eq!(rev(d, "HEAD~1"), base, "parent == the onto base");
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);
     assert!(!has_bonsai_dir(d));
@@ -123,8 +148,16 @@ fn fixup_discards_message_keeps_tree() {
 
     assert_eq!(count_ahead(d, &base, "HEAD"), 1);
     assert_eq!(tree_of(d, "HEAD"), orig_tree, "same tree as squash");
-    assert_eq!(msg_of(d, "HEAD"), "c1", "fixup keeps the predecessor's message");
-    assert_eq!(author_of(d, "HEAD"), orig_c1_author, "fixup keeps the predecessor's author (N3)");
+    assert_eq!(
+        msg_of(d, "HEAD"),
+        "c1",
+        "fixup keeps the predecessor's message"
+    );
+    assert_eq!(
+        author_of(d, "HEAD"),
+        orig_c1_author,
+        "fixup keeps the predecessor's author (N3)"
+    );
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);
     assert!(!has_bonsai_dir(d));
 }
@@ -150,11 +183,23 @@ fn reword_changes_message_keeps_tree() {
         other => panic!("expected Rebased, got {other:?}"),
     }
 
-    assert_eq!(count_ahead(d, &base, "HEAD"), 2, "reword keeps both commits");
-    assert_eq!(tree_of(d, "HEAD"), orig_tree, "reword leaves the tree unchanged");
+    assert_eq!(
+        count_ahead(d, &base, "HEAD"),
+        2,
+        "reword keeps both commits"
+    );
+    assert_eq!(
+        tree_of(d, "HEAD"),
+        orig_tree,
+        "reword leaves the tree unchanged"
+    );
     assert_eq!(msg_of(d, "HEAD"), "reworded c2");
     assert_eq!(msg_of(d, "HEAD~1"), "c1");
-    assert_eq!(author_of(d, "HEAD"), orig_c2_author, "author preserved on reword");
+    assert_eq!(
+        author_of(d, "HEAD"),
+        orig_c2_author,
+        "author preserved on reword"
+    );
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);
     assert!(!has_bonsai_dir(d));
 }
@@ -194,7 +239,9 @@ fn reword_dropped_when_empty_emits_warning() {
     }];
 
     match start_interactive_rebase(d, &onto, todos).expect("start") {
-        RebaseOutcome::Rebased { steps, warnings, .. } => {
+        RebaseOutcome::Rebased {
+            steps, warnings, ..
+        } => {
             assert_eq!(steps, 0, "the empty pick produced no commit");
             assert_eq!(warnings.len(), 1, "exactly one dropped-reword warning");
             assert!(
@@ -231,7 +278,10 @@ fn drop_removes_the_middle_commit() {
     let files = tree_files(d, "HEAD");
     assert!(files.contains(&"a.txt".to_string()), "a.txt survives");
     assert!(files.contains(&"c.txt".to_string()), "c.txt survives");
-    assert!(!files.contains(&"b.txt".to_string()), "dropped commit's file is gone");
+    assert!(
+        !files.contains(&"b.txt".to_string()),
+        "dropped commit's file is gone"
+    );
     assert_eq!(msg_of(d, "HEAD~1"), "c1");
     assert_eq!(msg_of(d, "HEAD"), "c3");
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);

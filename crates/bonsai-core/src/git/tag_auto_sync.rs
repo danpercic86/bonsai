@@ -119,10 +119,7 @@ fn fetch_temp_tags(repo: &git2::Repository, remote_name: &str) -> Result<(), App
 /// Blocking, best-effort, NEVER-fail-the-fetch tag reconciliation (P84). See the
 /// module docs. `remote`: None => default ("origin" else the first configured
 /// remote).
-pub fn auto_sync_tags(
-    workdir: &Path,
-    remote: Option<&str>,
-) -> Result<TagAutoSyncReport, AppError> {
+pub fn auto_sync_tags(workdir: &Path, remote: Option<&str>) -> Result<TagAutoSyncReport, AppError> {
     let repo = open_repo_at(workdir)?;
 
     // No remote configured => empty Ok (not an error).

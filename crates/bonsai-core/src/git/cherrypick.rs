@@ -25,7 +25,11 @@ use crate::git::stage::open_workdir_repo;
 
 /// Wire: tagged "kind", camelCase (identical recipe to `MergeOutcome`).
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum CherrypickOutcome {
     /// Clean pick, auto-committed. `oid` = the new commit.
     /// `stashed` = an autostash was created AND restored for this pick.
@@ -162,8 +166,8 @@ pub fn cherrypick_commit(
     // Validate the oid resolves BEFORE any mutation; the borrow ends here so
     // the later &mut autostash calls are legal (mirrors merge_branch).
     let pick_id = {
-        let oid = git2::Oid::from_str(oid)
-            .map_err(|_| AppError::Git("invalid commit id".to_string()))?;
+        let oid =
+            git2::Oid::from_str(oid).map_err(|_| AppError::Git("invalid commit id".to_string()))?;
         repo.find_commit(oid)?.id()
     };
 
@@ -217,7 +221,10 @@ pub fn cherrypick_commit(
     }
 
     if repo.index()?.has_conflicts() {
-        let paths: Vec<String> = list_conflicts(workdir)?.into_iter().map(|c| c.path).collect();
+        let paths: Vec<String> = list_conflicts(workdir)?
+            .into_iter()
+            .map(|c| c.path)
+            .collect();
         // Persist a custom message so it survives the pause and is honored by
         // cherrypick_continue via MERGE_MSG (§2.2). No override → leave whatever
         // libgit2 wrote (the picked commit's message).
@@ -234,16 +241,14 @@ pub fn cherrypick_commit(
         other => return Ok(other),
     };
     if let Some(stash) = stash_oid {
-        return Ok(match autostash::pop_after_success(&mut repo, workdir, stash)? {
-            PopResult::Restored => CherrypickOutcome::Committed {
-                oid,
-                stashed: true,
+        return Ok(
+            match autostash::pop_after_success(&mut repo, workdir, stash)? {
+                PopResult::Restored => CherrypickOutcome::Committed { oid, stashed: true },
+                PopResult::Conflicted(paths) => {
+                    CherrypickOutcome::StashPopConflicts { head: oid, paths }
+                }
             },
-            PopResult::Conflicted(paths) => CherrypickOutcome::StashPopConflicts {
-                head: oid,
-                paths,
-            },
-        });
+        );
     }
     Ok(CherrypickOutcome::Committed {
         oid,

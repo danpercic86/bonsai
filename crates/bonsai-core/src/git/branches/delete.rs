@@ -23,7 +23,9 @@ pub fn delete_branch_with(repo: &git2::Repository, name: &str) -> Result<(), App
     let mut branch = match repo.find_branch(name, git2::BranchType::Local) {
         Ok(b) => b,
         Err(e) if e.code() == git2::ErrorCode::NotFound => {
-            return Err(AppError::BranchNotFound(format!("branch '{name}' not found")));
+            return Err(AppError::BranchNotFound(format!(
+                "branch '{name}' not found"
+            )));
         }
         Err(e) => return Err(e.into()),
     };

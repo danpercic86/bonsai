@@ -11,12 +11,12 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{commit_fixed, git, git_env, init_repo};
 use bonsai_core::ai::RunOpts;
 use bonsai_core::error::AppError;
 use bonsai_core::git::ai_explain::digest_changes;
 use bonsai_core::git::ai_explain::AiDigestRange;
-use crate::common;
-use crate::common::{commit_fixed, git, git_env, init_repo};
 
 const STUB_BODY: &str = "MERGED_BODY_OK";
 const STUB_MODE_ENV: &str = "BONSAI_STUB_MODE";
@@ -123,9 +123,15 @@ fn between_refs_commit_set_matches_git_log_oracle() {
         .lines()
         .map(|h| h[..7].to_string())
         .collect();
-    assert_eq!(ours, oracle, "digest commit set must match `git log main..feature`");
+    assert_eq!(
+        ours, oracle,
+        "digest commit set must match `git log main..feature`"
+    );
     assert_eq!(ours.len(), 2, "two feature-only commits expected");
-    assert!(payload.contains("RANGE main..feature (2 commits)"), "{payload}");
+    assert!(
+        payload.contains("RANGE main..feature (2 commits)"),
+        "{payload}"
+    );
     // The range diff carries the feature-only content.
     assert!(payload.contains("+feature two"), "{payload}");
 }
@@ -194,7 +200,10 @@ fn last_days_commit_set_matches_git_log_oracle() {
         .lines()
         .map(|h| h[..7].to_string())
         .collect();
-    assert_eq!(ours, oracle, "lastDays commit set must match the git oracle");
+    assert_eq!(
+        ours, oracle,
+        "lastDays commit set must match the git oracle"
+    );
     assert_eq!(ours.len(), 2, "the 10-day-old commit is outside the window");
     // The diff is anchored at the boundary commit's tree: it must NOT re-add
     // the out-of-window file but must add both in-window files.
@@ -235,9 +244,18 @@ fn digest_returns_stub_body_with_commits_and_diff_sections() {
             to: "feature".to_string(),
         },
     );
-    assert!(payload.contains("\nCOMMITS\n"), "payload lacks COMMITS:\n{payload}");
-    assert!(payload.contains("\n\nDIFF\n"), "payload lacks DIFF:\n{payload}");
-    assert!(payload.starts_with("RANGE "), "payload lacks RANGE header:\n{payload}");
+    assert!(
+        payload.contains("\nCOMMITS\n"),
+        "payload lacks COMMITS:\n{payload}"
+    );
+    assert!(
+        payload.contains("\n\nDIFF\n"),
+        "payload lacks DIFF:\n{payload}"
+    );
+    assert!(
+        payload.starts_with("RANGE "),
+        "payload lacks RANGE header:\n{payload}"
+    );
 }
 
 /// An empty range (`from == to`) errors BEFORE spawning the CLI (`nonzero`
@@ -409,7 +427,9 @@ fn unicode_subject_appears_in_commits_meta() {
             .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
             .expect("add");
         index.write().expect("index write");
-        let tree = repo.find_tree(index.write_tree().expect("tree")).expect("t");
+        let tree = repo
+            .find_tree(index.write_tree().expect("tree"))
+            .expect("t");
         let sig = git2::Signature::new(
             "Ünï Author",
             "uni@example.com",
@@ -428,8 +448,14 @@ fn unicode_subject_appears_in_commits_meta() {
             to: "feature".to_string(),
         },
     );
-    assert!(payload.contains(subject), "unicode subject lost:\n{payload}");
-    assert!(payload.contains("Ünï Author"), "unicode author lost:\n{payload}");
+    assert!(
+        payload.contains(subject),
+        "unicode subject lost:\n{payload}"
+    );
+    assert!(
+        payload.contains("Ünï Author"),
+        "unicode author lost:\n{payload}"
+    );
 }
 
 /// End-to-end 200-commit cap: 250 commits built via git2 (NEVER 250 CLI
@@ -452,7 +478,9 @@ fn digest_payload_caps_metadata_at_200_commits() {
         let mut parent: Option<git2::Oid> = None;
         for i in 0..251 {
             // per-commit unique tree via a single evolving blob
-            let blob = repo.blob(format!("content {i}\n").as_bytes()).expect("blob");
+            let blob = repo
+                .blob(format!("content {i}\n").as_bytes())
+                .expect("blob");
             let mut tb = repo.treebuilder(None).expect("tb");
             tb.insert("f.txt", blob, 0o100644).expect("insert");
             let tree = repo.find_tree(tb.write().expect("w")).expect("t");
@@ -462,7 +490,14 @@ fn digest_payload_caps_metadata_at_200_commits() {
                 .unwrap_or_default();
             let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
             let oid = repo
-                .commit(Some("HEAD"), &sig, &sig, &format!("bulk {i}"), &tree, &parent_refs)
+                .commit(
+                    Some("HEAD"),
+                    &sig,
+                    &sig,
+                    &format!("bulk {i}"),
+                    &tree,
+                    &parent_refs,
+                )
                 .expect("commit");
             if i == 0 {
                 // Anchor `from` at the root so the range holds exactly 250.
@@ -481,14 +516,24 @@ fn digest_payload_caps_metadata_at_200_commits() {
         },
     );
     let listed = payload_short7s(&payload);
-    assert_eq!(listed.len(), 200, "exactly MAX_DIGEST_COMMITS metadata lines");
+    assert_eq!(
+        listed.len(),
+        200,
+        "exactly MAX_DIGEST_COMMITS metadata lines"
+    );
     assert!(
         payload.contains("... and 50 more commits"),
         "overflow note missing:\n{}",
         &payload[..payload.len().min(2000)]
     );
-    assert!(payload.contains("RANGE start..HEAD (250 commits)"), "header count");
-    assert!(payload.contains("\n\nDIFF\n"), "DIFF section must follow the capped meta");
+    assert!(
+        payload.contains("RANGE start..HEAD (250 commits)"),
+        "header count"
+    );
+    assert!(
+        payload.contains("\n\nDIFF\n"),
+        "DIFF section must follow the capped meta"
+    );
 }
 
 /// A bad ref maps to `Git`; days=0 maps to `InvalidName` — both before any

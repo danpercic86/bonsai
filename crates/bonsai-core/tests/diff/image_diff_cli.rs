@@ -22,11 +22,11 @@
 //!
 //! HARD RULE: scratch repos live on D: via `common::init_repo()`.
 
+use crate::common;
+use crate::common::init_repo;
 use bonsai_core::git::commit::create_commit;
 use bonsai_core::git::image_diff::{get_image_diff, ImageDiffRequest};
 use bonsai_core::git::stage::stage_paths;
-use crate::common;
-use crate::common::init_repo;
 
 macro_rules! require_git {
     () => {

@@ -10,23 +10,27 @@ fn init_repo() -> (tempfile::TempDir, git2::Repository) {
     let repo = git2::Repository::init(dir.path()).expect("init");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     (dir, repo)
 }
 
 fn commit(repo: &git2::Repository, msg: &str, parents: &[git2::Oid], t: i64) -> git2::Oid {
-    let sig = git2::Signature::new("Test User", "test@example.com", &git2::Time::new(t, 0))
-        .expect("sig");
+    let sig =
+        git2::Signature::new("Test User", "test@example.com", &git2::Time::new(t, 0)).expect("sig");
     let blob = repo.blob(msg.as_bytes()).expect("blob");
     let mut tb = repo.treebuilder(None).expect("treebuilder");
     tb.insert("f.txt", blob, 0o100_644).expect("insert");
-    let tree = repo.find_tree(tb.write().expect("write tree")).expect("tree");
+    let tree = repo
+        .find_tree(tb.write().expect("write tree"))
+        .expect("tree");
     let parent_commits: Vec<git2::Commit> = parents
         .iter()
         .map(|p| repo.find_commit(*p).expect("parent"))
         .collect();
     let refs: Vec<&git2::Commit> = parent_commits.iter().collect();
-    repo.commit(None, &sig, &sig, msg, &tree, &refs).expect("commit")
+    repo.commit(None, &sig, &sig, msg, &tree, &refs)
+        .expect("commit")
 }
 
 fn branch(repo: &git2::Repository, name: &str, oid: git2::Oid) {
@@ -35,7 +39,8 @@ fn branch(repo: &git2::Repository, name: &str, oid: git2::Oid) {
 }
 
 fn set_head(repo: &git2::Repository, name: &str) {
-    repo.set_head(&format!("refs/heads/{name}")).expect("set head");
+    repo.set_head(&format!("refs/heads/{name}"))
+        .expect("set head");
 }
 
 /// `c0<-c1<-c2` with `main` on the tip, `other` on `c1`, HEAD attached to main.
@@ -50,7 +55,12 @@ fn fixture() -> (tempfile::TempDir, git2::Repository, [git2::Oid; 3]) {
     (dir, repo, [c0, c1, c2])
 }
 
-fn run(path: &std::path::Path, cache: &GraphCache, perf: &PerfState, f: &GraphFilter) -> Vec<GraphChunk> {
+fn run(
+    path: &std::path::Path,
+    cache: &GraphCache,
+    perf: &PerfState,
+    f: &GraphFilter,
+) -> Vec<GraphChunk> {
     let mut out = Vec::new();
     stream_graph_cached(path, cache, perf, f, |c| {
         out.push(c);
@@ -113,7 +123,10 @@ fn filter_equality_gates_the_cache() {
     // ...and switching back to the first filter re-walks again (single slot).
     let third = run(dir.path(), &cache, &perf, &f);
     let c = perf.snapshot();
-    assert_eq!(c.graph_walks, 3, "toggle back → one more walk (determinism, not caching)");
+    assert_eq!(
+        c.graph_walks, 3,
+        "toggle back → one more walk (determinism, not caching)"
+    );
     assert_eq!(wire(&first), wire(&third), "deterministic filtered stream");
 }
 
@@ -139,12 +152,24 @@ fn redecorate_under_filter_never_resurrects_hidden_pills() {
     let after = run(dir.path(), &cache, &perf, &f);
 
     let c = perf.snapshot();
-    assert_eq!(c.graph_walks, 1, "ref-only change at an existing oid → no re-walk");
+    assert_eq!(
+        c.graph_walks, 1,
+        "ref-only change at an existing oid → no re-walk"
+    );
     assert_eq!(c.graph_redecorates, 1, "served as HitRedecorate");
     let pills = all_pill_names(&after);
-    assert!(pills.contains(&"feature".to_string()), "whitelisted pill appears");
-    assert!(!pills.contains(&"secret".to_string()), "hidden pill never resurrects");
-    assert!(!pills.contains(&"other".to_string()), "hidden pill never resurrects");
+    assert!(
+        pills.contains(&"feature".to_string()),
+        "whitelisted pill appears"
+    );
+    assert!(
+        !pills.contains(&"secret".to_string()),
+        "hidden pill never resurrects"
+    );
+    assert!(
+        !pills.contains(&"other".to_string()),
+        "hidden pill never resurrects"
+    );
 }
 
 /// The store path caches a FILTERED walk (the bracketing re-probe runs under
@@ -221,6 +246,9 @@ fn redecorate_refreshes_meta_flags_on_stale_flip() {
         "flags rewritten from the fresh seed (stale fallback)"
     );
     let pills = all_pill_names(&after);
-    assert!(pills.contains(&"main".to_string()), "fallback shows all pills");
+    assert!(
+        pills.contains(&"main".to_string()),
+        "fallback shows all pills"
+    );
     assert!(pills.contains(&"renamed".to_string()));
 }

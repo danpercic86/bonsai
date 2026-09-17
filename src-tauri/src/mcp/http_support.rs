@@ -356,8 +356,11 @@ impl HttpMcp {
     }
 
     pub(super) async fn call_tool(&mut self, name: &str, arguments: Value) -> Value {
-        self.rpc("tools/call", json!({ "name": name, "arguments": arguments }))
-            .await
+        self.rpc(
+            "tools/call",
+            json!({ "name": name, "arguments": arguments }),
+        )
+        .await
     }
 }
 

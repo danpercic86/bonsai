@@ -20,7 +20,12 @@ use super::{
 
 const AT_MS: u64 = 1_700_000_000_000;
 
-fn row(kind: ToolKind, id: &str, os: TargetOs, res: Resolution) -> (&'static ToolEntry, Resolution) {
+fn row(
+    kind: ToolKind,
+    id: &str,
+    os: TargetOs,
+    res: Resolution,
+) -> (&'static ToolEntry, Resolution) {
     let entry = catalog::find_for(kind, id, os).expect("catalog row (AC8 pins totality)");
     (entry, res)
 }
@@ -65,8 +70,7 @@ fn browsable_program(dir: &Path, stem: &str) -> PathBuf {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
-            .expect("set the execute bit");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("set the execute bit");
     }
     path
 }
@@ -147,7 +151,11 @@ fn a_stored_custom_path_that_is_gone_is_still_listed_but_not_present() {
     // render the "custom path gone" state instead of an unexplained empty
     // picker.
     let scratch = crate::testutil::scratch_dir();
-    let gone = scratch.path().join("Removed.exe").to_string_lossy().to_string();
+    let gone = scratch
+        .path()
+        .join("Removed.exe")
+        .to_string_lossy()
+        .to_string();
 
     let scan = scan_from_rows(&[], &gone, "", TargetOs::host(), AT_MS);
     assert_eq!(ids(&scan.terminals), vec![CUSTOM_ID]);
@@ -223,8 +231,15 @@ fn a_built_in_selection_resolves_without_any_filesystem_test() {
             built_in_res("powershell"),
         ),
     ];
-    let picked = picked_from(&env, TargetOs::Windows, &rows, "cmd", ToolKind::Terminal, "")
-        .expect("a built-in selection always resolves");
+    let picked = picked_from(
+        &env,
+        TargetOs::Windows,
+        &rows,
+        "cmd",
+        ToolKind::Terminal,
+        "",
+    )
+    .expect("a built-in selection always resolves");
     assert_eq!(picked.program, "cmd");
     assert_eq!(picked.recipe, Recipe::DirCwd(&["/K"]));
     assert_eq!(picked.open_arg, None);
@@ -322,19 +337,40 @@ fn an_undetected_unknown_or_wrong_kind_selection_yields_none() {
     )];
     for setting in ["", "no-such-tool", CUSTOM_ID] {
         assert_eq!(
-            picked_from(&env, TargetOs::Windows, &rows, setting, ToolKind::Terminal, ""),
+            picked_from(
+                &env,
+                TargetOs::Windows,
+                &rows,
+                setting,
+                ToolKind::Terminal,
+                ""
+            ),
             None,
             "setting {setting:?} must not resolve"
         );
     }
     // A catalog id of the OTHER kind.
     assert_eq!(
-        picked_from(&env, TargetOs::Windows, &rows, "vscode", ToolKind::Terminal, ""),
+        picked_from(
+            &env,
+            TargetOs::Windows,
+            &rows,
+            "vscode",
+            ToolKind::Terminal,
+            ""
+        ),
         None
     );
     // A real catalog id that simply was not detected on this host.
     assert_eq!(
-        picked_from(&env, TargetOs::Windows, &rows, "pwsh", ToolKind::Terminal, ""),
+        picked_from(
+            &env,
+            TargetOs::Windows,
+            &rows,
+            "pwsh",
+            ToolKind::Terminal,
+            ""
+        ),
         None
     );
     // An id that exists only on ANOTHER OS is nameable but never launchable.
@@ -444,7 +480,11 @@ fn a_hand_written_detail_is_length_capped() {
     let scan = scan_from_rows(&[], "", &stored, TargetOs::Windows, AT_MS);
     let custom = &scan.editors[0];
     assert!(!custom.present, "too long to validate");
-    assert_eq!(custom.detail.chars().count(), 513, "512 chars + the ellipsis");
+    assert_eq!(
+        custom.detail.chars().count(),
+        513,
+        "512 chars + the ellipsis"
+    );
     let prefix = custom
         .detail
         .strip_suffix('…')

@@ -107,7 +107,8 @@ mod tests {
         {
             let mut cfg = repo.config().expect("open config");
             cfg.set_str("user.name", "Test User").expect("set name");
-            cfg.set_str("user.email", "test@example.com").expect("set email");
+            cfg.set_str("user.email", "test@example.com")
+                .expect("set email");
         }
         repo
     }
@@ -117,7 +118,9 @@ mod tests {
     fn commit_file(dir: &Path, name: &str, content: &str, msg: &str) -> String {
         std::fs::write(dir.join(name), content).expect("write file");
         crate::git::stage::stage_paths(dir, &[name.to_string()]).expect("stage");
-        crate::git::commit::create_commit(dir, msg, None, false).expect("commit").oid
+        crate::git::commit::create_commit(dir, msg, None, false)
+            .expect("commit")
+            .oid
     }
 
     /// `ReflogEntry` serializes with EXACTLY the camelCase keys the TS wire type
@@ -161,7 +164,11 @@ mod tests {
         let head2 = commit_file(path, "a.txt", "two\n", "c2: edit");
 
         let entries = read_reflog(path, "HEAD").expect("reflog ok");
-        assert!(entries.len() >= 2, "at least two reflog entries, got {}", entries.len());
+        assert!(
+            entries.len() >= 2,
+            "at least two reflog entries, got {}",
+            entries.len()
+        );
         assert_eq!(entries[0].index, 0, "index 0 is newest");
         assert_eq!(entries[0].new_oid, head2, "newest new_oid == current HEAD");
         assert!(

@@ -164,9 +164,10 @@ async fn execute_job(
                         if updated > 0 {
                             let cg_path = path.clone();
                             tauri::async_runtime::spawn_blocking(move || {
-                                let _ = bonsai_core::git::maintenance::write_commit_graph_best_effort(
-                                    &cg_path,
-                                );
+                                let _ =
+                                    bonsai_core::git::maintenance::write_commit_graph_best_effort(
+                                        &cg_path,
+                                    );
                             });
                         }
                         RunResult::Success {
@@ -195,7 +196,13 @@ async fn execute_job(
             } => {
                 entry.consecutive_failures = 0; // D6 reset
                 entry.last_error = None;
-                (JobOutcome::Success, updated_refs, None, false, emit_repo_changed)
+                (
+                    JobOutcome::Success,
+                    updated_refs,
+                    None,
+                    false,
+                    emit_repo_changed,
+                )
             }
             RunResult::Suppressed => (JobOutcome::Suppressed, None, None, false, false),
             RunResult::Failed(msg) => {
@@ -235,7 +242,12 @@ async fn execute_job(
     if repo_changed {
         emit(SchedulerEvent::RepoChanged(RepoChangedPayload {
             repo_id: repo_id.clone(),
-            reason: (if matches!(job, JobKind::AutoFetch) { "fetch" } else { "fs" }).to_string(),
+            reason: (if matches!(job, JobKind::AutoFetch) {
+                "fetch"
+            } else {
+                "fs"
+            })
+            .to_string(),
         }));
     }
     emit(SchedulerEvent::JobStatus(payload));
@@ -290,10 +302,7 @@ pub async fn run_scheduler(app: tauri::AppHandle, tick: std::time::Duration) {
             // Poison recovery (audit §3.8) — matches `lock_recover`'s policy:
             // the repos map stays structurally valid, and skipping every tick
             // forever would silently kill auto-fetch/health-refresh.
-            let guard = state
-                .repos
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
+            let guard = state.repos.lock().unwrap_or_else(PoisonError::into_inner);
             guard
                 .iter()
                 .map(|(id, entry)| (id.clone(), entry.path.clone()))

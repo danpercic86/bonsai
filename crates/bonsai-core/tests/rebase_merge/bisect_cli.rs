@@ -21,12 +21,12 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use crate::common;
+use crate::common::{commit_fixed, git, init_repo};
 use bonsai_core::error::AppError;
 use bonsai_core::git::bisect::{
     bisect_mark, bisect_reset, bisect_skip, get_bisect_state, start_bisect, BisectOutcome,
 };
-use crate::common;
-use crate::common::{commit_fixed, git, init_repo};
 
 macro_rules! require_git {
     () => {
@@ -149,12 +149,18 @@ fn bonsai_first_bad_matches_git_on_linear_history() {
 
     let cand = candidate_set(d, &bad, &good);
     let git_first_bad = git_bisect_first_bad(d, &bad, &good);
-    assert_eq!(git_first_bad, oids[bug_at], "git names the bug-introducing commit");
+    assert_eq!(
+        git_first_bad, oids[bug_at],
+        "git names the bug-introducing commit"
+    );
 
     let (bonsai_first_bad, midpoints) = bonsai_bisect(d, &bad, &good);
 
     // (a) final first-bad equality.
-    assert_eq!(bonsai_first_bad, git_first_bad, "Bonsai first-bad == git first-bad");
+    assert_eq!(
+        bonsai_first_bad, git_first_bad,
+        "Bonsai first-bad == git first-bad"
+    );
 
     // (b) every Bonsai midpoint is in git's candidate set.
     for m in &midpoints {
@@ -234,7 +240,11 @@ fn skip_a_midpoint_still_converges_to_git_first_bad() {
         }
     }
     assert!(skipped_once, "a midpoint was skipped");
-    assert_eq!(answer.expect("converged"), git_first_bad, "skip still finds git's first-bad");
+    assert_eq!(
+        answer.expect("converged"),
+        git_first_bad,
+        "skip still finds git's first-bad"
+    );
 }
 
 // ============================================================ reset safety
@@ -280,14 +290,25 @@ fn reset_from_mid_bisect_restores_original_branch_and_tip() {
 
     // Reset mid-bisect and cross-check the restore against git itself.
     bisect_reset(d).expect("reset");
-    assert_eq!(rev(d, "HEAD"), orig_head, "HEAD oid restored to the pre-bisect tip");
+    assert_eq!(
+        rev(d, "HEAD"),
+        orig_head,
+        "HEAD oid restored to the pre-bisect tip"
+    );
     assert_eq!(
         git(d, &["rev-parse", "--abbrev-ref", "HEAD"]),
         orig_branch,
         "original branch re-attached (not left detached)"
     );
-    assert_eq!(git(d, &["status", "--porcelain"]), "", "worktree is clean after reset");
-    assert!(get_bisect_state(d).expect("query").is_none(), "no bisect state remains");
+    assert_eq!(
+        git(d, &["status", "--porcelain"]),
+        "",
+        "worktree is clean after reset"
+    );
+    assert!(
+        get_bisect_state(d).expect("query").is_none(),
+        "no bisect state remains"
+    );
     // A fresh bisect can be started again after a clean reset.
     start_bisect(d, &bad, std::slice::from_ref(&good)).expect("restart after reset");
     bisect_reset(d).expect("final cleanup reset");
@@ -316,7 +337,11 @@ fn mark_after_external_checkout_errors_and_leaves_state_unchanged() {
         BisectOutcome::Testing { current, .. } => current,
         other => panic!("expected Testing on start, got {other:?}"),
     };
-    assert_eq!(rev(d, "HEAD"), midpoint, "engine detached HEAD onto the midpoint");
+    assert_eq!(
+        rev(d, "HEAD"),
+        midpoint,
+        "engine detached HEAD onto the midpoint"
+    );
 
     let before = get_bisect_state(d).expect("state").expect("in progress");
 
@@ -338,8 +363,13 @@ fn mark_after_external_checkout_errors_and_leaves_state_unchanged() {
     }
 
     // The persisted search state is untouched by the rejected calls.
-    let after = get_bisect_state(d).expect("state").expect("still in progress");
-    assert_eq!(before, after, "rejected mark/skip left the bisect state unchanged");
+    let after = get_bisect_state(d)
+        .expect("state")
+        .expect("still in progress");
+    assert_eq!(
+        before, after,
+        "rejected mark/skip left the bisect state unchanged"
+    );
 
     // Cleanup: never leave the scratch repo mid-bisect on a detached HEAD.
     bisect_reset(d).expect("cleanup reset");
@@ -394,7 +424,10 @@ fn start_refuses_when_untracked_file_would_be_clobbered_by_midpoint_checkout() {
         "UNTRACKED-LOCAL\n",
         "untracked file was clobbered"
     );
-    assert!(get_bisect_state(d).expect("query").is_none(), "a refused start left bisect state");
+    assert!(
+        get_bisect_state(d).expect("query").is_none(),
+        "a refused start left bisect state"
+    );
     assert!(
         !d.join(".git").join("bonsai-bisect").exists(),
         "a refused start must leave no bisect state dir"

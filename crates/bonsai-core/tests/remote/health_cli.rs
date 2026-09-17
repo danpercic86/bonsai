@@ -13,9 +13,11 @@
 
 use std::path::Path;
 
-use bonsai_core::health::collect_repo_health;
 use crate::common;
-use crate::common::{commit_fixed, git, git_ok, git_raw, init_repo, porcelain_records, scratch_dir};
+use crate::common::{
+    commit_fixed, git, git_ok, git_raw, init_repo, porcelain_records, scratch_dir,
+};
+use bonsai_core::health::collect_repo_health;
 
 macro_rules! require_git {
     () => {
@@ -83,8 +85,13 @@ fn stats_match_rev_list_and_count_objects() {
         .unwrap_or_else(|| panic!("stats errored: {:?}", health.stats.error));
 
     // Oracle 1: commit count.
-    let cli_commits: u32 = git(d, &["rev-list", "--count", "HEAD"]).parse().expect("count");
-    assert_eq!(stats.commit_count, cli_commits, "vs git rev-list --count HEAD");
+    let cli_commits: u32 = git(d, &["rev-list", "--count", "HEAD"])
+        .parse()
+        .expect("count");
+    assert_eq!(
+        stats.commit_count, cli_commits,
+        "vs git rev-list --count HEAD"
+    );
     assert!(!stats.commit_count_capped);
 
     // Oracle 2: object count = loose `count` + `in-pack` from count-objects -v.
@@ -98,7 +105,10 @@ fn stats_match_rev_list_and_count_objects() {
             .expect("count-objects field")
     };
     let cli_objects = field("count") + field("in-pack");
-    assert_eq!(stats.object_count, cli_objects, "vs git count-objects -v\n{co}");
+    assert_eq!(
+        stats.object_count, cli_objects,
+        "vs git count-objects -v\n{co}"
+    );
     assert!(!stats.object_scan_capped);
 
     // Largest blobs are 40-hex oids, sizes descending, ≤ 10 rows.
@@ -201,7 +211,10 @@ fn branches_match_for_each_ref_and_ahead_behind() {
     git(d, &["branch", "feature-y"]);
     git(d, &["tag", "v1", &c0]);
     git(d, &["tag", "v2"]);
-    git(d, &["remote", "add", "origin", "https://example.invalid/x.git"]);
+    git(
+        d,
+        &["remote", "add", "origin", "https://example.invalid/x.git"],
+    );
     // Seed origin/main at C0 → main is ahead 1 behind 0; wire the upstream.
     git(d, &["update-ref", "refs/remotes/origin/main", &c0]);
     git(d, &["branch", "--set-upstream-to=origin/main", "main"]);
@@ -253,9 +266,15 @@ fn structure_matches_worktree_list_porcelain() {
     let wt_root = scratch_dir();
     let locked = wt_root.path().join("wt-locked");
     let prunable = wt_root.path().join("wt-prunable");
-    git(d, &["worktree", "add", "--detach", locked.to_str().unwrap()]);
+    git(
+        d,
+        &["worktree", "add", "--detach", locked.to_str().unwrap()],
+    );
     git(d, &["worktree", "lock", locked.to_str().unwrap()]);
-    git(d, &["worktree", "add", "--detach", prunable.to_str().unwrap()]);
+    git(
+        d,
+        &["worktree", "add", "--detach", prunable.to_str().unwrap()],
+    );
     std::fs::remove_dir_all(&prunable).expect("delete worktree dir → prunable");
 
     // Drifted asset pair (differing normalized content).
@@ -270,10 +289,22 @@ fn structure_matches_worktree_list_porcelain() {
 
     // Oracle: parse `git worktree list --porcelain`.
     let porcelain = git(d, &["worktree", "list", "--porcelain"]);
-    let cli_total = porcelain.lines().filter(|l| l.starts_with("worktree ")).count() as u32;
-    let cli_locked = porcelain.lines().filter(|l| l.starts_with("locked")).count() as u32;
-    let cli_prunable = porcelain.lines().filter(|l| l.starts_with("prunable")).count() as u32;
-    assert_eq!(s.worktree_count, cli_total, "vs worktree list --porcelain\n{porcelain}");
+    let cli_total = porcelain
+        .lines()
+        .filter(|l| l.starts_with("worktree "))
+        .count() as u32;
+    let cli_locked = porcelain
+        .lines()
+        .filter(|l| l.starts_with("locked"))
+        .count() as u32;
+    let cli_prunable = porcelain
+        .lines()
+        .filter(|l| l.starts_with("prunable"))
+        .count() as u32;
+    assert_eq!(
+        s.worktree_count, cli_total,
+        "vs worktree list --porcelain\n{porcelain}"
+    );
     assert_eq!(s.worktree_count, 3, "main + 2 linked");
     assert_eq!(s.worktrees_locked, cli_locked);
     assert_eq!(s.worktrees_locked, 1);
@@ -300,10 +331,17 @@ fn edge_unborn_head_repo_degrades() {
     assert_eq!(stats.commit_count, 0);
     let b = health.branches.data.expect("branches Ok on unborn");
     assert!(b.unborn);
-    assert_eq!(b.current_branch.as_deref(), Some("main"), "symbolic target name");
+    assert_eq!(
+        b.current_branch.as_deref(),
+        Some("main"),
+        "symbolic target name"
+    );
     assert_eq!(b.local_count, 0);
     assert!(b.stale.is_none(), "stale sub-metric unavailable on unborn");
-    let ws = health.working_state.data.expect("workingState Ok on unborn");
+    let ws = health
+        .working_state
+        .data
+        .expect("workingState Ok on unborn");
     assert_eq!(ws.staged + ws.unstaged + ws.conflicted, 0);
     assert!(health.structure.data.is_some());
 }
@@ -358,7 +396,7 @@ fn edge_git_dir_only_never_panics() {
     }
 
     let health = collect_repo_health(d); // must not panic
-    // Every section must resolve to exactly one of data/error.
+                                         // Every section must resolve to exactly one of data/error.
     assert!(health.stats.data.is_some() ^ health.stats.error.is_some());
     assert!(health.branches.data.is_some() ^ health.branches.error.is_some());
     assert!(health.working_state.data.is_some() ^ health.working_state.error.is_some());
@@ -392,7 +430,10 @@ fn collect_repo_health_is_read_only() {
     commit_fixed(d, "C1");
     git(d, &["branch", "merged", &c0]);
     git(d, &["tag", "v1"]);
-    git(d, &["remote", "add", "origin", "https://example.invalid/x.git"]);
+    git(
+        d,
+        &["remote", "add", "origin", "https://example.invalid/x.git"],
+    );
     git(d, &["update-ref", "refs/remotes/origin/main", &c0]);
     git(d, &["branch", "--set-upstream-to=origin/main", "main"]);
     // Stash + dirty working tree + staged + untracked.
@@ -411,15 +452,39 @@ fn collect_repo_health_is_read_only() {
     let health = collect_repo_health(d);
     let after = observable_state(d);
 
-    assert_eq!(before.status, after.status, "porcelain status changed — WRITE detected");
-    assert_eq!(before.refs, after.refs, "refs/HEAD changed — WRITE detected");
-    assert_eq!(before.stash, after.stash, "stash list changed — WRITE detected");
-    assert_eq!(before.index, after.index, "index contents changed — WRITE detected");
+    assert_eq!(
+        before.status, after.status,
+        "porcelain status changed — WRITE detected"
+    );
+    assert_eq!(
+        before.refs, after.refs,
+        "refs/HEAD changed — WRITE detected"
+    );
+    assert_eq!(
+        before.stash, after.stash,
+        "stash list changed — WRITE detected"
+    );
+    assert_eq!(
+        before.index, after.index,
+        "index contents changed — WRITE detected"
+    );
 
     // Sanity: all sections actually ran with data on this rich fixture.
     assert!(health.stats.data.is_some(), "{:?}", health.stats.error);
-    assert!(health.branches.data.is_some(), "{:?}", health.branches.error);
-    assert!(health.working_state.data.is_some(), "{:?}", health.working_state.error);
-    assert!(health.structure.data.is_some(), "{:?}", health.structure.error);
+    assert!(
+        health.branches.data.is_some(),
+        "{:?}",
+        health.branches.error
+    );
+    assert!(
+        health.working_state.data.is_some(),
+        "{:?}",
+        health.working_state.error
+    );
+    assert!(
+        health.structure.data.is_some(),
+        "{:?}",
+        health.structure.error
+    );
     assert_eq!(health.working_state.data.unwrap().stash_count, 1);
 }

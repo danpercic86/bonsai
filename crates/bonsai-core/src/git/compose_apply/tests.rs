@@ -44,12 +44,18 @@ fn apply_two_groups_creates_two_commits_each_its_own_delta() {
     assert_ne!(head_oid(p).expect("head"), base);
 
     // Each commit's delta-to-parent is EXACTLY its group's files.
-    assert_eq!(delta_paths(p, &res.commits[0].oid), vec!["f1.txt", "f2.txt"]);
+    assert_eq!(
+        delta_paths(p, &res.commits[0].oid),
+        vec!["f1.txt", "f2.txt"]
+    );
     assert_eq!(delta_paths(p, &res.commits[1].oid), vec!["f3.txt"]);
 
     // CLI oracle (guarded): `git diff-tree` agrees per commit.
     if have_git() {
-        assert_eq!(git_delta_names(p, &res.commits[0].oid), vec!["f1.txt", "f2.txt"]);
+        assert_eq!(
+            git_delta_names(p, &res.commits[0].oid),
+            vec!["f1.txt", "f2.txt"]
+        );
         assert_eq!(git_delta_names(p, &res.commits[1].oid), vec!["f3.txt"]);
     }
 }
@@ -80,8 +86,14 @@ fn apply_leaves_uncovered_files_uncommitted() {
         .chain(st.untracked.iter())
         .map(|e| e.path.as_str())
         .collect();
-    assert!(dirty.contains(&"uncovered.txt"), "uncovered file stays dirty: {dirty:?}");
-    assert!(!dirty.contains(&"covered.txt"), "covered file committed: {dirty:?}");
+    assert!(
+        dirty.contains(&"uncovered.txt"),
+        "uncovered file stays dirty: {dirty:?}"
+    );
+    assert!(
+        !dirty.contains(&"covered.txt"),
+        "covered file committed: {dirty:?}"
+    );
 }
 
 /// §8.11: EVERY validation failure rejects BEFORE any mutation — HEAD unchanged
@@ -107,14 +119,24 @@ fn apply_rejects_before_any_commit() {
     };
 
     // empty message => EmptyMessage.
-    let e = apply_composed_commits(p, &ComposePlan { groups: vec![group(&["f1.txt"], "   ")] })
-        .expect_err("empty message");
+    let e = apply_composed_commits(
+        p,
+        &ComposePlan {
+            groups: vec![group(&["f1.txt"], "   ")],
+        },
+    )
+    .expect_err("empty message");
     assert!(matches!(e, AppError::EmptyMessage), "got {e:?}");
     expect_untouched(Err(e));
 
     // empty file list => Other.
-    let e = apply_composed_commits(p, &ComposePlan { groups: vec![group(&[], "msg")] })
-        .expect_err("empty files");
+    let e = apply_composed_commits(
+        p,
+        &ComposePlan {
+            groups: vec![group(&[], "msg")],
+        },
+    )
+    .expect_err("empty files");
     assert!(matches!(e, AppError::Other(_)), "got {e:?}");
     expect_untouched(Err(e));
 
@@ -134,8 +156,13 @@ fn apply_rejects_before_any_commit() {
     assert_eq!(commit_count(p), 1);
 
     // path not in the change set => Other.
-    let e = apply_composed_commits(p, &ComposePlan { groups: vec![group(&["ghost.txt"], "m")] })
-        .expect_err("unknown path");
+    let e = apply_composed_commits(
+        p,
+        &ComposePlan {
+            groups: vec![group(&["ghost.txt"], "m")],
+        },
+    )
+    .expect_err("unknown path");
     match e {
         AppError::Other(m) => assert!(m.contains("not in the working changes"), "got {m}"),
         other => panic!("expected Other, got {other:?}"),
@@ -144,8 +171,7 @@ fn apply_rejects_before_any_commit() {
     assert_eq!(commit_count(p), 1);
 
     // empty plan => NothingToCommit.
-    let e = apply_composed_commits(p, &ComposePlan { groups: vec![] })
-        .expect_err("empty plan");
+    let e = apply_composed_commits(p, &ComposePlan { groups: vec![] }).expect_err("empty plan");
     assert!(matches!(e, AppError::NothingToCommit), "got {e:?}");
     expect_untouched(Err(e));
 
@@ -153,8 +179,13 @@ fn apply_rejects_before_any_commit() {
     let dir2 = init_scratch_no_identity();
     let p2 = dir2.path();
     write(p2, "f1.txt", "1\n");
-    let e = apply_composed_commits(p2, &ComposePlan { groups: vec![group(&["f1.txt"], "m")] })
-        .expect_err("no identity");
+    let e = apply_composed_commits(
+        p2,
+        &ComposePlan {
+            groups: vec![group(&["f1.txt"], "m")],
+        },
+    )
+    .expect_err("no identity");
     assert!(matches!(e, AppError::ConfigMissing(_)), "got {e:?}");
     assert!(head_oid(p2).is_none(), "still unborn — nothing committed");
 }
@@ -206,8 +237,16 @@ fn apply_rolls_back_on_mid_sequence_failure() {
     }
 
     // ROLLBACK proven: HEAD restored, index back at HEAD, zero commits landed.
-    assert_eq!(head_oid(p).expect("head"), orig, "HEAD rolled back to original");
-    assert_eq!(commit_count(p), 1, "zero commits landed (only base remains)");
+    assert_eq!(
+        head_oid(p).expect("head"),
+        orig,
+        "HEAD rolled back to original"
+    );
+    assert_eq!(
+        commit_count(p),
+        1,
+        "zero commits landed (only base remains)"
+    );
     assert_eq!(index_tree(p), head_tree(p), "index reset to HEAD");
 
     // WORKING TREE UNTOUCHED: all original on-disk content preserved.

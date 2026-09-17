@@ -9,11 +9,11 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use crate::common::{commit_fixed, git, git_ok};
 use bonsai_core::error::AppError;
 use bonsai_core::git::exec::SpawnGitExec;
 use bonsai_core::git::remote::{fetch_all, pull_ff, push_current, PullResult, PushResult};
-use crate::common;
-use crate::common::{commit_fixed, git, git_ok};
 
 macro_rules! require_git {
     () => {
@@ -143,8 +143,14 @@ fn pull_after_upstream_force_rewrite_changes_nothing() {
     // NOTHING moved locally: ref still X, X's file intact, Y's file absent,
     // porcelain unchanged. Only the remote-tracking ref followed the rewrite.
     assert_eq!(rev_parse(&f.work, "main"), x_tip, "local ref must not move");
-    assert!(f.work.join("x.txt").exists(), "X's worktree file must survive");
-    assert!(!f.work.join("y.txt").exists(), "Y must not appear in worktree");
+    assert!(
+        f.work.join("x.txt").exists(),
+        "X's worktree file must survive"
+    );
+    assert!(
+        !f.work.join("y.txt").exists(),
+        "Y must not appear in worktree"
+    );
     assert_eq!(git(&f.work, &["status", "--porcelain"]), porcelain_before);
     assert_eq!(rev_parse(&f.work, "refs/remotes/origin/main"), y_tip);
 
@@ -175,7 +181,10 @@ fn fetch_fail_fast_broken_remote_leaves_valid_remote_untouched() {
     let f = setup();
 
     let missing = f.root.join("no-such-remote.git");
-    git(&f.work, &["remote", "add", "aaa-broken", &path_str(&missing)]);
+    git(
+        &f.work,
+        &["remote", "add", "aaa-broken", &path_str(&missing)],
+    );
 
     // Ordering oracle: libgit2 must list the broken remote first.
     let repo = git2::Repository::open(&f.work).expect("open work");
@@ -187,7 +196,11 @@ fn fetch_fail_fast_broken_remote_leaves_valid_remote_untouched() {
         .flatten()
         .map(str::to_string)
         .collect();
-    assert_eq!(order, ["aaa-broken", "origin"], "ordering assumption broken");
+    assert_eq!(
+        order,
+        ["aaa-broken", "origin"],
+        "ordering assumption broken"
+    );
     drop(repo);
 
     seed_publish(&f, "new.txt", "new\n", "published after clone");
@@ -251,7 +264,11 @@ fn push_with_stale_tracking_is_local_up_to_date_divergence() {
         }
         other => panic!("expected UpToDate (stale-tracking short-circuit), got {other:?}"),
     }
-    assert_eq!(rev_parse(&f.bare, "main"), b_tip, "bare must keep rival's B");
+    assert_eq!(
+        rev_parse(&f.bare, "main"),
+        b_tip,
+        "bare must keep rival's B"
+    );
 
     // CLI divergence oracle: `git push` contacts the remote and refuses the
     // non-fast-forward rewind instead of reporting up-to-date.
@@ -259,7 +276,11 @@ fn push_with_stale_tracking_is_local_up_to_date_divergence() {
         !git_ok(&f.work, &["push", "origin", "main"]),
         "CLI `git push` must reject the stale-state push (documented divergence)"
     );
-    assert_eq!(rev_parse(&f.bare, "main"), b_tip, "CLI must not move bare either");
+    assert_eq!(
+        rev_parse(&f.bare, "main"),
+        b_tip,
+        "CLI must not move bare either"
+    );
 
     // After a fetch the truth is visible again and pull fast-forwards to B.
     fetch_all(&f.work).expect("fetch");
@@ -338,7 +359,11 @@ fn unicode_branch_push_round_trips() {
 
     let res = push_current(&f.work, &SpawnGitExec, false).expect("push unicode branch");
     match res {
-        PushResult::Pushed { remote, branch, set_upstream } => {
+        PushResult::Pushed {
+            remote,
+            branch,
+            set_upstream,
+        } => {
             assert_eq!(remote, "origin");
             assert_eq!(branch, name, "branch name must round-trip un-mangled");
             assert!(set_upstream, "first push must set the upstream");
@@ -349,13 +374,19 @@ fn unicode_branch_push_round_trips() {
     // Bare has the ref, byte-identical name, correct tip.
     assert_eq!(rev_parse(&f.bare, &format!("refs/heads/{name}")), tip);
     // Upstream config exactly as `git push -u` would leave it.
-    assert_eq!(git(&f.work, &["config", &format!("branch.{name}.remote")]), "origin");
+    assert_eq!(
+        git(&f.work, &["config", &format!("branch.{name}.remote")]),
+        "origin"
+    );
     assert_eq!(
         git(&f.work, &["config", &format!("branch.{name}.merge")]),
         format!("refs/heads/{name}")
     );
     // Tracking ref exists and ahead/behind is clean (rev-list oracle).
-    assert_eq!(rev_parse(&f.work, &format!("refs/remotes/origin/{name}")), tip);
+    assert_eq!(
+        rev_parse(&f.work, &format!("refs/remotes/origin/{name}")),
+        tip
+    );
     assert_eq!(
         git(
             &f.work,

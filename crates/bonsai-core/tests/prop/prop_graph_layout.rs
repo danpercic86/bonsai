@@ -75,7 +75,11 @@ fn assert_invariants(shape: &RepoShape, path: &Path, layout: &GraphLayout) {
         assert_eq!(layout.lane_count, 0);
     } else {
         let max = *used.iter().max().unwrap();
-        assert_eq!(layout.lane_count, max + 1, "lane_count == max used lane + 1");
+        assert_eq!(
+            layout.lane_count,
+            max + 1,
+            "lane_count == max used lane + 1"
+        );
         let full: BTreeSet<u32> = (0..layout.lane_count).collect();
         assert_eq!(used, full, "every lane below lane_count is used (density)");
     }
@@ -84,7 +88,11 @@ fn assert_invariants(shape: &RepoShape, path: &Path, layout: &GraphLayout) {
     let mut sorted = layout.edges.clone();
     sorted.sort_by_key(|e| (e.from, e.to));
     assert_eq!(
-        layout.edges.iter().map(|e| (e.from, e.to)).collect::<Vec<_>>(),
+        layout
+            .edges
+            .iter()
+            .map(|e| (e.from, e.to))
+            .collect::<Vec<_>>(),
         sorted.iter().map(|e| (e.from, e.to)).collect::<Vec<_>>(),
         "edges sorted ascending by (from,to)"
     );
@@ -106,7 +114,10 @@ fn assert_invariants(shape: &RepoShape, path: &Path, layout: &GraphLayout) {
 
     // (6) head_index points at the HEAD oid; detached HEAD ⇒ exactly one Head.
     let head = repo.head().ok();
-    let head_oid = head.as_ref().and_then(|h| h.target()).map(|o| o.to_string());
+    let head_oid = head
+        .as_ref()
+        .and_then(|h| h.target())
+        .map(|o| o.to_string());
     match (&layout.head_index, &head_oid) {
         (Some(i), Some(h)) => assert_eq!(&layout.nodes[*i as usize].id, h),
         (None, None) => {}
@@ -200,12 +211,16 @@ fn regression_f_t5_1_lane_shift_on_head_append() {
         cfg.set_str("user.email", "prop@bonsai.local").unwrap();
     }
     let mk = |parents: &[git2::Oid], t: i64, tag: &str| {
-        let sig = git2::Signature::new("Prop Bot", "prop@bonsai.local", &git2::Time::new(t, 0)).unwrap();
+        let sig =
+            git2::Signature::new("Prop Bot", "prop@bonsai.local", &git2::Time::new(t, 0)).unwrap();
         let blob = repo.blob(tag.as_bytes()).unwrap();
         let mut tb = repo.treebuilder(None).unwrap();
         tb.insert("n.txt", blob, 0o100_644).unwrap();
         let tree = repo.find_tree(tb.write().unwrap()).unwrap();
-        let pcs: Vec<git2::Commit> = parents.iter().map(|p| repo.find_commit(*p).unwrap()).collect();
+        let pcs: Vec<git2::Commit> = parents
+            .iter()
+            .map(|p| repo.find_commit(*p).unwrap())
+            .collect();
         let prefs: Vec<&git2::Commit> = pcs.iter().collect();
         repo.commit(None, &sig, &sig, tag, &tree, &prefs).unwrap()
     };

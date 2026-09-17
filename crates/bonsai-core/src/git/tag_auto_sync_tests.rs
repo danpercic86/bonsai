@@ -57,9 +57,11 @@ fn auto_sync_adopts_moves_and_skips() {
     let mut remote = repo.remote("origin", url).expect("remote");
 
     // Remote tags: adoptme@c1 (remote-only), ffme@c2, insync@c0, ahead@c0.
-    repo.tag_lightweight("adoptme", &obj1, false).expect("adoptme");
+    repo.tag_lightweight("adoptme", &obj1, false)
+        .expect("adoptme");
     repo.tag_lightweight("ffme", &obj2, false).expect("ffme");
-    repo.tag_lightweight("insync", &obj0, false).expect("insync");
+    repo.tag_lightweight("insync", &obj0, false)
+        .expect("insync");
     repo.tag_lightweight("ahead", &obj0, false).expect("ahead");
     remote
         .push(
@@ -80,8 +82,10 @@ fn auto_sync_adopts_moves_and_skips() {
     // - move ahead forward to c2 (local ahead of remote c0 => skip)
     // - add localonly@c1 (never on remote)
     repo.tag_delete("adoptme").expect("del adoptme");
-    repo.tag_lightweight("ffme", &obj0, true).expect("ffme back");
-    repo.tag_lightweight("ahead", &obj2, true).expect("ahead fwd");
+    repo.tag_lightweight("ffme", &obj0, true)
+        .expect("ffme back");
+    repo.tag_lightweight("ahead", &obj2, true)
+        .expect("ahead fwd");
     repo.tag_lightweight("localonly", &obj1, false)
         .expect("localonly");
 
@@ -144,7 +148,9 @@ fn auto_sync_skips_siblings() {
     // Remote tag at sib_a; push; then move local to sib_b (diverged).
     repo.tag_lightweight("t", &repo.find_object(sib_a, None).unwrap(), false)
         .expect("tag");
-    remote.push(&["refs/tags/t:refs/tags/t"], None).expect("push");
+    remote
+        .push(&["refs/tags/t:refs/tags/t"], None)
+        .expect("push");
     repo.tag_lightweight("t", &repo.find_object(sib_b, None).unwrap(), true)
         .expect("move local");
 
@@ -174,7 +180,9 @@ fn auto_sync_noop_when_in_sync() {
     let url = bare_dir.path().to_str().expect("utf8");
     let mut remote = repo.remote("origin", url).expect("remote");
     repo.tag_lightweight("v1", &obj0, false).expect("tag");
-    remote.push(&["refs/tags/v1:refs/tags/v1"], None).expect("push");
+    remote
+        .push(&["refs/tags/v1:refs/tags/v1"], None)
+        .expect("push");
 
     let report = auto_sync_tags(work_dir.path(), None).expect("auto-sync");
     assert!(report.adopted.is_empty());
@@ -198,7 +206,9 @@ fn auto_sync_adopts_annotated_tag() {
 
     repo.tag("rel", &obj0, &sig(), "annotated release", false)
         .expect("annot");
-    remote.push(&["refs/tags/rel:refs/tags/rel"], None).expect("push");
+    remote
+        .push(&["refs/tags/rel:refs/tags/rel"], None)
+        .expect("push");
     repo.tag_delete("rel").expect("del local");
 
     let report = auto_sync_tags(work_dir.path(), None).expect("auto-sync");
@@ -279,5 +289,9 @@ fn auto_sync_fetch_failure_is_best_effort() {
     let report = auto_sync_tags(dir.path(), None).expect("best-effort ok");
     assert_eq!(report.remote, "origin");
     assert!(report.adopted.is_empty());
-    assert_eq!(temp_ref_count(dir.path()), 0, "temp namespace cleaned on failure");
+    assert_eq!(
+        temp_ref_count(dir.path()),
+        0,
+        "temp namespace cleaned on failure"
+    );
 }

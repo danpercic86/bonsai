@@ -83,7 +83,12 @@ pub struct RunOpts {
 
 impl Default for RunOpts {
     fn default() -> Self {
-        RunOpts { model: None, timeout: DEFAULT_TIMEOUT, system_prompt: None, json_schema: None }
+        RunOpts {
+            model: None,
+            timeout: DEFAULT_TIMEOUT,
+            system_prompt: None,
+            json_schema: None,
+        }
     }
 }
 

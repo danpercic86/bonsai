@@ -35,9 +35,9 @@ pub(crate) fn get_job_status_inner(
     repo_id: &str,
 ) -> Result<Vec<JobStatus>, AppError> {
     repo_path(state, repo_id)?; // NoRepo gate only
-    // Recover from poison like the scheduler loop itself does (scheduler.rs
-    // lock_recover rationale) — a single panicked job must not make this
-    // command fail forever.
+                                // Recover from poison like the scheduler loop itself does (scheduler.rs
+                                // lock_recover rationale) — a single panicked job must not make this
+                                // command fail forever.
     let cfg = *crate::scheduler::lock_recover(&sched.cfg);
     let jobs = crate::scheduler::lock_recover(&sched.jobs);
     Ok([JobKind::AutoFetch, JobKind::HealthRefresh]

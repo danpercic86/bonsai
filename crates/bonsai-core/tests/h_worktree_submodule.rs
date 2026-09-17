@@ -9,12 +9,10 @@
 
 mod common;
 
-#[path = "worktree_submodule/worktree_cli.rs"]
-mod worktree_cli;
-#[path = "worktree_submodule/worktree_context_cli.rs"]
-mod worktree_context_cli;
-#[path = "worktree_submodule/worktree_copy_cli.rs"]
-mod worktree_copy_cli;
+#[path = "worktree_submodule/stash_cli.rs"]
+mod stash_cli;
+#[path = "worktree_submodule/stash_cli_conflicts.rs"]
+mod stash_cli_conflicts;
 #[path = "worktree_submodule/submodule_cli.rs"]
 mod submodule_cli;
 #[path = "worktree_submodule/submodule_cli_2.rs"]
@@ -23,7 +21,9 @@ mod submodule_cli_2;
 mod submodule_reconnect_cli;
 #[path = "worktree_submodule/submodule_wedge_cli.rs"]
 mod submodule_wedge_cli;
-#[path = "worktree_submodule/stash_cli.rs"]
-mod stash_cli;
-#[path = "worktree_submodule/stash_cli_conflicts.rs"]
-mod stash_cli_conflicts;
+#[path = "worktree_submodule/worktree_cli.rs"]
+mod worktree_cli;
+#[path = "worktree_submodule/worktree_context_cli.rs"]
+mod worktree_context_cli;
+#[path = "worktree_submodule/worktree_copy_cli.rs"]
+mod worktree_copy_cli;

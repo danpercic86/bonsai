@@ -45,7 +45,11 @@ fn scan_all_kinds_sorted_and_filtered() {
     write(root, ".claude/commands/notes.txt", b"ignore me\n");
 
     let inv = scan_agent_assets(root).unwrap();
-    assert_eq!(inv.assets.len(), 3, "3 assets, empty-skill + notes.txt skipped");
+    assert_eq!(
+        inv.assets.len(),
+        3,
+        "3 assets, empty-skill + notes.txt skipped"
+    );
 
     // Sort order: skill < agent < command, then name.
     assert_eq!(inv.assets[0].kind, AgentAssetKind::Skill);
@@ -105,7 +109,13 @@ fn parse_preserves_order_and_unknown_keys() {
 
     // A bare `key:` line yields an empty value; `key: value` keeps the value.
     let (f4, _, _) = parse_frontmatter("---\nmodel:\ntools: Read, Write\n---\n");
-    assert_eq!(f4[0], FrontmatterField { key: "model".into(), value: String::new() });
+    assert_eq!(
+        f4[0],
+        FrontmatterField {
+            key: "model".into(),
+            value: String::new()
+        }
+    );
     assert_eq!(f4[1].value, "Read, Write");
 }
 
@@ -127,7 +137,10 @@ fn round_trip_flat_frontmatter_is_fixed_point() {
     assert_eq!(serialize_asset(&[], "prompt"), "prompt\n");
     assert_eq!(serialize_asset(&[], "prompt\n"), "prompt\n");
     // A bare `key:` (empty value) serializes without a trailing space.
-    let empty_val = vec![FrontmatterField { key: "model".into(), value: String::new() }];
+    let empty_val = vec![FrontmatterField {
+        key: "model".into(),
+        value: String::new(),
+    }];
     assert_eq!(serialize_asset(&empty_val, "b\n"), "---\nmodel:\n---\nb\n");
 }
 
@@ -159,17 +172,26 @@ fn complex_frontmatter_is_detected_and_errors() {
 #[test]
 fn validate_required_and_warning_rules() {
     // Agent missing `description` -> Error, invalid.
-    let fields = vec![FrontmatterField { key: "name".into(), value: "test-runner".into() }];
+    let fields = vec![FrontmatterField {
+        key: "name".into(),
+        value: "test-runner".into(),
+    }];
     let v = validate(AgentAssetKind::Agent, "test-runner", &fields, "body", false);
     assert!(!v.valid);
-    assert!(v.issues.iter().any(
-        |i| i.severity == IssueSeverity::Error && i.message.contains("requires frontmatter field 'description'")
-    ));
+    assert!(v.issues.iter().any(|i| i.severity == IssueSeverity::Error
+        && i.message
+            .contains("requires frontmatter field 'description'")));
 
     // Agent with both required -> valid.
     let full = vec![
-        FrontmatterField { key: "name".into(), value: "test-runner".into() },
-        FrontmatterField { key: "description".into(), value: "runs".into() },
+        FrontmatterField {
+            key: "name".into(),
+            value: "test-runner".into(),
+        },
+        FrontmatterField {
+            key: "description".into(),
+            value: "runs".into(),
+        },
     ];
     assert!(validate(AgentAssetKind::Agent, "test-runner", &full, "b", false).valid);
 
@@ -183,28 +205,43 @@ fn validate_required_and_warning_rules() {
     // `name: Foo_Bar` -> lowercase-hyphen Warning, still valid.
     let warn = validate(AgentAssetKind::Command, "Foo_Bar", &[], "b", false);
     assert!(warn.valid);
-    assert!(warn.issues.iter().any(
-        |i| i.severity == IssueSeverity::Warning && i.message.contains("lowercase")
-    ));
+    assert!(warn
+        .issues
+        .iter()
+        .any(|i| i.severity == IssueSeverity::Warning && i.message.contains("lowercase")));
 
     // Frontmatter `name` differing from the on-disk name -> Warning.
     let mism = vec![
-        FrontmatterField { key: "name".into(), value: "other".into() },
-        FrontmatterField { key: "description".into(), value: "d".into() },
+        FrontmatterField {
+            key: "name".into(),
+            value: "other".into(),
+        },
+        FrontmatterField {
+            key: "description".into(),
+            value: "d".into(),
+        },
     ];
     let mv = validate(AgentAssetKind::Agent, "test-runner", &mism, "b", false);
     assert!(mv.valid, "mismatch is only a Warning");
-    assert!(mv.issues.iter().any(|i| i.message.contains("differs from the file name")));
+    assert!(mv
+        .issues
+        .iter()
+        .any(|i| i.message.contains("differs from the file name")));
 
     // Empty body for a command -> Warning.
     let eb = validate(AgentAssetKind::Command, "changelog", &[], "   \n", false);
-    assert!(eb.issues.iter().any(|i| i.message.contains("body is empty")));
+    assert!(eb
+        .issues
+        .iter()
+        .any(|i| i.message.contains("body is empty")));
 }
 
 // §11 row 4.4 / row 11 — name safety.
 #[test]
 fn validate_asset_name_rejects_unsafe() {
-    for bad in ["", "   ", ".", "..", "-x", "a/b", "a\\b", "a:b", "../x", "a\tb", "café"] {
+    for bad in [
+        "", "   ", ".", "..", "-x", "a/b", "a\\b", "a:b", "../x", "a\tb", "café",
+    ] {
         assert!(
             matches!(validate_asset_name(bad), Err(AppError::InvalidName(_))),
             "name {bad:?} should be InvalidName"
@@ -306,7 +343,16 @@ fn wire_shapes_are_camel_case() {
     assert_eq!(field["value"], "broken");
 
     // Skill/command kinds also serialize bare.
-    assert_eq!(serde_json::to_value(AgentAssetKind::Skill).unwrap(), "skill");
-    assert_eq!(serde_json::to_value(AgentAssetKind::Command).unwrap(), "command");
-    assert_eq!(serde_json::to_value(IssueSeverity::Warning).unwrap(), "warning");
+    assert_eq!(
+        serde_json::to_value(AgentAssetKind::Skill).unwrap(),
+        "skill"
+    );
+    assert_eq!(
+        serde_json::to_value(AgentAssetKind::Command).unwrap(),
+        "command"
+    );
+    assert_eq!(
+        serde_json::to_value(IssueSeverity::Warning).unwrap(),
+        "warning"
+    );
 }

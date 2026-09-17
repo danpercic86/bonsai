@@ -11,9 +11,9 @@
 //! covers [`super::home_resolve`], which produces those values from an
 //! `app_config_dir()` when `home_dir()` fails.
 
+use super::home_resolve::strip_app_containers;
 use super::redact::{HOME_TOKEN, REDACTED_TOKEN};
 use super::scrub::scrub_string;
-use super::home_resolve::strip_app_containers;
 use super::scrub_home::{mask_home_with, normalize_home};
 use std::path::Path;
 
@@ -26,7 +26,11 @@ const LINUX_HOME: &str = "/home/jane";
 #[test]
 fn all_three_os_layouts_collapse_to_the_same_token() {
     let cases = [
-        (WIN_HOME, r"C:\Users\jane\Repos\bonsai", r"<home>\Repos\bonsai"),
+        (
+            WIN_HOME,
+            r"C:\Users\jane\Repos\bonsai",
+            r"<home>\Repos\bonsai",
+        ),
         (MAC_HOME, "/Users/jane/Repos/bonsai", "<home>/Repos/bonsai"),
         (LINUX_HOME, "/home/jane/Repos/bonsai", "<home>/Repos/bonsai"),
     ];
@@ -66,7 +70,11 @@ fn case_differences_still_match() {
     // Windows and macOS are case-insensitive, so `c:\users\JANE` is the same
     // directory as `C:\Users\jane`.
     for input in [r"c:\users\JANE\x", r"C:\USERS\JANE\x", r"C:\Users\Jane\x"] {
-        assert_eq!(mask_home_with(input, WIN_HOME), r"<home>\x", "input={input}");
+        assert_eq!(
+            mask_home_with(input, WIN_HOME),
+            r"<home>\x",
+            "input={input}"
+        );
     }
     assert_eq!(mask_home_with("/HOME/Jane/x", LINUX_HOME), "<home>/x");
 }
@@ -95,17 +103,31 @@ fn the_bare_home_dir_with_and_without_a_trailing_separator_matches() {
 fn a_sibling_directory_with_the_same_prefix_is_not_masked() {
     // `/home/bobby` is a DIFFERENT account: masking it as `<home>by` would be
     // both wrong and misleading.
-    for input in ["/home/janet/x", "/home/jane2/x", "/home/jane.bak/x", "/home/jane-old/x"] {
+    for input in [
+        "/home/janet/x",
+        "/home/jane2/x",
+        "/home/jane.bak/x",
+        "/home/jane-old/x",
+    ] {
         assert_eq!(mask_home_with(input, LINUX_HOME), input, "input={input}");
     }
-    assert_eq!(mask_home_with(r"C:\Users\janet\x", WIN_HOME), r"C:\Users\janet\x");
+    assert_eq!(
+        mask_home_with(r"C:\Users\janet\x", WIN_HOME),
+        r"C:\Users\janet\x"
+    );
 }
 
 #[test]
 fn a_match_ending_at_punctuation_or_whitespace_is_still_a_match() {
-    assert_eq!(mask_home_with("cwd=/home/jane, ok", LINUX_HOME), "cwd=<home>, ok");
+    assert_eq!(
+        mask_home_with("cwd=/home/jane, ok", LINUX_HOME),
+        "cwd=<home>, ok"
+    );
     assert_eq!(mask_home_with("\"/home/jane\"", LINUX_HOME), "\"<home>\"");
-    assert_eq!(mask_home_with("at /home/jane during scan", LINUX_HOME), "at <home> during scan");
+    assert_eq!(
+        mask_home_with("at /home/jane during scan", LINUX_HOME),
+        "at <home> during scan"
+    );
 }
 
 // ---- multiple occurrences / no-match ----
@@ -120,10 +142,19 @@ fn every_occurrence_is_replaced() {
 
 #[test]
 fn a_string_without_the_home_dir_is_returned_borrowed_and_unchanged() {
-    for input in ["/opt/tools/code", "no paths here at all", "", "/home/", "/homely/jane"] {
+    for input in [
+        "/opt/tools/code",
+        "no paths here at all",
+        "",
+        "/home/",
+        "/homely/jane",
+    ] {
         let out = mask_home_with(input, LINUX_HOME);
         assert_eq!(out, input, "input={input}");
-        assert!(matches!(out, std::borrow::Cow::Borrowed(_)), "must not allocate: {input}");
+        assert!(
+            matches!(out, std::borrow::Cow::Borrowed(_)),
+            "must not allocate: {input}"
+        );
     }
 }
 
@@ -131,9 +162,18 @@ fn a_string_without_the_home_dir_is_returned_borrowed_and_unchanged() {
 
 #[test]
 fn normalize_home_folds_case_and_separators_and_drops_the_trailing_one() {
-    assert_eq!(normalize_home(Path::new(r"C:\Users\Jane\")).as_deref(), Some("c:/users/jane"));
-    assert_eq!(normalize_home(Path::new("/Users/Jane")).as_deref(), Some("/users/jane"));
-    assert_eq!(normalize_home(Path::new("/home/jane//")).as_deref(), Some("/home/jane"));
+    assert_eq!(
+        normalize_home(Path::new(r"C:\Users\Jane\")).as_deref(),
+        Some("c:/users/jane")
+    );
+    assert_eq!(
+        normalize_home(Path::new("/Users/Jane")).as_deref(),
+        Some("/users/jane")
+    );
+    assert_eq!(
+        normalize_home(Path::new("/home/jane//")).as_deref(),
+        Some("/home/jane")
+    );
 }
 
 #[test]
@@ -151,8 +191,18 @@ fn the_shared_parent_of_all_accounts_is_refused() {
     // account name is still there, now behind a token claiming it is not. Worse
     // than no masking, so it is refused — this is what bounds a too-greedy
     // `home_resolve` candidate.
-    for shared in [r"C:\Users", "C:/users/", "/Users", "/home", "/home/", r"D:\USERS"] {
-        assert!(normalize_home(Path::new(shared)).is_none(), "shared={shared:?}");
+    for shared in [
+        r"C:\Users",
+        "C:/users/",
+        "/Users",
+        "/home",
+        "/home/",
+        r"D:\USERS",
+    ] {
+        assert!(
+            normalize_home(Path::new(shared)).is_none(),
+            "shared={shared:?}"
+        );
     }
     // One segment deeper IS a home directory.
     assert!(normalize_home(Path::new(r"C:\Users\jane")).is_some());
@@ -175,7 +225,10 @@ fn masking_does_not_rescue_a_credential_further_down_the_path() {
     // pass runs FIRST, then every existing rule sees the shortened string.
     let out = scrub_string("/home/jane/log password=hunter2secret", Some(LINUX_HOME));
     assert!(out.starts_with(HOME_TOKEN), "home pass ran first: {out}");
-    assert!(out.contains(REDACTED_TOKEN), "credential rule still fires: {out}");
+    assert!(
+        out.contains(REDACTED_TOKEN),
+        "credential rule still fires: {out}"
+    );
     assert!(!out.contains("hunter2secret"), "{out}");
     assert!(!out.contains("jane"), "{out}");
 }
@@ -199,8 +252,14 @@ fn the_config_dir_of_every_os_layout_strips_back_to_the_home_dir() {
     // expectation is therefore `/`-folded; `normalize_home` folds again, so the
     // difference is invisible downstream.
     let cases = [
-        (r"C:\Users\jane\AppData\Roaming\com.bonsai.app", "C:/Users/jane"),
-        ("/Users/jane/Library/Application Support/com.bonsai.app", "/Users/jane"),
+        (
+            r"C:\Users\jane\AppData\Roaming\com.bonsai.app",
+            "C:/Users/jane",
+        ),
+        (
+            "/Users/jane/Library/Application Support/com.bonsai.app",
+            "/Users/jane",
+        ),
         ("/home/jane/.config/com.bonsai.app", "/home/jane"),
     ];
     for (config_dir, expected) in cases {
@@ -231,8 +290,17 @@ fn an_unrecognised_container_stops_the_walk_instead_of_climbing_past_home() {
 
 #[test]
 fn a_config_dir_without_a_parent_yields_no_candidate() {
-    for degenerate in ["", "/", "com.bonsai.app", "/com.bonsai.app", "C:/com.bonsai.app"] {
-        assert!(strip_app_containers(Path::new(degenerate)).is_none(), "{degenerate:?}");
+    for degenerate in [
+        "",
+        "/",
+        "com.bonsai.app",
+        "/com.bonsai.app",
+        "C:/com.bonsai.app",
+    ] {
+        assert!(
+            strip_app_containers(Path::new(degenerate)).is_none(),
+            "{degenerate:?}"
+        );
     }
 }
 
@@ -240,9 +308,13 @@ fn a_config_dir_without_a_parent_yields_no_candidate() {
 fn the_derived_candidate_feeds_normalize_home_and_masks_the_account_name() {
     // The two halves composed, which is what `resolve_home_mask` does: config dir
     // ⇒ candidate ⇒ folded home ⇒ the account name is gone from a raw path.
-    let candidate = strip_app_containers(Path::new(r"C:\Users\jane\AppData\Roaming\com.bonsai.app"))
-        .expect("candidate");
+    let candidate =
+        strip_app_containers(Path::new(r"C:\Users\jane\AppData\Roaming\com.bonsai.app"))
+            .expect("candidate");
     let home = normalize_home(&candidate).expect("normalizable");
     assert_eq!(home, WIN_HOME);
-    assert_eq!(mask_home_with(r"C:\Users\jane\Repos\bonsai", &home), r"<home>\Repos\bonsai");
+    assert_eq!(
+        mask_home_with(r"C:\Users\jane\Repos\bonsai", &home),
+        r"<home>\Repos\bonsai"
+    );
 }

@@ -17,11 +17,11 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{git, init_repo};
 use bonsai_core::ai::RunOpts;
 use bonsai_core::error::AppError;
 use bonsai_core::git::ai_pr_description::{generate_pr_description, PrDescription};
-use crate::common;
-use crate::common::{git, init_repo};
 
 const STUB_MODE_ENV: &str = "BONSAI_STUB_MODE";
 const CLAUDE_BIN_ENV: &str = "BONSAI_CLAUDE_BIN";
@@ -130,10 +130,19 @@ fn payload_carries_commits_and_diffstat() {
         payload.contains("\nNET CHANGES (diffstat):\n"),
         "payload lacks NET CHANGES diffstat:\n{payload}"
     );
-    assert!(payload.contains("f.txt"), "diffstat lacks the changed file:\n{payload}");
+    assert!(
+        payload.contains("f.txt"),
+        "diffstat lacks the changed file:\n{payload}"
+    );
     // Both unique commit summaries reach the grounding.
-    assert!(payload.contains("feat: add C"), "COMMITS lacks C:\n{payload}");
-    assert!(payload.contains("fix: fix D"), "COMMITS lacks D:\n{payload}");
+    assert!(
+        payload.contains("feat: add C"),
+        "COMMITS lacks C:\n{payload}"
+    );
+    assert!(
+        payload.contains("fix: fix D"),
+        "COMMITS lacks D:\n{payload}"
+    );
 }
 
 // ============================================================ §4a empty-range guard
@@ -155,7 +164,10 @@ fn empty_range_fails_before_cli() {
 
     match out.expect_err("empty range must fail") {
         AppError::AiFailed(m) => {
-            assert_eq!(m, "nothing to describe: feature has no commits beyond feature");
+            assert_eq!(
+                m,
+                "nothing to describe: feature has no commits beyond feature"
+            );
         }
         other => {
             panic!("expected AiFailed (pre-CLI), got {other:?} — a spawn would be AiUnavailable")

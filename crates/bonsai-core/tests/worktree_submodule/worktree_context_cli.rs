@@ -9,14 +9,14 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use crate::common::{commit_fixed, git, porcelain_records};
 use bonsai_core::assets::{
     activate_profile, activate_profile_for_worktree, list_profiles, list_worktree_contexts,
     preview_profile_for_worktree, save_profile, ContextProfile, ProfileTarget, TargetWriteAction,
     MAIN_WORKTREE_KEY,
 };
 use bonsai_core::error::AppError;
-use crate::common;
-use crate::common::{commit_fixed, git, porcelain_records};
 
 macro_rules! require_git {
     () => {
@@ -110,7 +110,10 @@ fn two_worktrees_activate_different_profiles_end_to_end() {
         &f.main,
         profile(
             "haiku",
-            &[("claude", "# haiku claude\n"), ("agents", "# haiku agents\n")],
+            &[
+                ("claude", "# haiku claude\n"),
+                ("agents", "# haiku agents\n"),
+            ],
         ),
     )
     .unwrap();
@@ -150,10 +153,7 @@ fn two_worktrees_activate_different_profiles_end_to_end() {
         vec![" M AGENTS.md".to_string(), " M CLAUDE.md".to_string()],
         "wt-a status: only the two activated docs, no .bonsai here"
     );
-    assert!(
-        porcelain_records(&f.wb).is_empty(),
-        "wt-b must be pristine"
-    );
+    assert!(porcelain_records(&f.wb).is_empty(), "wt-b must be pristine");
     assert!(!f.wa.join(".bonsai").exists());
     assert!(!f.wb.join(".bonsai").exists());
 
@@ -196,7 +196,13 @@ fn cli_locked_worktree_is_refused_until_unlocked() {
     save_profile(&f.main, profile("p", &[("claude", "# p\n")])).unwrap();
     git(
         &f.main,
-        &["worktree", "lock", "--reason", "pinned by QA", f.wa.to_str().unwrap()],
+        &[
+            "worktree",
+            "lock",
+            "--reason",
+            "pinned by QA",
+            f.wa.to_str().unwrap(),
+        ],
     );
 
     for res in [
@@ -214,7 +220,11 @@ fn cli_locked_worktree_is_refused_until_unlocked() {
     let rows = list_worktree_contexts(&f.main).unwrap();
     let a = rows.iter().find(|r| r.worktree_key == "wt-a").unwrap();
     assert!(!a.activatable && a.locked);
-    assert!(a.blocked_reason.as_deref().unwrap().contains("pinned by QA"));
+    assert!(a
+        .blocked_reason
+        .as_deref()
+        .unwrap()
+        .contains("pinned by QA"));
 
     // Unlock via the CLI → activation proceeds.
     git(&f.main, &["worktree", "unlock", f.wa.to_str().unwrap()]);
@@ -233,7 +243,10 @@ fn dirty_tracked_target_in_linked_worktree_blocks_and_preserves_content() {
     let f = setup();
     std::fs::write(f.wa.join("CLAUDE.md"), "# precious human edit\n").unwrap();
     // Oracle precondition: git itself sees the file as tracked+modified.
-    let pre: Vec<String> = porcelain_records(&f.wa).into_iter().map(|(r, _)| r).collect();
+    let pre: Vec<String> = porcelain_records(&f.wa)
+        .into_iter()
+        .map(|(r, _)| r)
+        .collect();
     assert_eq!(pre, vec![" M CLAUDE.md".to_string()]);
 
     save_profile(
@@ -253,7 +266,10 @@ fn dirty_tracked_target_in_linked_worktree_blocks_and_preserves_content() {
     // ZERO writes: target #1 (GEMINI.md) not created, human edit intact.
     assert!(!f.wa.join("GEMINI.md").exists(), "no partial write");
     assert_eq!(read(&f.wa.join("CLAUDE.md")), b"# precious human edit\n");
-    let post: Vec<String> = porcelain_records(&f.wa).into_iter().map(|(r, _)| r).collect();
+    let post: Vec<String> = porcelain_records(&f.wa)
+        .into_iter()
+        .map(|(r, _)| r)
+        .collect();
     assert_eq!(post, pre, "git status unchanged by the refused activation");
     // No activation recorded.
     assert!(list_profiles(&f.main)
@@ -325,7 +341,9 @@ fn activation_from_inside_linked_worktree_records_own_key() {
         Some("p")
     );
     assert!(
-        !act.store.worktree_activations.contains_key(MAIN_WORKTREE_KEY),
+        !act.store
+            .worktree_activations
+            .contains_key(MAIN_WORKTREE_KEY),
         "must not retarget @main"
     );
     assert_eq!(act.store.active_profile, None, "legacy mirror untouched");

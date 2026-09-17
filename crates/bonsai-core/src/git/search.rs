@@ -357,7 +357,11 @@ fn revwalk_search(
 
     // Fold the needle once; haystacks fold per-commit in contains_fold.
     let cs = q.case_sensitive;
-    let needle = if cs { q.text.clone() } else { q.text.to_lowercase() };
+    let needle = if cs {
+        q.text.clone()
+    } else {
+        q.text.to_lowercase()
+    };
 
     let mut out: Vec<SearchMatch> = Vec::new();
     let mut examined = 0usize;
@@ -369,7 +373,9 @@ fn revwalk_search(
         // Per-commit degradation (audit §3.16, mirrors health.rs): one corrupt
         // commit/odb entry skips that row instead of aborting the whole search.
         let Ok(oid) = oid else { continue };
-        let Ok(c) = repo.find_commit(oid) else { continue };
+        let Ok(c) = repo.find_commit(oid) else {
+            continue;
+        };
         let msg = String::from_utf8_lossy(c.message_bytes());
         let (hit, which) = match q.field {
             SearchField::Message => (contains_fold(&msg, &needle, cs), MatchedField::Message),
@@ -427,7 +433,10 @@ fn push_scope(repo: &git2::Repository, walk: &mut git2::Revwalk, r: &str) -> Res
 ///
 /// `pub(crate)` so `history_index` reuses the same all-refs seeding for its
 /// reachable walk (P57 OQ9) instead of carrying a fourth private copy.
-pub(crate) fn seed_all_refs(repo: &git2::Repository, walk: &mut git2::Revwalk) -> Result<(), AppError> {
+pub(crate) fn seed_all_refs(
+    repo: &git2::Repository,
+    walk: &mut git2::Revwalk,
+) -> Result<(), AppError> {
     for entry in repo.branches(Some(git2::BranchType::Local))? {
         let Ok((b, _)) = entry else { continue }; // garbled ref → skip (F-A6-D)
         if let Ok(c) = b.get().peel_to_commit() {
@@ -460,6 +469,6 @@ pub(crate) fn seed_all_refs(repo: &git2::Repository, walk: &mut git2::Revwalk) -
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]
-mod tests_unit;
-#[cfg(test)]
 mod tests_oracle;
+#[cfg(test)]
+mod tests_unit;

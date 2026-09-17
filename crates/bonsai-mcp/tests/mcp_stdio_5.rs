@@ -38,7 +38,9 @@ fn write_witness_hook(repo: &std::path::Path, name: &str) {
     let path = dir.join(name);
     std::fs::write(
         &path,
-        format!("#!/bin/sh\necho ran > \"$(git rev-parse --show-toplevel)/{name}-ran.txt\"\nexit 0\n"),
+        format!(
+            "#!/bin/sh\necho ran > \"$(git rev-parse --show-toplevel)/{name}-ran.txt\"\nexit 0\n"
+        ),
     )
     .expect("write hook");
     #[cfg(unix)]

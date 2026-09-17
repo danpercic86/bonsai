@@ -14,12 +14,12 @@
 
 use std::path::Path;
 
+use crate::common;
 use bonsai_core::ai::RunOpts;
 use bonsai_core::error::AppError;
 use bonsai_core::git::ai_operation::{plan_operation, PlanOutcome};
 use bonsai_core::git::commit::create_commit;
 use bonsai_core::git::stage::stage_paths;
-use crate::common;
 
 const STUB_MODE_ENV: &str = "BONSAI_STUB_MODE";
 const CLAUDE_BIN_ENV: &str = "BONSAI_CLAUDE_BIN";
@@ -39,7 +39,8 @@ fn linear_repo() -> (tempfile::TempDir, String, String) {
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
         cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     }
     let a = commit(d, "a.txt", "a\n", "A");
@@ -60,7 +61,11 @@ fn envelope(result: &str) -> String {
 /// a worktree file.
 fn snapshot(p: &Path) -> (Option<String>, Vec<u8>, Vec<u8>) {
     let repo = git2::Repository::open(p).expect("open");
-    let head = repo.head().ok().and_then(|r| r.target()).map(|o| o.to_string());
+    let head = repo
+        .head()
+        .ok()
+        .and_then(|r| r.target())
+        .map(|o| o.to_string());
     let index = std::fs::read(repo.path().join("index")).unwrap_or_default();
     let file = std::fs::read(p.join("a.txt")).unwrap_or_default();
     (head, index, file)
@@ -93,15 +98,25 @@ fn ai_operation_plan_operation_end_to_end_writes_nothing() {
     .expect("write envelope");
     let outcome = plan_operation(d, "take me back to the first commit", RunOpts::default())
         .expect("plan_operation Ok");
-    assert!(matches!(outcome, PlanOutcome::Proposed { .. }), "got {outcome:?}");
+    assert!(
+        matches!(outcome, PlanOutcome::Proposed { .. }),
+        "got {outcome:?}"
+    );
     assert_eq!(snapshot(d), before, "a Proposed plan must mutate nothing");
 
     // (b) undoLastMerge on a non-merge HEAD → Unsupported; nothing mutates.
     std::fs::write(&env_file, envelope(r#"{"intent":"undoLastMerge"}"#)).expect("write envelope");
     let outcome =
         plan_operation(d, "undo my last merge", RunOpts::default()).expect("plan_operation Ok");
-    assert!(matches!(outcome, PlanOutcome::Unsupported { .. }), "got {outcome:?}");
-    assert_eq!(snapshot(d), before, "an Unsupported plan must mutate nothing");
+    assert!(
+        matches!(outcome, PlanOutcome::Unsupported { .. }),
+        "got {outcome:?}"
+    );
+    assert_eq!(
+        snapshot(d),
+        before,
+        "an Unsupported plan must mutate nothing"
+    );
 
     std::env::remove_var(ENVELOPE_ENV);
     std::env::remove_var(STUB_MODE_ENV);
@@ -129,13 +144,19 @@ fn ai_operation_unparseable_reply_is_unsupported_not_failed() {
     .expect("write envelope");
     let outcome = plan_operation(d, "order me a pizza", RunOpts::default())
         .expect("garbage reply → Ok(Unsupported)");
-    assert!(matches!(outcome, PlanOutcome::Unsupported { .. }), "got {outcome:?}");
+    assert!(
+        matches!(outcome, PlanOutcome::Unsupported { .. }),
+        "got {outcome:?}"
+    );
 
     // A genuine CLI failure (nonzero exit) → Err(AiFailed): the DISTINCT path.
     std::env::remove_var(ENVELOPE_ENV);
     std::env::set_var(STUB_MODE_ENV, "nonzero");
     let err = plan_operation(d, "anything", RunOpts::default()).expect_err("nonzero → Err");
-    assert!(matches!(err, AppError::AiFailed(_)), "expected AiFailed, got {err:?}");
+    assert!(
+        matches!(err, AppError::AiFailed(_)),
+        "expected AiFailed, got {err:?}"
+    );
 
     std::env::remove_var(STUB_MODE_ENV);
     std::env::remove_var(CLAUDE_BIN_ENV);

@@ -30,7 +30,10 @@ fn absolute_paths_become_ordinals_keeping_only_the_extension() {
 fn unix_paths_and_git_dirs_are_redacted_too() {
     let r = r();
     let out = redact_names("cannot open /home/jane/work/secret-project/.git", &r);
-    assert!(!out.contains("secret-project") && !out.contains("jane"), "{out}");
+    assert!(
+        !out.contains("secret-project") && !out.contains("jane"),
+        "{out}"
+    );
     assert!(out.contains("path#"), "{out}");
 }
 
@@ -48,8 +51,14 @@ fn ref_names_keep_their_kind_only() {
 fn urls_keep_scheme_and_forge_kind_only() {
     let r = r();
     let out = redact_names("push to https://github.com/acme-corp/secret-repo.git", &r);
-    assert!(!out.contains("acme-corp") && !out.contains("secret-repo"), "{out}");
-    assert!(out.contains("remote#") && out.contains("(https,github)"), "{out}");
+    assert!(
+        !out.contains("acme-corp") && !out.contains("secret-repo"),
+        "{out}"
+    );
+    assert!(
+        out.contains("remote#") && out.contains("(https,github)"),
+        "{out}"
+    );
     // An scp-style remote is redacted too (as a path ordinal rather than a
     // remote one) — over-redaction is fine, a leaked host+repo is not.
     let scp = redact_names("git@gitlab.example.com:o/r.git", &r);
@@ -114,7 +123,10 @@ fn error_messages_are_scrubbed_of_paths_refs_and_urls() {
     for leak in ["jane.doe", "acme-client", "acme-corp", "private", "release"] {
         assert!(!msg.contains(leak), "leaked {leak}: {msg}");
     }
-    assert!(msg.contains("path#") && msg.contains("remote#") && msg.contains("ref#"), "{msg}");
+    assert!(
+        msg.contains("path#") && msg.contains("remote#") && msg.contains("ref#"),
+        "{msg}"
+    );
     assert_eq!(v["where"], "repo.open", "the emit site is a symbol, kept");
 }
 

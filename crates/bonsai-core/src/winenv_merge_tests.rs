@@ -55,7 +55,10 @@ fn merge_path_orders_the_process_path_first_then_system_then_user() {
         .expect("four missing entries");
 
     assert_eq!(added, vec![r"C:\sys1", r"C:\sys2", r"C:\usr1", r"C:\usr2"]);
-    assert_eq!(merged, format!(r"{process};C:\sys1;C:\sys2;C:\usr1;C:\usr2"));
+    assert_eq!(
+        merged,
+        format!(r"{process};C:\sys1;C:\sys2;C:\usr1;C:\usr2")
+    );
 }
 
 /// **Regression guard for the prepend→append reversal (contract §5.5).**
@@ -133,7 +136,10 @@ fn merge_path_compares_case_insensitively_and_ignores_trailing_separators() {
     // lowercase) => nothing missing.
     assert_eq!(merge_path(r"C:\Tools\", "", r"c:\tools", &no_env()), None);
     // A trailing FORWARD slash is trimmed too, and surrounding whitespace.
-    assert_eq!(merge_path("", r"  C:\Tools/  ", r"C:\TOOLS", &no_env()), None);
+    assert_eq!(
+        merge_path("", r"  C:\Tools/  ", r"C:\TOOLS", &no_env()),
+        None
+    );
     // Only TRAILING separators are normalized: an interior `/` is a different
     // string, so the entry is treated as missing (deliberately conservative —
     // appending a duplicate spelling is harmless, dropping a real entry is
@@ -146,8 +152,13 @@ fn merge_path_ignores_empty_registry_segments_and_deduplicates_its_own_additions
     // Empty components must never be introduced (an empty PATH entry means
     // "current directory"), and a directory listed in BOTH hives is appended
     // once.
-    let (merged, added) = merge_path(r";C:\shared;;", r"C:\shared\;C:\extra", r"C:\keep", &no_env())
-        .expect("two distinct missing entries");
+    let (merged, added) = merge_path(
+        r";C:\shared;;",
+        r"C:\shared\;C:\extra",
+        r"C:\keep",
+        &no_env(),
+    )
+    .expect("two distinct missing entries");
 
     assert_eq!(added, vec![r"C:\shared", r"C:\extra"]);
     assert_eq!(merged, r"C:\keep;C:\shared;C:\extra");
@@ -179,7 +190,12 @@ fn merge_path_drops_every_segment_the_guards_reject() {
 #[test]
 fn merge_path_is_none_when_every_registry_segment_is_rejected() {
     assert_eq!(
-        merge_path(r"%UNSET%\tools;.;", r"\drive-relative", r"C:\keep", &no_env()),
+        merge_path(
+            r"%UNSET%\tools;.;",
+            r"\drive-relative",
+            r"C:\keep",
+            &no_env()
+        ),
         None
     );
 }
@@ -297,15 +313,15 @@ fn is_absolute_windows_path_accepts_only_fully_qualified_paths() {
         assert!(is_absolute_windows_path(ok), "{ok} must be accepted");
     }
     for bad in [
-        r"\tools",     // drive-relative: resolves against the current drive root
-        r"C:tools",    // drive-current
-        "tools",       // bare relative
-        ".",           // the CWD — an arbitrary user-chosen repository
-        "..",          //
-        "",            //
-        r"%VAR%\bin",  // unexpanded residue
-        r"\\",         // no share
-        "C:",          // drive with no root
+        r"\tools",    // drive-relative: resolves against the current drive root
+        r"C:tools",   // drive-current
+        "tools",      // bare relative
+        ".",          // the CWD — an arbitrary user-chosen repository
+        "..",         //
+        "",           //
+        r"%VAR%\bin", // unexpanded residue
+        r"\\",        // no share
+        "C:",         // drive with no root
     ] {
         assert!(!is_absolute_windows_path(bad), "{bad:?} must be rejected");
     }
@@ -325,7 +341,10 @@ fn parse_reg_query_table() {
     // name must match case-INsensitively (this is the one behavioural
     // difference from `gitbin::parse_reg_query`).
     let upper = "    PATH    REG_SZ    C:\\Windows\r\n";
-    assert_eq!(parse_reg_query(upper, "Path").as_deref(), Some(r"C:\Windows"));
+    assert_eq!(
+        parse_reg_query(upper, "Path").as_deref(),
+        Some(r"C:\Windows")
+    );
 
     // A path containing spaces survives; only the surrounding padding is cut.
     let spaced = "    Path    REG_SZ    C:\\Program Files\\Git\\cmd\r\n";
@@ -336,16 +355,28 @@ fn parse_reg_query_table() {
 
     // A value name that is a PREFIX of another must not cross-match.
     let prefixed = "    PathExt    REG_SZ    .COM;.EXE\r\n    Path    REG_SZ    C:\\right\r\n";
-    assert_eq!(parse_reg_query(prefixed, "Path").as_deref(), Some(r"C:\right"));
+    assert_eq!(
+        parse_reg_query(prefixed, "Path").as_deref(),
+        Some(r"C:\right")
+    );
 
     // Defensive: empty, localized error text, wrong type, empty data, a bare
     // name, and raw garbage all yield None rather than a panic.
     assert_eq!(parse_reg_query("", "Path"), None);
-    assert_eq!(parse_reg_query("ERROR: The system was unable to find", "Path"), None);
-    assert_eq!(parse_reg_query("    Path    REG_DWORD    0x1\r\n", "Path"), None);
+    assert_eq!(
+        parse_reg_query("ERROR: The system was unable to find", "Path"),
+        None
+    );
+    assert_eq!(
+        parse_reg_query("    Path    REG_DWORD    0x1\r\n", "Path"),
+        None
+    );
     assert_eq!(parse_reg_query("    Path    REG_SZ    \r\n", "Path"), None);
     assert_eq!(parse_reg_query("Path", "Path"), None);
-    assert_eq!(parse_reg_query("random \u{fffd} garbage \0 output", "Path"), None);
+    assert_eq!(
+        parse_reg_query("random \u{fffd} garbage \0 output", "Path"),
+        None
+    );
 }
 
 #[test]
@@ -361,10 +392,7 @@ fn parse_reg_values_reads_a_whole_block() {
     );
     let values = parse_reg_values(block);
     assert_eq!(
-        values
-            .iter()
-            .map(|(n, _)| n.as_str())
-            .collect::<Vec<_>>(),
+        values.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
         vec!["APPDATA", "LOCALAPPDATA", "HOMEPATH", "SESSIONNAME"]
     );
     assert_eq!(values[1].1, r"C:\Users\dev\AppData\Local");

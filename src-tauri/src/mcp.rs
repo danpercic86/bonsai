@@ -26,7 +26,6 @@
 //! fresh, never-enabled install). Turning it OFF persists `mcp_enabled=false`,
 //! so the next launch stays down.
 
-
 use std::sync::{Arc, Mutex};
 
 use bonsai_core::error::AppError;
@@ -406,8 +405,8 @@ async fn stop(app: &AppHandle, mcp_state: &McpServerState) -> Result<McpStatus, 
 }
 
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod http_support;
 #[cfg(test)]
 mod http_tests;
+#[cfg(test)]
+mod tests;

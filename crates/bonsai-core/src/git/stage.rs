@@ -252,7 +252,11 @@ pub(crate) fn ensure_no_untracked_collision(
         // `Tree::get_path` matches directly.
         let path = entry
             .index_to_workdir()
-            .and_then(|d| d.new_file().path().map(|p| p.to_string_lossy().into_owned()))
+            .and_then(|d| {
+                d.new_file()
+                    .path()
+                    .map(|p| p.to_string_lossy().into_owned())
+            })
             .unwrap_or_else(|| String::from_utf8_lossy(entry.path_bytes()).into_owned());
         if target_path_collides(repo, target_tree, &path, ignorecase) {
             return Err(AppError::Git(format!(

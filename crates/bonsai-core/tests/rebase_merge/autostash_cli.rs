@@ -9,12 +9,14 @@
 
 use std::path::Path;
 
-use bonsai_core::error::AppError;
-use bonsai_core::git::autostash::{is_dirty, pop_after_success, rollback_and_map, stash_save, PopResult};
-use bonsai_core::git::merge::{merge_branch, MergeOutcome};
-use bonsai_core::git::stash::list_stashes;
 use crate::common;
 use crate::common::{commit_fixed, git, init_repo};
+use bonsai_core::error::AppError;
+use bonsai_core::git::autostash::{
+    is_dirty, pop_after_success, rollback_and_map, stash_save, PopResult,
+};
+use bonsai_core::git::merge::{merge_branch, MergeOutcome};
+use bonsai_core::git::stash::list_stashes;
 
 macro_rules! require_git {
     () => {
@@ -76,11 +78,17 @@ fn is_dirty_truth_table() {
 
     // Unstaged tracked edit → dirty.
     std::fs::write(path.join("f.txt"), "unstaged\n").expect("edit f");
-    assert!(is_dirty(&repo).expect("unstaged"), "unstaged tracked edit → dirty");
+    assert!(
+        is_dirty(&repo).expect("unstaged"),
+        "unstaged tracked edit → dirty"
+    );
 
     // Staged tracked edit → dirty.
     git(path, &["add", "f.txt"]);
-    assert!(is_dirty(&repo).expect("staged"), "staged tracked edit → dirty");
+    assert!(
+        is_dirty(&repo).expect("staged"),
+        "staged tracked edit → dirty"
+    );
 }
 
 /// `is_dirty` on an unborn HEAD with a STAGED add is dirty (a staged add is an
@@ -93,7 +101,10 @@ fn is_dirty_unborn_head_staged_add() {
     std::fs::write(path.join("f.txt"), "new\n").expect("write");
     git(path, &["add", "f.txt"]);
     let repo = open(path);
-    assert!(is_dirty(&repo).expect("unborn staged"), "unborn + staged add → dirty");
+    assert!(
+        is_dirty(&repo).expect("unborn staged"),
+        "unborn + staged add → dirty"
+    );
 }
 
 // ---------------------------------------------- rollback_and_map conflicted
@@ -119,12 +130,19 @@ fn rollback_and_map_conflicted_restore_retains_stash() {
     match out {
         AppError::Git(m) => {
             assert!(m.contains("boom"), "original error preserved: {m}");
-            assert!(m.contains("stash@{"), "message points at the safe stash: {m}");
+            assert!(
+                m.contains("stash@{"),
+                "message points at the safe stash: {m}"
+            );
         }
         other => panic!("expected Git error, got {other:?}"),
     }
     // The stash is RETAINED (conflicted restore never drops).
-    assert_eq!(list_stashes(path).expect("list").len(), 1, "stash retained on conflicted rollback");
+    assert_eq!(
+        list_stashes(path).expect("list").len(),
+        1,
+        "stash retained on conflicted rollback"
+    );
 }
 
 // ---------------------------------------------- pop_after_success conflict
@@ -153,11 +171,18 @@ fn pop_after_success_content_conflict_retains_and_lists() {
     let mut repo = open(path);
     match pop_after_success(&mut repo, path, oid).expect("pop_after_success Ok") {
         PopResult::Conflicted(paths) => {
-            assert!(paths.iter().any(|p| p == "f.txt"), "conflicted path listed: {paths:?}");
+            assert!(
+                paths.iter().any(|p| p == "f.txt"),
+                "conflicted path listed: {paths:?}"
+            );
         }
         PopResult::Restored => panic!("expected a content conflict, got Restored"),
     }
-    assert_eq!(list_stashes(path).expect("list").len(), 1, "stash retained on conflicted pop");
+    assert_eq!(
+        list_stashes(path).expect("list").len(),
+        1,
+        "stash retained on conflicted pop"
+    );
 }
 
 // ------------------------------------------------------- merge-path autostash
@@ -189,7 +214,18 @@ fn merge_ff_with_dirty_tree_autostashes_and_restores() {
     }
 
     // FF brought in topic's file AND the dirty edit was restored.
-    assert_eq!(read(path, "g.txt"), "topic\n", "FF pulled in topic's commit");
-    assert_eq!(read(path, "f.txt"), "dirty-edit\n", "the autostashed edit was restored");
-    assert!(list_stashes(path).expect("list").is_empty(), "autostash dropped after clean restore");
+    assert_eq!(
+        read(path, "g.txt"),
+        "topic\n",
+        "FF pulled in topic's commit"
+    );
+    assert_eq!(
+        read(path, "f.txt"),
+        "dirty-edit\n",
+        "the autostashed edit was restored"
+    );
+    assert!(
+        list_stashes(path).expect("list").is_empty(),
+        "autostash dropped after clean restore"
+    );
 }

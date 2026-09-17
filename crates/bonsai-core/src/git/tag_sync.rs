@@ -175,7 +175,9 @@ fn ls_remote_tags(
 /// Local side of the join: tag name -> (peeled committish oid, annotated).
 /// Tags whose ref cannot be peeled at all are skipped (defensive — a broken ref
 /// should not fail the whole reconciliation).
-fn collect_local_tags(repo: &git2::Repository) -> Result<HashMap<String, (git2::Oid, bool)>, AppError> {
+fn collect_local_tags(
+    repo: &git2::Repository,
+) -> Result<HashMap<String, (git2::Oid, bool)>, AppError> {
     let mut local = HashMap::new();
     let refs = repo.references_glob("refs/tags/*")?;
     for r in refs {
@@ -293,7 +295,11 @@ pub fn list_tag_sync(workdir: &Path, remote: Option<&str>) -> Result<TagSyncRepo
 ///
 /// Errors: invalid/blank name → `InvalidName`; remote not found → `NoRemote`;
 /// auth → `AuthFailed`; Net/Http/Ssh → `NetworkError`; other → `Git`.
-pub fn force_refresh_tag(workdir: &Path, remote_name: &str, tag_name: &str) -> Result<(), AppError> {
+pub fn force_refresh_tag(
+    workdir: &Path,
+    remote_name: &str,
+    tag_name: &str,
+) -> Result<(), AppError> {
     validate_tag_name(tag_name)?;
     let repo = open_repo_at(workdir)?;
 
@@ -333,7 +339,11 @@ pub fn force_refresh_tag(workdir: &Path, remote_name: &str, tag_name: &str) -> R
 /// auth → `AuthFailed`; Net/Http/Ssh → `NetworkError`; server rejection
 /// (`push_update_reference` status / NotFastForward) → `PushRejected`; other →
 /// `Git`.
-pub fn delete_remote_tag(workdir: &Path, remote_name: &str, tag_name: &str) -> Result<(), AppError> {
+pub fn delete_remote_tag(
+    workdir: &Path,
+    remote_name: &str,
+    tag_name: &str,
+) -> Result<(), AppError> {
     validate_tag_name(tag_name)?;
     let repo = open_repo_at(workdir)?;
 

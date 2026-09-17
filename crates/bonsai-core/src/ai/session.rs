@@ -123,7 +123,11 @@ pub(crate) fn run(
 
 impl<'a> ClaudeSession<'a> {
     fn new(deps: SessionDeps<'a>) -> Self {
-        let SessionDeps { ctl, on_event, clock } = deps;
+        let SessionDeps {
+            ctl,
+            on_event,
+            clock,
+        } = deps;
         let now = clock.now();
         ClaudeSession {
             ctl,

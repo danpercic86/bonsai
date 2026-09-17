@@ -75,8 +75,9 @@ fn oracle_all_is_union_of_message_and_author() {
         return;
     }
     let (dir, _) = build_fixture();
-    let ours: BTreeSet<String> =
-        our_oids(dir.path(), &q(SearchField::All, "grace")).into_iter().collect();
+    let ours: BTreeSet<String> = our_oids(dir.path(), &q(SearchField::All, "grace"))
+        .into_iter()
+        .collect();
     let msg: BTreeSet<String> = cli_oids(
         dir.path(),
         &["log", "--all", "-i", "-F", "--grep=grace", "--format=%H"],
@@ -138,9 +139,12 @@ fn oracle_empty_results_is_ok() {
         return;
     }
     let (dir, _) = build_fixture();
-    let results =
-        search_commits(dir.path(), &SpawnGitRunner, &q(SearchField::Message, "zzznotfound"))
-            .expect("search");
+    let results = search_commits(
+        dir.path(),
+        &SpawnGitRunner,
+        &q(SearchField::Message, "zzznotfound"),
+    )
+    .expect("search");
     assert!(results.matches.is_empty());
     assert!(!results.truncated);
 }
@@ -163,10 +167,16 @@ fn oracle_all_refs_seeds_remotes_and_tags() {
     );
     assert_eq!(ours, cli, "all-refs message search == git log --all --grep");
     // Newest-first by timestamp: c_tag(3000), c_remote(2000), c_base(1000).
-    assert_eq!(ours, vec![oid_hex(c_tag), oid_hex(c_remote), oid_hex(c_base)]);
+    assert_eq!(
+        ours,
+        vec![oid_hex(c_tag), oid_hex(c_remote), oid_hex(c_base)]
+    );
     // Spell out the load-bearing claim: the remote-only and tag-only commits
     // are present (not just reachable via the local `main` branch at c_base).
-    assert!(ours.contains(&oid_hex(c_remote)), "remote-tracking ref seeded");
+    assert!(
+        ours.contains(&oid_hex(c_remote)),
+        "remote-tracking ref seeded"
+    );
     assert!(ours.contains(&oid_hex(c_tag)), "tag ref seeded");
 }
 
@@ -244,7 +254,10 @@ fn oracle_content_pickaxe_g_regex_matches_cli() {
     };
     let ours = our_oids(dir.path(), &regex_query);
     // -i is added (default case-insensitive) — mirror it in the oracle.
-    let cli = cli_oids(dir.path(), &["log", "--all", "-i", "--format=%H", "-Gal.ha"]);
+    let cli = cli_oids(
+        dir.path(),
+        &["log", "--all", "-i", "--format=%H", "-Gal.ha"],
+    );
     assert_eq!(ours, cli, "content -G == git log -G");
     assert!(!ours.is_empty(), "regex should match the alpha edits");
 }
@@ -332,14 +345,15 @@ fn seed_all_refs_skips_garbled_loose_refs() {
     let head = repo.head().expect("HEAD").target().expect("oid");
 
     // Garbled loose refs: not-40-hex content in branch + tag ref files.
-    std::fs::write(d.join(".git/refs/heads/garbled"), "not-a-hex-oid\n")
-        .expect("garbled branch");
+    std::fs::write(d.join(".git/refs/heads/garbled"), "not-a-hex-oid\n").expect("garbled branch");
     std::fs::create_dir_all(d.join(".git/refs/tags")).expect("tags dir");
-    std::fs::write(d.join(".git/refs/tags/garbled"), "also-garbage\n")
-        .expect("garbled tag");
+    std::fs::write(d.join(".git/refs/tags/garbled"), "also-garbage\n").expect("garbled tag");
 
     let mut walk = repo.revwalk().expect("revwalk");
     seed_all_refs(&repo, &mut walk).expect("garbled refs must be skipped, not abort");
     let oids: Vec<git2::Oid> = walk.collect::<Result<_, _>>().expect("walk");
-    assert!(oids.contains(&head), "HEAD commit still seeded, got {oids:?}");
+    assert!(
+        oids.contains(&head),
+        "HEAD commit still seeded, got {oids:?}"
+    );
 }

@@ -76,7 +76,11 @@ fn provider(token: Option<&str>, routes: Vec<(&str, u16, &str)>) -> GitHubProvid
 fn viewer_maps_get_user() {
     let p = provider(
         Some("tok"),
-        vec![("/user", 200, r#"{ "login": "octocat", "avatar_url": "https://a/o.png" }"#)],
+        vec![(
+            "/user",
+            200,
+            r#"{ "login": "octocat", "avatar_url": "https://a/o.png" }"#,
+        )],
     );
     let v = p.viewer().unwrap();
     assert_eq!(v.login, "octocat");
@@ -86,10 +90,7 @@ fn viewer_maps_get_user() {
 #[test]
 fn viewer_requires_token() {
     let p = provider(None, vec![("/user", 200, "{}")]);
-    assert!(matches!(
-        p.viewer(),
-        Err(AppError::ForgeAuthRequired(_))
-    ));
+    assert!(matches!(p.viewer(), Err(AppError::ForgeAuthRequired(_))));
 }
 
 #[test]
@@ -189,8 +190,7 @@ fn create_pr_requires_token_and_posts_body() {
     assert_eq!(d.summary.number, 42);
     let reqs = seen.lock().unwrap();
     assert_eq!(reqs[0].method, HttpMethod::Post);
-    let sent: serde_json::Value =
-        serde_json::from_str(reqs[0].body.as_ref().unwrap()).unwrap();
+    let sent: serde_json::Value = serde_json::from_str(reqs[0].body.as_ref().unwrap()).unwrap();
     assert_eq!(sent["head"], "feature");
     assert_eq!(sent["base"], "main");
 }
@@ -226,8 +226,7 @@ fn merge_pr_puts_merge_method_and_refetches() {
     let reqs = seen.lock().unwrap();
     assert_eq!(reqs[0].method, HttpMethod::Put);
     assert!(reqs[0].url.contains("/pulls/7/merge"));
-    let sent: serde_json::Value =
-        serde_json::from_str(reqs[0].body.as_ref().unwrap()).unwrap();
+    let sent: serde_json::Value = serde_json::from_str(reqs[0].body.as_ref().unwrap()).unwrap();
     assert_eq!(sent["merge_method"], "squash");
 }
 
@@ -239,7 +238,10 @@ fn merge_pr_rejects_fast_forward_without_sending() {
         p.merge_pr(7, &merge_input(MergeMethod::FastForward)),
         Err(AppError::ForgeApi(_))
     ));
-    assert!(seen.lock().unwrap().is_empty(), "nothing sent for unsupported method");
+    assert!(
+        seen.lock().unwrap().is_empty(),
+        "nothing sent for unsupported method"
+    );
 }
 
 #[test]
@@ -283,8 +285,7 @@ fn close_pr_patches_state_closed() {
     assert_eq!(d.summary.state, PrState::Closed);
     let reqs = seen.lock().unwrap();
     assert_eq!(reqs[0].method, HttpMethod::Patch);
-    let sent: serde_json::Value =
-        serde_json::from_str(reqs[0].body.as_ref().unwrap()).unwrap();
+    let sent: serde_json::Value = serde_json::from_str(reqs[0].body.as_ref().unwrap()).unwrap();
     assert_eq!(sent["state"], "closed");
 }
 
@@ -392,11 +393,18 @@ fn commit_statuses_omits_not_found_and_propagates_fatal() {
     );
     let shas = vec!["aa11".to_string(), "bb22".to_string(), "cc33".to_string()];
     let out = p.commit_statuses(&shas).unwrap();
-    assert_eq!(out.len(), 2, "the 404 sha is omitted, the two resolved remain");
+    assert_eq!(
+        out.len(),
+        2,
+        "the 404 sha is omitted, the two resolved remain"
+    );
     let find = |sha: &str| out.iter().find(|s| s.sha == sha);
     assert_eq!(find("aa11").unwrap().state, CheckRollup::Success);
     assert_eq!(find("bb22").unwrap().state, CheckRollup::Failure);
-    assert!(find("cc33").is_none(), "not-found sha omitted from the batch");
+    assert!(
+        find("cc33").is_none(),
+        "not-found sha omitted from the batch"
+    );
 
     // (b) a FATAL error (401 on a sha's status URL ⇒ AuthFailed) fails the
     // WHOLE batch — account/transport-level errors are not silently dropped.

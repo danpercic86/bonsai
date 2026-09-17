@@ -55,7 +55,14 @@ async fn item1_security_token_origin_host_gate() {
     );
     // Correct bearer but an Origin header present -> 403 (D-3).
     assert_eq!(
-        probe_status(&client, &url, Some(TEST_TOKEN), Some("http://evil.test"), None).await,
+        probe_status(
+            &client,
+            &url,
+            Some(TEST_TOKEN),
+            Some("http://evil.test"),
+            None
+        )
+        .await,
         StatusCode::FORBIDDEN,
         "any Origin header must be 403"
     );
@@ -71,7 +78,10 @@ async fn item1_security_token_origin_host_gate() {
         ok != StatusCode::UNAUTHORIZED && ok != StatusCode::FORBIDDEN,
         "authenticated loopback request must pass the gate, got {ok}"
     );
-    assert!(ok.is_success(), "authenticated initialize should be 2xx, got {ok}");
+    assert!(
+        ok.is_success(),
+        "authenticated initialize should be 2xx, got {ok}"
+    );
 
     running.stop();
 }
@@ -107,7 +117,10 @@ async fn item2_read_round_trip_and_tool_count() {
     );
     for t in READ_TOOLS {
         assert!(names.contains(&t.to_string()), "missing read tool {t}");
-        assert!(t.starts_with("bonsai_"), "read tool must be bonsai_-prefixed: {t}");
+        assert!(
+            t.starts_with("bonsai_"),
+            "read tool must be bonsai_-prefixed: {t}"
+        );
     }
     for t in WRITE_TOOLS {
         assert!(
@@ -179,7 +192,10 @@ async fn item3_write_gating_and_conflict_round_trip() {
         .iter()
         .map(|v| v.as_str().unwrap().to_string())
         .collect();
-    assert!(paths.contains(&"a.txt".to_string()), "paths must include a.txt: {paths:?}");
+    assert!(
+        paths.contains(&"a.txt".to_string()),
+        "paths must include a.txt: {paths:?}"
+    );
 
     // get_conflict -> bothModified with the branch versions.
     let conflict = ok_structured(
@@ -193,7 +209,10 @@ async fn item3_write_gating_and_conflict_round_trip() {
         "conflict kind: {conflict}"
     );
     assert_eq!(conflict.get("ours").and_then(Value::as_str), Some(OURS_A));
-    assert_eq!(conflict.get("theirs").and_then(Value::as_str), Some(THEIRS_A));
+    assert_eq!(
+        conflict.get("theirs").and_then(Value::as_str),
+        Some(THEIRS_A)
+    );
 
     // resolve + commit_merge.
     ok_structured(
@@ -278,21 +297,22 @@ async fn item5_list_select_and_act_on_non_seed_repo() {
 
     let count_a = graph_node_count(a.path());
     let count_b = graph_node_count(b.path());
-    assert_ne!(count_a, count_b, "fixtures A and B must differ in node count");
+    assert_ne!(
+        count_a, count_b,
+        "fixtures A and B must differ in node count"
+    );
 
-    let running = spawn(
-        false,
-        None,
-        arc_list(vec![ra, rb]),
-        seed_some(a_id.clone()),
-    )
-    .await;
+    let running = spawn(false, None, arc_list(vec![ra, rb]), seed_some(a_id.clone())).await;
     let mut client = HttpMcp::connect(running.port, TEST_TOKEN).await;
 
     // list_repos: A and B, A marked selected (the seed).
     let list = ok_structured(&client.call_tool("bonsai_list_repos", json!({})).await);
     let arr = list.as_array().expect("list_repos returns an array");
-    assert_eq!(arr.len(), 2, "list_repos must return both open tabs: {list}");
+    assert_eq!(
+        arr.len(),
+        2,
+        "list_repos must return both open tabs: {list}"
+    );
     let find = |id: &str| {
         arr.iter()
             .find(|e| e.get("repoId").and_then(Value::as_str) == Some(id))
@@ -323,7 +343,10 @@ async fn item5_list_select_and_act_on_non_seed_repo() {
             .call_tool("bonsai_select_repo", json!({ "repoId": b_id }))
             .await,
     );
-    assert_eq!(sel.get("repoId").and_then(Value::as_str), Some(b_id.as_str()));
+    assert_eq!(
+        sel.get("repoId").and_then(Value::as_str),
+        Some(b_id.as_str())
+    );
     assert_eq!(sel.get("selected").and_then(Value::as_bool), Some(true));
 
     // Now get_graph reflects B (the non-focused/non-seed tab) — call-time resolution.
@@ -427,13 +450,7 @@ async fn item7_write_off_bounce_renegotiates_read_only() {
     // Simulate the write->off bounce: stop, then restart read-only on the SAME
     // port (as `set_allow_write` does).
     running.stop();
-    let running2 = spawn(
-        false,
-        Some(port),
-        arc_list(vec![ra]),
-        seed_some(a_id),
-    )
-    .await;
+    let running2 = spawn(false, Some(port), arc_list(vec![ra]), seed_some(a_id)).await;
     assert_eq!(running2.port, port, "bounce should re-bind the same port");
 
     // A NEW client session re-negotiates the now-14 tool set.

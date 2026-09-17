@@ -19,7 +19,8 @@ use crate::git::status::read_status;
 const COMMIT_SYSTEM_PROMPT: &str = "You are a Git commit-message author. Given a staged diff on standard input, write ONE concise commit message in Conventional Commits style: a short imperative summary line of at most 72 characters (for example 'feat(scope): ...', 'fix: ...', 'refactor: ...'), then, only if warranted, a blank line followed by a brief body of one-line bullet points. Output ONLY the commit message text — no explanations, no preamble, no surrounding quotes, and no markdown code fences.";
 
 /// The `-p` positional prompt (contract §3.2, verbatim single line). (P15)
-const COMMIT_PROMPT: &str = "Write a commit message for the staged changes provided on standard input.";
+const COMMIT_PROMPT: &str =
+    "Write a commit message for the staged changes provided on standard input.";
 
 /// The model's proposed commit message. Serialized camelCase (mirrored in TS).
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -52,7 +53,14 @@ pub fn generate_commit_message(
     //    respecting the entry's origPath for renames.
     let mut file_diffs = Vec::with_capacity(staged.len());
     for entry in &staged {
-        let fd = workdir_file_diff(workdir, &entry.path, entry.orig_path.as_deref(), true, false, false)?;
+        let fd = workdir_file_diff(
+            workdir,
+            &entry.path,
+            entry.orig_path.as_deref(),
+            true,
+            false,
+            false,
+        )?;
         file_diffs.push(fd);
     }
 

@@ -13,7 +13,11 @@ use crate::git::stage::open_workdir_repo;
 /// The Rebase variant is fully shaped NOW so P3d does not change the wire
 /// type; P3c only populates its fields best-effort from plain file reads.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum RepoOpState {
     None,
     Merge {

@@ -10,9 +10,9 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
 
+use crate::common::{commit_fixed, git, git_raw, init_repo};
 use bonsai_core::git::conflict::ConflictKind;
 use bonsai_core::git::merge::{merge_branch, MergeOutcome};
-use crate::common::{commit_fixed, git, git_raw, init_repo};
 
 macro_rules! require_git {
     () => {
@@ -52,7 +52,12 @@ pub(crate) fn cli_stage_presence(dir: &Path) -> BTreeMap<String, (bool, bool, bo
     for rec in raw.split('\0').filter(|t| !t.is_empty()) {
         // "<mode> <oid> <stage>\t<path>"
         let (meta, path) = rec.split_once('\t').expect("ls-files -u record");
-        let stage: u32 = meta.split_whitespace().nth(2).expect("stage").parse().expect("stage n");
+        let stage: u32 = meta
+            .split_whitespace()
+            .nth(2)
+            .expect("stage")
+            .parse()
+            .expect("stage n");
         let e = map.entry(path.to_string()).or_insert((false, false, false));
         match stage {
             1 => e.0 = true,
@@ -125,7 +130,10 @@ impl Fixture {
     /// representation; both rows are resolvable via the §3.2 matrix. The test
     /// pins libgit2's actual shape for the RenameDelete fixture instead of
     /// strict CLI equality.
-    pub(crate) fn expected_presence(self, cli: &BTreeMap<String, (bool, bool, bool)>) -> BTreeMap<String, (bool, bool, bool)> {
+    pub(crate) fn expected_presence(
+        self,
+        cli: &BTreeMap<String, (bool, bool, bool)>,
+    ) -> BTreeMap<String, (bool, bool, bool)> {
         match self {
             Fixture::RenameDelete => BTreeMap::from([
                 ("a.txt".to_string(), (true, false, false)),
@@ -193,7 +201,11 @@ pub(crate) fn script(d: &Path, f: Fixture) {
             commit_fixed(d, "main modifies a.txt");
         }
         Fixture::RenameDelete => {
-            write(d, "a.txt", "stable content that rename detection can match\n");
+            write(
+                d,
+                "a.txt",
+                "stable content that rename detection can match\n",
+            );
             write(d, "keep.txt", "keep\n");
             git(d, &["add", "-A"]);
             commit_fixed(d, "base");

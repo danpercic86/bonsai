@@ -270,10 +270,7 @@ pub fn parse_mr_refs(body: &str, iid: u64) -> Result<PrRefs, AppError> {
         base_sha: None,
         head_sha: None,
     });
-    let head_oid = diff_refs
-        .head_sha
-        .or(mr.sha)
-        .unwrap_or_default();
+    let head_oid = diff_refs.head_sha.or(mr.sha).unwrap_or_default();
     let base_oid = diff_refs.base_sha.unwrap_or_default();
     Ok(PrRefs {
         base_oid: base_oid.clone(),

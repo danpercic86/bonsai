@@ -12,6 +12,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use crate::common::{commit_fixed, git, init_repo};
 use bonsai_core::error::AppError;
 use bonsai_core::git::commit::{amend_commit, create_commit};
 use bonsai_core::git::exec::SpawnGitExec;
@@ -19,8 +21,6 @@ use bonsai_core::git::hooks::{run_hook_nonblocking, HookName};
 use bonsai_core::git::merge::{commit_merge, merge_branch, MergeOutcome};
 use bonsai_core::git::remote::{push_current, PushResult};
 use bonsai_core::git::stage::stage_paths;
-use crate::common;
-use crate::common::{commit_fixed, git, init_repo};
 
 /// Gate: `git hook run` (and `--ignore-missing`) need Git ≥ 2.36.
 macro_rules! require_hook_git {
@@ -159,7 +159,10 @@ fn absent_hook_under_hookspath_allows_commit_merge() {
     let res = commit_merge(dir.path(), "merge topic", None, false)
         .expect("commit_merge: absent hook must be a no-op");
     assert_eq!(res.summary, "merge topic");
-    assert!(!dir.path().join(".git/MERGE_HEAD").exists(), "merge concluded");
+    assert!(
+        !dir.path().join(".git/MERGE_HEAD").exists(),
+        "merge concluded"
+    );
 }
 
 /// `push_current` succeeds with `core.hooksPath` set and NO pre-push hook.
@@ -170,7 +173,16 @@ fn absent_hook_under_hookspath_allows_push() {
     let root = root_dir.path();
     git(root, &["init", "--bare", "-b", "main", "origin.git"]);
     let work = root.join("work");
-    git(root, &["-c", "core.autocrlf=false", "clone", &root.join("origin.git").to_string_lossy(), "work"]);
+    git(
+        root,
+        &[
+            "-c",
+            "core.autocrlf=false",
+            "clone",
+            &root.join("origin.git").to_string_lossy(),
+            "work",
+        ],
+    );
     git(&work, &["config", "user.name", "Test User"]);
     git(&work, &["config", "user.email", "test@example.com"]);
     git(&work, &["config", "core.autocrlf", "false"]);
@@ -230,15 +242,25 @@ fn clean_merge_runs_commit_msg_hook_not_pre_commit() {
     write_hook(&git_hooks_dir(dir.path()), "pre-commit", "exit 1\n");
 
     let outcome = merge_branch(dir.path(), "topic", false).expect("clean merge");
-    assert!(matches!(outcome, MergeOutcome::Merged { .. }), "got {outcome:?}");
+    assert!(
+        matches!(outcome, MergeOutcome::Merged { .. }),
+        "got {outcome:?}"
+    );
     let msg = head_message(dir.path());
-    assert!(msg.starts_with("Merge branch 'topic'"), "subject kept: {msg}");
+    assert!(
+        msg.starts_with("Merge branch 'topic'"),
+        "subject kept: {msg}"
+    );
     assert!(
         msg.contains("Signed-off-by: Hook <hook@example.com>"),
         "commit-msg rewrite must land in the merge commit: {msg}"
     );
     let parents = git(dir.path(), &["rev-list", "--parents", "-1", "HEAD"]);
-    assert_eq!(parents.split_whitespace().count(), 3, "2-parent merge: {parents}");
+    assert_eq!(
+        parents.split_whitespace().count(),
+        3,
+        "2-parent merge: {parents}"
+    );
 }
 
 /// A FAILING commit-msg hook blocks the clean auto-merge with the merge left
@@ -274,7 +296,10 @@ fn clean_merge_commit_msg_fail_leaves_merge_paused() {
     // Recovery path: conclude the paused merge, bypassing the failing hook.
     let res = commit_merge(dir.path(), "merge topic anyway", None, true).expect("recover");
     assert_eq!(res.summary, "merge topic anyway");
-    assert!(!dir.path().join(".git/MERGE_HEAD").exists(), "merge concluded");
+    assert!(
+        !dir.path().join(".git/MERGE_HEAD").exists(),
+        "merge concluded"
+    );
 }
 
 /// `skip_hooks = true` (≡ --no-verify) bypasses a failing commit-msg on the
@@ -286,7 +311,10 @@ fn clean_merge_skip_hooks_bypasses_commit_msg() {
     write_hook(&git_hooks_dir(dir.path()), "commit-msg", "exit 1\n");
 
     let outcome = merge_branch(dir.path(), "topic", true).expect("skip bypasses");
-    assert!(matches!(outcome, MergeOutcome::Merged { .. }), "got {outcome:?}");
+    assert!(
+        matches!(outcome, MergeOutcome::Merged { .. }),
+        "got {outcome:?}"
+    );
 }
 
 // ======================================================================
@@ -298,11 +326,18 @@ fn clean_merge_skip_hooks_bypasses_commit_msg() {
 fn amend_failing_pre_commit_blocks() {
     require_hook_git!();
     let dir = seeded_repo();
-    write_hook(&git_hooks_dir(dir.path()), "pre-commit", "echo nope >&2\nexit 1\n");
+    write_hook(
+        &git_hooks_dir(dir.path()),
+        "pre-commit",
+        "echo nope >&2\nexit 1\n",
+    );
     let before = head_oid(dir.path());
 
     let err = amend_commit(dir.path(), "amended", None, false).expect_err("must block");
-    assert!(matches!(err, AppError::HookRejected(ref m) if m.contains("nope")), "got {err:?}");
+    assert!(
+        matches!(err, AppError::HookRejected(ref m) if m.contains("nope")),
+        "got {err:?}"
+    );
     assert_eq!(head_oid(dir.path()), before, "HEAD unchanged");
 }
 
@@ -315,7 +350,10 @@ fn amend_commit_msg_trailer_and_skip() {
     amend_commit(dir.path(), "amended subject", None, false).expect("amend");
     let msg = head_message(dir.path());
     assert!(msg.starts_with("amended subject"), "{msg}");
-    assert!(msg.contains("Signed-off-by: Hook"), "trailer in amend: {msg}");
+    assert!(
+        msg.contains("Signed-off-by: Hook"),
+        "trailer in amend: {msg}"
+    );
 
     write_hook(&git_hooks_dir(dir.path()), "commit-msg", "exit 1\n");
     amend_commit(dir.path(), "amended again", None, true).expect("skip bypasses");
@@ -333,7 +371,11 @@ fn amend_commit_msg_trailer_and_skip() {
 fn commit_merge_hook_fail_retains_merge_head() {
     require_hook_git!();
     let dir = paused_merge_repo();
-    write_hook(&git_hooks_dir(dir.path()), "pre-commit", "echo blocked >&2\nexit 1\n");
+    write_hook(
+        &git_hooks_dir(dir.path()),
+        "pre-commit",
+        "echo blocked >&2\nexit 1\n",
+    );
 
     let err = commit_merge(dir.path(), "merge topic", None, false).expect_err("must block");
     assert!(matches!(err, AppError::HookRejected(_)), "got {err:?}");
@@ -362,7 +404,10 @@ fn commit_merge_rewrite_and_post_commit_sees_merge_head() {
     let saw = std::fs::read_to_string(dir.path().join("post-commit-saw.txt"))
         .expect("post-commit must have run and seen MERGE_HEAD");
     assert_eq!(saw.trim(), "present");
-    assert!(!dir.path().join(".git/MERGE_HEAD").exists(), "cleanup after post-commit");
+    assert!(
+        !dir.path().join(".git/MERGE_HEAD").exists(),
+        "cleanup after post-commit"
+    );
 }
 
 // ======================================================================
@@ -384,8 +429,14 @@ fn crlf_trailer_from_hook_is_normalized() {
     stage_new_file(dir.path(), "a.txt");
     create_commit(dir.path(), "subject", None, false).expect("commit");
     let msg = head_message(dir.path());
-    assert!(msg.contains("CRLF-Trailer: yes"), "trailer present: {msg:?}");
-    assert!(!msg.contains('\r'), "no CR may survive normalization: {msg:?}");
+    assert!(
+        msg.contains("CRLF-Trailer: yes"),
+        "trailer present: {msg:?}"
+    );
+    assert!(
+        !msg.contains('\r'),
+        "no CR may survive normalization: {msg:?}"
+    );
 }
 
 /// A commit-msg hook that TRUNCATES the message file to empty ⇒ clean
@@ -394,7 +445,11 @@ fn crlf_trailer_from_hook_is_normalized() {
 fn hook_emptied_message_is_empty_message_error() {
     require_hook_git!();
     let dir = seeded_repo();
-    write_hook(&git_hooks_dir(dir.path()), "commit-msg", ": > \"$1\"\nexit 0\n");
+    write_hook(
+        &git_hooks_dir(dir.path()),
+        "commit-msg",
+        ": > \"$1\"\nexit 0\n",
+    );
     stage_new_file(dir.path(), "a.txt");
     let before = head_oid(dir.path());
 
@@ -434,7 +489,10 @@ fn skip_hooks_sentinel_matrix_commit_sites() {
     write_hook(&git_hooks_dir(m.path()), "pre-commit", SENTINEL_HOOK);
     write_hook(&git_hooks_dir(m.path()), "commit-msg", SENTINEL_HOOK);
     let outcome = merge_branch(m.path(), "topic", true).expect("merge with skip");
-    assert!(matches!(outcome, MergeOutcome::Merged { .. }), "got {outcome:?}");
+    assert!(
+        matches!(outcome, MergeOutcome::Merged { .. }),
+        "got {outcome:?}"
+    );
     no_sentinel(m.path(), "merge_branch");
 
     // commit_merge (paused merge).

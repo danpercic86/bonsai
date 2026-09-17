@@ -82,7 +82,6 @@ mod tests {
     use crate::ai::testutil::{env_lock, STUB_MODE_ENV};
     use crate::ai::CLAUDE_BIN_ENV;
 
-
     /// Windows runs the `.cmd` stub directly (`Command::new` routes `.cmd`
     /// through cmd.exe automatically). macOS/Linux use the POSIX `.sh` twin,
     /// with the executable bit forced on at test time — git doesn't reliably

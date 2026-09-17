@@ -55,7 +55,8 @@ pub fn reset_branch(workdir: &Path, target_oid: &str, mode: ResetMode) -> Result
         Err(e) => return Err(e.into()),
     }
 
-    let oid = git2::Oid::from_str(target_oid).map_err(|_| AppError::Git("invalid commit id".to_string()))?;
+    let oid = git2::Oid::from_str(target_oid)
+        .map_err(|_| AppError::Git("invalid commit id".to_string()))?;
     let obj = repo.find_object(oid, None)?;
     // Reject non-commit targets by peeling to a commit.
     let commit = obj
@@ -113,7 +114,8 @@ mod tests {
         {
             let mut cfg = repo.config().expect("config");
             cfg.set_str("user.name", "Test User").expect("name");
-            cfg.set_str("user.email", "test@example.com").expect("email");
+            cfg.set_str("user.email", "test@example.com")
+                .expect("email");
         }
         std::fs::write(dir.path().join("a.txt"), "one\n").expect("write");
         crate::git::stage::stage_paths(dir.path(), &["a.txt".to_string()]).expect("stage");

@@ -44,7 +44,8 @@ fn init_scratch() -> tempfile::TempDir {
     let repo = git2::Repository::init(dir.path()).expect("init repo");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     dir
 }
@@ -158,7 +159,9 @@ fn commit_variant_delete_gives_new_none() {
     commit_bytes(p, "img.png", RED, "add image");
     std::fs::remove_file(p.join("img.png")).expect("rm");
     stage_paths(p, &["img.png".into()]).expect("stage deletion");
-    let del = create_commit(p, "delete image", None, false).expect("commit").oid;
+    let del = create_commit(p, "delete image", None, false)
+        .expect("commit")
+        .oid;
 
     let diff = get_image_diff(
         p,
@@ -184,7 +187,9 @@ fn commit_variant_rename_uses_orig_path() {
     std::fs::remove_file(p.join("a.png")).expect("rm a");
     std::fs::write(p.join("b.png"), RED).expect("write b");
     stage_paths(p, &["a.png".into(), "b.png".into()]).expect("stage rename");
-    let c = create_commit(p, "rename a->b", None, false).expect("commit").oid;
+    let c = create_commit(p, "rename a->b", None, false)
+        .expect("commit")
+        .oid;
 
     // With orig_path -> old resolved from a.png in the parent tree.
     let with = get_image_diff(
@@ -196,7 +201,10 @@ fn commit_variant_rename_uses_orig_path() {
         },
     )
     .expect("rename diff");
-    assert_eq!(base64_decode(&with.old.expect("old via orig_path").base64), RED);
+    assert_eq!(
+        base64_decode(&with.old.expect("old via orig_path").base64),
+        RED
+    );
     assert!(with.new.is_some(), "new = b.png present");
 
     // Without orig_path -> old None (b.png absent from the parent tree).
@@ -231,7 +239,10 @@ fn workdir_variant_unstaged() {
     )
     .expect("workdir diff");
     assert_eq!(base64_decode(&diff.old.expect("old = index").base64), RED);
-    assert_eq!(base64_decode(&diff.new.expect("new = workdir").base64), GREEN);
+    assert_eq!(
+        base64_decode(&diff.new.expect("new = workdir").base64),
+        GREEN
+    );
 }
 
 /// Workdir variant (staged): old = HEAD blob, new = index blob.
@@ -262,7 +273,7 @@ fn over_cap_side_is_none_and_flagged() {
     let dir = init_scratch();
     let p = dir.path();
     commit_bytes(p, "img.png", RED, "add small image"); // index = small RED
-    // Workdir file over the cap.
+                                                        // Workdir file over the cap.
     std::fs::write(p.join("img.png"), vec![0u8; MAX_IMAGE_BYTES + 1]).expect("write big");
 
     let diff = get_image_diff(
@@ -301,7 +312,10 @@ fn zero_byte_side_is_absent_not_empty_base64() {
     .expect("zero-byte diff");
     assert!(diff.old.is_some(), "small old side present");
     assert!(diff.new.is_none(), "0-byte new -> None (absent)");
-    assert!(!diff.new_too_large, "0-byte is absent, NOT flagged too_large");
+    assert!(
+        !diff.new_too_large,
+        "0-byte is absent, NOT flagged too_large"
+    );
 }
 
 /// Compare variant: HEAD (old) vs the to-commit (new).

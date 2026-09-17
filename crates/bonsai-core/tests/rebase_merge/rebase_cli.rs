@@ -14,14 +14,14 @@
 
 use std::path::Path;
 
-use bonsai_core::git::rebase::{rebase_branch, RebaseOutcome};
-use bonsai_core::git::remote::fetch_all;
 use crate::common;
 use crate::common::{commit_fixed, git, init_repo};
 use crate::rebase_support::{
     checkout, cli_rebase, count_ahead, has_rebase_dir, head_oid, repo_state, require_git,
     rev_parse, script_clean_linear, top_infos, tree_oid, twin_pair, write,
 };
+use bonsai_core::git::rebase::{rebase_branch, RebaseOutcome};
+use bonsai_core::git::remote::fetch_all;
 
 // ============================================================ §9.1 clean linear
 
@@ -36,7 +36,12 @@ fn clean_linear_rebase_matches_cli_twin() {
 
     let outcome = rebase_branch(b, "main").expect("rebase");
     match &outcome {
-        RebaseOutcome::Rebased { branch, head, steps, .. } => {
+        RebaseOutcome::Rebased {
+            branch,
+            head,
+            steps,
+            ..
+        } => {
             assert_eq!(branch, "topic");
             assert_eq!(steps, &2, "topic..main range is 2 commits");
             assert_eq!(head, &head_oid(b), "returned head must be HEAD");
@@ -47,12 +52,28 @@ fn clean_linear_rebase_matches_cli_twin() {
     cli_rebase(t, "main");
 
     // Final HEAD tree identical.
-    assert_eq!(tree_oid(b), tree_oid(t), "final HEAD tree oid must match twin");
+    assert_eq!(
+        tree_oid(b),
+        tree_oid(t),
+        "final HEAD tree oid must match twin"
+    );
     // Each replayed commit: tree + author identity/time + message, in order.
-    assert_eq!(top_infos(b, 2), top_infos(t, 2), "replayed commits differ from twin");
+    assert_eq!(
+        top_infos(b, 2),
+        top_infos(t, 2),
+        "replayed commits differ from twin"
+    );
     // Linear parent chain rooted at main's (unmoved) tip.
-    assert_eq!(rev_parse(b, "HEAD~2"), onto_tip, "chain must root at main tip");
-    assert_eq!(count_ahead(b, "main", "HEAD"), 2, "exactly 2 replayed commits");
+    assert_eq!(
+        rev_parse(b, "HEAD~2"),
+        onto_tip,
+        "chain must root at main tip"
+    );
+    assert_eq!(
+        count_ahead(b, "main", "HEAD"),
+        2,
+        "exactly 2 replayed commits"
+    );
     assert_eq!(repo_state(b), git2::RepositoryState::Clean);
     assert!(!has_rebase_dir(b), "no rebase-merge dir after completion");
 }
@@ -74,11 +95,17 @@ fn rebasing_onto_an_ancestor_is_up_to_date() {
     let pre = head_oid(d);
 
     // onto (topic) is an ancestor of HEAD (main) -> nothing to replay.
-    assert_eq!(rebase_branch(d, "topic").expect("rebase"), RebaseOutcome::UpToDate);
+    assert_eq!(
+        rebase_branch(d, "topic").expect("rebase"),
+        RebaseOutcome::UpToDate
+    );
     assert_eq!(head_oid(d), pre, "HEAD must not move");
 
     // Rebasing the current branch onto itself also falls out as UpToDate.
-    assert_eq!(rebase_branch(d, "main").expect("self"), RebaseOutcome::UpToDate);
+    assert_eq!(
+        rebase_branch(d, "main").expect("self"),
+        RebaseOutcome::UpToDate
+    );
     assert_eq!(head_oid(d), pre);
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);
 }
@@ -116,9 +143,17 @@ fn fast_forward_rebase_matches_cli_twin() {
     // No rewritten commits: FF oids are byte-identical to the CLI twin.
     cli_rebase(t, "main");
     assert_eq!(head_oid(b), onto_tip, "topic fast-forwarded to main tip");
-    assert_eq!(head_oid(b), head_oid(t), "FF HEAD must equal twin (no rewrite)");
+    assert_eq!(
+        head_oid(b),
+        head_oid(t),
+        "FF HEAD must equal twin (no rewrite)"
+    );
     assert_eq!(tree_oid(b), onto_tree, "worktree/tree == onto's tree");
-    assert_eq!(count_ahead(b, "main", "HEAD"), 0, "no commits ahead of onto");
+    assert_eq!(
+        count_ahead(b, "main", "HEAD"),
+        0,
+        "no commits ahead of onto"
+    );
     assert_eq!(repo_state(b), git2::RepositoryState::Clean);
     assert!(!has_rebase_dir(b));
 }
@@ -137,7 +172,10 @@ fn rebase_onto_remote_tracking_matches_cli_twin() {
 
     // Seed publishes: main = base + advance (a.txt); topic diverges from base
     // with a disjoint change (b.txt) -> a clean rebase onto origin/main.
-    git(root, &["clone", "-c", "core.autocrlf=false", &bare_s, "seed"]);
+    git(
+        root,
+        &["clone", "-c", "core.autocrlf=false", &bare_s, "seed"],
+    );
     let seed = root.join("seed");
     git(&seed, &["config", "user.name", "Test User"]);
     git(&seed, &["config", "user.email", "test@example.com"]);
@@ -175,7 +213,12 @@ fn rebase_onto_remote_tracking_matches_cli_twin() {
 
     let outcome = rebase_branch(work, "origin/main").expect("rebase origin/main");
     match &outcome {
-        RebaseOutcome::Rebased { branch, head, steps, .. } => {
+        RebaseOutcome::Rebased {
+            branch,
+            head,
+            steps,
+            ..
+        } => {
             assert_eq!(branch, "topic");
             assert_eq!(steps, &1);
             assert_eq!(head, &head_oid(work));
@@ -185,9 +228,21 @@ fn rebase_onto_remote_tracking_matches_cli_twin() {
 
     cli_rebase(twin, "origin/main");
 
-    assert_eq!(tree_oid(work), tree_oid(twin), "final HEAD tree must match twin");
-    assert_eq!(top_infos(work, 1), top_infos(twin, 1), "replayed commit differs from twin");
-    assert_eq!(rev_parse(work, "HEAD~1"), onto_tip, "commit sits on origin/main tip");
+    assert_eq!(
+        tree_oid(work),
+        tree_oid(twin),
+        "final HEAD tree must match twin"
+    );
+    assert_eq!(
+        top_infos(work, 1),
+        top_infos(twin, 1),
+        "replayed commit differs from twin"
+    );
+    assert_eq!(
+        rev_parse(work, "HEAD~1"),
+        onto_tip,
+        "commit sits on origin/main tip"
+    );
     assert_eq!(count_ahead(work, "refs/remotes/origin/main", "HEAD"), 1);
     assert_eq!(repo_state(work), git2::RepositoryState::Clean);
 }
@@ -231,9 +286,16 @@ fn already_applied_pick_is_dropped_like_cli() {
     // The empty pick is DROPPED in both: exactly ONE commit replayed.
     let bonsai_ahead = count_ahead(b, "main", "HEAD");
     let twin_ahead = count_ahead(t, "main", "HEAD");
-    assert_eq!(bonsai_ahead, twin_ahead, "replayed-commit count must match twin");
+    assert_eq!(
+        bonsai_ahead, twin_ahead,
+        "replayed-commit count must match twin"
+    );
     assert_eq!(bonsai_ahead, 1, "the already-applied pick must be dropped");
     assert_eq!(tree_oid(b), tree_oid(t), "final HEAD tree must match twin");
-    assert_eq!(top_infos(b, 1), top_infos(t, 1), "surviving commit differs from twin");
+    assert_eq!(
+        top_infos(b, 1),
+        top_infos(t, 1),
+        "surviving commit differs from twin"
+    );
     assert_eq!(repo_state(b), git2::RepositoryState::Clean);
 }

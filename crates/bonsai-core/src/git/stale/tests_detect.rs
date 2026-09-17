@@ -88,8 +88,14 @@ fn merged_detection() {
     assert_eq!(report.base, "main");
 
     let names: Vec<&str> = report.branches.iter().map(|b| b.name.as_str()).collect();
-    assert!(names.contains(&"feat-merged"), "merged branch listed: {names:?}");
-    assert!(!names.contains(&"wip"), "unmerged branch NOT listed: {names:?}");
+    assert!(
+        names.contains(&"feat-merged"),
+        "merged branch listed: {names:?}"
+    );
+    assert!(
+        !names.contains(&"wip"),
+        "unmerged branch NOT listed: {names:?}"
+    );
     assert!(!names.contains(&"main"), "base never listed: {names:?}");
     assert!(
         !names.contains(&"cur-merged"),
@@ -127,7 +133,13 @@ fn gone_upstream_detection() {
     // `gone`: unique commit (so NOT merged) + configured upstream, but no
     // matching refs/remotes/origin/gone → upstream() errs → gone.
     branch_at(&repo, "gone", c0);
-    commit_on_ref(&repo, "refs/heads/gone", c0, &[("g.txt", "g\n")], "gone work");
+    commit_on_ref(
+        &repo,
+        "refs/heads/gone",
+        c0,
+        &[("g.txt", "g\n")],
+        "gone work",
+    );
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("branch.gone.remote", "origin").expect("remote");
@@ -136,8 +148,13 @@ fn gone_upstream_detection() {
     }
 
     // `live`: unique commit + a present remote-tracking ref → upstream Ok.
-    let live_tip =
-        commit_on_ref(&repo, "refs/heads/live", c0, &[("l.txt", "l\n")], "live work");
+    let live_tip = commit_on_ref(
+        &repo,
+        "refs/heads/live",
+        c0,
+        &[("l.txt", "l\n")],
+        "live work",
+    );
     repo.reference(
         "refs/remotes/origin/live",
         live_tip,
@@ -187,7 +204,13 @@ fn delete_branches_safety() {
 
     branch_at(&repo, "merged-stale", c1); // merged → safe
     branch_at(&repo, "not-stale", c0);
-    commit_on_ref(&repo, "refs/heads/not-stale", c0, &[("n.txt", "n\n")], "unique");
+    commit_on_ref(
+        &repo,
+        "refs/heads/not-stale",
+        c0,
+        &[("n.txt", "n\n")],
+        "unique",
+    );
 
     // Sanity: the classifier sees exactly `merged-stale` as safe.
     let report = find_stale_branches(d, Some("main")).expect("classify");
@@ -222,7 +245,11 @@ fn delete_branches_safety() {
         .find(|r| r.name == "merged-stale")
         .expect("row present");
     assert!(
-        deleted_row.message.as_deref().unwrap_or("").starts_with("was at "),
+        deleted_row
+            .message
+            .as_deref()
+            .unwrap_or("")
+            .starts_with("was at "),
         "Deleted row must carry 'was at <short-oid>', got {:?}",
         deleted_row.message
     );
@@ -272,4 +299,3 @@ fn delete_branches_refuses_current() {
     assert!(branch_exists(d, "main"), "base branch never deleted");
     assert!(!branch_exists(d, "old"), "merged branch deleted");
 }
-

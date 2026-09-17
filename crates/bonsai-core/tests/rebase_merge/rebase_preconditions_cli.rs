@@ -4,17 +4,17 @@
 //! Split out of `rebase_cli.rs`; the twin-repo scaffolding, helpers, and
 //! fixtures live in `rebase_support.rs`.
 
-use bonsai_core::error::AppError;
-use bonsai_core::git::commit::create_commit;
-use bonsai_core::git::conflict::{resolve_conflict, ConflictResolution};
-use bonsai_core::git::merge::{merge_branch, MergeOutcome};
-use bonsai_core::git::rebase::{rebase_branch, rebase_continue, rebase_skip, RebaseOutcome};
 use crate::common;
 use crate::common::{commit_fixed, git, init_repo};
 use crate::rebase_support::{
     checkout, has_rebase_dir, repo_state, require_git, script_clean_linear, script_conflict_one,
     twin_pair, write,
 };
+use bonsai_core::error::AppError;
+use bonsai_core::git::commit::create_commit;
+use bonsai_core::git::conflict::{resolve_conflict, ConflictResolution};
+use bonsai_core::git::merge::{merge_branch, MergeOutcome};
+use bonsai_core::git::rebase::{rebase_branch, rebase_continue, rebase_skip, RebaseOutcome};
 
 // ============================================================ §9.9 precondition matrix
 
@@ -114,7 +114,11 @@ fn precondition_missing_identity_is_config_missing_before_worktree() {
         "expected ConfigMissing, got {err:?}"
     );
     // Surfaces BEFORE the worktree is touched: nothing left behind.
-    assert_eq!(repo_state(d), git2::RepositoryState::Clean, "state must stay Clean");
+    assert_eq!(
+        repo_state(d),
+        git2::RepositoryState::Clean,
+        "state must stay Clean"
+    );
     assert!(!has_rebase_dir(d), "no rebase-merge dir left behind");
 }
 
@@ -139,7 +143,10 @@ fn plain_commit_during_paused_rebase_is_rejected() {
         "expected OperationInProgress, got {err:?}"
     );
     // The rebase state is untouched by the refused commit.
-    assert!(has_rebase_dir(d), "rebase state must persist after the refused commit");
+    assert!(
+        has_rebase_dir(d),
+        "rebase state must persist after the refused commit"
+    );
 }
 
 #[test]

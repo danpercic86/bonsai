@@ -34,7 +34,10 @@ fn from_json<T: DeserializeOwned>(body: &str) -> Result<T, AppError> {
 
 /// Strip the `refs/heads/` prefix for a neutral branch name (contract §3c).
 fn strip_ref(refname: &str) -> String {
-    refname.strip_prefix(HEADS_PREFIX).unwrap_or(refname).to_string()
+    refname
+        .strip_prefix(HEADS_PREFIX)
+        .unwrap_or(refname)
+        .to_string()
 }
 
 /// Re-add the `refs/heads/` prefix for a create-PR ref, unless the caller already
@@ -69,7 +72,10 @@ struct AzIdentity {
 /// Author name + avatar for a PR/comment.
 fn author_of(id: &Option<AzIdentity>) -> (String, Option<String>) {
     match id {
-        Some(i) => (i.display_name.clone().unwrap_or_default(), i.image_url.clone()),
+        Some(i) => (
+            i.display_name.clone().unwrap_or_default(),
+            i.image_url.clone(),
+        ),
         None => (String::new(), None),
     }
 }

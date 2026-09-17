@@ -21,12 +21,16 @@ mod branch;
 mod finalize;
 
 pub use branch::{merge_branch, merge_branch_gated};
-pub use finalize::{abort_merge, commit_merge};
 pub(crate) use finalize::finalize_merge_commit;
+pub use finalize::{abort_merge, commit_merge};
 
 /// Wire: tagged "kind", camelCase (same recipe as PullResult).
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum MergeOutcome {
     /// Incoming is already reachable from HEAD. Nothing changed.
     UpToDate,
@@ -111,10 +115,10 @@ pub(crate) enum MergeHooks {
 }
 
 #[cfg(test)]
-mod p8_helpers;
-#[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod autostash_tests;
 #[cfg(test)]
 mod hook_gate_tests;
+#[cfg(test)]
+mod p8_helpers;
+#[cfg(test)]
+mod tests;

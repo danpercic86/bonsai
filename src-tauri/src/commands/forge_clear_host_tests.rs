@@ -63,10 +63,7 @@ fn scratch_dir() -> tempfile::TempDir {
 
 /// A `delete_token` seam that records every key it saw and fails the ones in
 /// `fail`.
-fn recording_delete(
-    seen: Arc<Mutex<Vec<String>>>,
-    fail: &'static [&'static str],
-) -> DeleteTokenFn {
+fn recording_delete(seen: Arc<Mutex<Vec<String>>>, fail: &'static [&'static str]) -> DeleteTokenFn {
     Box::new(move |k: &str| {
         if let Ok(mut v) = seen.lock() {
             v.push(k.to_string());
@@ -365,7 +362,9 @@ fn empty_host_keychain_failure_does_not_claim_accounts_are_listed() {
             }),
         },
     ));
-    let msg = r.expect_err("a refused legacy delete must fail").to_string();
+    let msg = r
+        .expect_err("a refused legacy delete must fail")
+        .to_string();
     assert_eq!(
         msg,
         "could not remove the credentials from the OS keychain: access denied for bitbucket.org. Nothing was changed — this host has no accounts listed; a leftover credential for it could not be removed, so you can try again."

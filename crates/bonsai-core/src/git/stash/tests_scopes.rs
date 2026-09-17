@@ -117,6 +117,10 @@ fn p34_nothing_to_stash_each_scope() {
             "{scope:?}: no entry pushed"
         );
         assert_eq!(s9_head_oid(d), head, "{scope:?}: HEAD unchanged");
-        assert_eq!(s9_read(d, "a.txt"), "base\n", "{scope:?}: worktree unchanged");
+        assert_eq!(
+            s9_read(d, "a.txt"),
+            "base\n",
+            "{scope:?}: worktree unchanged"
+        );
     }
 }

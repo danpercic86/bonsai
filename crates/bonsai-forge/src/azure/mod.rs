@@ -75,7 +75,11 @@ impl AzureDevOpsProvider {
                 "Azure DevOps requires an org/project/repo remote".to_string(),
             )
         })?;
-        Ok((self.target.owner.as_str(), project, self.target.repo.as_str()))
+        Ok((
+            self.target.owner.as_str(),
+            project,
+            self.target.repo.as_str(),
+        ))
     }
 
     /// Return the token, or `ForgeAuthRequired` BEFORE any request.
@@ -240,7 +244,7 @@ impl ForgeProvider for AzureDevOpsProvider {
     fn merge_pr(&self, number: u64, input: &MergePrInput) -> Result<PrDetail, AppError> {
         let (org, project, repo) = self.coords()?;
         let token = self.require_token()?; // merge REQUIRES auth
-        // Unsupported method / missing head_sha ⇒ error BEFORE any request.
+                                           // Unsupported method / missing head_sha ⇒ error BEFORE any request.
         let body = req::complete_body(input)?;
         let url = rest::pull_request_url(org, project, repo, number);
         // 200 returns the updated PR; not-completable statuses map in `patch_complete`.

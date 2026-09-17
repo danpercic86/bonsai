@@ -25,7 +25,11 @@ fn discard_paths_restores_modified_file() {
 
     tauri::async_runtime::block_on(discard_paths_inner(&state, &id, vec!["a.txt".into()]))
         .expect("discard");
-    assert_eq!(read(dir.path(), "a.txt"), "base\n", "worktree restored to index");
+    assert_eq!(
+        read(dir.path(), "a.txt"),
+        "base\n",
+        "worktree restored to index"
+    );
     assert!(status_of(&state, &id).unstaged.is_empty());
 }
 
@@ -37,12 +41,20 @@ fn discard_paths_force_removes_untracked() {
     let (dir, id, _c0) = fixture_repo(&state);
 
     std::fs::write(dir.path().join("junk.txt"), "junk\n").expect("write");
-    tauri::async_runtime::block_on(discard_paths_force_inner(&state, &id, vec!["junk.txt".into()]))
-        .expect("force discard");
-    assert!(!dir.path().join("junk.txt").exists(), "untracked file deleted");
+    tauri::async_runtime::block_on(discard_paths_force_inner(
+        &state,
+        &id,
+        vec!["junk.txt".into()],
+    ))
+    .expect("force discard");
+    assert!(
+        !dir.path().join("junk.txt").exists(),
+        "untracked file deleted"
+    );
 
-    let err = tauri::async_runtime::block_on(discard_paths_inner(&state, &id, vec!["../evil".into()]))
-        .expect_err("escaping path must error");
+    let err =
+        tauri::async_runtime::block_on(discard_paths_inner(&state, &id, vec!["../evil".into()]))
+            .expect_err("escaping path must error");
     assert!(matches!(err, AppError::Other(_)), "{err:?}");
 }
 
@@ -57,8 +69,14 @@ fn discard_partial_selected_line_and_empty_noop() {
     std::fs::write(dir.path().join("d.txt"), "l1\nl2\nl3\n").expect("write");
 
     // Empty selection: no-op, file unchanged.
-    tauri::async_runtime::block_on(discard_partial_inner(&state, &id, "d.txt".into(), None, vec![]))
-        .expect("empty selection no-op");
+    tauri::async_runtime::block_on(discard_partial_inner(
+        &state,
+        &id,
+        "d.txt".into(),
+        None,
+        vec![],
+    ))
+    .expect("empty selection no-op");
     assert_eq!(read(dir.path(), "d.txt"), "l1\nl2\nl3\n");
 
     // Discard the added line 3: worktree returns to the index version.
@@ -67,7 +85,11 @@ fn discard_partial_selected_line_and_empty_noop() {
         &id,
         "d.txt".into(),
         None,
-        vec![LineSelection { kind: LineKind::Add, old_no: None, new_no: Some(3) }],
+        vec![LineSelection {
+            kind: LineKind::Add,
+            old_no: None,
+            new_no: Some(3),
+        }],
     ))
     .expect("discard_partial");
     assert_eq!(read(dir.path(), "d.txt"), "l1\nl2\n");
@@ -83,7 +105,10 @@ fn reset_branch_soft_mixed_hard() {
 
     // Soft: HEAD -> C0, index + workdir keep C1's content (change shows staged).
     tauri::async_runtime::block_on(reset_branch_command_inner(
-        &state, &id, c0.clone(), ResetMode::Soft,
+        &state,
+        &id,
+        c0.clone(),
+        ResetMode::Soft,
     ))
     .expect("soft reset");
     assert_eq!(head_oid(dir.path()), c0);
@@ -95,26 +120,42 @@ fn reset_branch_soft_mixed_hard() {
     // Mixed: back to C1 first, then mixed-reset to C0 — index matches C0
     // (change shows unstaged), workdir keeps v2.
     tauri::async_runtime::block_on(reset_branch_command_inner(
-        &state, &id, c1.clone(), ResetMode::Hard,
+        &state,
+        &id,
+        c1.clone(),
+        ResetMode::Hard,
     ))
     .expect("restore C1");
     tauri::async_runtime::block_on(reset_branch_command_inner(
-        &state, &id, c0.clone(), ResetMode::Mixed,
+        &state,
+        &id,
+        c0.clone(),
+        ResetMode::Mixed,
     ))
     .expect("mixed reset");
     assert_eq!(head_oid(dir.path()), c0);
     let st = status_of(&state, &id);
     assert!(st.staged.is_empty(), "{st:?}");
-    assert_eq!(st.unstaged.len(), 1, "C1 content unstaged after mixed: {st:?}");
+    assert_eq!(
+        st.unstaged.len(),
+        1,
+        "C1 content unstaged after mixed: {st:?}"
+    );
     assert_eq!(read(dir.path(), "a.txt"), "v2\n");
 
     // Hard: workdir + index both back to C0.
     tauri::async_runtime::block_on(reset_branch_command_inner(
-        &state, &id, c1.clone(), ResetMode::Hard,
+        &state,
+        &id,
+        c1.clone(),
+        ResetMode::Hard,
     ))
     .expect("restore C1 again");
     tauri::async_runtime::block_on(reset_branch_command_inner(
-        &state, &id, c0.clone(), ResetMode::Hard,
+        &state,
+        &id,
+        c0.clone(),
+        ResetMode::Hard,
     ))
     .expect("hard reset");
     assert_eq!(head_oid(dir.path()), c0);
@@ -154,8 +195,14 @@ fn compose_two_group_plan_happy() {
 
     let plan = ComposePlan {
         groups: vec![
-            ai_compose::ComposeGroup { files: vec!["f1.txt".into()], message: "first group".into() },
-            ai_compose::ComposeGroup { files: vec!["f2.txt".into()], message: "second group".into() },
+            ai_compose::ComposeGroup {
+                files: vec!["f1.txt".into()],
+                message: "first group".into(),
+            },
+            ai_compose::ComposeGroup {
+                files: vec!["f2.txt".into()],
+                message: "second group".into(),
+            },
         ],
     };
     let res = tauri::async_runtime::block_on(apply_composed_commits_inner(&state, &id, plan))
@@ -164,16 +211,26 @@ fn compose_two_group_plan_happy() {
     assert_eq!(res.commits.len(), 2);
     assert_eq!(res.commits[0].summary, "first group");
     assert_eq!(res.commits[1].summary, "second group");
-    assert_eq!(head_oid(dir.path()), res.commits[1].oid, "HEAD = newest group commit");
+    assert_eq!(
+        head_oid(dir.path()),
+        res.commits[1].oid,
+        "HEAD = newest group commit"
+    );
 
     let repo = git2::Repository::open(dir.path()).expect("open");
     let head = repo.head().unwrap().peel_to_commit().unwrap();
     assert_eq!(head.parent_id(0).unwrap().to_string(), res.commits[0].oid);
-    assert_eq!(head.parent(0).unwrap().parent_id(0).unwrap().to_string(), c0);
+    assert_eq!(
+        head.parent(0).unwrap().parent_id(0).unwrap().to_string(),
+        c0
+    );
 
     let st = status_of(&state, &id);
     assert_eq!(
-        st.untracked.iter().map(|e| e.path.as_str()).collect::<Vec<_>>(),
+        st.untracked
+            .iter()
+            .map(|e| e.path.as_str())
+            .collect::<Vec<_>>(),
         vec!["f3.txt"],
         "unassigned file left untouched"
     );
@@ -190,8 +247,14 @@ fn compose_invalid_plan_leaves_head_unchanged() {
 
     let plan = ComposePlan {
         groups: vec![
-            ai_compose::ComposeGroup { files: vec!["g1.txt".into()], message: "ok".into() },
-            ai_compose::ComposeGroup { files: vec!["g2.txt".into()], message: "   ".into() },
+            ai_compose::ComposeGroup {
+                files: vec!["g1.txt".into()],
+                message: "ok".into(),
+            },
+            ai_compose::ComposeGroup {
+                files: vec!["g2.txt".into()],
+                message: "   ".into(),
+            },
         ],
     };
     let err = tauri::async_runtime::block_on(apply_composed_commits_inner(&state, &id, plan))

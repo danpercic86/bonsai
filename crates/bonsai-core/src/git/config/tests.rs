@@ -160,7 +160,9 @@ fn advanced_excludes_curated_and_lists_arbitrary() {
     set_config(path, ConfigLevelArg::Local, "user.name", "Ada").expect("name");
     let view = read_config(path, ConfigLevelArg::Local).expect("read");
     assert!(
-        view.advanced.iter().any(|e| e.name == "alias.co" && e.value == "checkout"),
+        view.advanced
+            .iter()
+            .any(|e| e.name == "alias.co" && e.value == "checkout"),
         "advanced missing alias.co: {:?}",
         view.advanced
     );
@@ -208,8 +210,7 @@ fn apply_identity_profile_writes_local_identity() {
 #[test]
 fn apply_identity_profile_writes_signing_key_when_set() {
     let dir = init_repo();
-    let view =
-        apply_identity_profile(dir.path(), "Ada", "ada@x.io", Some("KEYID")).expect("apply");
+    let view = apply_identity_profile(dir.path(), "Ada", "ada@x.io", Some("KEYID")).expect("apply");
     assert!(
         view.advanced
             .iter()

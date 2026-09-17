@@ -18,14 +18,14 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use crate::common::{commit_fixed, file_url, git, init_repo, scratch_dir};
 use bonsai_core::error::AppError;
 use bonsai_core::git::search::SpawnGitRunner;
 use bonsai_core::git::submodule::{
     add_submodule, deinit_submodule, list_submodules, update_submodule, SubmoduleInfo,
     SubmoduleStatus,
 };
-use crate::common;
-use crate::common::{commit_fixed, file_url, git, init_repo, scratch_dir};
 
 macro_rules! require_git {
     () => {
@@ -83,7 +83,19 @@ fn build_super_with_renamed_sub(url: &str, name: &str, path: &str) -> tempfile::
     std::fs::write(p.join("top.txt"), "super\n").unwrap();
     git(p, &["add", "-A"]);
     commit_fixed(p, "super: initial");
-    git(p, &["-c", "protocol.file.allow=always", "submodule", "add", "--name", name, url, path]);
+    git(
+        p,
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "--name",
+            name,
+            url,
+            path,
+        ],
+    );
     git(p, &["add", "-A"]);
     commit_fixed(p, "super: add renamed submodule");
     dir
@@ -140,13 +152,21 @@ fn wedge(super_dir: &Path, key: &str, path: &str) -> (PathBuf, PathBuf) {
     );
 
     // The wedge is real, from both readers.
-    assert_eq!(cli_status_char(super_dir, path), '-', "git reports the wedge as '-'");
+    assert_eq!(
+        cli_status_char(super_dir, path),
+        '-',
+        "git reports the wedge as '-'"
+    );
     let row = list_submodules(super_dir)
         .expect("list")
         .into_iter()
         .find(|s| s.path == path)
         .expect("the submodule row survives the wedge");
-    assert_eq!(row.status, SubmoduleStatus::Uninitialized, "Bonsai reports Uninitialized");
+    assert_eq!(
+        row.status,
+        SubmoduleStatus::Uninitialized,
+        "Bonsai reports Uninitialized"
+    );
 
     (module_dir, sentinel)
 }
@@ -194,24 +214,59 @@ fn update_reconnects_orphaned_module_gitdir() {
         "the pinned content is back on disk"
     );
     let row = only(p);
-    assert_eq!(row.status, SubmoduleStatus::UpToDate, "row after reconnect: {row:?}");
-    assert_eq!(row.wt_oid.as_deref(), Some(v2.as_str()), "workdir at the pinned v2");
-    assert_eq!(row.index_oid.as_deref(), Some(v2.as_str()), "index still pins v2");
-    assert_eq!(cli_status_char(p, SUB_PATH), ' ', "git status char is a space");
-    assert_eq!(git(&sub_wd, &["rev-parse", "HEAD"]), v2, "submodule HEAD is v2");
+    assert_eq!(
+        row.status,
+        SubmoduleStatus::UpToDate,
+        "row after reconnect: {row:?}"
+    );
+    assert_eq!(
+        row.wt_oid.as_deref(),
+        Some(v2.as_str()),
+        "workdir at the pinned v2"
+    );
+    assert_eq!(
+        row.index_oid.as_deref(),
+        Some(v2.as_str()),
+        "index still pins v2"
+    );
+    assert_eq!(
+        cli_status_char(p, SUB_PATH),
+        ' ',
+        "git status char is a space"
+    );
+    assert_eq!(
+        git(&sub_wd, &["rev-parse", "HEAD"]),
+        v2,
+        "submodule HEAD is v2"
+    );
 
     // 5 — `<sub>/.git` is a FILE holding a RELATIVE, forward-slash gitlink.
     let gitlink = sub_wd.join(".git");
     let md = std::fs::symlink_metadata(&gitlink).expect("stat gitlink");
-    assert!(md.is_file(), "the gitlink must be a regular file, not a directory");
+    assert!(
+        md.is_file(),
+        "the gitlink must be a regular file, not a directory"
+    );
     let body = std::fs::read_to_string(&gitlink).expect("read gitlink");
-    assert!(body.starts_with("gitdir: .."), "gitlink must be relative, got: {body:?}");
-    assert!(body.ends_with('\n'), "gitlink must end with a newline, got: {body:?}");
+    assert!(
+        body.starts_with("gitdir: .."),
+        "gitlink must be relative, got: {body:?}"
+    );
+    assert!(
+        body.ends_with('\n'),
+        "gitlink must end with a newline, got: {body:?}"
+    );
     assert_eq!(body.matches('\n').count(), 1, "exactly one line: {body:?}");
     assert!(!body.contains('\\'), "forward slashes only, got: {body:?}");
-    assert!(!body.contains("//?/"), "no Windows verbatim prefix, got: {body:?}");
+    assert!(
+        !body.contains("//?/"),
+        "no Windows verbatim prefix, got: {body:?}"
+    );
     let target = body.trim_start_matches("gitdir: ").trim_end();
-    assert!(!target.contains(':'), "no absolute drive letter, got: {body:?}");
+    assert!(
+        !target.contains(':'),
+        "no absolute drive letter, got: {body:?}"
+    );
     // ...and git itself resolves it back inside `<super>/.git/modules`.
     let resolved = git(&sub_wd, &["rev-parse", "--absolute-git-dir"]).replace('\\', "/");
     assert!(
@@ -240,7 +295,10 @@ fn reconnect_works_offline() {
 
     // Kill the upstream. `TempDir::drop` ignores an already-removed path.
     std::fs::remove_dir_all(sub.path()).expect("delete the upstream source");
-    assert!(!sub.path().exists(), "the file:// url now points at nothing");
+    assert!(
+        !sub.path().exists(),
+        "the file:// url now points at nothing"
+    );
 
     update_submodule(p, SUB_PATH).expect("reconnect must not need the network");
 
@@ -251,8 +309,16 @@ fn reconnect_works_offline() {
         "repopulated offline from the cached objects"
     );
     let row = only(p);
-    assert_eq!(row.status, SubmoduleStatus::UpToDate, "row after offline reconnect");
-    assert_eq!(row.wt_oid.as_deref(), Some(v2.as_str()), "workdir at the pinned v2");
+    assert_eq!(
+        row.status,
+        SubmoduleStatus::UpToDate,
+        "row after offline reconnect"
+    );
+    assert_eq!(
+        row.wt_oid.as_deref(),
+        Some(v2.as_str()),
+        "workdir at the pinned v2"
+    );
 }
 
 // -------------------------------------------------------- criterion 6
@@ -279,8 +345,14 @@ fn reconnect_refuses_non_empty_workdir() {
 
     match update_submodule(p, SUB_PATH) {
         Err(AppError::Git(m)) => {
-            assert!(m.contains("The folder already has files in it."), "got: {m}");
-            assert!(m.contains(SUB_PATH), "the message must name the path, got: {m}");
+            assert!(
+                m.contains("The folder already has files in it."),
+                "got: {m}"
+            );
+            assert!(
+                m.contains(SUB_PATH),
+                "the message must name the path, got: {m}"
+            );
             assert!(
                 !m.to_lowercase().contains("reinitialize"),
                 "no raw libgit2 prose, got: {m}"
@@ -294,14 +366,25 @@ fn reconnect_refuses_non_empty_workdir() {
         before,
         "the user's file must be byte-identical after the refusal"
     );
-    assert!(!sub_wd.join(".git").exists(), "no gitlink may be written on a refusal");
+    assert!(
+        !sub_wd.join(".git").exists(),
+        "no gitlink may be written on a refusal"
+    );
     assert!(
         !sub_wd.join(".git.bonsai-tmp").exists(),
         "no atomic-write residue on a refusal"
     );
     assert_sentinel_intact(&sentinel);
-    assert_eq!(only(p).status, SubmoduleStatus::Uninitialized, "row unchanged after refusal");
-    assert_eq!(cli_status_char(p, SUB_PATH), '-', "git still reports the wedge");
+    assert_eq!(
+        only(p).status,
+        SubmoduleStatus::Uninitialized,
+        "row unchanged after refusal"
+    );
+    assert_eq!(
+        cli_status_char(p, SUB_PATH),
+        '-',
+        "git still reports the wedge"
+    );
 }
 
 // -------------------------------------------------------- criterion 7
@@ -333,14 +416,21 @@ fn reconnect_refuses_url_mismatch() {
         other => panic!("a url mismatch must be refused, got {other:?}"),
     }
 
-    assert!(!p.join(SUB_PATH).join(".git").exists(), "no gitlink on a refusal");
+    assert!(
+        !p.join(SUB_PATH).join(".git").exists(),
+        "no gitlink on a refusal"
+    );
     assert_eq!(
         std::fs::read_dir(p.join(SUB_PATH)).unwrap().count(),
         0,
         "the workdir is still empty"
     );
     assert_sentinel_intact(&sentinel);
-    assert_eq!(only(p).status, SubmoduleStatus::Uninitialized, "row unchanged after refusal");
+    assert_eq!(
+        only(p).status,
+        SubmoduleStatus::Uninitialized,
+        "row unchanged after refusal"
+    );
 }
 
 // ------------------------------------------ cosmetic-url tolerance (§8.1)
@@ -367,7 +457,11 @@ fn reconnect_tolerates_url_cosmetic_difference() {
     assert_sentinel_intact(&sentinel);
     let row = only(p);
     assert_eq!(row.status, SubmoduleStatus::UpToDate, "row after reconnect");
-    assert_eq!(row.wt_oid.as_deref(), Some(v2.as_str()), "workdir at the pinned v2");
+    assert_eq!(
+        row.wt_oid.as_deref(),
+        Some(v2.as_str()),
+        "workdir at the pinned v2"
+    );
 }
 
 // ------------------------------------------ deinit → update (§8.1, real path)
@@ -386,20 +480,36 @@ fn reconnect_after_deinit_reinitializes() {
     std::fs::write(&sentinel, SENTINEL_BODY).expect("plant sentinel");
 
     deinit_submodule(p, &SpawnGitRunner, SUB_PATH, true).expect("deinit");
-    assert_eq!(cli_status_char(p, SUB_PATH), '-', "deinit leaves the '-' (wedged) row");
-    assert_eq!(only(p).status, SubmoduleStatus::Uninitialized, "row after deinit");
-    assert!(sentinel.exists(), "deinit keeps the cached gitdir (that is the wedge)");
+    assert_eq!(
+        cli_status_char(p, SUB_PATH),
+        '-',
+        "deinit leaves the '-' (wedged) row"
+    );
+    assert_eq!(
+        only(p).status,
+        SubmoduleStatus::Uninitialized,
+        "row after deinit"
+    );
+    assert!(
+        sentinel.exists(),
+        "deinit keeps the cached gitdir (that is the wedge)"
+    );
 
     update_submodule(p, SUB_PATH).expect("update after deinit must reinitialize");
 
     assert_sentinel_intact(&sentinel);
-    assert_eq!(
-        read_lf(&p.join(SUB_PATH).join("lib.txt")),
-        "sub v2\n"
-    );
+    assert_eq!(read_lf(&p.join(SUB_PATH).join("lib.txt")), "sub v2\n");
     let row = only(p);
-    assert_eq!(row.status, SubmoduleStatus::UpToDate, "row after the repair");
-    assert_eq!(row.wt_oid.as_deref(), Some(v2.as_str()), "workdir at the pinned v2");
+    assert_eq!(
+        row.status,
+        SubmoduleStatus::UpToDate,
+        "row after the repair"
+    );
+    assert_eq!(
+        row.wt_oid.as_deref(),
+        Some(v2.as_str()),
+        "workdir at the pinned v2"
+    );
 }
 
 // ---------------------------------------- renamed submodule (name != path)
@@ -420,7 +530,11 @@ fn reconnect_renamed_submodule_prefers_name_keyed_gitdir() {
 
     // Precondition: git keyed the cache on the NAME, not the path.
     assert!(
-        p.join(".git").join("modules").join(name).join("HEAD").exists(),
+        p.join(".git")
+            .join("modules")
+            .join(name)
+            .join("HEAD")
+            .exists(),
         "precondition: the cached gitdir is name-keyed"
     );
     let (_module_dir, sentinel) = wedge(p, name, SUB_PATH);
@@ -434,15 +548,16 @@ fn reconnect_renamed_submodule_prefers_name_keyed_gitdir() {
     update_submodule(p, name).expect("the name-keyed gitdir must be the one reconnected");
 
     assert_sentinel_intact(&sentinel);
-    assert_eq!(
-        read_lf(&p.join(SUB_PATH).join("lib.txt")),
-        "sub v2\n"
-    );
+    assert_eq!(read_lf(&p.join(SUB_PATH).join("lib.txt")), "sub v2\n");
     let row = only(p);
     assert_eq!(row.name, name, "the row is the renamed section");
     assert_eq!(row.path, SUB_PATH);
     assert_eq!(row.status, SubmoduleStatus::UpToDate, "row after reconnect");
-    assert_eq!(row.wt_oid.as_deref(), Some(v2.as_str()), "workdir at the pinned v2");
+    assert_eq!(
+        row.wt_oid.as_deref(),
+        Some(v2.as_str()),
+        "workdir at the pinned v2"
+    );
     // The gitlink resolves into the NAME-keyed dir.
     let resolved = git(&p.join(SUB_PATH), &["rev-parse", "--absolute-git-dir"]).replace('\\', "/");
     assert!(
@@ -463,7 +578,10 @@ fn leftover_data_refusal_names_path_keyed_folder_for_renamed_submodule() {
 
     // Fresh clone: registered in `.gitmodules`, never cloned → no cached gitdir.
     let parent = scratch_dir();
-    git(parent.path(), &["clone", &file_url(super_dir.path()), "work"]);
+    git(
+        parent.path(),
+        &["clone", &file_url(super_dir.path()), "work"],
+    );
     let work = parent.path().join("work");
     assert!(
         !work.join(".git").join("modules").exists(),

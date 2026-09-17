@@ -48,9 +48,15 @@ fn check_spans(line: &str, spans: &[[u32; 2]]) {
     let mut prev_end: Option<u32> = None;
     for &[start, len] in spans {
         assert!(len > 0, "span len > 0");
-        assert!(start + len <= cc, "span within code-point bounds: {start}+{len} <= {cc}");
+        assert!(
+            start + len <= cc,
+            "span within code-point bounds: {start}+{len} <= {cc}"
+        );
         if let Some(pe) = prev_end {
-            assert!(start > pe, "spans ascending + non-adjacent (coalesced): {start} > {pe}");
+            assert!(
+                start > pe,
+                "spans ascending + non-adjacent (coalesced): {start} > {pe}"
+            );
         }
         prev_end = Some(start + len);
     }
@@ -84,8 +90,7 @@ fn regression_f_t5_2_intraline_diff_is_directional() {
     check_spans(a, &old_ab);
     check_spans(b, &new_ab);
     // ...but the changed-char sets are NOT swap-symmetric (pinned).
-    let symmetric =
-        charset(&old_ab) == charset(&new_ba) && charset(&new_ab) == charset(&old_ba);
+    let symmetric = charset(&old_ab) == charset(&new_ba) && charset(&new_ab) == charset(&old_ba);
     assert!(
         !symmetric,
         "F-T5-2: intraline diff is directional; expected asymmetry to reproduce"

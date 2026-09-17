@@ -25,7 +25,12 @@ pub const PROGRESS_MIN_INTERVAL: Duration = Duration::from_millis(50);
 /// a network fetch): fire at most once per [`PROGRESS_MIN_INTERVAL`], but ALWAYS
 /// fire the FIRST terminal (`received == total`) tick so the bar reaches 100%
 /// even if the last callback lands inside the window.
-fn progress_should_fire(last: Option<Instant>, now: Instant, done: bool, done_emitted: bool) -> bool {
+fn progress_should_fire(
+    last: Option<Instant>,
+    now: Instant,
+    done: bool,
+    done_emitted: bool,
+) -> bool {
     last.is_none_or(|t| now.duration_since(t) >= PROGRESS_MIN_INTERVAL) || (done && !done_emitted)
 }
 
@@ -200,9 +205,10 @@ pub fn pull_ff_with_activity(
     // RE-RESOLVE the upstream after the fetch — it may have moved.
     let branch = repo.find_branch(&name, git2::BranchType::Local)?;
     let upstream = branch.upstream()?;
-    let upstream_oid = upstream.get().target().ok_or_else(|| {
-        AppError::Git(format!("upstream of '{name}' has no target commit"))
-    })?;
+    let upstream_oid = upstream
+        .get()
+        .target()
+        .ok_or_else(|| AppError::Git(format!("upstream of '{name}' has no target commit")))?;
     // Resolved tracking shorthand ("origin/main") from the ALREADY-resolved
     // upstream branch (post-fetch) — the exact name the frontend passes back to
     // merge_branch/rebase_branch on a non-FF result. NOT recomputed from config;
@@ -248,8 +254,10 @@ pub fn pull_ff_with_activity(
         }
         Err(e) => return Err(e.into()),
     }
-    repo.find_reference(&refname)?
-        .set_target(upstream_oid, &format!("pull: fast-forward to {upstream_oid}"))?;
+    repo.find_reference(&refname)?.set_target(
+        upstream_oid,
+        &format!("pull: fast-forward to {upstream_oid}"),
+    )?;
 
     Ok(PullResult::FastForwarded {
         branch: name,

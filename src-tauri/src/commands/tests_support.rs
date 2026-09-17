@@ -60,15 +60,10 @@ pub(crate) fn path_string(p: &std::path::Path) -> String {
 
 /// Opens `path` runtime-free with a no-op watcher factory (P3e contract
 /// §9.1: `open_repo_inner(state, path, |_id| Box::new(|_class| {}))`).
-pub(crate) fn open(
-    state: &AppState,
-    path: &std::path::Path,
-) -> Result<OpenRepoResult, AppError> {
-    tauri::async_runtime::block_on(open_repo_inner(
-        state,
-        path_string(path),
-        |_id| Box::new(|_class| {}),
-    ))
+pub(crate) fn open(state: &AppState, path: &std::path::Path) -> Result<OpenRepoResult, AppError> {
+    tauri::async_runtime::block_on(open_repo_inner(state, path_string(path), |_id| {
+        Box::new(|_class| {})
+    }))
 }
 
 /// git2-init a repo with a committable identity; returns the temp dir.
@@ -76,7 +71,8 @@ pub(crate) fn init_repo_with_identity() -> tempfile::TempDir {
     let dir = tempfile::TempDir::new().expect("create temp dir");
     let repo = git2::Repository::init(dir.path()).expect("init repo");
     let mut cfg = repo.config().expect("open config");
-    cfg.set_str("user.name", "Test User").expect("set user.name");
+    cfg.set_str("user.name", "Test User")
+        .expect("set user.name");
     cfg.set_str("user.email", "test@example.com")
         .expect("set user.email");
     // Deterministic byte-exact worktree contents on Windows: without this a
@@ -100,8 +96,14 @@ pub(crate) fn write_stage_commit(
     std::fs::write(workdir.join(rel), contents).expect("write file");
     tauri::async_runtime::block_on(stage_inner(state, repo_id, vec![rel.to_string()]))
         .expect("stage");
-    tauri::async_runtime::block_on(commit_inner(state, repo_id, message.to_string(), None, None))
-        .expect("commit")
+    tauri::async_runtime::block_on(commit_inner(
+        state,
+        repo_id,
+        message.to_string(),
+        None,
+        None,
+    ))
+    .expect("commit")
 }
 
 /// Pauses a merge with `bothModified` conflicts on every path in `files`
@@ -125,8 +127,13 @@ pub(crate) fn conflicts_on(
         }
     };
     let main = head_branch(dir).expect("branch");
-    tauri::async_runtime::block_on(create_branch_here_inner(state, id, "feature".into(), c0.to_string()))
-        .expect("branch");
+    tauri::async_runtime::block_on(create_branch_here_inner(
+        state,
+        id,
+        "feature".into(),
+        c0.to_string(),
+    ))
+    .expect("branch");
     mkdirs();
     for (rel, _, theirs) in files {
         write_stage_commit(state, id, dir, rel, theirs, "feature side");
@@ -136,11 +143,15 @@ pub(crate) fn conflicts_on(
     for (rel, ours, _) in files {
         write_stage_commit(state, id, dir, rel, ours, "main side");
     }
-    let out = tauri::async_runtime::block_on(merge_branch_inner(state, id, "feature".into(), None)).expect("merge");
+    let out = tauri::async_runtime::block_on(merge_branch_inner(state, id, "feature".into(), None))
+        .expect("merge");
     match out {
         MergeOutcome::Conflicts { paths, .. } => {
             for (rel, _, _) in files {
-                assert!(paths.iter().any(|p| p == rel), "expected {rel} to conflict: {paths:?}");
+                assert!(
+                    paths.iter().any(|p| p == rel),
+                    "expected {rel} to conflict: {paths:?}"
+                );
             }
         }
         other => panic!("expected Conflicts, got {other:?}"),

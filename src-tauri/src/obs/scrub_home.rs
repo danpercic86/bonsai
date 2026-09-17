@@ -149,7 +149,11 @@ pub fn mask_home_with<'a>(s: &'a str, home: &str) -> Cow<'a, str> {
 
 /// Does the folded `home` occur at `chars[at..]`, ending on a path boundary?
 fn matches_home_at(chars: &[char], at: usize, home: &[char]) -> bool {
-    if !home.iter().enumerate().all(|(k, h)| fold(chars[at + k]) == *h) {
+    if !home
+        .iter()
+        .enumerate()
+        .all(|(k, h)| fold(chars[at + k]) == *h)
+    {
         return false;
     }
     // End of string, a separator, or anything that cannot continue a segment

@@ -18,11 +18,11 @@
 
 use std::path::Path;
 
+use crate::common;
 use bonsai_core::ai::RunOpts;
 use bonsai_core::git::ai_compose::compose_commits;
 use bonsai_core::git::commit::create_commit;
 use bonsai_core::git::stage::stage_paths;
-use crate::common;
 
 const STUB_MODE_ENV: &str = "BONSAI_STUB_MODE";
 const CLAUDE_BIN_ENV: &str = "BONSAI_CLAUDE_BIN";
@@ -41,7 +41,8 @@ fn dirty_repo() -> tempfile::TempDir {
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
         cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     }
     write(d, "app.rs", "fn main() {}\n");
@@ -85,11 +86,15 @@ fn ai_compose_grounding_reaches_stdin_and_returns_proposal() {
 
     // Grounding shape: the CHANGED FILES header, the exact paths, and FILE blocks.
     assert!(
-        payload.contains("CHANGED FILES (assign each to exactly one group; use these exact paths):"),
+        payload
+            .contains("CHANGED FILES (assign each to exactly one group; use these exact paths):"),
         "payload should carry the CHANGED FILES header; got:\n{payload}"
     );
     for p in ["app.rs", "lib.rs", "notes.md"] {
-        assert!(payload.contains(p), "payload should list {p}; got:\n{payload}");
+        assert!(
+            payload.contains(p),
+            "payload should list {p}; got:\n{payload}"
+        );
     }
     assert!(
         payload.contains("===== FILE:"),
@@ -104,7 +109,11 @@ fn ai_compose_grounding_reaches_stdin_and_returns_proposal() {
     );
 
     // The cost is parsed from the envelope.
-    assert_eq!(proposal.cost_usd, Some(0.012), "cost parsed from the stub envelope");
+    assert_eq!(
+        proposal.cost_usd,
+        Some(0.012),
+        "cost parsed from the stub envelope"
+    );
 
     // The non-JSON stub body ("MERGED_BODY_OK") is UNPARSEABLE => the referee
     // degrades to an all-unassigned apply-able partition (never an error).
@@ -117,8 +126,15 @@ fn ai_compose_grounding_reaches_stdin_and_returns_proposal() {
     got.sort();
     assert_eq!(
         got,
-        vec!["app.rs".to_string(), "lib.rs".to_string(), "notes.md".to_string()],
+        vec![
+            "app.rs".to_string(),
+            "lib.rs".to_string(),
+            "notes.md".to_string()
+        ],
         "every changed file must land in `unassigned` when parsing degrades"
     );
-    assert!(!proposal.notes.is_empty(), "the degrade must be noted for the UI");
+    assert!(
+        !proposal.notes.is_empty(),
+        "the degrade must be noted for the UI"
+    );
 }

@@ -14,25 +14,29 @@ fn init_repo() -> (tempfile::TempDir, git2::Repository) {
     let repo = git2::Repository::init(dir.path()).expect("init");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     (dir, repo)
 }
 
 /// Commit an in-memory single-file tree with an explicit timestamp (distinct
 /// times keep the TIME-sorted walk deterministic). Does NOT update any ref.
 fn commit(repo: &git2::Repository, msg: &str, parents: &[git2::Oid], t: i64) -> git2::Oid {
-    let sig = git2::Signature::new("Test User", "test@example.com", &git2::Time::new(t, 0))
-        .expect("sig");
+    let sig =
+        git2::Signature::new("Test User", "test@example.com", &git2::Time::new(t, 0)).expect("sig");
     let blob = repo.blob(msg.as_bytes()).expect("blob");
     let mut tb = repo.treebuilder(None).expect("treebuilder");
     tb.insert("f.txt", blob, 0o100_644).expect("insert");
-    let tree = repo.find_tree(tb.write().expect("write tree")).expect("tree");
+    let tree = repo
+        .find_tree(tb.write().expect("write tree"))
+        .expect("tree");
     let parent_commits: Vec<git2::Commit> = parents
         .iter()
         .map(|p| repo.find_commit(*p).expect("parent"))
         .collect();
     let refs: Vec<&git2::Commit> = parent_commits.iter().collect();
-    repo.commit(None, &sig, &sig, msg, &tree, &refs).expect("commit")
+    repo.commit(None, &sig, &sig, msg, &tree, &refs)
+        .expect("commit")
 }
 
 fn branch(repo: &git2::Repository, name: &str, oid: git2::Oid) {
@@ -41,7 +45,8 @@ fn branch(repo: &git2::Repository, name: &str, oid: git2::Oid) {
 }
 
 fn set_head(repo: &git2::Repository, name: &str) {
-    repo.set_head(&format!("refs/heads/{name}")).expect("set head");
+    repo.set_head(&format!("refs/heads/{name}"))
+        .expect("set head");
 }
 
 fn delete_branch(repo: &git2::Repository, name: &str) {
@@ -184,7 +189,11 @@ fn hit_verbatim_on_unchanged_repo() {
     assert_eq!(c.graph_walks, 1, "one cold walk");
     assert_eq!(c.graph_cache_hits, 1, "second request is a verbatim hit");
     assert_eq!(c.graph_redecorates, 0);
-    assert_eq!(wire(&first), wire(&second), "replayed stream is byte-identical");
+    assert_eq!(
+        wire(&first),
+        wire(&second),
+        "replayed stream is byte-identical"
+    );
 }
 
 /// AC-B1a: create a branch at an EXISTING commit → HitRedecorate (`graph_walks`
@@ -203,13 +212,20 @@ fn redecorate_on_branch_create_at_existing_commit() {
     let after = run(dir.path(), &cache, &perf);
 
     let c = perf.snapshot();
-    assert_eq!(c.graph_walks, 1, "no re-walk on a ref-only add at an existing oid");
+    assert_eq!(
+        c.graph_walks, 1,
+        "no re-walk on a ref-only add at an existing oid"
+    );
     assert_eq!(c.graph_redecorates, 1);
     assert_eq!(c.graph_cache_hits, 0);
 
     assert_eq!(rows(&before), rows(&after), "nodes/lanes identical");
     assert_eq!(edge_tuples(&before), edge_tuples(&after), "edges identical");
-    assert_eq!(done_head_index(&before), done_head_index(&after), "HEAD unmoved");
+    assert_eq!(
+        done_head_index(&before),
+        done_head_index(&after),
+        "HEAD unmoved"
+    );
     assert!(
         ref_names(&after, &c1).contains(&"feature".to_string()),
         "new pill present after redecorate"
@@ -241,7 +257,10 @@ fn miss_on_new_commit() {
 
     let hex3 = c3.to_string();
     assert!(!rows(&before).iter().any(|(id, _)| *id == hex3));
-    assert!(rows(&after).iter().any(|(id, _)| *id == hex3), "new commit walked");
+    assert!(
+        rows(&after).iter().any(|(id, _)| *id == hex3),
+        "new commit walked"
+    );
 }
 
 /// AC-B1d: a branch delete that drops commits → Miss (`graph_walks`+1); output
@@ -256,7 +275,10 @@ fn miss_on_branch_delete_dropping_commits() {
 
     let before = run(dir.path(), &cache, &perf);
     let hexf = f1.to_string();
-    assert!(rows(&before).iter().any(|(id, _)| *id == hexf), "offshoot walked");
+    assert!(
+        rows(&before).iter().any(|(id, _)| *id == hexf),
+        "offshoot walked"
+    );
 
     delete_branch(&repo, "feature"); // drops the only tip reaching f1
     let after = run(dir.path(), &cache, &perf);
@@ -285,7 +307,10 @@ fn redecorate_on_tag_at_existing_tip() {
     let after = run(dir.path(), &cache, &perf);
 
     let c = perf.snapshot();
-    assert_eq!(c.graph_walks, 1, "a tag at an existing tip does not re-walk");
+    assert_eq!(
+        c.graph_walks, 1,
+        "a tag at an existing tip does not re-walk"
+    );
     assert_eq!(c.graph_redecorates, 1);
     assert_eq!(rows(&before), rows(&after), "topology identical");
     assert!(
@@ -312,7 +337,10 @@ fn redecorate_on_head_move_to_existing_commit() {
     let after = run(dir.path(), &cache, &perf);
 
     let c = perf.snapshot();
-    assert_eq!(c.graph_walks, 1, "HEAD onto a walked commit does not re-walk");
+    assert_eq!(
+        c.graph_walks, 1,
+        "HEAD onto a walked commit does not re-walk"
+    );
     assert_eq!(c.graph_redecorates, 1);
 
     assert_eq!(rows(&before), rows(&after), "topology identical");
@@ -363,8 +391,16 @@ fn fingerprints_track_changes() {
     let tips3: BTreeSet<git2::Oid> = s3.tips.iter().copied().collect();
     let hide3: BTreeSet<git2::Oid> = s3.hide.iter().copied().collect();
     // Tips/head/hide back to the c0..c2 set (tag target c2 is already a tip).
-    assert_eq!(seed_fingerprint(&tips3, s3.head, &hide3), seed_fp1, "same topology");
-    assert_ne!(deco_fp1, deco_fingerprint(&s3.refs), "decoration differs (tag)");
+    assert_eq!(
+        seed_fingerprint(&tips3, s3.head, &hide3),
+        seed_fp1,
+        "same topology"
+    );
+    assert_ne!(
+        deco_fp1,
+        deco_fingerprint(&s3.refs),
+        "decoration differs (tag)"
+    );
 }
 
 // ---- PB-1: graph-cache memory cap ---------------------------------------
@@ -374,8 +410,14 @@ fn fingerprints_track_changes() {
 #[test]
 fn should_store_gate_boundary() {
     assert!(should_store(0, GRAPH_CACHE_MAX_NODES));
-    assert!(should_store(GRAPH_CACHE_MAX_NODES, GRAPH_CACHE_MAX_NODES), "at cap stores");
-    assert!(!should_store(GRAPH_CACHE_MAX_NODES + 1, GRAPH_CACHE_MAX_NODES), "over cap skips");
+    assert!(
+        should_store(GRAPH_CACHE_MAX_NODES, GRAPH_CACHE_MAX_NODES),
+        "at cap stores"
+    );
+    assert!(
+        !should_store(GRAPH_CACHE_MAX_NODES + 1, GRAPH_CACHE_MAX_NODES),
+        "over cap skips"
+    );
     assert!(should_store(2, 2), "at tiny cap stores");
     assert!(!should_store(3, 2), "over tiny cap skips");
 }
@@ -396,13 +438,20 @@ fn not_stored_above_cap_rewalks_each_time() {
     );
 
     let second = run_capped(dir.path(), &cache, &perf, 2);
-    assert!(cache.lock().expect("lock").is_none(), "still empty after a re-walk");
+    assert!(
+        cache.lock().expect("lock").is_none(),
+        "still empty after a re-walk"
+    );
 
     let c = perf.snapshot();
     assert_eq!(c.graph_walks, 2, "each over-cap request re-walks (Miss)");
     assert_eq!(c.graph_cache_hits, 0, "no verbatim hit above the cap");
     assert_eq!(c.graph_redecorates, 0, "no redecorate above the cap");
-    assert_eq!(wire(&first), wire(&second), "re-walked stream is byte-identical");
+    assert_eq!(
+        wire(&first),
+        wire(&second),
+        "re-walked stream is byte-identical"
+    );
 }
 
 /// AC-b6: a walk AT/BELOW the cap still stores and serves HitVerbatim on the
@@ -416,15 +465,25 @@ fn stored_at_cap_serves_verbatim() {
     let perf = PerfState::default();
 
     let first = run_capped(dir.path(), &cache, &perf, 3);
-    assert!(cache.lock().expect("lock").is_some(), "at-cap cold walk is stored");
+    assert!(
+        cache.lock().expect("lock").is_some(),
+        "at-cap cold walk is stored"
+    );
 
     let second = run_capped(dir.path(), &cache, &perf, 3);
 
     let c = perf.snapshot();
-    assert_eq!(c.graph_walks, 1, "second request served from cache (no re-walk)");
+    assert_eq!(
+        c.graph_walks, 1,
+        "second request served from cache (no re-walk)"
+    );
     assert_eq!(c.graph_cache_hits, 1, "at-cap store serves a verbatim hit");
     assert_eq!(c.graph_redecorates, 0);
-    assert_eq!(wire(&first), wire(&second), "cached replay is byte-identical");
+    assert_eq!(
+        wire(&first),
+        wire(&second),
+        "cached replay is byte-identical"
+    );
 }
 
 /// AC-b6: the emitted chunk stream is byte-identical whether or not the store is
@@ -447,7 +506,11 @@ fn stream_identical_when_store_skipped() {
         run_capped(dir.path(), &cache, &perf, 2)
     };
 
-    assert_eq!(wire(&stored), wire(&skipped), "emit path unaffected by the store cap");
+    assert_eq!(
+        wire(&stored),
+        wire(&skipped),
+        "emit path unaffected by the store cap"
+    );
 }
 
 // ---- P91 §3.1 spans ------------------------------------------------------
@@ -487,7 +550,10 @@ fn graph_get_span_covers_phases_and_cache() {
     let (miss_phases, miss_cache) = miss.into_test_view();
     assert_eq!(miss_cache, Some("miss"));
     for want in ["revwalk", "decorate", "lane"] {
-        assert!(miss_phases.iter().any(|n| n == want), "miss missing {want}: {miss_phases:?}");
+        assert!(
+            miss_phases.iter().any(|n| n == want),
+            "miss missing {want}: {miss_phases:?}"
+        );
     }
 
     // Second: served from cache (HitVerbatim) — NO revwalk phase.
@@ -495,5 +561,8 @@ fn graph_get_span_covers_phases_and_cache() {
     drive(&mut hit);
     let (hit_phases, hit_cache) = hit.into_test_view();
     assert_eq!(hit_cache, Some("hit"), "second walk should be a cache hit");
-    assert!(!hit_phases.iter().any(|n| n == "revwalk"), "cache hit must have no revwalk: {hit_phases:?}");
+    assert!(
+        !hit_phases.iter().any(|n| n == "revwalk"),
+        "cache hit must have no revwalk: {hit_phases:?}"
+    );
 }

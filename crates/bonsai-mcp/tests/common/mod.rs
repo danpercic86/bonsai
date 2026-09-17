@@ -195,7 +195,8 @@ impl McpClient {
         }
         cmd.args(extra);
         #[cfg(windows)]
-        cmd.env("TMP", "D:\\Data\\Temp").env("TEMP", "D:\\Data\\Temp");
+        cmd.env("TMP", "D:\\Data\\Temp")
+            .env("TEMP", "D:\\Data\\Temp");
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
@@ -284,7 +285,9 @@ impl McpClient {
     /// lines, or deliberately malformed byte sequences.
     pub fn write_raw(&mut self, bytes: &[u8]) {
         let s = self.stdin_mut();
-        s.write_all(bytes).and_then(|_| s.flush()).expect("write raw bytes");
+        s.write_all(bytes)
+            .and_then(|_| s.flush())
+            .expect("write raw bytes");
     }
 
     /// Drop the child's stdin, signalling EOF to the server.
@@ -354,7 +357,10 @@ impl McpClient {
 
     /// `tools/call` → the full JSON-RPC response message.
     pub fn call_tool(&mut self, name: &str, arguments: Value) -> Value {
-        self.request("tools/call", json!({ "name": name, "arguments": arguments }))
+        self.request(
+            "tools/call",
+            json!({ "name": name, "arguments": arguments }),
+        )
     }
 
     /// Prove the server is still alive: a fresh `tools/list` must return a
@@ -397,11 +403,17 @@ impl Drop for McpClient {
 /// Assert a `tools/call` succeeded (no JSON-RPC error, `isError` not true) and
 /// return its `structuredContent`.
 pub fn ok_structured(resp: &Value) -> Value {
-    assert!(resp.get("error").is_none(), "unexpected JSON-RPC error: {resp}");
+    assert!(
+        resp.get("error").is_none(),
+        "unexpected JSON-RPC error: {resp}"
+    );
     let result = resp
         .get("result")
         .unwrap_or_else(|| panic!("call had no result: {resp}"));
-    let is_error = result.get("isError").and_then(Value::as_bool).unwrap_or(false);
+    let is_error = result
+        .get("isError")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     assert!(!is_error, "tool reported isError=true: {result}");
     result
         .get("structuredContent")
@@ -419,7 +431,10 @@ pub fn err_structured(resp: &Value) -> Value {
     let result = resp
         .get("result")
         .unwrap_or_else(|| panic!("call had no result: {resp}"));
-    let is_error = result.get("isError").and_then(Value::as_bool).unwrap_or(false);
+    let is_error = result
+        .get("isError")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     assert!(is_error, "expected isError=true, got: {result}");
     result
         .get("structuredContent")

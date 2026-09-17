@@ -242,10 +242,7 @@ mod tests {
             ]
         );
         // Consecutive punctuation -> separate 1-char tokens.
-        assert_eq!(
-            toks("=="),
-            vec![("=".into(), 0, 1), ("=".into(), 1, 1)]
-        );
+        assert_eq!(toks("=="), vec![("=".into(), 0, 1), ("=".into(), 1, 1)]);
         assert!(toks("").is_empty());
     }
 
@@ -273,7 +270,7 @@ mod tests {
         let (old, new) = token_diff("foo", "foo bar");
         assert_eq!(old, Vec::<[u32; 2]>::new());
         assert_eq!(new, vec![[3, 4]]); // " bar" (space + word coalesced)
-        // Pure delete: mirror image.
+                                       // Pure delete: mirror image.
         let (old, new) = token_diff("foo bar", "foo");
         assert_eq!(old, vec![[3, 4]]);
         assert_eq!(new, Vec::<[u32; 2]>::new());

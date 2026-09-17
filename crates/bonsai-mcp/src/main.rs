@@ -25,8 +25,7 @@ use rmcp::ServiceExt;
 use bonsai_mcp::server::BonsaiServer;
 
 /// The single usage string, reused by the help path and every arg error.
-const USAGE: &str =
-    "usage: bonsai-mcp [--repo <path>] [--allow-write] [--allow-hooks]";
+const USAGE: &str = "usage: bonsai-mcp [--repo <path>] [--allow-write] [--allow-hooks]";
 
 /// Parsed startup configuration.
 #[derive(Debug)]
@@ -102,10 +101,16 @@ fn validate_repo(path: &std::path::Path) -> Result<PathBuf, String> {
     let info = bonsai_core::git::repo::read_repo_info(path)
         .map_err(|e| format!("cannot open --repo {}: {e}", path.display()))?;
     if !info.is_repo {
-        return Err(format!("--repo is not a git repository: {}", path.display()));
+        return Err(format!(
+            "--repo is not a git repository: {}",
+            path.display()
+        ));
     }
     if info.bare {
-        return Err(format!("--repo is a bare repository (unsupported): {}", path.display()));
+        return Err(format!(
+            "--repo is a bare repository (unsupported): {}",
+            path.display()
+        ));
     }
     Ok(PathBuf::from(info.path))
 }

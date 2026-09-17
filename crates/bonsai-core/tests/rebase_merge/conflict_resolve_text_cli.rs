@@ -5,13 +5,13 @@
 
 use std::path::Path;
 
-use bonsai_core::error::AppError;
-use bonsai_core::git::conflict::{list_conflicts, resolve_conflict_text};
 use crate::common;
 use crate::common::{assert_same_status, git};
 use crate::conflict_support::{
     cli_index_snapshot, cli_stage_presence, conflicted_pair, require_git, worktree, write, Fixture,
 };
+use bonsai_core::error::AppError;
+use bonsai_core::git::conflict::{list_conflicts, resolve_conflict_text};
 
 // ============================================================ P12 §6 resolve_conflict_text oracle
 //
@@ -129,8 +129,8 @@ fn resolve_conflict_text_non_conflicted_path_errors() {
     require_git!();
     let (bonsai, _twin, _p) = conflicted_pair(Fixture::BothModified);
     // A path with no conflict entry (find_conflict guard fires first).
-    let err = resolve_conflict_text(bonsai.path(), "not-conflicted.txt", "x\n")
-        .expect_err("no conflict");
+    let err =
+        resolve_conflict_text(bonsai.path(), "not-conflicted.txt", "x\n").expect_err("no conflict");
     match err {
         AppError::Git(m) => assert!(m.contains("has no conflict"), "got: {m}"),
         other => panic!("expected Git, got {other:?}"),

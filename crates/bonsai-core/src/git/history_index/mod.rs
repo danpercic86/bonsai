@@ -325,7 +325,10 @@ fn collect_tip_hexes(repo: &git2::Repository) -> Result<Vec<String>, AppError> {
 
 /// Current HEAD (40-hex); `None` when HEAD is unborn.
 fn head_hex(repo: &git2::Repository) -> Option<String> {
-    repo.head().ok().and_then(|h| h.target()).map(|o| o.to_string())
+    repo.head()
+        .ok()
+        .and_then(|h| h.target())
+        .map(|o| o.to_string())
 }
 
 /// Unix seconds now (0 on a pre-epoch clock — never panics).

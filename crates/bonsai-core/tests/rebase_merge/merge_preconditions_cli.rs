@@ -6,16 +6,16 @@
 
 use std::process::Command;
 
-use bonsai_core::error::AppError;
-use bonsai_core::git::commit::create_commit;
-use bonsai_core::git::conflict::{resolve_conflict, ConflictResolution};
-use bonsai_core::git::merge::{merge_branch, MergeOutcome};
 use crate::common;
 use crate::common::{commit_fixed, git, init_repo};
 use crate::merge_support::{
     head_oid, parents, repo_state, require_git, script_clean_diverged, script_conflict,
     stash_count, tree_oid, twin_pair, write,
 };
+use bonsai_core::error::AppError;
+use bonsai_core::git::commit::create_commit;
+use bonsai_core::git::conflict::{resolve_conflict, ConflictResolution};
+use bonsai_core::git::merge::{merge_branch, MergeOutcome};
 
 // ============================================================ §9.6 preconditions
 
@@ -67,7 +67,10 @@ fn staged_change_is_autostashed_and_merge_proceeds() {
     let outcome = merge_branch(d, "topic", false).expect("merge");
     let oid = match &outcome {
         MergeOutcome::Merged { oid, stashed } => {
-            assert!(*stashed, "staged change must be autostashed -> stashed:true");
+            assert!(
+                *stashed,
+                "staged change must be autostashed -> stashed:true"
+            );
             oid.clone()
         }
         other => panic!("expected Merged{{stashed:true}}, got {other:?}"),
@@ -78,7 +81,10 @@ fn staged_change_is_autostashed_and_merge_proceeds() {
     assert_eq!(oid, head_oid(d), "returned oid must be HEAD");
     assert_eq!(parents(d).len(), 2, "normal merge -> 2-parent commit");
     // Disjoint clean merge kept both sides.
-    assert_eq!(std::fs::read_to_string(d.join("b.txt")).expect("b"), "b topic\n");
+    assert_eq!(
+        std::fs::read_to_string(d.join("b.txt")).expect("b"),
+        "b topic\n"
+    );
 
     // The staged change's CONTENT survives...
     assert_eq!(
@@ -89,7 +95,9 @@ fn staged_change_is_autostashed_and_merge_proceeds() {
     // ...and returns UNSTAGED (OPEN Q#1: no REINSTATE_INDEX). Nothing staged;
     // a.txt shows only as a worktree modification.
     assert!(
-        git(d, &["diff", "--cached", "--name-only"]).trim().is_empty(),
+        git(d, &["diff", "--cached", "--name-only"])
+            .trim()
+            .is_empty(),
         "OPEN Q#1: the restored change must NOT be re-staged"
     );
     assert_eq!(
@@ -153,15 +161,30 @@ fn unstaged_edit_to_merge_touched_file_autostashes_then_pop_conflicts() {
         MergeOutcome::StashPopConflicts { head, paths } => (head, paths),
         other => panic!("expected StashPopConflicts, got {other:?}"),
     };
-    assert_eq!(paths, vec!["b.txt".to_string()], "b.txt conflicted on the pop");
+    assert_eq!(
+        paths,
+        vec!["b.txt".to_string()],
+        "b.txt conflicted on the pop"
+    );
     assert_eq!(head, head_oid(d), "head = the new merge-commit oid");
 
     // A conflicted stash-apply is NOT a merge op: state stays Clean.
-    assert_eq!(repo_state(d), git2::RepositoryState::Clean, "state must be Clean");
+    assert_eq!(
+        repo_state(d),
+        git2::RepositoryState::Clean,
+        "state must be Clean"
+    );
     assert!(!d.join(".git").join("MERGE_HEAD").exists(), "no MERGE_HEAD");
-    assert_eq!(parents(d).len(), 2, "the merge itself committed (2 parents)");
+    assert_eq!(
+        parents(d).len(),
+        2,
+        "the merge itself committed (2 parents)"
+    );
     // a.txt is main's side (merge untouched); b.txt has conflict markers.
-    assert_eq!(std::fs::read_to_string(d.join("a.txt")).expect("a"), "a main\n");
+    assert_eq!(
+        std::fs::read_to_string(d.join("a.txt")).expect("a"),
+        "a main\n"
+    );
     let b = std::fs::read_to_string(d.join("b.txt")).expect("b");
     assert!(
         b.contains("<<<<<<<") && b.contains(">>>>>>>"),

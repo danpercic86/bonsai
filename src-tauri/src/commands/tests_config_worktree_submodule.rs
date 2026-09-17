@@ -21,7 +21,11 @@ fn config_set_get_unset_local_round_trip_and_idempotent() {
     let (dir, id, _c0) = fixture_repo(&state);
 
     block_on(set_config_inner(
-        &state, &id, ConfigLevelArg::Local, "bonsai.testkey".into(), "hello".into(),
+        &state,
+        &id,
+        ConfigLevelArg::Local,
+        "bonsai.testkey".into(),
+        "hello".into(),
     ))
     .expect("set local");
 
@@ -36,10 +40,20 @@ fn config_set_get_unset_local_round_trip_and_idempotent() {
     // get_config(Local) is the read side; it must succeed on an open repo.
     block_on(get_config_inner(&state, &id, ConfigLevelArg::Local)).expect("get local");
 
-    block_on(unset_config_inner(&state, &id, ConfigLevelArg::Local, "bonsai.testkey".into()))
-        .expect("unset");
-    block_on(unset_config_inner(&state, &id, ConfigLevelArg::Local, "bonsai.testkey".into()))
-        .expect("unset again is idempotent (NotFound swallowed)");
+    block_on(unset_config_inner(
+        &state,
+        &id,
+        ConfigLevelArg::Local,
+        "bonsai.testkey".into(),
+    ))
+    .expect("unset");
+    block_on(unset_config_inner(
+        &state,
+        &id,
+        ConfigLevelArg::Local,
+        "bonsai.testkey".into(),
+    ))
+    .expect("unset again is idempotent (NotFound swallowed)");
     assert!(
         git2::Repository::open(dir.path())
             .unwrap()
@@ -61,7 +75,11 @@ fn config_global_read_and_invalid_key() {
     block_on(get_config_inner(&state, &id, ConfigLevelArg::Global)).expect("read global view");
 
     let err = block_on(set_config_inner(
-        &state, &id, ConfigLevelArg::Local, "nosectionkey".into(), "x".into(),
+        &state,
+        &id,
+        ConfigLevelArg::Local,
+        "nosectionkey".into(),
+        "x".into(),
     ))
     .expect_err("a key with no section is invalid");
     assert!(matches!(err, AppError::InvalidName(_)), "{err:?}");
@@ -86,7 +104,10 @@ fn apply_identity_profile_happy_and_no_repo() {
     // Returned view is the refreshed Local view (shape only asserted here).
     let _ = view.curated;
 
-    let cfg = git2::Repository::open(dir.path()).unwrap().config().unwrap();
+    let cfg = git2::Repository::open(dir.path())
+        .unwrap()
+        .config()
+        .unwrap();
     assert_eq!(cfg.get_string("user.name").unwrap(), "Ada Lovelace");
     assert_eq!(cfg.get_string("user.email").unwrap(), "ada@example.com");
 
@@ -111,26 +132,46 @@ fn worktree_add_list_lock_unlock_remove() {
     let (dir, id, _c0) = fixture_repo(&state);
     block_on(create_branch_inner(&state, &id, "wtbranch".into())).expect("create branch");
 
-    let created = block_on(add_worktree_inner(&state, &id, "wtbranch".into(), "wt-one".into()))
-        .expect("add worktree");
+    let created = block_on(add_worktree_inner(
+        &state,
+        &id,
+        "wtbranch".into(),
+        "wt-one".into(),
+    ))
+    .expect("add worktree");
     assert_eq!(created.branch.as_deref(), Some("wtbranch"));
     assert!(!created.is_main);
     let name = created.name.clone();
 
     let list = block_on(list_worktrees_inner(&state, &id)).expect("list");
     assert!(list.iter().any(|w| w.is_main), "main row present");
-    assert!(list.iter().any(|w| w.name == name), "the new worktree is listed");
-
-    block_on(lock_worktree_inner(&state, &id, name.clone(), Some("busy".into()))).expect("lock");
     assert!(
-        block_on(list_worktrees_inner(&state, &id)).unwrap().iter().any(|w| w.name == name && w.locked),
+        list.iter().any(|w| w.name == name),
+        "the new worktree is listed"
+    );
+
+    block_on(lock_worktree_inner(
+        &state,
+        &id,
+        name.clone(),
+        Some("busy".into()),
+    ))
+    .expect("lock");
+    assert!(
+        block_on(list_worktrees_inner(&state, &id))
+            .unwrap()
+            .iter()
+            .any(|w| w.name == name && w.locked),
         "listed as locked"
     );
     block_on(unlock_worktree_inner(&state, &id, name.clone())).expect("unlock");
 
     block_on(remove_worktree_inner(&state, &id, name.clone())).expect("remove");
     assert!(
-        !block_on(list_worktrees_inner(&state, &id)).unwrap().iter().any(|w| w.name == name),
+        !block_on(list_worktrees_inner(&state, &id))
+            .unwrap()
+            .iter()
+            .any(|w| w.name == name),
         "gone after remove"
     );
     let _ = dir;
@@ -142,13 +183,22 @@ fn worktree_remove_dirty_refusal_and_invalid_name() {
     let state = AppState::default();
     let (_dir, id, _c0) = fixture_repo(&state);
     block_on(create_branch_inner(&state, &id, "dirtybr".into())).expect("branch");
-    let wt = block_on(add_worktree_inner(&state, &id, "dirtybr".into(), "wt-dirty".into()))
-        .expect("add");
+    let wt = block_on(add_worktree_inner(
+        &state,
+        &id,
+        "dirtybr".into(),
+        "wt-dirty".into(),
+    ))
+    .expect("add");
 
     // Dirty the linked worktree, then removing it must refuse.
     let list = block_on(list_worktrees_inner(&state, &id)).unwrap();
     let row = list.iter().find(|w| w.name == wt.name).expect("row");
-    std::fs::write(std::path::Path::new(&row.abs_path).join("scratch.txt"), "dirty\n").expect("dirty");
+    std::fs::write(
+        std::path::Path::new(&row.abs_path).join("scratch.txt"),
+        "dirty\n",
+    )
+    .expect("dirty");
     let err = block_on(remove_worktree_inner(&state, &id, wt.name.clone()))
         .expect_err("dirty worktree must not be removed");
     assert!(matches!(err, AppError::Git(_)), "{err:?}");
@@ -179,7 +229,10 @@ fn worktree_copy_candidates_preview_and_add_with_changes() {
     );
 
     let plan = block_on(preview_worktree_copy_inner(
-        &state, &id, "copybr".into(), vec!["carry.txt".into()],
+        &state,
+        &id,
+        "copybr".into(),
+        vec!["carry.txt".into()],
     ))
     .expect("preview");
     assert!(plan.iter().any(|p| p.path == "carry.txt"), "planned");
@@ -189,11 +242,18 @@ fn worktree_copy_candidates_preview_and_add_with_changes() {
         action: worktree_copy::CopyAction::Copy,
     }];
     let created = block_on(add_worktree_with_changes_inner(
-        &state, &id, "copybr".into(), "wt-copy".into(), sel,
+        &state,
+        &id,
+        "copybr".into(),
+        "wt-copy".into(),
+        sel,
     ))
     .expect("add with changes");
     let carried = std::path::Path::new(&created.abs_path).join("carry.txt");
-    assert_eq!(std::fs::read_to_string(&carried).expect("carried file"), "carry me\n");
+    assert_eq!(
+        std::fs::read_to_string(&carried).expect("carried file"),
+        "carry me\n"
+    );
 
     block_on(remove_worktree_inner(&state, &id, created.name)).ok();
 }
@@ -208,7 +268,9 @@ fn submodule_list_empty_and_blank_name_invalid() {
     let (_dir, id, _c0) = fixture_repo(&state);
 
     assert!(
-        block_on(list_submodules_inner(&state, &id)).expect("list").is_empty(),
+        block_on(list_submodules_inner(&state, &id))
+            .expect("list")
+            .is_empty(),
         "no submodules yet"
     );
 
@@ -250,7 +312,10 @@ fn submodule_add_lifecycle_over_file_url() {
     let name = added.name.clone();
 
     assert!(
-        block_on(list_submodules_inner(&state, &id)).unwrap().iter().any(|s| s.path == "vendor/sub"),
+        block_on(list_submodules_inner(&state, &id))
+            .unwrap()
+            .iter()
+            .any(|s| s.path == "vendor/sub"),
         "listed after add"
     );
 
@@ -266,7 +331,10 @@ fn submodule_add_lifecycle_over_file_url() {
     // alone dies here with "attempt to reinitialize"; the salvage reattaches.
     let sub_wd = dir.path().join("vendor/sub");
     let module_dir = dir.path().join(".git").join("modules").join(&name);
-    assert!(module_dir.join("HEAD").exists(), "precondition: a cached module gitdir");
+    assert!(
+        module_dir.join("HEAD").exists(),
+        "precondition: a cached module gitdir"
+    );
     let sentinel = module_dir.join("bonsai-sentinel");
     std::fs::write(&sentinel, "keep me").expect("plant sentinel");
     std::fs::remove_file(sub_wd.join(".git")).expect("remove gitlink");
@@ -284,7 +352,11 @@ fn submodule_add_lifecycle_over_file_url() {
         .into_iter()
         .find(|s| s.path == "vendor/sub")
         .expect("the wedged row is still listed");
-    assert_eq!(wedged.status, SubStatus::Uninitialized, "wedged row: {wedged:?}");
+    assert_eq!(
+        wedged.status,
+        SubStatus::Uninitialized,
+        "wedged row: {wedged:?}"
+    );
 
     // ...and the command repairs it, reusing the cached gitdir (no network).
     block_on(update_submodule_inner(&state, &id, name.clone()))
@@ -315,16 +387,32 @@ fn submodule_add_lifecycle_over_file_url() {
     // prove here is that the row LEFT `uninitialized` and the checked-out commit
     // now matches the pinned one. (The `upToDate` end state is asserted on a
     // committed fixture in `bonsai-core/tests/submodule_wedge_cli.rs`.)
-    assert_ne!(repaired.status, SubStatus::Uninitialized, "repaired row: {repaired:?}");
-    assert_eq!(repaired.status, SubStatus::OutOfSync, "repaired row: {repaired:?}");
-    assert!(repaired.wt_oid.is_some() && repaired.wt_oid == repaired.index_oid,
-        "the checked-out commit matches the pinned one: {repaired:?}");
-    assert!(sub_wd.join(".git").is_file(), "a gitlink FILE was written back");
+    assert_ne!(
+        repaired.status,
+        SubStatus::Uninitialized,
+        "repaired row: {repaired:?}"
+    );
+    assert_eq!(
+        repaired.status,
+        SubStatus::OutOfSync,
+        "repaired row: {repaired:?}"
+    );
+    assert!(
+        repaired.wt_oid.is_some() && repaired.wt_oid == repaired.index_oid,
+        "the checked-out commit matches the pinned one: {repaired:?}"
+    );
+    assert!(
+        sub_wd.join(".git").is_file(),
+        "a gitlink FILE was written back"
+    );
 
     block_on(deinit_submodule_inner(&state, &id, name.clone(), true)).expect("deinit");
     block_on(remove_submodule_inner(&state, &id, name.clone(), true)).expect("remove");
     assert!(
-        !block_on(list_submodules_inner(&state, &id)).unwrap().iter().any(|s| s.path == "vendor/sub"),
+        !block_on(list_submodules_inner(&state, &id))
+            .unwrap()
+            .iter()
+            .any(|s| s.path == "vendor/sub"),
         "gone after remove"
     );
     let _ = dir;

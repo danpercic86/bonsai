@@ -8,11 +8,11 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{commit_fixed, git, git_ok, init_repo};
 use bonsai_core::error::AppError;
 use bonsai_core::git::branches::list_refs;
 use bonsai_core::git::tags::{create_tag, delete_tag, push_tag};
-use crate::common;
-use crate::common::{commit_fixed, git, git_ok, init_repo};
 
 macro_rules! require_git {
     () => {
@@ -76,8 +76,15 @@ fn annotated_tag_parity() {
     let (dir, c1, _c2) = repo_two_commits();
     let path = dir.path();
 
-    create_tag(path, "ann", &c1, Some("release notes".to_string()), false, false)
-        .expect("create annotated tag");
+    create_tag(
+        path,
+        "ann",
+        &c1,
+        Some("release notes".to_string()),
+        false,
+        false,
+    )
+    .expect("create annotated tag");
 
     // A real tag object, not a straight ref.
     assert_eq!(git(path, &["cat-file", "-t", "ann"]), "tag");
@@ -85,10 +92,7 @@ fn annotated_tag_parity() {
     assert_eq!(git(path, &["rev-parse", "ann^{commit}"]), c1);
 
     // Twin oracle via the CLI.
-    git(
-        path,
-        &["tag", "-a", "ann2", "-m", "release notes", &c1],
-    );
+    git(path, &["tag", "-a", "ann2", "-m", "release notes", &c1]);
 
     // Same peeled target and same subject (git normalizes the message).
     let ours = git(
@@ -107,9 +111,15 @@ fn annotated_tag_parity() {
             "refs/tags/ann2",
         ],
     );
-    assert_eq!(ours, twin, "annotated tag object target+subject must match CLI");
+    assert_eq!(
+        ours, twin,
+        "annotated tag object target+subject must match CLI"
+    );
     assert!(ours.starts_with(&c1), "peeled target must be C1: {ours}");
-    assert!(ours.contains("release notes"), "subject must be present: {ours}");
+    assert!(
+        ours.contains("release notes"),
+        "subject must be present: {ours}"
+    );
 }
 
 /// Annotated tag needs a git identity; lightweight does not (§8.1.3).
@@ -225,7 +235,11 @@ fn delete_parity() {
     assert_eq!(git(path, &["tag", "-l", "gone"]), "gone");
 
     delete_tag(path, "gone").expect("delete");
-    assert_eq!(git(path, &["tag", "-l", "gone"]), "", "tag ref must be gone");
+    assert_eq!(
+        git(path, &["tag", "-l", "gone"]),
+        "",
+        "tag ref must be gone"
+    );
 
     // Deleting a missing tag errors.
     match delete_tag(path, "gone") {
@@ -255,12 +269,16 @@ fn push_to_bare_remote() {
         "{}-origin.git",
         dir.path().file_name().unwrap().to_string_lossy()
     ));
-    git(dir.path().parent().unwrap(), &["init", "--bare", "-b", "main", &path_str(&bare)]);
+    git(
+        dir.path().parent().unwrap(),
+        &["init", "--bare", "-b", "main", &path_str(&bare)],
+    );
     // Publish main so the remote is a real repo (not strictly required for tags).
     git(path, &["remote", "add", "origin", &path_str(&bare)]);
     git(path, &["push", "origin", "main"]);
 
-    create_tag(path, "rel", &c1, Some("m".to_string()), false, false).expect("create annotated tag");
+    create_tag(path, "rel", &c1, Some("m".to_string()), false, false)
+        .expect("create annotated tag");
 
     push_tag(path, "origin", "rel", false).expect("push tag to bare");
 
@@ -305,12 +323,22 @@ fn push_annotated_tag_transfers_object() {
         "{}-annobj.git",
         dir.path().file_name().unwrap().to_string_lossy()
     ));
-    git(dir.path().parent().unwrap(), &["init", "--bare", "-b", "main", &path_str(&bare)]);
+    git(
+        dir.path().parent().unwrap(),
+        &["init", "--bare", "-b", "main", &path_str(&bare)],
+    );
     git(path, &["remote", "add", "origin", &path_str(&bare)]);
     git(path, &["push", "origin", "main"]);
 
-    create_tag(path, "annrel", &c1, Some("annotated payload".to_string()), false, false)
-        .expect("create annotated tag");
+    create_tag(
+        path,
+        "annrel",
+        &c1,
+        Some("annotated payload".to_string()),
+        false,
+        false,
+    )
+    .expect("create annotated tag");
 
     push_tag(path, "origin", "annrel", false).expect("push annotated tag to bare");
 
@@ -324,9 +352,16 @@ fn push_annotated_tag_transfers_object() {
     assert_eq!(git(&bare, &["rev-parse", "refs/tags/annrel^{commit}"]), c1);
     let subj = git(
         &bare,
-        &["for-each-ref", "--format=%(contents:subject)", "refs/tags/annrel"],
+        &[
+            "for-each-ref",
+            "--format=%(contents:subject)",
+            "refs/tags/annrel",
+        ],
     );
-    assert_eq!(subj, "annotated payload", "tag message must survive the push");
+    assert_eq!(
+        subj, "annotated payload",
+        "tag message must survive the push"
+    );
 
     std::fs::remove_dir_all(&bare).ok();
 }

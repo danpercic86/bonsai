@@ -95,7 +95,11 @@ pub struct ConflictSides {
 /// disagree.
 pub fn resolution_is_novel(sides: &ConflictSides, proposed: &str) -> bool {
     let mut allowed: HashSet<&str> = HashSet::new();
-    for side in [sides.base.as_str(), sides.ours.as_str(), sides.theirs.as_str()] {
+    for side in [
+        sides.base.as_str(),
+        sides.ours.as_str(),
+        sides.theirs.as_str(),
+    ] {
         for line in side.lines() {
             let norm = line.trim();
             if !norm.is_empty() {
@@ -333,7 +337,11 @@ mod tests {
     /// from either side) is the overwhelmingly common case and is never flagged.
     #[test]
     fn novel_recombination_is_not_flagged() {
-        let s = sides("base\n", "let a = 1;\nlet b = 2;\n", "let a = 1;\nlet c = 3;\n");
+        let s = sides(
+            "base\n",
+            "let a = 1;\nlet b = 2;\n",
+            "let a = 1;\nlet c = 3;\n",
+        );
         // Interleave of ours + theirs lines — every line came from a side.
         let proposed = "let a = 1;\nlet b = 2;\nlet c = 3;\n";
         assert!(!resolution_is_novel(&s, proposed));
@@ -351,7 +359,11 @@ mod tests {
     /// `trim` + `str::lines` remove — so a legitimate reindent is NOT flagged.
     #[test]
     fn reindent_and_crlf_are_not_flagged() {
-        let s = sides("base\n", "if (x) {\n    doThing();\n}\n", "if (x) {\n    doOther();\n}\n");
+        let s = sides(
+            "base\n",
+            "if (x) {\n    doThing();\n}\n",
+            "if (x) {\n    doOther();\n}\n",
+        );
         // Same lines, re-indented AND with `\r\n` endings.
         let proposed = "if (x) {\r\n        doThing();\r\n        doOther();\r\n}\r\n";
         assert!(!resolution_is_novel(&s, proposed));

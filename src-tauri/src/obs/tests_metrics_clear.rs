@@ -78,7 +78,10 @@ fn prune_folds_day_90_keeps_day_89_and_leaves_the_lifetime_figures_alone() {
     );
     assert_eq!(file.lifetime.session_ms, 1_000);
     // §3.5, user ruling: the window applies to days[] ONLY.
-    assert_eq!(file.first_seen, first_seen, "first_seen is a lifetime figure");
+    assert_eq!(
+        file.first_seen, first_seen,
+        "first_seen is a lifetime figure"
+    );
     assert_eq!(file.sessions, 37, "sessions is a lifetime figure");
 }
 
@@ -162,7 +165,10 @@ fn init_migrates_a_400_day_file_and_drops_the_rotated_bak() {
         Some(&310),
         "400 seeded buckets - 90 survivors = 310 folded into lifetime"
     );
-    assert_eq!(snap.sessions, 38, "sessions survives the fold and still bumps");
+    assert_eq!(
+        snap.sessions, 38,
+        "sessions survives the fold and still bumps"
+    );
 
     store.flush(&PerfCounters::default(), NOW).expect("flush");
     assert!(
@@ -197,7 +203,9 @@ fn a_date_change_inside_a_live_session_enforces_the_window() {
         Some(tomorrow.as_str())
     );
     assert!(
-        snap.days.iter().all(|b| b.date >= window_start(NOW + 86_400)),
+        snap.days
+            .iter()
+            .all(|b| b.date >= window_start(NOW + 86_400)),
         "the bucket that fell out of the window folded"
     );
 }
@@ -226,7 +234,11 @@ fn a_sparse_date_jump_folds_by_age_where_the_count_backstop_would_not() {
     metrics_file::save(&path, &seeded(days)).expect("seed");
 
     let store = MetricsState::for_test(path.clone(), NOW);
-    assert_eq!(store.snapshot().days.len(), 3, "precondition: all three loaded");
+    assert_eq!(
+        store.snapshot().days.len(),
+        3,
+        "precondition: all three loaded"
+    );
 
     // A single observation, 200 days later, inside the SAME live session.
     let far = writer::utc_date(NOW + 200 * 86_400);
@@ -237,7 +249,10 @@ fn a_sparse_date_jump_folds_by_age_where_the_count_backstop_would_not() {
         snap.days.len(),
         1,
         "age folds all three; the count backstop alone would leave 4: {:?}",
-        snap.days.iter().map(|d| d.date.as_str()).collect::<Vec<_>>()
+        snap.days
+            .iter()
+            .map(|d| d.date.as_str())
+            .collect::<Vec<_>>()
     );
     assert_eq!(snap.days[0].date, far, "only the new day survives");
     assert_eq!(
@@ -327,7 +342,10 @@ fn clear_rebaselines_perf_so_pre_clear_counts_do_not_come_back() {
     );
     // The folder the clear removed is re-created by the next save, containing
     // post-clear data only: no writer ever sees a missing directory as an error.
-    assert!(path.exists(), "collection is always-on and re-creates the file");
+    assert!(
+        path.exists(),
+        "collection is always-on and re-creates the file"
+    );
 }
 
 /// §8 item 7 — ResetInPlace leaves an EMPTY `usage.json` where `DeleteFiles`
@@ -380,10 +398,16 @@ fn a_saver_that_snapshotted_before_the_clear_cannot_resurrect_the_folder() {
     // stale and `persist`'s compare-then-commit must drop them.
     store.flush(&PerfCounters::default(), NOW).expect("flush");
 
-    assert!(!path.exists(), "the pre-clear snapshot must not be committed");
+    assert!(
+        !path.exists(),
+        "the pre-clear snapshot must not be committed"
+    );
     assert!(
         !path.parent().is_some_and(|d| d.exists()),
         "and the folder must stay gone"
     );
-    assert!(store.snapshot().days.is_empty(), "memory stayed cleared too");
+    assert!(
+        store.snapshot().days.is_empty(),
+        "memory stayed cleared too"
+    );
 }

@@ -249,7 +249,10 @@ pub fn parse_pr_refs(body: &str, number: u64) -> Result<PrRefs, AppError> {
         head_oid: pull.head.sha.clone(),
         base_fetch: FetchTarget {
             url: None,
-            refspec: format!("+refs/heads/{}:refs/bonsai/pr/{number}/base", pull.base.ref_),
+            refspec: format!(
+                "+refs/heads/{}:refs/bonsai/pr/{number}/base",
+                pull.base.ref_
+            ),
             resolve: pull.base.sha.clone(),
         },
         head_fetch: FetchTarget {

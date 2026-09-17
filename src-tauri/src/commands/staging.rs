@@ -15,7 +15,11 @@ pub async fn stage(
 }
 
 /// Runtime-free core of `stage` (unit-testable without a Tauri app).
-pub(crate) async fn stage_inner(state: &AppState, repo_id: &str, paths: Vec<String>) -> Result<(), AppError> {
+pub(crate) async fn stage_inner(
+    state: &AppState,
+    repo_id: &str,
+    paths: Vec<String>,
+) -> Result<(), AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || stage_paths(&path, &paths))
         .await
@@ -73,17 +77,22 @@ pub(crate) async fn commit_inner(
     skip_hooks: Option<bool>,
 ) -> Result<CommitResult, AppError> {
     let target = activity_target(state, repo_id, GitActivityCategory::Commit).await;
-    with_activity(state.git_activity_hub(), GitActivityCategory::Commit, target, move |emitter| async move {
-        let path = repo_path(state, repo_id)?;
-        let skip = skip_hooks.unwrap_or(false);
-        tauri::async_runtime::spawn_blocking(move || {
-            let rec: Option<&dyn GitActivityRecorder> =
-                emitter.as_deref().map(|e| e as &dyn GitActivityRecorder);
-            create_commit_with_activity(&path, &message, sign, skip, rec)
-        })
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
-    })
+    with_activity(
+        state.git_activity_hub(),
+        GitActivityCategory::Commit,
+        target,
+        move |emitter| async move {
+            let path = repo_path(state, repo_id)?;
+            let skip = skip_hooks.unwrap_or(false);
+            tauri::async_runtime::spawn_blocking(move || {
+                let rec: Option<&dyn GitActivityRecorder> =
+                    emitter.as_deref().map(|e| e as &dyn GitActivityRecorder);
+                create_commit_with_activity(&path, &message, sign, skip, rec)
+            })
+            .await
+            .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+        },
+    )
     .await
 }
 
@@ -176,16 +185,21 @@ pub(crate) async fn commit_amend_inner(
     skip_hooks: Option<bool>,
 ) -> Result<CommitResult, AppError> {
     let target = activity_target(state, repo_id, GitActivityCategory::Amend).await;
-    with_activity(state.git_activity_hub(), GitActivityCategory::Amend, target, move |emitter| async move {
-        let path = repo_path(state, repo_id)?;
-        let skip = skip_hooks.unwrap_or(false);
-        tauri::async_runtime::spawn_blocking(move || {
-            let rec: Option<&dyn GitActivityRecorder> =
-                emitter.as_deref().map(|e| e as &dyn GitActivityRecorder);
-            amend_commit_with_activity(&path, &message, sign, skip, rec)
-        })
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
-    })
+    with_activity(
+        state.git_activity_hub(),
+        GitActivityCategory::Amend,
+        target,
+        move |emitter| async move {
+            let path = repo_path(state, repo_id)?;
+            let skip = skip_hooks.unwrap_or(false);
+            tauri::async_runtime::spawn_blocking(move || {
+                let rec: Option<&dyn GitActivityRecorder> =
+                    emitter.as_deref().map(|e| e as &dyn GitActivityRecorder);
+                amend_commit_with_activity(&path, &message, sign, skip, rec)
+            })
+            .await
+            .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+        },
+    )
     .await
 }

@@ -81,7 +81,12 @@ fn mac_open_entries_are_mac_os_and_name_an_app() {
 fn bundle_rungs_only_appear_on_macos_rows() {
     for e in CATALOG {
         if e.rungs.iter().any(|r| matches!(r, Rung::Bundle { .. })) {
-            assert_eq!(e.os, TargetOs::MacOs, "{} has a Bundle rung off macOS", e.id);
+            assert_eq!(
+                e.os,
+                TargetOs::MacOs,
+                "{} has a Bundle rung off macOS",
+                e.id
+            );
         }
     }
 }
@@ -124,7 +129,12 @@ fn every_auto_rung_resolves_for_its_own_os() {
         for os in OSES {
             for rung in auto_rungs(kind, os) {
                 let entry = find_for(kind, rung.id, os).unwrap_or_else(|| {
-                    panic!("auto rung {:?} has no {:?} row on {}", rung.id, kind, os_name(os))
+                    panic!(
+                        "auto rung {:?} has no {:?} row on {}",
+                        rung.id,
+                        kind,
+                        os_name(os)
+                    )
                 });
                 // `MacApp` launches `open -a <app_name>`, so a `None` there
                 // would emit `open -a code` instead of the app name.
@@ -175,7 +185,10 @@ fn the_auto_ladders_are_the_ones_the_hardcoded_ladders_used() {
     for os in [TargetOs::Windows, TargetOs::Linux] {
         assert_eq!(
             listed(ToolKind::Editor, os),
-            vec![("vscode", AutoVia::Name), ("vscode-insiders", AutoVia::Name)]
+            vec![
+                ("vscode", AutoVia::Name),
+                ("vscode-insiders", AutoVia::Name)
+            ]
         );
     }
     assert_eq!(
@@ -228,8 +241,14 @@ fn find_for_is_exact_os_which_is_what_an_os_explicit_caller_needs() {
     assert_eq!(mac.app_name, Some("Visual Studio Code"));
     let win = find_for(ToolKind::Editor, "vscode", TargetOs::Windows).expect("win vscode row");
     assert_eq!(win.app_name, None);
-    assert_eq!(find_for(ToolKind::Editor, "vscode", TargetOs::Linux).map(|e| e.os), Some(TargetOs::Linux));
-    assert_eq!(find_for(ToolKind::Terminal, "windows-terminal", TargetOs::Linux), None);
+    assert_eq!(
+        find_for(ToolKind::Editor, "vscode", TargetOs::Linux).map(|e| e.os),
+        Some(TargetOs::Linux)
+    );
+    assert_eq!(
+        find_for(ToolKind::Terminal, "windows-terminal", TargetOs::Linux),
+        None
+    );
 }
 
 #[test]

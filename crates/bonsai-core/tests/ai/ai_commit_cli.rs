@@ -16,11 +16,11 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{commit_fixed, git, init_repo};
 use bonsai_core::ai::RunOpts;
 use bonsai_core::error::AppError;
 use bonsai_core::git::ai_commit::generate_commit_message;
-use crate::common;
-use crate::common::{commit_fixed, git, init_repo};
 
 const STUB_BODY: &str = "MERGED_BODY_OK";
 const STUB_MODE_ENV: &str = "BONSAI_STUB_MODE";
@@ -94,10 +94,18 @@ fn generate_returns_stub_body_and_writes_nothing() {
     let proposal = generate_commit_message(d, RunOpts::default()).expect("proposal on staged repo");
 
     assert_eq!(proposal.message, STUB_BODY, "message must be the stub body");
-    assert_eq!(proposal.cost_usd, Some(0.012), "cost parsed from the envelope");
+    assert_eq!(
+        proposal.cost_usd,
+        Some(0.012),
+        "cost parsed from the envelope"
+    );
 
     // WRITES NOTHING: no commit created, index & worktree bytes unchanged.
-    assert_eq!(git(d, &["rev-parse", "HEAD"]), head_before, "HEAD must not move");
+    assert_eq!(
+        git(d, &["rev-parse", "HEAD"]),
+        head_before,
+        "HEAD must not move"
+    );
     assert_eq!(
         std::fs::read(d.join("a.txt")).expect("read a.txt after"),
         worktree_before,

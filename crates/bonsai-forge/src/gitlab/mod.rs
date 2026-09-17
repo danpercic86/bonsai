@@ -118,7 +118,8 @@ impl ForgeProvider for GitLabProvider {
         self.require_supported()?;
         let page = query.page.max(1);
         let per_page = query.per_page.clamp(1, MAX_PER_PAGE);
-        let url = rest::merge_requests_url(self.host(), &self.project_id(), query.state, per_page, page);
+        let url =
+            rest::merge_requests_url(self.host(), &self.project_id(), query.state, per_page, page);
         let resp = rest::get(self.transport(), &url, self.token.as_deref())?;
         let items = dto::parse_mr_list(&resp.body)?;
         let has_next = rest::has_next_page(&resp, per_page, items.len());
@@ -174,7 +175,7 @@ impl ForgeProvider for GitLabProvider {
     fn merge_pr(&self, number: u64, input: &MergePrInput) -> Result<PrDetail, AppError> {
         self.require_supported()?;
         let token = self.require_token()?; // merge REQUIRES auth
-        // Unsupported method ⇒ error BEFORE any request is sent.
+                                           // Unsupported method ⇒ error BEFORE any request is sent.
         let body = dto::merge_body(input)?;
         let url = rest::merge_mr_url(self.host(), &self.project_id(), number);
         // 200 returns the updated MR; not-mergeable statuses map in `put_merge`.

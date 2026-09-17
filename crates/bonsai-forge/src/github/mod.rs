@@ -166,7 +166,7 @@ impl ForgeProvider for GitHubProvider {
     fn merge_pr(&self, number: u64, input: &MergePrInput) -> Result<PrDetail, AppError> {
         self.require_supported()?;
         let token = self.require_token()?; // merge REQUIRES auth
-        // Unsupported method ⇒ error BEFORE any request is sent.
+                                           // Unsupported method ⇒ error BEFORE any request is sent.
         let body = dto::merge_body(input)?;
         let url = rest::merge_pull_url(self.owner(), self.repo(), number);
         // 200 on success; the merge response has no full PR, so re-fetch it.

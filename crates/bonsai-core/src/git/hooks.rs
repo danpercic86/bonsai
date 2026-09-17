@@ -170,7 +170,11 @@ pub fn run_hook_nonblocking(
 /// `--ignore-missing` is ALWAYS present (F-A4-1): without it an absent hook
 /// exits 1 and would block the operation. The `--` separator is emitted ONLY
 /// when there are trailing args, so git never sees a dangling `--`.
-pub(crate) fn build_hook_run_args(hook: HookName, args: &[String], stdin_path: Option<&Path>) -> Vec<String> {
+pub(crate) fn build_hook_run_args(
+    hook: HookName,
+    args: &[String],
+    stdin_path: Option<&Path>,
+) -> Vec<String> {
     let mut out = vec![
         "hook".to_string(),
         "run".to_string(),

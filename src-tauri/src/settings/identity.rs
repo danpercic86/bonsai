@@ -6,9 +6,7 @@
 
 /// Curated identity-profile color (P82). Closed named palette — maps to a
 /// theme-aware CSS token in the frontend (see P82-ui.md); no raw hex on the wire.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ProfileColor {
     #[default]

@@ -35,18 +35,28 @@ fn parse_pr_list_maps_fields_strips_refs_and_builds_url() {
     // refs/heads/ stripped for the neutral branch names.
     assert_eq!(pr.source_branch, "feature");
     assert_eq!(pr.target_branch, "main");
-    assert_eq!(pr.head_sha, "abc123", "lastMergeSourceCommit.commitId → headSha");
+    assert_eq!(
+        pr.head_sha, "abc123",
+        "lastMergeSourceCommit.commitId → headSha"
+    );
     // Browser URL synthesized from the repo base + pullRequestId.
-    assert_eq!(pr.url, "https://dev.azure.com/org/proj/_git/repo/pullrequest/12");
+    assert_eq!(
+        pr.url,
+        "https://dev.azure.com/org/proj/_git/repo/pullrequest/12"
+    );
     // No comment count in the base payload ⇒ 0 (OQ-A2).
     assert_eq!(pr.comments, 0);
 }
 
 #[test]
 fn parse_pr_list_empty_envelope() {
-    assert!(parse_pr_list(r#"{ "count": 0, "value": [] }"#, WEB_BASE).unwrap().is_empty());
+    assert!(parse_pr_list(r#"{ "count": 0, "value": [] }"#, WEB_BASE)
+        .unwrap()
+        .is_empty());
     // Missing `value` also parses (defaulted empty).
-    assert!(parse_pr_list(r#"{ "count": 0 }"#, WEB_BASE).unwrap().is_empty());
+    assert!(parse_pr_list(r#"{ "count": 0 }"#, WEB_BASE)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -130,7 +140,11 @@ fn parse_threads_splits_review_from_conversation_skips_system_and_deleted() {
             }
         ]
     }"#;
-    let comments = parse_threads(body, "https://dev.azure.com/org/proj/_git/repo/pullrequest/9").unwrap();
+    let comments = parse_threads(
+        body,
+        "https://dev.azure.com/org/proj/_git/repo/pullrequest/9",
+    )
+    .unwrap();
     // The system comment and the deleted comment are dropped ⇒ 2 remain.
     assert_eq!(comments.len(), 2);
 
@@ -140,7 +154,10 @@ fn parse_threads_splits_review_from_conversation_skips_system_and_deleted() {
     assert_eq!(conv.id, 1001);
     assert_eq!(conv.path, None);
     assert_eq!(conv.body, "top-level");
-    assert_eq!(conv.url, "https://dev.azure.com/org/proj/_git/repo/pullrequest/9?discussionId=1");
+    assert_eq!(
+        conv.url,
+        "https://dev.azure.com/org/proj/_git/repo/pullrequest/9?discussionId=1"
+    );
 
     // Thread 2: a review comment carrying the file path + right line; id = 2*1000 + 1.
     let review = &comments[1];
@@ -160,7 +177,11 @@ fn parse_threads_line_falls_back_to_left_side() {
     let comments = parse_threads(body, "https://x/pullrequest/1").unwrap();
     assert_eq!(comments.len(), 1);
     assert_eq!(comments[0].kind, CommentKind::Review);
-    assert_eq!(comments[0].line, Some(7), "falls back to leftFileStart.line");
+    assert_eq!(
+        comments[0].line,
+        Some(7),
+        "falls back to leftFileStart.line"
+    );
 }
 
 #[test]
@@ -179,7 +200,10 @@ fn parse_repo_probe_rejects_html_and_id_less_payloads() {
     for body in ["{}", r#"{ "id": "" }"#, r#"{ "name": "repo" }"#] {
         match parse_repo_probe(body) {
             Err(AppError::ForgeApi(m)) => {
-                assert!(m.contains("did not return a repository object"), "message: {m}")
+                assert!(
+                    m.contains("did not return a repository object"),
+                    "message: {m}"
+                )
             }
             other => panic!("expected ForgeApi for {body}, got {other:?}"),
         }
@@ -192,7 +216,10 @@ fn parse_viewer_uses_display_name_no_avatar() {
                     "id": "guid" }"#;
     let v = parse_viewer(body).unwrap();
     assert_eq!(v.login, "Ada Lovelace", "login is displayName");
-    assert_eq!(v.avatar_url, None, "Azure profile carries no avatar (contract)");
+    assert_eq!(
+        v.avatar_url, None,
+        "Azure profile carries no avatar (contract)"
+    );
 }
 
 #[test]
@@ -265,7 +292,10 @@ fn status_state_vocabulary() {
     assert_eq!(normalize_status_state("pending"), CheckRollup::Pending);
     assert_eq!(normalize_status_state("failed"), CheckRollup::Failure);
     assert_eq!(normalize_status_state("error"), CheckRollup::Failure);
-    assert_eq!(normalize_status_state("notApplicable"), CheckRollup::Neutral);
+    assert_eq!(
+        normalize_status_state("notApplicable"),
+        CheckRollup::Neutral
+    );
     assert_eq!(normalize_status_state("notSet"), CheckRollup::Neutral);
     assert_eq!(normalize_status_state("mystery"), CheckRollup::Error);
 }

@@ -188,10 +188,7 @@ fn result_block_path(line: &str) -> Option<&str> {
 /// packed alone, §6.3), and a model given one file often answers with the bare
 /// body. When exactly one path was requested and no block was found, the whole
 /// reply is taken as that path's body — still marker- and emptiness-checked below.
-pub(crate) fn parse_bulk_response(
-    text: &str,
-    requested: &[String],
-) -> Result<BulkParse, AppError> {
+pub(crate) fn parse_bulk_response(text: &str, requested: &[String]) -> Result<BulkParse, AppError> {
     let mut blocks: Vec<(String, String)> = Vec::new();
     let mut current: Option<(String, Vec<&str>)> = None;
     for line in text.lines() {

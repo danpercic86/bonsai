@@ -101,11 +101,10 @@ pub async fn logs_delete_all(
         //    holding the file — a cause that is false here.
         // The reverse asymmetry (a `clear` failure must not discard log counts) is
         // the contract's §6 rule and lives in `merge_metrics_counts`.
-        let reply = tauri::async_runtime::spawn_blocking(move || {
-            sink.roll_and_purge(exports_for_purge)
-        })
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))??;
+        let reply =
+            tauri::async_runtime::spawn_blocking(move || sink.roll_and_purge(exports_for_purge))
+                .await
+                .map_err(|e| AppError::Other(format!("task join error: {e}")))??;
         LogsDeleteResult {
             deleted_files: reply.deleted_files,
             deleted_bytes: reply.deleted_bytes,
@@ -117,11 +116,10 @@ pub async fn logs_delete_all(
             metrics_cleared: false,
         }
     } else {
-        let counts = tauri::async_runtime::spawn_blocking(move || {
-            writer::purge_scope(&dir, &exports, None)
-        })
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?;
+        let counts =
+            tauri::async_runtime::spawn_blocking(move || writer::purge_scope(&dir, &exports, None))
+                .await
+                .map_err(|e| AppError::Other(format!("task join error: {e}")))?;
         LogsDeleteResult {
             deleted_files: counts.deleted_files,
             deleted_bytes: counts.deleted_bytes,

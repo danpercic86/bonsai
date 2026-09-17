@@ -94,7 +94,13 @@ impl AiRunRegistry {
                 reply_tx,
             },
         );
-        let ctl = RunControl { run_id: run_id.clone(), cancel, awaiting, pid, replies };
+        let ctl = RunControl {
+            run_id: run_id.clone(),
+            cancel,
+            awaiting,
+            pid,
+            replies,
+        };
         (run_id, ctl)
     }
 
@@ -116,10 +122,14 @@ impl AiRunRegistry {
     pub fn reply(&self, run_id: &str, text: String) -> Result<(), AppError> {
         let map = self.map();
         let Some(h) = map.get(run_id) else {
-            return Err(AppError::AiFailed(format!("AI run {run_id} is no longer active")));
+            return Err(AppError::AiFailed(format!(
+                "AI run {run_id} is no longer active"
+            )));
         };
         if !h.awaiting.load(Ordering::Relaxed) {
-            return Err(AppError::AiFailed(format!("AI run {run_id} is not waiting for input")));
+            return Err(AppError::AiFailed(format!(
+                "AI run {run_id} is not waiting for input"
+            )));
         }
         h.reply_tx
             .send(text)
@@ -128,7 +138,9 @@ impl AiRunRegistry {
 
     /// True while the run is blocked on a question (drives the reply affordance).
     pub fn is_awaiting(&self, run_id: &str) -> bool {
-        self.map().get(run_id).is_some_and(|h| h.awaiting.load(Ordering::Relaxed))
+        self.map()
+            .get(run_id)
+            .is_some_and(|h| h.awaiting.load(Ordering::Relaxed))
     }
 
     /// Drop the entry. MUST be called on EVERY exit path of the command (success,
@@ -191,7 +203,10 @@ mod tests {
             matches!(&err, AppError::AiFailed(m) if m.contains("not waiting")),
             "got {err:?}"
         );
-        assert!(reg.reply("ai-nope", "x".into()).is_err(), "unknown id -> Err");
+        assert!(
+            reg.reply("ai-nope", "x".into()).is_err(),
+            "unknown id -> Err"
+        );
 
         ctl.awaiting.store(true, Ordering::Relaxed);
         assert!(!reg.is_awaiting("ai-nope"));
@@ -251,8 +266,16 @@ mod tests {
                 }));
             }
             let kept: Vec<_> = handles.into_iter().filter_map(|h| h.join().ok()).collect();
-            assert_eq!(wins.load(Ordering::SeqCst), CAP, "exactly `cap` registrations may win");
-            assert_eq!(reg.active(), CAP, "the map itself must never exceed the cap");
+            assert_eq!(
+                wins.load(Ordering::SeqCst),
+                CAP,
+                "exactly `cap` registrations may win"
+            );
+            assert_eq!(
+                reg.active(),
+                CAP,
+                "the map itself must never exceed the cap"
+            );
             drop(kept);
         }
     }

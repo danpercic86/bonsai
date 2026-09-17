@@ -112,7 +112,8 @@ pub fn save(index_dir: &Path, store: &IndexStore) -> Result<(), AppError> {
         std::process::id()
     ));
 
-    std::fs::write(&tmp, &json).map_err(|e| AppError::Io(format!("write {}: {e}", tmp.display())))?;
+    std::fs::write(&tmp, &json)
+        .map_err(|e| AppError::Io(format!("write {}: {e}", tmp.display())))?;
     std::fs::rename(&tmp, &file).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
         AppError::Io(format!(
@@ -246,7 +247,10 @@ mod tests {
         }
 
         // The store is intact and no tmp file survives.
-        assert!(load(index_dir.as_path()).is_some(), "store parses after storm");
+        assert!(
+            load(index_dir.as_path()).is_some(),
+            "store parses after storm"
+        );
         let leftovers: Vec<_> = std::fs::read_dir(index_dir.as_path())
             .expect("read_dir")
             .flatten()

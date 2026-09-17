@@ -55,13 +55,14 @@ fn committer_ts_reads_committer_time() {
     let (dir, repo) = init_repo();
     let author = git2::Signature::new("Author", "a@example.com", &git2::Time::new(100, 0))
         .expect("author signature");
-    let committer =
-        git2::Signature::new("Committer", "c@example.com", &git2::Time::new(500, 0))
-            .expect("committer signature");
+    let committer = git2::Signature::new("Committer", "c@example.com", &git2::Time::new(500, 0))
+        .expect("committer signature");
     let blob = repo.blob(b"x").expect("blob");
     let mut tb = repo.treebuilder(None).expect("treebuilder");
     tb.insert("f.txt", blob, 0o100_644).expect("tree insert");
-    let tree = repo.find_tree(tb.write().expect("write tree")).expect("find tree");
+    let tree = repo
+        .find_tree(tb.write().expect("write tree"))
+        .expect("find tree");
     let oid = repo
         .commit(None, &author, &committer, "C0", &tree, &[])
         .expect("commit");

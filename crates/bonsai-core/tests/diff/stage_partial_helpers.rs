@@ -7,9 +7,9 @@
 
 use std::path::Path;
 
+use crate::common::{commit_fixed, git, git_raw, init_repo};
 use bonsai_core::git::diff::{FileDiff, LineKind};
 use bonsai_core::git::stage_partial::LineSelection;
-use crate::common::{commit_fixed, git, git_raw, init_repo};
 
 // ---------------------------------------------------------------------------
 // Helpers

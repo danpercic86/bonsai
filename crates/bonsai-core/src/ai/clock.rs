@@ -75,7 +75,8 @@ mod test_clock {
 
         /// Move virtual time forward. Monotonic by construction (only ever added).
         pub(crate) fn advance(&self, by: Duration) {
-            self.offset_ms.fetch_add(by.as_millis() as u64, Ordering::SeqCst);
+            self.offset_ms
+                .fetch_add(by.as_millis() as u64, Ordering::SeqCst);
         }
 
         /// How many times the session has read this clock so far.

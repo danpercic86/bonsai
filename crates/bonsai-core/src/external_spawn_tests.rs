@@ -62,10 +62,23 @@ fn hostile_path_becomes_one_argv_token() {
         let path = PathBuf::from(raw);
         let spec = spec_from(&browsed_editor("editor"), &path);
         assert_eq!(spec.program, "editor", "program never becomes the path");
-        assert_eq!(spec.args.len(), 1, "path is exactly ONE arg for {raw:?}: {:?}", spec.args);
-        assert_eq!(spec.args[0], path.display().to_string(), "arg is the path verbatim");
+        assert_eq!(
+            spec.args.len(),
+            1,
+            "path is exactly ONE arg for {raw:?}: {:?}",
+            spec.args
+        );
+        assert_eq!(
+            spec.args[0],
+            path.display().to_string(),
+            "arg is the path verbatim"
+        );
         // LOW-1: the child does not launch from the (hostile) repo directory.
-        assert_eq!(spec.cwd, safe_cwd(), "argument delivery keeps the neutral cwd");
+        assert_eq!(
+            spec.cwd,
+            safe_cwd(),
+            "argument delivery keeps the neutral cwd"
+        );
     }
 }
 
@@ -74,11 +87,20 @@ fn hostile_path_becomes_one_argv_token() {
 /// read as a flag or a script name however it is spelled.
 #[test]
 fn hostile_path_as_working_dir_never_becomes_an_argument() {
-    for raw in [r#"C:\a b & c\repo"#, "/tmp/-rf", "/tmp/x;y", "/tmp/café/日本語"] {
+    for raw in [
+        r#"C:\a b & c\repo"#,
+        "/tmp/-rf",
+        "/tmp/x;y",
+        "/tmp/café/日本語",
+    ] {
         let path = PathBuf::from(raw);
         let spec = spec_from(&browsed_terminal("pwsh"), &path);
         assert_eq!(spec.program, "pwsh");
-        assert!(spec.args.is_empty(), "no argv token for {raw:?}: {:?}", spec.args);
+        assert!(
+            spec.args.is_empty(),
+            "no argv token for {raw:?}: {:?}",
+            spec.args
+        );
         assert_eq!(spec.cwd, path, "the directory IS the delivery here");
         assert!(!spec.hide_console, "a terminal window must stay visible");
     }
@@ -133,11 +155,20 @@ fn macos_editor_open_rungs_wait_for_exit() {
     let ladder = editor_ladder(TargetOs::MacOs, None, &path);
     assert_eq!(ladder.len(), 3, "open -a VS Code, open -a Insiders, code");
     assert_eq!(ladder[0].program, "open");
-    assert!(ladder[0].wait_for_exit, "rung 1 must judge open's exit code");
+    assert!(
+        ladder[0].wait_for_exit,
+        "rung 1 must judge open's exit code"
+    );
     assert_eq!(ladder[1].program, "open");
-    assert!(ladder[1].wait_for_exit, "rung 2 must judge open's exit code");
+    assert!(
+        ladder[1].wait_for_exit,
+        "rung 2 must judge open's exit code"
+    );
     assert_eq!(ladder[2].program, "code");
-    assert!(!ladder[2].wait_for_exit, "the plain CLI rung stays detached");
+    assert!(
+        !ladder[2].wait_for_exit,
+        "the plain CLI rung stays detached"
+    );
 }
 
 /// (b) No Windows or Linux spec ever waits — editor, terminal, or reveal.

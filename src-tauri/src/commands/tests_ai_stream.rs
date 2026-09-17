@@ -71,7 +71,6 @@ fn assert_stream_shape(sink: &Sink, run_id: &str) {
     assert_eq!(events[0].kind, AiRunEventKind::Started);
 }
 
-
 // ============================================================ consent gate
 
 /// The consent gate fires BEFORE any repo work: an UNKNOWN repo id still yields
@@ -95,7 +94,10 @@ fn stream_refuses_without_consent_before_touching_the_repo() {
     ))
     .expect_err("no consent ⇒ refuse");
     assert!(matches!(err, AppError::AiUnavailable(_)), "{err:?}");
-    assert!(sink.events().is_empty(), "a refused run must not emit any event");
+    assert!(
+        sink.events().is_empty(),
+        "a refused run must not emit any event"
+    );
 }
 
 /// An empty `paths` list is rejected before the repo is resolved.
@@ -135,7 +137,13 @@ fn stream_rejects_more_runs_than_the_concurrency_cap() {
     let (dir, id, c0) = fixture_repo(&state);
     let base = tempfile::TempDir::new().expect("base");
     let file = consent_file(base.path(), |_| {});
-    conflicts_on(&state, &id, dir.path(), &c0, &[("a.txt", "main\n", "feature\n")]);
+    conflicts_on(
+        &state,
+        &id,
+        dir.path(),
+        &c0,
+        &[("a.txt", "main\n", "feature\n")],
+    );
 
     let registry = AiRunRegistry::default();
     // Saturate the registry the way live runs would: `finish` is what frees a slot,
@@ -157,11 +165,17 @@ fn stream_rejects_more_runs_than_the_concurrency_cap() {
     .expect_err("over the cap ⇒ refuse");
     match &err {
         AppError::AiFailed(m) => {
-            assert!(m.starts_with("too many AI runs"), "the UI keys on this message: {m}")
+            assert!(
+                m.starts_with("too many AI runs"),
+                "the UI keys on this message: {m}"
+            )
         }
         other => panic!("expected AiFailed, got {other:?}"),
     }
-    assert!(sink.events().is_empty(), "a refused run must not emit any event");
+    assert!(
+        sink.events().is_empty(),
+        "a refused run must not emit any event"
+    );
     assert_eq!(
         registry.active(),
         bonsai_core::ai::AI_MAX_CONCURRENT_RUNS,
@@ -203,7 +217,13 @@ fn stream_single_path_proposes_and_writes_nothing() {
     let (dir, id, c0) = fixture_repo(&state);
     let base = tempfile::TempDir::new().expect("base");
     let file = consent_file(base.path(), |_| {});
-    conflicts_on(&state, &id, dir.path(), &c0, &[("a.txt", "main\n", "feature\n")]);
+    conflicts_on(
+        &state,
+        &id,
+        dir.path(),
+        &c0,
+        &[("a.txt", "main\n", "feature\n")],
+    );
     let before = std::fs::read(dir.path().join("a.txt")).expect("read a.txt");
     let registry = AiRunRegistry::default();
     let sink = Sink::default();
@@ -229,17 +249,25 @@ fn stream_single_path_proposes_and_writes_nothing() {
     let kinds = sink.kinds();
     assert_eq!(kinds.last(), Some(&AiRunEventKind::Done), "{kinds:?}");
     assert_eq!(
-        kinds.iter().filter(|k| **k == AiRunEventKind::Started).count(),
+        kinds
+            .iter()
+            .filter(|k| **k == AiRunEventKind::Started)
+            .count(),
         1,
         "exactly one Started per run"
     );
     // Single-path runs attribute every event to their file (bulk attribution).
     assert!(
-        sink.events().iter().all(|e| e.path.as_deref() == Some("a.txt")),
+        sink.events()
+            .iter()
+            .all(|e| e.path.as_deref() == Some("a.txt")),
         "events must carry the path for a single-file run"
     );
     // D4: a proposal is bytes only — the worktree and the index are untouched.
-    assert_eq!(std::fs::read(dir.path().join("a.txt")).expect("read after"), before);
+    assert_eq!(
+        std::fs::read(dir.path().join("a.txt")).expect("read after"),
+        before
+    );
     // The registry entry is released on the success path too.
     assert_eq!(registry.active(), 0, "finish() must run on every exit path");
 
@@ -257,7 +285,13 @@ fn stream_sends_the_read_only_tool_allowlist_by_default() {
     let state = AppState::default();
     let (dir, id, c0) = fixture_repo(&state);
     let base = tempfile::TempDir::new().expect("base");
-    conflicts_on(&state, &id, dir.path(), &c0, &[("a.txt", "main\n", "feature\n")]);
+    conflicts_on(
+        &state,
+        &id,
+        dir.path(),
+        &c0,
+        &[("a.txt", "main\n", "feature\n")],
+    );
 
     let default_file = consent_file(base.path(), |_| {});
     let sink = Sink::default();
@@ -389,8 +423,18 @@ fn stream_bulk_attributes_one_run_to_every_path() {
     assert_stream_shape(&sink, &batch.run_id);
     let kinds = sink.kinds();
     assert_eq!(kinds.last(), Some(&AiRunEventKind::Done));
-    assert_eq!(kinds.iter().filter(|k| **k == AiRunEventKind::Started).count(), 1);
-    let texts: Vec<String> = sink.events().iter().filter_map(|e| e.text.clone()).collect();
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|k| **k == AiRunEventKind::Started)
+            .count(),
+        1
+    );
+    let texts: Vec<String> = sink
+        .events()
+        .iter()
+        .filter_map(|e| e.text.clone())
+        .collect();
     assert!(
         texts.iter().any(|t| t.starts_with("batch 1/1: 2 files")),
         "the batch plan must be logged: {texts:?}"
@@ -427,7 +471,11 @@ fn stream_bulk_marks_an_unanswered_path_failed_without_failing_the_batch() {
         &AiRunRegistry::default(),
         &file,
         &id,
-        vec!["a/one.json".to_string(), "b/two.json".to_string(), "c.txt".to_string()],
+        vec![
+            "a/one.json".to_string(),
+            "b/two.json".to_string(),
+            "c.txt".to_string(),
+        ],
         Sink::default().collector(),
     ))
     .expect("a missing file must not fail the batch");
@@ -435,7 +483,11 @@ fn stream_bulk_marks_an_unanswered_path_failed_without_failing_the_batch() {
     assert_eq!(batch.proposals.len(), 2, "{:?}", batch.proposals);
     assert_eq!(batch.failed.len(), 1);
     assert_eq!(batch.failed[0].path, "c.txt");
-    assert!(batch.failed[0].reason.contains("no result block"), "{:?}", batch.failed[0]);
+    assert!(
+        batch.failed[0].reason.contains("no result block"),
+        "{:?}",
+        batch.failed[0]
+    );
 
     block_on(abort_merge_inner(&state, &id)).expect("cleanup");
 }
@@ -451,7 +503,13 @@ fn stream_bulk_skips_an_ineligible_path_individually() {
     let (dir, id, c0) = fixture_repo(&state);
     let base = tempfile::TempDir::new().expect("base");
     let file = consent_file(base.path(), |_| {});
-    conflicts_on(&state, &id, dir.path(), &c0, &[("a.txt", "main\n", "feature\n")]);
+    conflicts_on(
+        &state,
+        &id,
+        dir.path(),
+        &c0,
+        &[("a.txt", "main\n", "feature\n")],
+    );
 
     let batch = block_on(ai_resolve_conflict_stream_inner(
         &state,
@@ -523,7 +581,10 @@ fn cancel_run_is_ok_for_unknown_ids_and_flips_a_live_flag() {
 
     let (run_id, ctl) = registry.register();
     ai_cancel_run_inner(&registry, &run_id).expect("known id ⇒ Ok");
-    assert!(ctl.cancel.load(std::sync::atomic::Ordering::Relaxed), "flag must be set");
+    assert!(
+        ctl.cancel.load(std::sync::atomic::Ordering::Relaxed),
+        "flag must be set"
+    );
     ai_cancel_run_inner(&registry, &run_id).expect("repeat cancel ⇒ still Ok");
 }
 
@@ -539,7 +600,11 @@ fn reply_run_requires_a_run_that_is_awaiting_input() {
     let err = ai_reply_run_inner(&registry, &run_id, "x".into()).expect_err("not awaiting");
     assert!(matches!(err, AppError::AiFailed(_)), "{err:?}");
 
-    ctl.awaiting.store(true, std::sync::atomic::Ordering::Relaxed);
+    ctl.awaiting
+        .store(true, std::sync::atomic::Ordering::Relaxed);
     ai_reply_run_inner(&registry, &run_id, "the plural form".into()).expect("awaiting ⇒ Ok");
-    assert_eq!(ctl.replies.try_recv().ok().as_deref(), Some("the plural form"));
+    assert_eq!(
+        ctl.replies.try_recv().ok().as_deref(),
+        Some("the plural form")
+    );
 }

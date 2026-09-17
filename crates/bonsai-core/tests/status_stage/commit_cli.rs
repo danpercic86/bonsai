@@ -10,12 +10,12 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{commit_fixed, git, git_ok, git_raw, init_repo};
 use bonsai_core::error::AppError;
 use bonsai_core::git::commit::create_commit;
 use bonsai_core::git::stage::stage_paths;
 use bonsai_core::git::status::read_status;
-use crate::common;
-use crate::common::{commit_fixed, git, git_ok, git_raw, init_repo};
 
 macro_rules! require_git {
     () => {
@@ -103,7 +103,10 @@ fn strip_timestamp(v: &str) -> String {
 fn assert_same_commit_fields(a: &Path, b: &Path) -> CommitObj {
     let ours = cat_file_head(a);
     let cli = cat_file_head(b);
-    assert_eq!(ours, cli, "git2 commit (left) differs from CLI twin (right)");
+    assert_eq!(
+        ours, cli,
+        "git2 commit (left) differs from CLI twin (right)"
+    );
     ours
 }
 
@@ -176,7 +179,10 @@ fn unborn_first_commit() {
     let obj = assert_same_commit_fields(a.path(), b.path());
     assert!(obj.parents.is_empty(), "first commit has no parents");
     assert_eq!(res.branch.as_deref(), Some("main"));
-    assert_eq!(git(a.path(), &["rev-parse", "--abbrev-ref", "HEAD"]), "main");
+    assert_eq!(
+        git(a.path(), &["rev-parse", "--abbrev-ref", "HEAD"]),
+        "main"
+    );
 
     let snapshot = read_status(a.path()).expect("read_status");
     assert!(snapshot.staged.is_empty());
@@ -194,7 +200,8 @@ fn empty_message_rejected() {
     let head_before = git(a.path(), &["rev-parse", "HEAD"]);
 
     for msg in ["", "   ", " \n\t \n"] {
-        let err = create_commit(a.path(), msg, None, false).expect_err("empty message must be rejected");
+        let err =
+            create_commit(a.path(), msg, None, false).expect_err("empty message must be rejected");
         assert!(matches!(err, AppError::EmptyMessage), "got: {err:?}");
     }
     assert_eq!(git(a.path(), &["rev-parse", "HEAD"]), head_before);
@@ -222,7 +229,8 @@ fn nothing_to_commit_rejected() {
     assert_eq!(git(clean.path(), &["rev-parse", "HEAD"]), head_before);
 
     let unborn = init_repo();
-    let err = create_commit(unborn.path(), "nothing yet", None, false).expect_err("unborn empty index");
+    let err =
+        create_commit(unborn.path(), "nothing yet", None, false).expect_err("unborn empty index");
     assert!(matches!(err, AppError::NothingToCommit), "got: {err:?}");
     assert!(!git_ok(unborn.path(), &["rev-parse", "--verify", "HEAD"]));
 }

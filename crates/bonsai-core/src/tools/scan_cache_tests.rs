@@ -66,14 +66,28 @@ fn concurrent_probes_coalesce_onto_a_single_probe() {
                 })
             })
             .collect();
-        handles.into_iter().map(|h| h.join().expect("probe thread")).collect()
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("probe thread"))
+            .collect()
     });
 
-    assert_eq!(probes.load(Ordering::SeqCst), 1, "{CALLERS} callers must produce ONE probe");
+    assert_eq!(
+        probes.load(Ordering::SeqCst),
+        1,
+        "{CALLERS} callers must produce ONE probe"
+    );
     let (at_ms, first) = results.first().expect("one result per caller");
-    assert_eq!(first.len(), 1, "the leader's rows came back, not an empty scan");
+    assert_eq!(
+        first.len(),
+        1,
+        "the leader's rows came back, not an empty scan"
+    );
     for (other_ms, other) in &results {
-        assert_eq!(other_ms, at_ms, "every caller got the leader's scan identity");
+        assert_eq!(
+            other_ms, at_ms,
+            "every caller got the leader's scan identity"
+        );
         assert_eq!(other, first, "every caller got the leader's rows");
     }
 }
@@ -83,7 +97,10 @@ fn concurrent_probes_coalesce_onto_a_single_probe() {
 #[test]
 fn a_probe_publishes_what_the_cache_then_serves_and_a_refresh_replaces_it() {
     let cell = ScanCell::new();
-    assert!(cell.cached().is_none(), "nothing is cached before the first probe");
+    assert!(
+        cell.cached().is_none(),
+        "nothing is cached before the first probe"
+    );
 
     let (at_ms, found) = cell.probe(rows);
     assert_eq!(found.len(), 1);
@@ -92,9 +109,15 @@ fn a_probe_publishes_what_the_cache_then_serves_and_a_refresh_replaces_it() {
     assert_eq!(hit, found);
 
     let (next_ms, next) = cell.probe(Vec::new);
-    assert!(next.is_empty(), "the refresh returns its OWN probe, not the cache");
+    assert!(
+        next.is_empty(),
+        "the refresh returns its OWN probe, not the cache"
+    );
     assert!(next_ms >= at_ms, "the scan identity never moves backwards");
-    assert!(cell.cached().expect("republished").1.is_empty(), "the cache was replaced");
+    assert!(
+        cell.cached().expect("republished").1.is_empty(),
+        "the cache was replaced"
+    );
 }
 
 /// A probe that panics clears the in-flight flag on the way out (that is what
@@ -107,7 +130,10 @@ fn a_panicking_probe_does_not_wedge_the_cell() {
     let blew_up = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         cell.probe(|| panic!("probe blew up"));
     }));
-    assert!(blew_up.is_err(), "the panic propagates to the caller, as before");
+    assert!(
+        blew_up.is_err(),
+        "the panic propagates to the caller, as before"
+    );
 
     let started = Instant::now();
     let (_, found) = cell.probe(rows);
@@ -134,7 +160,11 @@ fn a_follower_reprobes_when_the_leader_panics_instead_of_serving_stale_rows() {
     let cell = ScanCell::new();
     // What a stale handoff would hand back.
     let (stale_ms, stale) = cell.probe(rows);
-    assert_eq!(stale.len(), 1, "the first probe published rows that can go stale");
+    assert_eq!(
+        stale.len(),
+        1,
+        "the first probe published rows that can go stale"
+    );
 
     // Opened from INSIDE the leader's probe closure, i.e. only once the lease is
     // held — so the caller below is guaranteed to be a follower.
@@ -170,7 +200,10 @@ fn a_follower_reprobes_when_the_leader_panics_instead_of_serving_stale_rows() {
         "the follower must run its OWN probe: the dead leader published nothing, \
          so nothing is coming to replace the stale rows"
     );
-    assert!(found.is_empty(), "the follower got the dead leader's PREDECESSOR's rows");
+    assert!(
+        found.is_empty(),
+        "the follower got the dead leader's PREDECESSOR's rows"
+    );
     assert!(
         at_ms > stale_ms,
         "the follower got the stale scan identity, so its Rescan looks like it never landed"

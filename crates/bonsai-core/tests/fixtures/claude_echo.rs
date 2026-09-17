@@ -56,13 +56,21 @@ fn main() {
     let paths = requested_paths(&payload);
     let bytes = payload.len();
 
-    emit(r#"{"type":"system","subtype":"init","session_id":"sess-echo","model":"sonnet","tools":["Read","Grep","Glob"]}"#);
-    emit(&assistant_line(&format!("received {bytes} bytes for {} files", paths.len())));
+    emit(
+        r#"{"type":"system","subtype":"init","session_id":"sess-echo","model":"sonnet","tools":["Read","Grep","Glob"]}"#,
+    );
+    emit(&assistant_line(&format!(
+        "received {bytes} bytes for {} files",
+        paths.len()
+    )));
 
     if mode == "bulk_ask" {
         // 2./3. Ask, then wait for the reply — on an OPEN stdin, which is what makes
         // this a second TURN rather than a second process.
-        emit(&result_line("BONSAI_NEEDS_INPUT: which locale wins?", 0.0238));
+        emit(&result_line(
+            "BONSAI_NEEDS_INPUT: which locale wins?",
+            0.0238,
+        ));
         match lines.next() {
             Some(Ok(reply)) => {
                 let text = user_text(&reply);

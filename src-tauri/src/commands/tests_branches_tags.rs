@@ -34,9 +34,16 @@ fn list_branches_matches_fixture() {
 
     let snap = block_on(list_branches_inner(&state, &id)).expect("list");
     let head_name = head_branch(dir.path()).expect("attached head");
-    let mut expected = ["feature/x".to_string(), "Zeta".to_string(), head_name.clone()];
+    let mut expected = [
+        "feature/x".to_string(),
+        "Zeta".to_string(),
+        head_name.clone(),
+    ];
     expected.sort_by_key(|n| n.to_lowercase());
-    assert_eq!(local_names(&snap), expected.iter().map(String::as_str).collect::<Vec<_>>());
+    assert_eq!(
+        local_names(&snap),
+        expected.iter().map(String::as_str).collect::<Vec<_>>()
+    );
     for b in &snap.local {
         assert_eq!(b.is_head, b.name == head_name);
         assert_eq!(b.tip, c0, "all branches at the fixture root commit");
@@ -53,8 +60,8 @@ fn create_branch_duplicate_and_invalid_names() {
     let (_dir, id, _c0) = fixture_repo(&state);
     block_on(create_branch_inner(&state, &id, "dup".into())).expect("create");
 
-    let err = block_on(create_branch_inner(&state, &id, "dup".into()))
-        .expect_err("duplicate must error");
+    let err =
+        block_on(create_branch_inner(&state, &id, "dup".into())).expect_err("duplicate must error");
     assert!(matches!(err, AppError::BranchExists(_)), "{err:?}");
 
     for bad in ["-bad", "a..b", "", "has space?*"] {
@@ -71,9 +78,17 @@ fn create_branch_here_at_older_commit() {
     let (dir, id, c0) = fixture_repo(&state);
     write_stage_commit(&state, &id, dir.path(), "a.txt", "v2\n", "C1");
 
-    let res = block_on(create_branch_here_inner(&state, &id, "from-c0".into(), c0.clone()))
-        .expect("create here");
-    assert!(!res.stashed && res.apply.is_none(), "clean tree: no autostash");
+    let res = block_on(create_branch_here_inner(
+        &state,
+        &id,
+        "from-c0".into(),
+        c0.clone(),
+    ))
+    .expect("create here");
+    assert!(
+        !res.stashed && res.apply.is_none(),
+        "clean tree: no autostash"
+    );
     assert_eq!(head_branch(dir.path()).as_deref(), Some("from-c0"));
     assert_eq!(head_oid(dir.path()), c0);
     assert_eq!(
@@ -111,8 +126,8 @@ fn checkout_branch_happy_dirty_and_missing() {
     let stashes = block_on(list_stashes_inner(&state, &id)).expect("stashes");
     assert!(stashes.is_empty(), "clean re-apply consumes the autostash");
 
-    let err = block_on(checkout_branch_inner(&state, &id, "no-such".into()))
-        .expect_err("missing branch");
+    let err =
+        block_on(checkout_branch_inner(&state, &id, "no-such".into())).expect_err("missing branch");
     assert!(matches!(err, AppError::BranchNotFound(_)), "{err:?}");
 }
 
@@ -130,8 +145,13 @@ fn delete_branch_merged_unmerged_current() {
     assert!(!local_names(&snap).contains(&"merged"));
 
     // Unmerged: commit on a side branch, come back, deletion is blocked.
-    block_on(create_branch_here_inner(&state, &id, "ahead".into(), head_oid(dir.path())))
-        .expect("create+checkout");
+    block_on(create_branch_here_inner(
+        &state,
+        &id,
+        "ahead".into(),
+        head_oid(dir.path()),
+    ))
+    .expect("create+checkout");
     write_stage_commit(&state, &id, dir.path(), "ahead.txt", "x\n", "ahead commit");
     block_on(checkout_branch_inner(&state, &id, main.clone())).expect("back to main");
     let err = block_on(delete_branch_inner(&state, &id, "ahead".into()))
@@ -157,20 +177,34 @@ fn rename_branch_happy_and_collision() {
     block_on(create_branch_inner(&state, &id, "old-name".into())).expect("create");
     block_on(create_branch_inner(&state, &id, "taken".into())).expect("create");
 
-    let res = block_on(rename_branch_inner(&state, &id, "old-name".into(), "new-name".into()))
-        .expect("rename");
+    let res = block_on(rename_branch_inner(
+        &state,
+        &id,
+        "old-name".into(),
+        "new-name".into(),
+    ))
+    .expect("rename");
     assert!(!res.was_head);
     assert!(res.upstream.is_none());
     let snap = block_on(list_branches_inner(&state, &id)).expect("list");
     assert!(local_names(&snap).contains(&"new-name"));
     assert!(!local_names(&snap).contains(&"old-name"));
     assert_eq!(
-        snap.local.iter().find(|b| b.name == "new-name").unwrap().tip,
+        snap.local
+            .iter()
+            .find(|b| b.name == "new-name")
+            .unwrap()
+            .tip,
         c0
     );
 
-    let err = block_on(rename_branch_inner(&state, &id, "new-name".into(), "taken".into()))
-        .expect_err("collision must error");
+    let err = block_on(rename_branch_inner(
+        &state,
+        &id,
+        "new-name".into(),
+        "taken".into(),
+    ))
+    .expect_err("collision must error");
     assert!(matches!(err, AppError::BranchExists(_)), "{err:?}");
 }
 
@@ -190,7 +224,10 @@ fn list_stale_branches_is_read_only() {
         "merged branch classified stale: {report:?}"
     );
     let snap = block_on(list_branches_inner(&state, &id)).expect("list");
-    assert!(local_names(&snap).contains(&"stale-one"), "read-only: nothing deleted");
+    assert!(
+        local_names(&snap).contains(&"stale-one"),
+        "read-only: nothing deleted"
+    );
 }
 
 /// delete_branches: refuses the current branch, deletes a re-verified stale
@@ -217,7 +254,10 @@ fn delete_branches_partial_results() {
         stale::BranchDeleteStatus::Deleted,
         "current/base branch must never be deleted: {results:?}"
     );
-    assert_eq!(by_name("stale-two").status, stale::BranchDeleteStatus::Deleted);
+    assert_eq!(
+        by_name("stale-two").status,
+        stale::BranchDeleteStatus::Deleted
+    );
     // Adapted: the freshly-recomputed stale set is checked FIRST, so a branch
     // that doesn't exist is reported SkippedNotStale (not in the safe set)
     // rather than SkippedNotFound. Either way it must not be "Deleted".
@@ -230,7 +270,10 @@ fn delete_branches_partial_results() {
     );
 
     let snap = block_on(list_branches_inner(&state, &id)).expect("list");
-    assert!(local_names(&snap).contains(&main.as_str()), "current branch survives");
+    assert!(
+        local_names(&snap).contains(&main.as_str()),
+        "current branch survives"
+    );
     assert!(!local_names(&snap).contains(&"stale-two"));
 }
 
@@ -241,8 +284,16 @@ fn tag_create_delete_round_trip() {
     let state = AppState::default();
     let (dir, id, c0) = fixture_repo(&state);
 
-    block_on(create_tag_inner(&state, &id, "light".into(), c0.clone(), None, false, None))
-        .expect("lightweight tag");
+    block_on(create_tag_inner(
+        &state,
+        &id,
+        "light".into(),
+        c0.clone(),
+        None,
+        false,
+        None,
+    ))
+    .expect("lightweight tag");
     block_on(create_tag_inner(
         &state,
         &id,
@@ -253,12 +304,24 @@ fn tag_create_delete_round_trip() {
         None,
     ))
     .expect("annotated tag");
-    block_on(create_tag_inner(&state, &id, "v1.0-ünïcode".into(), c0.clone(), None, false, None))
-        .expect("unicode tag name");
+    block_on(create_tag_inner(
+        &state,
+        &id,
+        "v1.0-ünïcode".into(),
+        c0.clone(),
+        None,
+        false,
+        None,
+    ))
+    .expect("unicode tag name");
 
     let snap = block_on(list_branches_inner(&state, &id)).expect("list");
     for t in ["light", "ann", "v1.0-ünïcode"] {
-        assert!(snap.tags.iter().any(|x| x == t), "tag {t} listed: {:?}", snap.tags);
+        assert!(
+            snap.tags.iter().any(|x| x == t),
+            "tag {t} listed: {:?}",
+            snap.tags
+        );
     }
     // The annotated one is a real tag object.
     let repo = git2::Repository::open(dir.path()).expect("open");
@@ -266,15 +329,31 @@ fn tag_create_delete_round_trip() {
     assert_eq!(obj.kind(), Some(git2::ObjectType::Tag));
 
     // Duplicate, non-force.
-    let err = block_on(create_tag_inner(&state, &id, "light".into(), c0.clone(), None, false, None))
-        .expect_err("duplicate tag");
+    let err = block_on(create_tag_inner(
+        &state,
+        &id,
+        "light".into(),
+        c0.clone(),
+        None,
+        false,
+        None,
+    ))
+    .expect_err("duplicate tag");
     match err {
         AppError::Git(m) => assert!(m.contains("already exists"), "{m}"),
         other => panic!("expected Git(exists), got {other:?}"),
     }
     // Invalid name.
-    let err = block_on(create_tag_inner(&state, &id, "-bad".into(), c0.clone(), None, false, None))
-        .expect_err("invalid tag name");
+    let err = block_on(create_tag_inner(
+        &state,
+        &id,
+        "-bad".into(),
+        c0.clone(),
+        None,
+        false,
+        None,
+    ))
+    .expect_err("invalid tag name");
     assert!(matches!(err, AppError::InvalidName(_)), "{err:?}");
 
     // Delete happy + missing.
@@ -300,21 +379,51 @@ fn push_tag_to_file_remote() {
     git2::Repository::init_bare(bare_dir.path()).expect("init bare");
     {
         let repo = git2::Repository::open(dir.path()).expect("open");
-        repo.remote("origin", &file_url(bare_dir.path())).expect("remote add");
+        repo.remote("origin", &file_url(bare_dir.path()))
+            .expect("remote add");
     }
 
-    block_on(create_tag_inner(&state, &id, "rel".into(), c0.clone(), Some("m".into()), false, None))
-        .expect("create tag");
-    block_on(push_tag_inner(&state, &id, "origin".into(), "rel".into(), false))
-        .expect("push tag to bare file:// remote");
+    block_on(create_tag_inner(
+        &state,
+        &id,
+        "rel".into(),
+        c0.clone(),
+        Some("m".into()),
+        false,
+        None,
+    ))
+    .expect("create tag");
+    block_on(push_tag_inner(
+        &state,
+        &id,
+        "origin".into(),
+        "rel".into(),
+        false,
+    ))
+    .expect("push tag to bare file:// remote");
 
     let bare = git2::Repository::open_bare(bare_dir.path()).expect("open bare");
-    assert!(bare.find_reference("refs/tags/rel").is_ok(), "tag arrived in the remote");
+    assert!(
+        bare.find_reference("refs/tags/rel").is_ok(),
+        "tag arrived in the remote"
+    );
 
-    let err = block_on(push_tag_inner(&state, &id, "nosuch".into(), "rel".into(), false))
-        .expect_err("missing remote");
+    let err = block_on(push_tag_inner(
+        &state,
+        &id,
+        "nosuch".into(),
+        "rel".into(),
+        false,
+    ))
+    .expect_err("missing remote");
     assert!(matches!(err, AppError::NoRemote(_)), "{err:?}");
-    let err = block_on(push_tag_inner(&state, &id, "origin".into(), "ghost".into(), false))
-        .expect_err("missing local tag");
+    let err = block_on(push_tag_inner(
+        &state,
+        &id,
+        "origin".into(),
+        "ghost".into(),
+        false,
+    ))
+    .expect_err("missing local tag");
     assert!(matches!(err, AppError::Git(_)), "{err:?}");
 }

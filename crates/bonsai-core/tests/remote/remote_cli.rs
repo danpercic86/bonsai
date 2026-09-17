@@ -17,11 +17,11 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use crate::common::{commit_fixed, git, git_ok};
 use bonsai_core::error::AppError;
 use bonsai_core::git::exec::SpawnGitExec;
 use bonsai_core::git::remote::{fetch_all, pull_ff, push_current, PullResult, PushResult};
-use crate::common;
-use crate::common::{commit_fixed, git, git_ok};
 
 macro_rules! require_git {
     () => {
@@ -57,7 +57,10 @@ fn clone_from_bare(root: &Path, bare: &Path, name: &str) -> PathBuf {
     // machine's *global* core.autocrlf=true (else the worktree is CRLF while the
     // index is LF, and the post-clone `configure_identity` autocrlf=false flip makes
     // `git status` report spurious modifications — breaking the FF-pull CLI oracle).
-    git(root, &["-c", "core.autocrlf=false", "clone", &path_str(bare), name]);
+    git(
+        root,
+        &["-c", "core.autocrlf=false", "clone", &path_str(bare), name],
+    );
     let dir = root.join(name);
     configure_identity(&dir);
     dir
@@ -128,7 +131,10 @@ fn fetch_updates_remote_tracking_ref() {
     assert_eq!(res.remotes.len(), 1);
     assert_eq!(res.remotes[0].remote, "origin");
     assert!(res.remotes[0].updated_refs >= 1, "expected updated refs");
-    assert!(res.remotes[0].received_objects > 0, "expected received objects");
+    assert!(
+        res.remotes[0].received_objects > 0,
+        "expected received objects"
+    );
     assert_eq!(rev_parse(&f.work, "refs/remotes/origin/main"), bare_tip);
 
     git(&twin, &["fetch"]);
@@ -184,7 +190,10 @@ fn fetch_covers_all_remotes_in_order() {
         .flatten()
         .map(str::to_string)
         .collect();
-    assert_eq!(names, expected.iter().map(String::as_str).collect::<Vec<_>>());
+    assert_eq!(
+        names,
+        expected.iter().map(String::as_str).collect::<Vec<_>>()
+    );
     assert_eq!(expected.len(), 2);
 }
 
@@ -291,7 +300,10 @@ fn pull_diverged_reports_and_changes_nothing() {
         other => panic!("expected WouldNotFastForward, got {other:?}"),
     }
     assert_eq!(rev_parse(&f.work, "main"), tip_before, "ref must not move");
-    assert!(!f.work.join("upstream.txt").exists(), "worktree must not change");
+    assert!(
+        !f.work.join("upstream.txt").exists(),
+        "worktree must not change"
+    );
     assert_eq!(git(&f.work, &["status", "--porcelain"]), porcelain_before);
     assert_eq!(
         rev_parse(&f.work, "refs/remotes/origin/main"),
@@ -350,7 +362,10 @@ fn pull_detached_and_unborn_are_guarded() {
     }
 
     let unborn = common::init_repo();
-    git(unborn.path(), &["remote", "add", "origin", &path_str(&f.bare)]);
+    git(
+        unborn.path(),
+        &["remote", "add", "origin", &path_str(&f.bare)],
+    );
     let err = pull_ff(unborn.path()).expect_err("unborn pull");
     match err {
         AppError::Git(m) => assert_eq!(m, "cannot pull: the repository has no commits yet"),
@@ -372,7 +387,11 @@ fn push_updates_bare_and_tracking_ref() {
 
     let res = push_current(&f.work, &SpawnGitExec, false).expect("push");
     match res {
-        PushResult::Pushed { remote, branch, set_upstream } => {
+        PushResult::Pushed {
+            remote,
+            branch,
+            set_upstream,
+        } => {
             assert_eq!(remote, "origin");
             assert_eq!(branch, "main");
             assert!(!set_upstream, "upstream was already configured");
@@ -408,7 +427,10 @@ fn pre_push_hook_blocks_push_current() {
     let base = rev_parse(&f.bare, "main");
     local_commit(&f.work, "feature.txt", "feat\n", "feature work");
 
-    common::write_pre_push_hook(&f.work, "read line\necho \"pre-push saw: $line\" >&2\nexit 1\n");
+    common::write_pre_push_hook(
+        &f.work,
+        "read line\necho \"pre-push saw: $line\" >&2\nexit 1\n",
+    );
 
     let err = push_current(&f.work, &SpawnGitExec, false).expect_err("pre-push must block");
     match err {
@@ -420,7 +442,11 @@ fn pre_push_hook_blocks_push_current() {
         other => panic!("expected HookRejected, got {other:?}"),
     }
     // Oracle: the push never happened — bare main unchanged.
-    assert_eq!(rev_parse(&f.bare, "main"), base, "bare main must be unchanged");
+    assert_eq!(
+        rev_parse(&f.bare, "main"),
+        base,
+        "bare main must be unchanged"
+    );
 }
 
 /// P59a-2: `skip_hooks = true` (≡ --no-verify) bypasses a failing pre-push — the
@@ -439,7 +465,11 @@ fn pre_push_hook_skipped_allows_push_current() {
 
     let res = push_current(&f.work, &SpawnGitExec, true).expect("skip_hooks bypasses pre-push");
     assert!(matches!(res, PushResult::Pushed { .. }), "got {res:?}");
-    assert_eq!(rev_parse(&f.bare, "main"), tip, "bare main must advance when hook skipped");
+    assert_eq!(
+        rev_parse(&f.bare, "main"),
+        tip,
+        "bare main must advance when hook skipped"
+    );
 }
 
 /// §6.3.2: an immediate second push is UpToDate (local short-circuit).
@@ -472,7 +502,11 @@ fn push_without_upstream_sets_upstream() {
 
     let res = push_current(&f.work, &SpawnGitExec, false).expect("push");
     match res {
-        PushResult::Pushed { remote, branch, set_upstream } => {
+        PushResult::Pushed {
+            remote,
+            branch,
+            set_upstream,
+        } => {
             assert_eq!(remote, "origin");
             assert_eq!(branch, "topic");
             assert!(set_upstream, "must report the upstream was set");
@@ -481,7 +515,10 @@ fn push_without_upstream_sets_upstream() {
     }
     assert_eq!(rev_parse(&f.bare, "refs/heads/topic"), tip);
     assert_eq!(git(&f.work, &["config", "branch.topic.remote"]), "origin");
-    assert_eq!(git(&f.work, &["config", "branch.topic.merge"]), "refs/heads/topic");
+    assert_eq!(
+        git(&f.work, &["config", "branch.topic.merge"]),
+        "refs/heads/topic"
+    );
     assert_eq!(rev_parse(&f.work, "refs/remotes/origin/topic"), tip);
 }
 
@@ -514,7 +551,11 @@ fn push_non_fast_forward_is_rejected_and_bare_unchanged() {
         AppError::PushRejected(m) => assert!(!m.is_empty(), "message must not be empty"),
         other => panic!("expected PushRejected, got {other:?}"),
     }
-    assert_eq!(rev_parse(&f.bare, "main"), bare_before, "bare must be unchanged");
+    assert_eq!(
+        rev_parse(&f.bare, "main"),
+        bare_before,
+        "bare must be unchanged"
+    );
 
     assert!(
         !git_ok(&f.work, &["push"]),
@@ -535,7 +576,10 @@ fn push_detached_and_unborn_are_guarded() {
     }
 
     let unborn = common::init_repo();
-    git(unborn.path(), &["remote", "add", "origin", &path_str(&f.bare)]);
+    git(
+        unborn.path(),
+        &["remote", "add", "origin", &path_str(&f.bare)],
+    );
     let err = push_current(unborn.path(), &SpawnGitExec, false).expect_err("unborn push");
     match err {
         AppError::Git(m) => assert_eq!(m, "cannot push: the repository has no commits yet"),

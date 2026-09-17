@@ -14,7 +14,12 @@ fn create_delete_stash_merge_resolution() {
     let (dir, a, b) = linear_repo();
     let p = dir.path();
     let repo = git2::Repository::open(p).expect("open");
-    let head_branch = repo.head().expect("head").shorthand().expect("sh").to_string();
+    let head_branch = repo
+        .head()
+        .expect("head")
+        .shorthand()
+        .expect("sh")
+        .to_string();
 
     // createBranch at HEAD (at_oid = None), Safe.
     let op = expect_proposed(
@@ -184,17 +189,18 @@ fn model_echoes_are_sanitized() {
     let repo = git2::Repository::open(dir.path()).expect("open");
 
     // Unsupported.reason passthrough: controls + bidi stripped, capped.
-    let evil = format!(
-        "run\u{202e}\x1b[31m rm -rf\n{}",
-        "A".repeat(500)
-    );
+    let evil = format!("run\u{202e}\x1b[31m rm -rf\n{}", "A".repeat(500));
     let reason = expect_unsupported(
         resolve_intent(&repo, AiOpIntent::Unsupported { reason: evil }, None).expect("Ok"),
     );
     assert!(!reason.contains('\u{202e}'), "bidi stripped: {reason:?}");
     assert!(!reason.contains('\x1b'), "ESC stripped: {reason:?}");
     assert!(!reason.contains('\n'), "newline replaced: {reason:?}");
-    assert!(reason.chars().count() <= 201, "capped: {}", reason.chars().count());
+    assert!(
+        reason.chars().count() <= 201,
+        "capped: {}",
+        reason.chars().count()
+    );
     assert!(reason.ends_with('…'), "truncation marker present");
 
     // Branch echo in an Unsupported message: bidi/control chars removed.
@@ -208,7 +214,10 @@ fn model_echoes_are_sanitized() {
         )
         .expect("Ok"),
     );
-    assert!(reason.contains("'ghost'"), "sanitized echo, got: {reason:?}");
+    assert!(
+        reason.contains("'ghost'"),
+        "sanitized echo, got: {reason:?}"
+    );
 
     // Commit echo: a non-hex spec is gated (F-A2-2) and echoed sanitized.
     let reason = expect_unsupported(
@@ -222,5 +231,8 @@ fn model_echoes_are_sanitized() {
         )
         .expect("Ok"),
     );
-    assert!(reason.contains("'HEAD~1 '"), "sanitized echo, got: {reason:?}");
+    assert!(
+        reason.contains("'HEAD~1 '"),
+        "sanitized echo, got: {reason:?}"
+    );
 }

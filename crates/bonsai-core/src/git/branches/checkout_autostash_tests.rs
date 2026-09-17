@@ -19,11 +19,13 @@ use crate::git::stash::{list_stashes, ApplyStashOutcome};
 /// relying on `init.defaultBranch` — libgit2 falls back to "master" when
 /// that config is unset, which this module's "main" assertions assume.
 fn ca_init(dir: &Path) -> git2::Repository {
-    let repo = git2::Repository::init_opts(dir, git2::RepositoryInitOptions::new().initial_head("main"))
-        .expect("init repo");
+    let repo =
+        git2::Repository::init_opts(dir, git2::RepositoryInitOptions::new().initial_head("main"))
+            .expect("init repo");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     drop(cfg);
     repo
@@ -61,8 +63,15 @@ fn ca_commit_on_ref(
         tb.insert(name, blob, 0o100644).expect("insert");
     }
     let tree = repo.find_tree(tb.write().expect("tree oid")).expect("tree");
-    repo.commit(Some(refname), &sig, &sig, &format!("{msg}\n"), &tree, &[parent])
-        .expect("commit on ref")
+    repo.commit(
+        Some(refname),
+        &sig,
+        &sig,
+        &format!("{msg}\n"),
+        &tree,
+        &[parent],
+    )
+    .expect("commit on ref")
 }
 
 fn ca_find_commit<'a>(repo: &'a git2::Repository, oid: git2::Oid) -> git2::Commit<'a> {
@@ -266,7 +275,11 @@ fn ca_3_dirty_conflicting_reapply_retains_stash() {
         "conflicting carry-over reports Conflicts on a.txt as a SUCCESS"
     );
 
-    assert_eq!(ca_head_branch(d).as_deref(), Some("feat"), "switch happened");
+    assert_eq!(
+        ca_head_branch(d).as_deref(),
+        Some("feat"),
+        "switch happened"
+    );
 
     let repo = git2::Repository::open(d).expect("reopen");
     assert!(
@@ -459,7 +472,11 @@ fn ca_6_no_upstream_no_ff() {
         "no upstream → no FF, switch still succeeds"
     );
     assert_eq!(ca_head_branch(d).as_deref(), Some("feat"));
-    assert_eq!(ca_branch_tip(d, "feat"), feat_tip.to_string(), "ref unchanged");
+    assert_eq!(
+        ca_branch_tip(d, "feat"),
+        feat_tip.to_string(),
+        "ref unchanged"
+    );
 }
 
 // ------------------------------- Case 7: FF + carried stash ordering (AC11)
@@ -515,7 +532,11 @@ fn ca_7_ff_plus_carried_stash_ordering() {
         "u1\n",
         "FF tip's file present under the restored work"
     );
-    assert_eq!(ca_read(d, "a.txt"), "edited\n", "carried edit on top of FF tip");
+    assert_eq!(
+        ca_read(d, "a.txt"),
+        "edited\n",
+        "carried edit on top of FF tip"
+    );
     assert_eq!(
         list_stashes(d).expect("list").len(),
         0,
@@ -704,7 +725,10 @@ fn cbh_autostash_refuses_branch_in_other_worktree() {
     let err = checkout_branch_autostash(d, "feature").expect_err("must refuse");
     match &err {
         AppError::BranchCheckedOutElsewhere(m) => {
-            assert!(m.contains("already checked out at"), "git-like message: {m}");
+            assert!(
+                m.contains("already checked out at"),
+                "git-like message: {m}"
+            );
             assert!(
                 m.contains(&created.abs_path),
                 "message names the linked worktree path ({}): {m}",
@@ -780,7 +804,10 @@ fn checkout_branch_refuses_branch_in_other_worktree() {
     let err = checkout_branch(d, "feature").expect_err("must refuse");
     match &err {
         AppError::BranchCheckedOutElsewhere(m) => {
-            assert!(m.contains("already checked out at"), "git-like message: {m}");
+            assert!(
+                m.contains("already checked out at"),
+                "git-like message: {m}"
+            );
             assert!(m.contains(&created.abs_path), "names the worktree: {m}");
         }
         other => panic!("expected BranchCheckedOutElsewhere, got {other:?}"),

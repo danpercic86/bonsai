@@ -29,14 +29,17 @@ fn fixture() -> tempfile::TempDir {
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
         cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     }
     std::fs::write(dir.path().join("a.txt"), "base\n").expect("write");
     let mut index = repo.index().expect("index");
     index.add_path(Path::new("a.txt")).expect("add");
     index.write().expect("write index");
-    let tree = repo.find_tree(index.write_tree().expect("tree")).expect("find tree");
+    let tree = repo
+        .find_tree(index.write_tree().expect("tree"))
+        .expect("find tree");
     let sig = git2::Signature::now("Test User", "test@example.com").expect("sig");
     let head = repo
         .commit(Some("HEAD"), &sig, &sig, "C0", &tree, &[])
@@ -55,7 +58,10 @@ fn run_round(id: &str, gen: u64, path: &Path, perf: &PerfState) {
     with_repo(id, gen, path, perf, list_refs_with).expect("refs");
     with_repo(id, gen, path, perf, list_worktrees_with).expect("worktrees");
     with_repo_mut(id, gen, path, perf, list_stashes_with).expect("stashes");
-    with_repo_mut(id, gen, path, perf, |r| graph_seed_with(r, &GraphFilter::default()).map(|_| ())).expect("seed");
+    with_repo_mut(id, gen, path, perf, |r| {
+        graph_seed_with(r, &GraphFilter::default()).map(|_| ())
+    })
+    .expect("seed");
 }
 
 /// Drive a graph stream through `with_repo_mut_timed` (the FU-B2c seam), the
@@ -67,29 +73,38 @@ fn graph_chunks_timed(id: &str, gen: u64, path: &Path, perf: &Arc<PerfState>) ->
     let cache: Arc<GraphCache> = Arc::new(Mutex::new(None));
     let (tx, rx) = std::sync::mpsc::channel::<GraphChunk>();
     let perf_walk = perf.clone();
-    with_repo_mut_timed("stream_graph", id, gen, path, perf, move |progress, repo| {
-        let mut recorder =
-            crate::obs::phase::PhaseRecorder::start(crate::obs::phase::OP_GRAPH_GET);
-        crate::graph_cache::stream_graph_cached_with(
-            repo,
-            &cache,
-            &perf_walk,
-            &GraphFilter::default(),
-            &mut recorder,
-            |chunk| {
-                progress.tick();
-                tx.send(chunk).is_ok()
-            },
-        )
-    })
+    with_repo_mut_timed(
+        "stream_graph",
+        id,
+        gen,
+        path,
+        perf,
+        move |progress, repo| {
+            let mut recorder =
+                crate::obs::phase::PhaseRecorder::start(crate::obs::phase::OP_GRAPH_GET);
+            crate::graph_cache::stream_graph_cached_with(
+                repo,
+                &cache,
+                &perf_walk,
+                &GraphFilter::default(),
+                &mut recorder,
+                |chunk| {
+                    progress.tick();
+                    tx.send(chunk).is_ok()
+                },
+            )
+        },
+    )
     .expect("graph stream");
     rx.into_iter().collect()
 }
 
 /// Status via the FU-B2c timed seam (single-shot: no tick).
 fn status_timed(id: &str, gen: u64, path: &Path, perf: &Arc<PerfState>) -> StatusSnapshot {
-    with_repo_timed("read_status", id, gen, path, perf, move |_p, repo| read_status_with(repo))
-        .expect("status")
+    with_repo_timed("read_status", id, gen, path, perf, move |_p, repo| {
+        read_status_with(repo)
+    })
+    .expect("status")
 }
 
 /// AC-b1 (DIRECT / list-command path): N routed reads on a cold thread share
@@ -109,8 +124,14 @@ fn ac_b1_round_shares_one_open_warm_round_zero() {
     run_round(id, 1, dir.path(), &perf);
     let warm = perf.snapshot().repo_opens;
 
-    assert_eq!(cold, 1, "5 direct reads must share ONE open on a cold thread");
-    assert_eq!(warm, 0, "a warm round (same thread + generation) re-opens nothing");
+    assert_eq!(
+        cold, 1,
+        "5 direct reads must share ONE open on a cold thread"
+    );
+    assert_eq!(
+        warm, 0,
+        "a warm round (same thread + generation) re-opens nothing"
+    );
 }
 
 /// FU-B2c AC-(a) (status seam): calling `with_repo_timed`(read_status) THEN
@@ -136,8 +157,14 @@ fn fu_b2c_status_reuses_across_rounds() {
     let _ = graph_chunks_timed(id, 1, dir.path(), &perf);
     let warm = perf.snapshot().repo_opens;
 
-    assert_eq!(cold, 1, "status+graph on the same thread+gen share ONE handle (cold)");
-    assert_eq!(warm, 0, "a warm round reuses the cached handle across rounds");
+    assert_eq!(
+        cold, 1,
+        "status+graph on the same thread+gen share ONE handle (cold)"
+    );
+    assert_eq!(
+        warm, 0,
+        "a warm round reuses the cached handle across rounds"
+    );
 }
 
 /// FU-B2c AC-(a) (graph seam): `with_repo_mut_timed`(graph) reuses its handle
@@ -158,7 +185,10 @@ fn fu_b2c_graph_reuses_across_rounds() {
     let warm = perf.snapshot().repo_opens;
 
     assert_eq!(cold, 1, "cold graph round opens ONE handle");
-    assert_eq!(warm, 0, "a warm graph round reuses the cached handle across rounds");
+    assert_eq!(
+        warm, 0,
+        "a warm graph round reuses the cached handle across rounds"
+    );
 }
 
 /// FU-B2c AC-(b): a hanging closure through the timed wrapper (tiny deadline)
@@ -190,7 +220,11 @@ fn fu_b2c_timeout_abandons_handle_and_next_call_reopens() {
         }
         other => panic!("expected Git timeout error, got {other:?}"),
     }
-    assert_eq!(perf.snapshot().repo_opens, 1, "the hanging call opened once (miss)");
+    assert_eq!(
+        perf.snapshot().repo_opens,
+        1,
+        "the hanging call opened once (miss)"
+    );
 
     // The abandoned handle must NOT be in the cache ⇒ the next call reopens.
     perf.reset();
@@ -212,15 +246,27 @@ fn fu_b2c_generation_evict_timed() {
 
     let _ = status_timed(id, 1, dir.path(), &perf);
     let _ = status_timed(id, 1, dir.path(), &perf);
-    assert_eq!(perf.snapshot().repo_opens, 1, "gen 1: one open then reuse (timed)");
+    assert_eq!(
+        perf.snapshot().repo_opens,
+        1,
+        "gen 1: one open then reuse (timed)"
+    );
 
     perf.reset();
     let _ = status_timed(id, 2, dir.path(), &perf);
-    assert_eq!(perf.snapshot().repo_opens, 1, "generation bump reopens (timed)");
+    assert_eq!(
+        perf.snapshot().repo_opens,
+        1,
+        "generation bump reopens (timed)"
+    );
 
     perf.reset();
     let _ = status_timed(id, 2, dir.path(), &perf);
-    assert_eq!(perf.snapshot().repo_opens, 0, "gen 2 handle reused after reopen (timed)");
+    assert_eq!(
+        perf.snapshot().repo_opens,
+        0,
+        "gen 2 handle reused after reopen (timed)"
+    );
 }
 
 /// FU-B2c AC-(d) (status): `StatusSnapshot` from `with_repo_timed` is byte-
@@ -289,7 +335,11 @@ fn ac_b3_generation_bump_forces_reopen() {
 
     perf.reset();
     with_repo(id, 2, dir.path(), &perf, read_status_with).expect("gen2 b");
-    assert_eq!(perf.snapshot().repo_opens, 0, "gen 2 handle reused after reopen");
+    assert_eq!(
+        perf.snapshot().repo_opens,
+        0,
+        "gen 2 handle reused after reopen"
+    );
 }
 
 /// AC-b5: status through a REUSED handle after an EXTERNAL index write (via a
@@ -320,7 +370,10 @@ fn ac_b5_status_reused_handle_sees_external_index_write() {
         s2, fresh,
         "reused handle must equal a fresh open after an external index write"
     );
-    assert_ne!(s1, s2, "the external stage must be visible through the reused handle");
+    assert_ne!(
+        s1, s2,
+        "the external stage must be visible through the reused handle"
+    );
     assert!(
         s2.staged.iter().any(|e| e.path == "new.txt"),
         "new.txt must show as STAGED (not untracked) ⇒ index was reloaded"
@@ -341,8 +394,14 @@ fn ac_b5_refs_reused_handle_sees_external_branch() {
 
     {
         let repo2 = git2::Repository::open(path).expect("open 2");
-        let head = repo2.head().expect("head").peel_to_commit().expect("commit");
-        repo2.branch("externally-added", &head, false).expect("branch");
+        let head = repo2
+            .head()
+            .expect("head")
+            .peel_to_commit()
+            .expect("commit");
+        repo2
+            .branch("externally-added", &head, false)
+            .expect("branch");
         // `head` (borrows `repo2`) drops at the end of this block, before `repo2`.
     }
 

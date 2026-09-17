@@ -23,23 +23,24 @@ fn isolation_independent_status_and_commit() {
     write_stage_commit(&state, &id_a, dir_a.path(), "a.txt", "hello", "first in A");
 
     // A now has one commit; its status is clean.
-    let graph_a = tauri::async_runtime::block_on(get_graph_inner(&state, &id_a, None))
-        .expect("graph A");
+    let graph_a =
+        tauri::async_runtime::block_on(get_graph_inner(&state, &id_a, None)).expect("graph A");
     assert_eq!(graph_a.nodes.len(), 1, "A should have exactly one commit");
-    let status_a = tauri::async_runtime::block_on(get_status_inner(&state, &id_a))
-        .expect("status A");
+    let status_a =
+        tauri::async_runtime::block_on(get_status_inner(&state, &id_a)).expect("status A");
     assert!(status_a.staged.is_empty() && status_a.unstaged.is_empty());
 
     // B is untouched: still unborn, empty graph, no files.
-    let graph_b = tauri::async_runtime::block_on(get_graph_inner(&state, &id_b, None))
-        .expect("graph B");
-    assert!(graph_b.nodes.is_empty(), "B must be unaffected by a commit in A");
-    let status_b = tauri::async_runtime::block_on(get_status_inner(&state, &id_b))
-        .expect("status B");
+    let graph_b =
+        tauri::async_runtime::block_on(get_graph_inner(&state, &id_b, None)).expect("graph B");
     assert!(
-        status_b.staged.is_empty()
-            && status_b.unstaged.is_empty()
-            && status_b.untracked.is_empty(),
+        graph_b.nodes.is_empty(),
+        "B must be unaffected by a commit in A"
+    );
+    let status_b =
+        tauri::async_runtime::block_on(get_status_inner(&state, &id_b)).expect("status B");
+    assert!(
+        status_b.staged.is_empty() && status_b.unstaged.is_empty() && status_b.untracked.is_empty(),
         "B working dir must be empty"
     );
 }
@@ -59,22 +60,22 @@ fn isolation_independent_branches_and_op_state() {
     tauri::async_runtime::block_on(create_branch_inner(&state, &id_a, "x".to_string()))
         .expect("create branch x in A");
 
-    let branches_a = tauri::async_runtime::block_on(list_branches_inner(&state, &id_a))
-        .expect("branches A");
+    let branches_a =
+        tauri::async_runtime::block_on(list_branches_inner(&state, &id_a)).expect("branches A");
     assert!(
         branches_a.local.iter().any(|b| b.name == "x"),
         "A must have branch x"
     );
 
-    let branches_b = tauri::async_runtime::block_on(list_branches_inner(&state, &id_b))
-        .expect("branches B");
+    let branches_b =
+        tauri::async_runtime::block_on(list_branches_inner(&state, &id_b)).expect("branches B");
     assert!(
         !branches_b.local.iter().any(|b| b.name == "x"),
         "B must NOT have branch x"
     );
 
-    let op_b = tauri::async_runtime::block_on(get_op_state_inner(&state, &id_b))
-        .expect("op-state B");
+    let op_b =
+        tauri::async_runtime::block_on(get_op_state_inner(&state, &id_b)).expect("op-state B");
     assert_eq!(op_b, RepoOpState::None, "B op-state must stay None");
 }
 
@@ -124,11 +125,9 @@ fn isolation_focus_dedupe_on_reopen() {
     #[cfg(any(windows, target_os = "macos"))]
     {
         let variant = path_string(dir_a.path()).to_uppercase();
-        let cased = tauri::async_runtime::block_on(open_repo_inner(
-            &state,
-            variant,
-            |_id| Box::new(|_class| {}),
-        ))
+        let cased = tauri::async_runtime::block_on(open_repo_inner(&state, variant, |_id| {
+            Box::new(|_class| {})
+        }))
         .expect("re-open A (case-variant)")
         .repo_id;
         assert_eq!(
@@ -170,12 +169,26 @@ fn start_conflicting_merge(state: &AppState, id: &str, dir: &std::path::Path) ->
         .expect("create topic");
     tauri::async_runtime::block_on(checkout_branch_inner(state, id, "topic".to_string()))
         .expect("checkout topic");
-    write_stage_commit(state, id, dir, "a.txt", "line1\ntopic\nline3\n", "topic change");
+    write_stage_commit(
+        state,
+        id,
+        dir,
+        "a.txt",
+        "line1\ntopic\nline3\n",
+        "topic change",
+    );
 
     // Back on the base branch: a conflicting edit to the same line.
     tauri::async_runtime::block_on(checkout_branch_inner(state, id, base_branch.clone()))
         .expect("checkout base branch");
-    write_stage_commit(state, id, dir, "a.txt", "line1\nmain\nline3\n", "main change");
+    write_stage_commit(
+        state,
+        id,
+        dir,
+        "a.txt",
+        "line1\nmain\nline3\n",
+        "main change",
+    );
 
     // Merge topic → guaranteed conflict, repo pauses in Merge state.
     let outcome =
@@ -217,8 +230,8 @@ fn isolation_in_progress_merge_does_not_leak() {
     // Snapshot B before the merge storm in A.
     let branches_b_before = tauri::async_runtime::block_on(list_branches_inner(&state, &id_b))
         .expect("branches B before");
-    let status_b_before = tauri::async_runtime::block_on(get_status_inner(&state, &id_b))
-        .expect("status B before");
+    let status_b_before =
+        tauri::async_runtime::block_on(get_status_inner(&state, &id_b)).expect("status B before");
     let graph_b_before = tauri::async_runtime::block_on(get_graph_inner(&state, &id_b, None))
         .expect("graph B before");
 
@@ -226,14 +239,14 @@ fn isolation_in_progress_merge_does_not_leak() {
     start_conflicting_merge(&state, &id_a, dir_a.path());
 
     // A genuinely reflects the in-progress merge.
-    let op_a = tauri::async_runtime::block_on(get_op_state_inner(&state, &id_a))
-        .expect("op-state A");
+    let op_a =
+        tauri::async_runtime::block_on(get_op_state_inner(&state, &id_a)).expect("op-state A");
     assert!(
         matches!(op_a, RepoOpState::Merge { .. }),
         "A must be paused in a merge, got {op_a:?}"
     );
-    let conflicts_a = tauri::async_runtime::block_on(list_conflicts_inner(&state, &id_a))
-        .expect("conflicts A");
+    let conflicts_a =
+        tauri::async_runtime::block_on(list_conflicts_inner(&state, &id_a)).expect("conflicts A");
     assert!(
         conflicts_a.iter().any(|c| c.path == "a.txt"),
         "A must list a.txt as conflicted, got {conflicts_a:?}"
@@ -241,15 +254,23 @@ fn isolation_in_progress_merge_does_not_leak() {
 
     // B is entirely unaffected: op-state None, and its branches/status/graph
     // are byte-identical to the pre-merge snapshot.
-    let op_b = tauri::async_runtime::block_on(get_op_state_inner(&state, &id_b))
-        .expect("op-state B");
+    let op_b =
+        tauri::async_runtime::block_on(get_op_state_inner(&state, &id_b)).expect("op-state B");
     assert_eq!(op_b, RepoOpState::None, "B op-state must stay None");
 
     let branches_b_after = tauri::async_runtime::block_on(list_branches_inner(&state, &id_b))
         .expect("branches B after");
     assert_eq!(
-        branches_b_after.local.iter().map(|b| b.name.clone()).collect::<Vec<_>>(),
-        branches_b_before.local.iter().map(|b| b.name.clone()).collect::<Vec<_>>(),
+        branches_b_after
+            .local
+            .iter()
+            .map(|b| b.name.clone())
+            .collect::<Vec<_>>(),
+        branches_b_before
+            .local
+            .iter()
+            .map(|b| b.name.clone())
+            .collect::<Vec<_>>(),
         "B's branch set must be unchanged"
     );
     assert!(
@@ -257,11 +278,19 @@ fn isolation_in_progress_merge_does_not_leak() {
         "B must not have gained A's 'topic' branch"
     );
 
-    let status_b_after = tauri::async_runtime::block_on(get_status_inner(&state, &id_b))
-        .expect("status B after");
+    let status_b_after =
+        tauri::async_runtime::block_on(get_status_inner(&state, &id_b)).expect("status B after");
     assert_eq!(
-        (status_b_after.staged.len(), status_b_after.unstaged.len(), status_b_after.untracked.len()),
-        (status_b_before.staged.len(), status_b_before.unstaged.len(), status_b_before.untracked.len()),
+        (
+            status_b_after.staged.len(),
+            status_b_after.unstaged.len(),
+            status_b_after.untracked.len()
+        ),
+        (
+            status_b_before.staged.len(),
+            status_b_before.unstaged.len(),
+            status_b_before.untracked.len()
+        ),
         "B's working-dir status must be unchanged"
     );
 
@@ -306,4 +335,3 @@ fn isolation_close_preserves_other_repos_in_progress_op() {
         "A must still list a.txt as conflicted after closing B, got {conflicts_a:?}"
     );
 }
-

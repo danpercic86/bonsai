@@ -10,10 +10,10 @@
 
 use std::path::Path;
 
-use bonsai_core::error::AppError;
-use bonsai_core::git::stage::{stage_paths, unstage_paths};
 use crate::common;
 use crate::common::{assert_same_status, commit_fixed, git, init_repo, porcelain_records};
+use bonsai_core::error::AppError;
+use bonsai_core::git::stage::{stage_paths, unstage_paths};
 
 macro_rules! require_git {
     () => {
@@ -66,7 +66,10 @@ fn stage_untracked_including_nested() {
 
     assert_same_status(a.path(), b.path());
     let records = porcelain_records(a.path());
-    assert!(records.iter().any(|(r, _)| r == "A  loose.txt"), "{records:?}");
+    assert!(
+        records.iter().any(|(r, _)| r == "A  loose.txt"),
+        "{records:?}"
+    );
     assert!(
         records.iter().any(|(r, _)| r == "A  newdir/nested.txt"),
         "{records:?}"
@@ -139,7 +142,10 @@ fn stage_batch_mixed() {
     });
 
     stage_paths(a.path(), &strings(&["u.txt", "tracked.txt", "other.txt"])).expect("stage_paths");
-    git(b.path(), &["add", "-A", "--", "u.txt", "tracked.txt", "other.txt"]);
+    git(
+        b.path(),
+        &["add", "-A", "--", "u.txt", "tracked.txt", "other.txt"],
+    );
 
     assert_same_status(a.path(), b.path());
     let records = porcelain_records(a.path());
@@ -211,7 +217,10 @@ fn unstage_rename_both_sides() {
     });
 
     unstage_paths(a.path(), &strings(&["tracked.txt", "renamed.txt"])).expect("unstage_paths");
-    git(b.path(), &["restore", "--staged", "--", "tracked.txt", "renamed.txt"]);
+    git(
+        b.path(),
+        &["restore", "--staged", "--", "tracked.txt", "renamed.txt"],
+    );
 
     assert_same_status(a.path(), b.path());
 }

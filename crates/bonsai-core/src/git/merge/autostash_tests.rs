@@ -50,7 +50,11 @@ fn p8_1_not_dirty_ff_unchanged() {
     assert_eq!(repo.state(), git2::RepositoryState::Clean);
     assert_eq!(p8_head_oid(&repo), topic, "HEAD must move to topic tip");
     assert_eq!(p8_read(dir.path(), "feature.txt"), "feature\n");
-    assert_eq!(p8_stash_count(dir.path()), 0, "no stash created on clean FF");
+    assert_eq!(
+        p8_stash_count(dir.path()),
+        0,
+        "no stash created on clean FF"
+    );
 }
 
 // ---- Row 2 (matrix #2): Dirty (unstaged) FF round-trip -----------------
@@ -86,8 +90,7 @@ fn p8_2_dirty_unstaged_ff_round_trip() {
         .to_string();
 
     // Dirty: edit an unrelated tracked file, leave it UNSTAGED.
-    std::fs::write(dir.path().join("unrelated.txt"), "locally edited\n")
-        .expect("edit unrelated");
+    std::fs::write(dir.path().join("unrelated.txt"), "locally edited\n").expect("edit unrelated");
 
     let outcome = merge_branch(dir.path(), "topic", false).expect("merge");
     assert_eq!(
@@ -245,7 +248,10 @@ fn p8_4_dirty_clean_normal_merge() {
     let outcome = merge_branch(dir.path(), "topic", false).expect("merge");
     let oid = match &outcome {
         MergeOutcome::Merged { oid, stashed } => {
-            assert!(*stashed, "clean normal merge over dirty tree must be stashed:true");
+            assert!(
+                *stashed,
+                "clean normal merge over dirty tree must be stashed:true"
+            );
             oid.clone()
         }
         other => panic!("expected Merged, got {other:?}"),

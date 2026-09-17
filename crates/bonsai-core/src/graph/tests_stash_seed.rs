@@ -76,7 +76,8 @@ fn stash_appears_as_own_node() {
         let c1 = commit_file(&repo, "f.txt", "v1", "C1"); // HEAD tip == base
         std::fs::write(dir.path().join("f.txt"), "v2-dirty").expect("dirty");
         let res =
-            crate::git::stash::create_stash(dir.path(), None, crate::git::stash::StashScope::All).expect("create_stash");
+            crate::git::stash::create_stash(dir.path(), None, crate::git::stash::StashScope::All)
+                .expect("create_stash");
         assert!(res.created, "worktree was dirty → a stash must be created");
 
         let l = compute_graph(dir.path()).expect("compute_graph");
@@ -117,8 +118,7 @@ fn stash_appears_as_own_node() {
         // Exactly one edge originates at `sr`, points to the base row, on
         // the stash node's own (offshoot) lane.
         let sr_u = sr as u32;
-        let out_edges: Vec<&GraphEdge> =
-            l.edges.iter().filter(|e| e.from == sr_u).collect();
+        let out_edges: Vec<&GraphEdge> = l.edges.iter().filter(|e| e.from == sr_u).collect();
         assert_eq!(out_edges.len(), 1, "one edge out of the stash node");
         assert_eq!(out_edges[0].to, base_row as u32);
         assert_eq!(out_edges[0].lane, l.nodes[sr].lane, "offshoot lane");
@@ -139,13 +139,17 @@ fn stash_appears_as_own_node() {
         let c1 = commit_file(&repo, "f.txt", "v1", "C1"); // base, HEAD stays
 
         std::fs::write(dir.path().join("f.txt"), "edit-a").expect("dirty a");
-        assert!(crate::git::stash::create_stash(dir.path(), None, crate::git::stash::StashScope::All)
-            .expect("create_stash a")
-            .created); // becomes stash@{1}
+        assert!(
+            crate::git::stash::create_stash(dir.path(), None, crate::git::stash::StashScope::All)
+                .expect("create_stash a")
+                .created
+        ); // becomes stash@{1}
         std::fs::write(dir.path().join("f.txt"), "edit-b").expect("dirty b");
-        assert!(crate::git::stash::create_stash(dir.path(), None, crate::git::stash::StashScope::All)
-            .expect("create_stash b")
-            .created); // stash@{0}
+        assert!(
+            crate::git::stash::create_stash(dir.path(), None, crate::git::stash::StashScope::All)
+                .expect("create_stash b")
+                .created
+        ); // stash@{0}
 
         let l = compute_graph(dir.path()).expect("compute_graph");
 
@@ -207,7 +211,8 @@ fn stash_appears_as_own_node() {
         let x = commit_file(&repo, "f.txt", "vX", "X"); // base-to-be
         std::fs::write(dir.path().join("f.txt"), "vX-dirty").expect("dirty");
         let res =
-            crate::git::stash::create_stash(dir.path(), None, crate::git::stash::StashScope::All).expect("create_stash");
+            crate::git::stash::create_stash(dir.path(), None, crate::git::stash::StashScope::All)
+                .expect("create_stash");
         assert!(res.created);
 
         // Return to main and delete `temp` → X unreachable from any branch.

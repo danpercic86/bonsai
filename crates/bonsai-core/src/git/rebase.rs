@@ -26,7 +26,11 @@ const CONFLICT_MSG: &str =
 
 /// Wire: tagged "kind", camelCase (identical recipe to MergeOutcome, P3c §4).
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum RebaseOutcome {
     /// `onto` is already an ancestor of HEAD (branch already based on it, or
     /// ahead) — nothing to replay. HEAD unmoved.
@@ -57,7 +61,6 @@ pub enum RebaseOutcome {
         total_steps: u32,
     },
 }
-
 
 /// Blocking. Starts a rebase of the current branch onto `onto_name` (local
 /// shorthand "main" OR remote-tracking shorthand "origin/main").

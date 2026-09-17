@@ -8,17 +8,17 @@
 
 use std::path::Path;
 
-use bonsai_core::error::AppError;
-use bonsai_core::git::conflict::resolve_conflict_text;
-use bonsai_core::git::opstate::{read_op_state, RepoOpState};
-use bonsai_core::git::rebase::{rebase_abort, rebase_continue, rebase_skip, RebaseOutcome};
-use bonsai_core::git::rebase_interactive::{start_interactive_rebase, RebaseAction, RebaseTodoOp};
 use crate::common;
 use crate::common::{commit_fixed, git, init_repo};
 use crate::rebase_interactive_support::{
     count_ahead, has_bonsai_dir, read_str, repo_state, require_git, rev, script_conflict,
     symbolic_head, write,
 };
+use bonsai_core::error::AppError;
+use bonsai_core::git::conflict::resolve_conflict_text;
+use bonsai_core::git::opstate::{read_op_state, RepoOpState};
+use bonsai_core::git::rebase::{rebase_abort, rebase_continue, rebase_skip, RebaseOutcome};
+use bonsai_core::git::rebase_interactive::{start_interactive_rebase, RebaseAction, RebaseTodoOp};
 
 // ============================================================ conflict -> continue
 
@@ -38,9 +38,11 @@ fn conflict_pauses_then_continue_completes() {
     }];
 
     let (paths, cur, total) = match start_interactive_rebase(d, &onto, todos).expect("start") {
-        RebaseOutcome::Conflicts { paths, current_step, total_steps } => {
-            (paths, current_step, total_steps)
-        }
+        RebaseOutcome::Conflicts {
+            paths,
+            current_step,
+            total_steps,
+        } => (paths, current_step, total_steps),
         other => panic!("expected Conflicts, got {other:?}"),
     };
     assert_eq!(paths, vec!["a.txt".to_string()]);
@@ -48,11 +50,19 @@ fn conflict_pauses_then_continue_completes() {
     assert_eq!(total, 1);
 
     // The Bonsai sequencer exists and is paused.
-    assert!(has_bonsai_dir(d), ".git/bonsai-rebase/state.json must exist");
+    assert!(
+        has_bonsai_dir(d),
+        ".git/bonsai-rebase/state.json must exist"
+    );
 
     // opstate probe reports Rebase (NOT CherryPick), from the Bonsai file (§4).
     match read_op_state(d).expect("op state") {
-        RepoOpState::Rebase { head_name, onto: onto_field, current_step, total_steps } => {
+        RepoOpState::Rebase {
+            head_name,
+            onto: onto_field,
+            current_step,
+            total_steps,
+        } => {
             assert_eq!(head_name, Some("topic".to_string()));
             assert_eq!(onto_field, Some(onto.clone()));
             assert_eq!(current_step, 1);
@@ -63,8 +73,10 @@ fn conflict_pauses_then_continue_completes() {
 
     // Worktree carries real conflict markers.
     let text = read_str(d, "a.txt");
-    assert!(text.contains("<<<<<<<") && text.contains("=======") && text.contains(">>>>>>>"),
-        "expected conflict markers, got: {text}");
+    assert!(
+        text.contains("<<<<<<<") && text.contains("=======") && text.contains(">>>>>>>"),
+        "expected conflict markers, got: {text}"
+    );
 
     // Continue while conflicts remain -> UnresolvedConflicts.
     assert!(matches!(
@@ -75,7 +87,12 @@ fn conflict_pauses_then_continue_completes() {
     // Resolve by hand + continue -> completes.
     resolve_conflict_text(d, "a.txt", "line1\nresolved\nline3\n").expect("resolve");
     match rebase_continue(d).expect("continue") {
-        RebaseOutcome::Rebased { branch, head, steps, .. } => {
+        RebaseOutcome::Rebased {
+            branch,
+            head,
+            steps,
+            ..
+        } => {
             assert_eq!(branch, "topic");
             assert_eq!(steps, 1);
             assert_eq!(head, rev(d, "HEAD"));
@@ -83,10 +100,22 @@ fn conflict_pauses_then_continue_completes() {
         other => panic!("expected Rebased, got {other:?}"),
     }
 
-    assert_eq!(read_str(d, "a.txt"), "line1\nresolved\nline3\n", "resolved content committed");
-    assert_eq!(rev(d, "HEAD~1"), onto, "replayed commit sits on the onto tip");
+    assert_eq!(
+        read_str(d, "a.txt"),
+        "line1\nresolved\nline3\n",
+        "resolved content committed"
+    );
+    assert_eq!(
+        rev(d, "HEAD~1"),
+        onto,
+        "replayed commit sits on the onto tip"
+    );
     assert_eq!(count_ahead(d, &onto, "HEAD"), 1);
-    assert_eq!(repo_state(d), git2::RepositoryState::Clean, "state Clean after finish");
+    assert_eq!(
+        repo_state(d),
+        git2::RepositoryState::Clean,
+        "state Clean after finish"
+    );
     assert!(!has_bonsai_dir(d), "sequencer removed on finish");
     assert_eq!(symbolic_head(d), "refs/heads/topic");
 }
@@ -120,12 +149,24 @@ fn skip_drops_the_conflicting_op_and_completes() {
     let topic_a = rev(d, "topic~1");
     let topic_other = rev(d, "topic");
     let todos = vec![
-        RebaseTodoOp { oid: topic_a, action: RebaseAction::Pick, new_message: None },
-        RebaseTodoOp { oid: topic_other, action: RebaseAction::Pick, new_message: None },
+        RebaseTodoOp {
+            oid: topic_a,
+            action: RebaseAction::Pick,
+            new_message: None,
+        },
+        RebaseTodoOp {
+            oid: topic_other,
+            action: RebaseAction::Pick,
+            new_message: None,
+        },
     ];
 
     match start_interactive_rebase(d, &onto, todos).expect("start") {
-        RebaseOutcome::Conflicts { paths, current_step, .. } => {
+        RebaseOutcome::Conflicts {
+            paths,
+            current_step,
+            ..
+        } => {
             assert_eq!(paths, vec!["a.txt".to_string()]);
             assert_eq!(current_step, 1, "conflict on the first op");
         }
@@ -141,8 +182,16 @@ fn skip_drops_the_conflicting_op_and_completes() {
     }
 
     // The skipped op is absent: a.txt stays at onto's content; other.txt applied.
-    assert_eq!(read_str(d, "a.txt"), "line1\nmain\nline3\n", "skipped op dropped");
-    assert_eq!(read_str(d, "other.txt"), "other topic\n", "clean op applied");
+    assert_eq!(
+        read_str(d, "a.txt"),
+        "line1\nmain\nline3\n",
+        "skipped op dropped"
+    );
+    assert_eq!(
+        read_str(d, "other.txt"),
+        "other topic\n",
+        "clean op applied"
+    );
     assert_eq!(count_ahead(d, &onto, "HEAD"), 1);
     assert_eq!(rev(d, "HEAD~1"), onto);
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);
@@ -173,11 +222,26 @@ fn abort_restores_the_original_branch_tip() {
 
     rebase_abort(d).expect("abort");
 
-    assert_eq!(symbolic_head(d), "refs/heads/topic", "HEAD re-attached to topic");
-    assert_eq!(rev(d, "topic"), topic_tip, "branch tip byte-identical to pre-rebase");
+    assert_eq!(
+        symbolic_head(d),
+        "refs/heads/topic",
+        "HEAD re-attached to topic"
+    );
+    assert_eq!(
+        rev(d, "topic"),
+        topic_tip,
+        "branch tip byte-identical to pre-rebase"
+    );
     assert_eq!(rev(d, "HEAD"), topic_tip);
-    assert_eq!(read_str(d, "a.txt"), orig_a, "worktree restored to the original tip");
-    assert!(git(d, &["ls-files", "-u"]).is_empty(), "no conflict stages remain");
+    assert_eq!(
+        read_str(d, "a.txt"),
+        orig_a,
+        "worktree restored to the original tip"
+    );
+    assert!(
+        git(d, &["ls-files", "-u"]).is_empty(),
+        "no conflict stages remain"
+    );
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);
     assert!(!has_bonsai_dir(d), "sequencer removed on abort");
 
@@ -230,7 +294,10 @@ fn continue_with_out_of_range_cursor_does_not_panic() {
         other => panic!("expected Rebased, got {other:?}"),
     }
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);
-    assert!(!has_bonsai_dir(d), "sequencer removed after the graceful finish");
+    assert!(
+        !has_bonsai_dir(d),
+        "sequencer removed after the graceful finish"
+    );
 }
 
 // ============================================================ M2 — abort after N commits
@@ -270,15 +337,30 @@ fn abort_after_commits_and_partial_finish_restores_exact_tip() {
     let q = rev(d, "topic~1");
     let c = rev(d, "topic");
     let todos = vec![
-        RebaseTodoOp { oid: p, action: RebaseAction::Pick, new_message: None },
-        RebaseTodoOp { oid: q, action: RebaseAction::Pick, new_message: None },
-        RebaseTodoOp { oid: c, action: RebaseAction::Pick, new_message: None },
+        RebaseTodoOp {
+            oid: p,
+            action: RebaseAction::Pick,
+            new_message: None,
+        },
+        RebaseTodoOp {
+            oid: q,
+            action: RebaseAction::Pick,
+            new_message: None,
+        },
+        RebaseTodoOp {
+            oid: c,
+            action: RebaseAction::Pick,
+            new_message: None,
+        },
     ];
 
     // Two clean commits, then a conflict on the third (committed == 2).
     match start_interactive_rebase(d, &onto, todos).expect("start") {
         RebaseOutcome::Conflicts { current_step, .. } => {
-            assert_eq!(current_step, 3, "paused on the third op after two clean commits");
+            assert_eq!(
+                current_step, 3,
+                "paused on the third op after two clean commits"
+            );
         }
         other => panic!("expected Conflicts, got {other:?}"),
     }
@@ -290,15 +372,26 @@ fn abort_after_commits_and_partial_finish_restores_exact_tip() {
     let rewritten = rev(d, "HEAD");
     assert_ne!(rewritten, original_tip);
     git(d, &["update-ref", "refs/heads/topic", &rewritten]);
-    assert_eq!(rev(d, "topic"), rewritten, "ref moved by the simulated partial finish");
+    assert_eq!(
+        rev(d, "topic"),
+        rewritten,
+        "ref moved by the simulated partial finish"
+    );
 
     // Abort must force the branch ref back to the exact original tip.
     rebase_abort(d).expect("abort");
-    assert_eq!(rev(d, "topic"), original_tip, "abort force-resets the branch ref (M2)");
+    assert_eq!(
+        rev(d, "topic"),
+        original_tip,
+        "abort force-resets the branch ref (M2)"
+    );
     assert_eq!(symbolic_head(d), "refs/heads/topic", "HEAD re-attached");
     assert_eq!(rev(d, "HEAD"), original_tip);
     assert_eq!(read_str(d, "a.txt"), orig_a, "worktree restored");
-    assert!(git(d, &["ls-files", "-u"]).is_empty(), "no conflict stages remain");
+    assert!(
+        git(d, &["ls-files", "-u"]).is_empty(),
+        "no conflict stages remain"
+    );
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);
     assert!(!has_bonsai_dir(d));
 }
@@ -336,7 +429,11 @@ fn skip_making_squash_first_applied_is_refused() {
     let a = rev(d, "topic~1");
     let b = rev(d, "topic");
     let todos = vec![
-        RebaseTodoOp { oid: a, action: RebaseAction::Pick, new_message: None },
+        RebaseTodoOp {
+            oid: a,
+            action: RebaseAction::Pick,
+            new_message: None,
+        },
         RebaseTodoOp {
             oid: b,
             action: RebaseAction::Squash,
@@ -355,7 +452,11 @@ fn skip_making_squash_first_applied_is_refused() {
         other => panic!("expected Git, got {other:?}"),
     }
     // No corruption: the branch tip is unchanged (the ref never moved).
-    assert_eq!(rev(d, "topic"), original_tip, "branch tip must be unchanged");
+    assert_eq!(
+        rev(d, "topic"),
+        original_tip,
+        "branch tip must be unchanged"
+    );
 
     // The engine is still recoverable via abort.
     rebase_abort(d).expect("abort");

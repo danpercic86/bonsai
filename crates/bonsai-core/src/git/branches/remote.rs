@@ -146,10 +146,7 @@ pub fn checkout_remote(workdir: &Path, remote_shorthand: &str) -> Result<(), App
         // Local was strictly behind and the worktree is now at the remote tip:
         // fast-forward the local ref onto it (force-update refs/heads/<name>).
         repo.find_reference(&format!("refs/heads/{local_name}"))?
-            .set_target(
-                remote_tip,
-                "bonsai: fast-forward on remote checkout",
-            )?;
+            .set_target(remote_tip, "bonsai: fast-forward on remote checkout")?;
     }
 
     repo.set_head(&format!("refs/heads/{local_name}"))?;

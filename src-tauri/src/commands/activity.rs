@@ -130,16 +130,24 @@ mod tests {
         let (hub, _log) = hub_with_recorder();
         let saw: Arc<Mutex<Option<bool>>> = Arc::new(Mutex::new(None));
         let saw2 = Arc::clone(&saw);
-        let out: Result<u32, AppError> =
-            tauri::async_runtime::block_on(with_activity(hub, GitActivityCategory::Push, None, move |em| {
+        let out: Result<u32, AppError> = tauri::async_runtime::block_on(with_activity(
+            hub,
+            GitActivityCategory::Push,
+            None,
+            move |em| {
                 let saw2 = saw2.clone();
                 async move {
                     *saw2.lock().expect("lock") = Some(em.is_none());
                     Ok(7)
                 }
-            }));
+            },
+        ));
         assert_eq!(out.ok(), Some(7));
-        assert_eq!(*saw.lock().expect("lock"), Some(true), "no subscriber ⇒ None recorder");
+        assert_eq!(
+            *saw.lock().expect("lock"),
+            Some(true),
+            "no subscriber ⇒ None recorder"
+        );
     }
 
     /// FU-1 §9.5 — with nobody subscribed, `activity_target` must short-circuit
@@ -170,11 +178,8 @@ mod tests {
             GitActivityCategory::Commit,
             GitActivityCategory::Fetch,
         ] {
-            let out = tauri::async_runtime::block_on(activity_target(
-                &state,
-                "bogus-repo",
-                category,
-            ));
+            let out =
+                tauri::async_runtime::block_on(activity_target(&state, "bogus-repo", category));
             assert_eq!(out, None, "inactive hub ⇒ no target ({category:?})");
         }
         // An unknown repo id is equally silent (the op's own `repo_path?` is what
@@ -189,7 +194,10 @@ mod tests {
 
     #[test]
     fn exit_code_map() {
-        assert_eq!(activity_exit_code(&AppError::HookRejected("x".into())), None);
+        assert_eq!(
+            activity_exit_code(&AppError::HookRejected("x".into())),
+            None
+        );
         assert_eq!(activity_exit_code(&AppError::Git("x".into())), Some(1));
         assert_eq!(activity_exit_code(&AppError::NoRepo), Some(1));
     }

@@ -59,9 +59,9 @@ fn read_only_server_rejects_all_mutation_tools_without_side_effect() {
     // Each mutation tool, called directly, is a JSON-RPC "tool not found" error.
     for t in WRITE_TOOLS {
         let resp = c.call_tool(t, json!({}));
-        let err = resp
-            .get("error")
-            .unwrap_or_else(|| panic!("mutation {t} on a read-only server must be a JSON-RPC error, got: {resp}"));
+        let err = resp.get("error").unwrap_or_else(|| {
+            panic!("mutation {t} on a read-only server must be a JSON-RPC error, got: {resp}")
+        });
         assert_eq!(
             err.get("code").and_then(Value::as_i64),
             Some(-32602),

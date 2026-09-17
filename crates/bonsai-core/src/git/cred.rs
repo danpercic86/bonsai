@@ -35,7 +35,10 @@ pub(crate) const GIT_MISSING_MSG: &str = "bonsai: git executable not found";
 /// conflated them, which is the root of the misleading auth toast.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum FillOutcome {
-    Filled { username: String, password: String },
+    Filled {
+        username: String,
+        password: String,
+    },
     /// git ran and exited, but produced no usable username+password (cache
     /// miss, non-zero exit, unparseable output). The pre-P70 `None` meaning.
     NoCredentials,
@@ -215,7 +218,9 @@ pub(crate) fn credential_fill(repo_path: Option<&Path>, url: &str) -> FillOutcom
 
     let (mut username, mut password) = (None, None);
     for line in stdout.lines() {
-        let Some((key, value)) = line.split_once('=') else { continue };
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
         match key {
             "username" => username = Some(value.to_string()),
             "password" => password = Some(value.to_string()),
@@ -294,7 +299,8 @@ pub(crate) fn acquire_cred_with(
                     }
                     let mut a = attempts.borrow_mut();
                     a.helper = HelperState::Done;
-                    a.helper_git_unavailable = Some("no runnable git executable was resolved".to_string());
+                    a.helper_git_unavailable =
+                        Some("no runnable git executable was resolved".to_string());
                     continue;
                 }
                 let bypass = attempts.borrow().helper == HelperState::RetryAllowed;
@@ -330,9 +336,7 @@ pub(crate) fn acquire_cred_with(
                         attempts.borrow_mut().helper = HelperState::Done;
                     }
                     // No cached creds / fill failed (§A.1) -> fall through.
-                    CredResolve::NoCredentials => {
-                        attempts.borrow_mut().helper = HelperState::Done
-                    }
+                    CredResolve::NoCredentials => attempts.borrow_mut().helper = HelperState::Done,
                     // P70: git could NOT be launched (e.g. the resolver's
                     // cached path went stale mid-session). This rung is done,
                     // and we remember that it failed for a launch reason — but
@@ -346,8 +350,7 @@ pub(crate) fn acquire_cred_with(
                 }
             }
             Some(CredMethod::SshAgent) => {
-                if let Ok(cred) =
-                    git2::Cred::ssh_key_from_agent(username_from_url.unwrap_or("git"))
+                if let Ok(cred) = git2::Cred::ssh_key_from_agent(username_from_url.unwrap_or("git"))
                 {
                     return Ok(cred);
                 }
@@ -382,11 +385,7 @@ fn exhausted_error(helper_git_unavailable: Option<&str>) -> git2::Error {
         Some(detail) => format!("{GIT_MISSING_MSG}: {detail}"),
         None => CRED_EXHAUSTED_MSG.to_string(),
     };
-    git2::Error::new(
-        git2::ErrorCode::Auth,
-        git2::ErrorClass::Callback,
-        &message,
-    )
+    git2::Error::new(git2::ErrorCode::Auth, git2::ErrorClass::Callback, &message)
 }
 
 /// Maps a git2 error from a remote operation to an AppError. `context` is the

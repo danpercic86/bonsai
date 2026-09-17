@@ -24,7 +24,11 @@ use crate::git::stage::open_workdir_repo;
 
 /// Wire: tagged "kind", camelCase (identical recipe to `CherrypickOutcome`).
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum RevertOutcome {
     /// Clean revert, auto-committed. `oid` = the new commit.
     /// `stashed` = an autostash was created AND restored for this revert.
@@ -48,7 +52,10 @@ fn revert_message(reverted: &git2::Commit) -> String {
         .lines()
         .next()
         .unwrap_or("");
-    format!("Revert \"{subject}\"\n\nThis reverts commit {}.\n", reverted.id())
+    format!(
+        "Revert \"{subject}\"\n\nThis reverts commit {}.\n",
+        reverted.id()
+    )
 }
 
 /// Shared finalize for the clean path AND `revert_continue`: read the reverted
@@ -116,8 +123,8 @@ pub fn revert_commit(workdir: &Path, oid: &str) -> Result<RevertOutcome, AppErro
     // Validate the oid resolves BEFORE any mutation; the borrow ends here so
     // the later &mut autostash calls are legal (mirrors merge_branch).
     let target_id = {
-        let oid = git2::Oid::from_str(oid)
-            .map_err(|_| AppError::Git("invalid commit id".to_string()))?;
+        let oid =
+            git2::Oid::from_str(oid).map_err(|_| AppError::Git("invalid commit id".to_string()))?;
         repo.find_commit(oid)?.id()
     };
 
@@ -169,7 +176,10 @@ pub fn revert_commit(workdir: &Path, oid: &str) -> Result<RevertOutcome, AppErro
     }
 
     if repo.index()?.has_conflicts() {
-        let paths: Vec<String> = list_conflicts(workdir)?.into_iter().map(|c| c.path).collect();
+        let paths: Vec<String> = list_conflicts(workdir)?
+            .into_iter()
+            .map(|c| c.path)
+            .collect();
         // PAUSE. Do NOT pop — the autostash (if any) is RETAINED on the stack.
         return Ok(RevertOutcome::Conflicts { paths, stashed });
     }
@@ -180,16 +190,14 @@ pub fn revert_commit(workdir: &Path, oid: &str) -> Result<RevertOutcome, AppErro
         other => return Ok(other),
     };
     if let Some(stash) = stash_oid {
-        return Ok(match autostash::pop_after_success(&mut repo, workdir, stash)? {
-            PopResult::Restored => RevertOutcome::Committed {
-                oid,
-                stashed: true,
+        return Ok(
+            match autostash::pop_after_success(&mut repo, workdir, stash)? {
+                PopResult::Restored => RevertOutcome::Committed { oid, stashed: true },
+                PopResult::Conflicted(paths) => {
+                    RevertOutcome::StashPopConflicts { head: oid, paths }
+                }
             },
-            PopResult::Conflicted(paths) => RevertOutcome::StashPopConflicts {
-                head: oid,
-                paths,
-            },
-        });
+        );
     }
     Ok(RevertOutcome::Committed {
         oid,

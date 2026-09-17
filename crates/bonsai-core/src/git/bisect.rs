@@ -44,7 +44,11 @@ pub(crate) struct BisectState {
 /// Outcome of start / mark / skip — drives the banner and any auto-checkout.
 /// Wire: tagged "kind", camelCase (mirrored in TS, contract §5).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum BisectOutcome {
     /// Still searching. `current` is now checked out (detached HEAD).
     Testing {
@@ -88,7 +92,8 @@ use engine::{
 // ---------------------------------------------------------------- helpers
 
 pub(super) fn oid(s: &str) -> Result<git2::Oid, AppError> {
-    git2::Oid::from_str(s).map_err(|_| AppError::Git("corrupt bisect state: invalid oid".to_string()))
+    git2::Oid::from_str(s)
+        .map_err(|_| AppError::Git("corrupt bisect state: invalid oid".to_string()))
 }
 
 /// `ceil(log2(remaining))` — the count-based step estimate. 0 when `remaining`
@@ -166,11 +171,7 @@ pub(super) fn checkout_commit(repo: &git2::Repository, target: git2::Oid) -> Res
 /// ancestors. Detaches HEAD onto the first midpoint. Errors:
 /// OperationInProgress (a bisect/other op is active), Git (unborn / bad oid /
 /// non-ancestor good / same good&bad / degenerate range / dirty worktree).
-pub fn start_bisect(
-    workdir: &Path,
-    bad: &str,
-    good: &[String],
-) -> Result<BisectOutcome, AppError> {
+pub fn start_bisect(workdir: &Path, bad: &str, good: &[String]) -> Result<BisectOutcome, AppError> {
     let repo = open_workdir_repo(workdir)?;
 
     if bisect_in_progress(&repo) {

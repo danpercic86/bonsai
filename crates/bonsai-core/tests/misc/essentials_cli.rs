@@ -11,15 +11,17 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{git, git_env, git_ok, init_repo, FIXED_DATE};
 use bonsai_core::error::AppError;
-use bonsai_core::git::cherrypick::{cherrypick_abort, cherrypick_commit, cherrypick_continue, CherrypickOutcome};
+use bonsai_core::git::cherrypick::{
+    cherrypick_abort, cherrypick_commit, cherrypick_continue, CherrypickOutcome,
+};
 use bonsai_core::git::commit::amend_commit;
 use bonsai_core::git::conflict::resolve_conflict_text;
 use bonsai_core::git::discard::discard_paths;
 use bonsai_core::git::reset::{reset_branch, ResetMode};
 use bonsai_core::git::revert::{revert_abort, revert_commit, revert_continue, RevertOutcome};
-use crate::common;
-use crate::common::{git, git_env, git_ok, init_repo, FIXED_DATE};
 
 macro_rules! require_git {
     () => {
@@ -150,7 +152,11 @@ fn essentials_1b_message_only_amend_matches_cli() {
         &[("GIT_COMMITTER_DATE", "2026-02-02T00:00:00+0000")],
     );
 
-    assert_eq!(tree_oid(a), tree_before, "message-only amend keeps the tree");
+    assert_eq!(
+        tree_oid(a),
+        tree_before,
+        "message-only amend keeps the tree"
+    );
     assert_eq!(tree_oid(a), tree_oid(b), "tree matches the CLI amend");
 }
 
@@ -255,7 +261,11 @@ fn essentials_6_reset_mixed_matches_cli() {
     assert_eq!(head_oid(a), head_oid(b));
     assert_eq!(head_oid(a), target);
     // Mixed: index reset to target; worktree UNCHANGED.
-    assert_eq!(index_tree(a), index_tree(b), "mixed resets the index like CLI");
+    assert_eq!(
+        index_tree(a),
+        index_tree(b),
+        "mixed resets the index like CLI"
+    );
     assert_eq!(read(a, "a.txt"), "three\n", "worktree unchanged by mixed");
     assert_eq!(read(a, "a.txt"), read(b, "a.txt"));
 }
@@ -274,11 +284,22 @@ fn essentials_6_reset_hard_matches_cli() {
     assert_eq!(head_oid(a), head_oid(b));
     assert_eq!(head_oid(a), target);
     // Hard: index + worktree reset to target (a.txt=="one", b.txt gone).
-    assert_eq!(index_tree(a), index_tree(b), "hard resets the index like CLI");
+    assert_eq!(
+        index_tree(a),
+        index_tree(b),
+        "hard resets the index like CLI"
+    );
     assert_eq!(tree_oid(a), tree_oid(b));
-    assert_eq!(read(a, "a.txt"), "one\n", "worktree reset to target content");
+    assert_eq!(
+        read(a, "a.txt"),
+        "one\n",
+        "worktree reset to target content"
+    );
     assert_eq!(read(a, "a.txt"), read(b, "a.txt"));
-    assert!(!a.join("b.txt").exists(), "hard reset removed the later file");
+    assert!(
+        !a.join("b.txt").exists(),
+        "hard reset removed the later file"
+    );
     assert_eq!(a.join("b.txt").exists(), b.join("b.txt").exists());
 }
 
@@ -310,7 +331,11 @@ fn essentials_7_discard_matches_cli() {
     git(b, &["restore", "--worktree", "a.txt"]);
 
     // a.txt restored to the INDEX (staged) version on both.
-    assert_eq!(read(a, "a.txt"), "staged\n", "discard restores to the index version");
+    assert_eq!(
+        read(a, "a.txt"),
+        "staged\n",
+        "discard restores to the index version"
+    );
     assert_eq!(read(a, "a.txt"), read(b, "a.txt"));
     // Staged content preserved (index tree unchanged, identical to CLI).
     assert_eq!(index_tree(a), index_tree(b), "staged content preserved");
@@ -382,7 +407,11 @@ fn essentials_2_cherrypick_clean_matches_cli() {
     }
     git(b, &["cherry-pick", &pick_b]);
 
-    assert_eq!(tree_oid(a), tree_oid(b), "cherry-picked tree must match the CLI");
+    assert_eq!(
+        tree_oid(a),
+        tree_oid(b),
+        "cherry-picked tree must match the CLI"
+    );
     assert_eq!(read(a, "feature.txt"), "feature\n");
 
     let repo = git2::Repository::open(a).expect("open A");
@@ -393,7 +422,11 @@ fn essentials_2_cherrypick_clean_matches_cli() {
         main_a,
         "HEAD advanced onto the former main tip"
     );
-    assert_eq!(head.message().ok(), Some("add feature\n"), "picked message reused");
+    assert_eq!(
+        head.message().ok(),
+        Some("add feature\n"),
+        "picked message reused"
+    );
     assert_eq!(head.author().name().ok(), Some("Test User"));
     assert_eq!(
         head.author().when().seconds(),
@@ -441,7 +474,10 @@ fn essentials_3_cherrypick_conflict_resolve_continue_matches_cli() {
     assert_eq!(repo_state(a), git2::RepositoryState::CherryPick);
 
     // CLI twin: the same cherry-pick conflicts (non-zero exit).
-    assert!(!git_ok(b, &["cherry-pick", &pick_b]), "CLI cherry-pick must conflict");
+    assert!(
+        !git_ok(b, &["cherry-pick", &pick_b]),
+        "CLI cherry-pick must conflict"
+    );
 
     // Both resolve x.txt to the SAME hand-merged content.
     let resolved = "line1\nresolved\nline3\n";
@@ -456,7 +492,11 @@ fn essentials_3_cherrypick_conflict_resolve_continue_matches_cli() {
     git(b, &["add", "x.txt"]);
     git_env(b, &["cherry-pick", "--continue"], &[("GIT_EDITOR", "true")]);
 
-    assert_eq!(tree_oid(a), tree_oid(b), "resolved cherry-pick tree must match CLI");
+    assert_eq!(
+        tree_oid(a),
+        tree_oid(b),
+        "resolved cherry-pick tree must match CLI"
+    );
     assert_eq!(read(a, "x.txt"), resolved);
     assert_eq!(repo_state(a), git2::RepositoryState::Clean);
 }
@@ -490,12 +530,20 @@ fn essentials_4_revert_clean_matches_cli() {
     git(b, &["revert", "--no-edit", &c2_b]);
 
     assert_eq!(tree_oid(a), tree_oid(b), "reverted tree must match the CLI");
-    assert_eq!(read(a, "x.txt"), "base\n", "revert undoes the second commit");
+    assert_eq!(
+        read(a, "x.txt"),
+        "base\n",
+        "revert undoes the second commit"
+    );
 
     let repo = git2::Repository::open(a).expect("open A");
     let head = repo.head().expect("head").peel_to_commit().expect("peel");
     let expected = format!("Revert \"second\"\n\nThis reverts commit {c2_a}.\n");
-    assert_eq!(head.message().ok(), Some(expected.as_str()), "byte-exact revert message");
+    assert_eq!(
+        head.message().ok(),
+        Some(expected.as_str()),
+        "byte-exact revert message"
+    );
     // The revert is authored as YOU (current signature), not the reverted author.
     assert_eq!(head.author().name().ok(), Some("Test User"));
     assert_eq!(head.committer().name().ok(), Some("Test User"));
@@ -536,7 +584,10 @@ fn essentials_5_revert_conflict_resolve_continue_matches_cli() {
     }
     assert_eq!(repo_state(a), git2::RepositoryState::Revert);
 
-    assert!(!git_ok(b, &["revert", "--no-edit", &c2_b]), "CLI revert must conflict");
+    assert!(
+        !git_ok(b, &["revert", "--no-edit", &c2_b]),
+        "CLI revert must conflict"
+    );
 
     let resolved = "line1\nresolved\nline3\n";
     resolve_conflict_text(a, "x.txt", resolved).expect("resolve index");
@@ -550,7 +601,11 @@ fn essentials_5_revert_conflict_resolve_continue_matches_cli() {
     git(b, &["add", "x.txt"]);
     git_env(b, &["revert", "--continue"], &[("GIT_EDITOR", "true")]);
 
-    assert_eq!(tree_oid(a), tree_oid(b), "resolved revert tree must match CLI");
+    assert_eq!(
+        tree_oid(a),
+        tree_oid(b),
+        "resolved revert tree must match CLI"
+    );
     assert_eq!(repo_state(a), git2::RepositoryState::Clean);
 }
 

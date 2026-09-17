@@ -20,7 +20,10 @@ fn git(dir: &Path, args: &[&str]) -> String {
         args,
         String::from_utf8_lossy(&out.stderr)
     );
-    String::from_utf8(out.stdout).expect("utf8 git output").trim().to_string()
+    String::from_utf8(out.stdout)
+        .expect("utf8 git output")
+        .trim()
+        .to_string()
 }
 
 #[test]
@@ -45,7 +48,10 @@ fn read_repo_info_matches_git_cli() {
     let cli_oid = git(path, &["rev-parse", "HEAD"]);
 
     let info = bonsai_core::git::repo::read_repo_info(path).expect("read_repo_info");
-    assert!(info.is_repo, "CLI-created repo must be reported is_repo=true");
+    assert!(
+        info.is_repo,
+        "CLI-created repo must be reported is_repo=true"
+    );
     let head = info.head.expect("head present for a repo with a commit");
     assert!(!head.unborn);
     assert!(!head.detached);

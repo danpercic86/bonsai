@@ -15,7 +15,11 @@ fn paths(entries: &[bonsai_core::git::status::StatusEntry]) -> Vec<&str> {
 }
 
 fn sel(kind: LineKind, old_no: Option<u32>, new_no: Option<u32>) -> LineSelection {
-    LineSelection { kind, old_no, new_no }
+    LineSelection {
+        kind,
+        old_no,
+        new_no,
+    }
 }
 
 /// stage puts a new file into the index; unstage takes it back out — the
@@ -29,16 +33,21 @@ fn stage_then_unstage_round_trip() {
     let before = status_of(&state, &id);
     assert!(paths(&before.untracked).contains(&"b.txt"));
 
-    tauri::async_runtime::block_on(stage_inner(&state, &id, vec!["b.txt".into()]))
-        .expect("stage");
+    tauri::async_runtime::block_on(stage_inner(&state, &id, vec!["b.txt".into()])).expect("stage");
     let staged = status_of(&state, &id);
-    assert!(paths(&staged.staged).contains(&"b.txt"), "index must reflect the stage");
+    assert!(
+        paths(&staged.staged).contains(&"b.txt"),
+        "index must reflect the stage"
+    );
     assert!(!paths(&staged.untracked).contains(&"b.txt"));
 
     tauri::async_runtime::block_on(unstage_inner(&state, &id, vec!["b.txt".into()]))
         .expect("unstage");
     let after = status_of(&state, &id);
-    assert!(paths(&after.untracked).contains(&"b.txt"), "back to untracked");
+    assert!(
+        paths(&after.untracked).contains(&"b.txt"),
+        "back to untracked"
+    );
     assert!(after.staged.is_empty());
     assert_eq!(
         std::fs::read_to_string(dir.path().join("b.txt")).expect("read"),
@@ -90,7 +99,11 @@ fn commit_failure_paths() {
         .expect_err("blank message must error");
     assert!(matches!(err, AppError::EmptyMessage), "{err:?}");
 
-    assert_eq!(head_oid(dir.path()), c0, "failed commits must not move HEAD");
+    assert_eq!(
+        head_oid(dir.path()),
+        c0,
+        "failed commits must not move HEAD"
+    );
 }
 
 /// commit_amend replaces HEAD with the new message + current index, preserving
@@ -103,9 +116,14 @@ fn commit_amend_happy() {
     std::fs::write(dir.path().join("extra.txt"), "x\n").expect("write");
     tauri::async_runtime::block_on(stage_inner(&state, &id, vec!["extra.txt".into()]))
         .expect("stage");
-    let res =
-        tauri::async_runtime::block_on(commit_amend_inner(&state, &id, "C0 amended".into(), None, None))
-            .expect("amend");
+    let res = tauri::async_runtime::block_on(commit_amend_inner(
+        &state,
+        &id,
+        "C0 amended".into(),
+        None,
+        None,
+    ))
+    .expect("amend");
 
     assert_ne!(res.oid, c0, "amend rewrites the commit oid");
     assert_eq!(head_oid(dir.path()), res.oid);
@@ -159,7 +177,10 @@ fn stage_partial_single_line_selection() {
 
     let st = status_of(&state, &id);
     assert!(paths(&st.staged).contains(&"p.txt"), "line 4 staged");
-    assert!(paths(&st.unstaged).contains(&"p.txt"), "line 5 still unstaged");
+    assert!(
+        paths(&st.unstaged).contains(&"p.txt"),
+        "line 5 still unstaged"
+    );
 }
 
 /// Empty selection is a documented no-op; a stale coordinate (not in the fresh
@@ -171,8 +192,14 @@ fn stage_partial_empty_and_stale_selection() {
     write_stage_commit(&state, &id, dir.path(), "q.txt", "one\n", "seed q");
     std::fs::write(dir.path().join("q.txt"), "one\ntwo\n").expect("write");
 
-    tauri::async_runtime::block_on(stage_partial_inner(&state, &id, "q.txt".into(), None, vec![]))
-        .expect("empty selection is a no-op");
+    tauri::async_runtime::block_on(stage_partial_inner(
+        &state,
+        &id,
+        "q.txt".into(),
+        None,
+        vec![],
+    ))
+    .expect("empty selection is a no-op");
     let st = status_of(&state, &id);
     assert!(st.staged.is_empty(), "no-op must not stage anything");
 
@@ -212,11 +239,20 @@ fn unstage_partial_single_line_selection() {
 
     let st = status_of(&state, &id);
     assert!(paths(&st.staged).contains(&"r.txt"), "line 3 still staged");
-    assert!(paths(&st.unstaged).contains(&"r.txt"), "line 2 back to unstaged");
+    assert!(
+        paths(&st.unstaged).contains(&"r.txt"),
+        "line 2 back to unstaged"
+    );
 
     // Empty selection: no-op.
-    tauri::async_runtime::block_on(unstage_partial_inner(&state, &id, "r.txt".into(), None, vec![]))
-        .expect("empty selection is a no-op");
+    tauri::async_runtime::block_on(unstage_partial_inner(
+        &state,
+        &id,
+        "r.txt".into(),
+        None,
+        vec![],
+    ))
+    .expect("empty selection is a no-op");
 }
 
 /// The wire path format is forward-slash only: a backslash-separated Windows
@@ -230,9 +266,8 @@ fn stage_rejects_backslash_and_escaping_paths() {
     std::fs::write(dir.path().join("dir").join("f.txt"), "f\n").expect("write");
 
     for bad in ["dir\\f.txt", "../evil", "", "/abs", "C:/abs"] {
-        let err =
-            tauri::async_runtime::block_on(stage_inner(&state, &id, vec![bad.to_string()]))
-                .expect_err("invalid wire path must error");
+        let err = tauri::async_runtime::block_on(stage_inner(&state, &id, vec![bad.to_string()]))
+            .expect_err("invalid wire path must error");
         match err {
             AppError::Other(m) => assert!(m.contains("invalid path"), "{bad}: {m}"),
             other => panic!("{bad}: expected Other(invalid path), got {other:?}"),

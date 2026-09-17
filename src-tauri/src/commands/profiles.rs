@@ -12,7 +12,10 @@ pub async fn list_profiles(
 }
 
 /// Runtime-free core of `list_profiles` (unit-testable without a Tauri app).
-pub(crate) async fn list_profiles_inner(state: &AppState, repo_id: &str) -> Result<ProfileStore, AppError> {
+pub(crate) async fn list_profiles_inner(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<ProfileStore, AppError> {
     let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || assets::list_profiles(&workdir))
         .await

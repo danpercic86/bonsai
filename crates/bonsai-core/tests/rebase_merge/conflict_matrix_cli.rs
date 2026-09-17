@@ -7,12 +7,12 @@
 
 use std::path::Path;
 
-use bonsai_core::git::conflict::{list_conflicts, resolve_conflict, ConflictResolution};
 use crate::common;
 use crate::common::git;
 use crate::conflict_support::{
     cli_index_snapshot, conflicted_pair, require_git, worktree, write, Fixture,
 };
+use bonsai_core::git::conflict::{list_conflicts, resolve_conflict, ConflictResolution};
 
 // ============================================================ §9.3 resolution matrix
 
@@ -101,8 +101,18 @@ fn run_cell(
 fn matrix_both_modified() {
     require_git!();
     use ConflictResolution as R;
-    run_cell(Fixture::BothModified, R::Ours, CliAction::CheckoutOursAdd, None);
-    run_cell(Fixture::BothModified, R::Theirs, CliAction::CheckoutTheirsAdd, None);
+    run_cell(
+        Fixture::BothModified,
+        R::Ours,
+        CliAction::CheckoutOursAdd,
+        None,
+    );
+    run_cell(
+        Fixture::BothModified,
+        R::Theirs,
+        CliAction::CheckoutTheirsAdd,
+        None,
+    );
     run_cell(
         Fixture::BothModified,
         R::MarkResolved,
@@ -122,8 +132,18 @@ fn matrix_both_modified() {
 fn matrix_both_added() {
     require_git!();
     use ConflictResolution as R;
-    run_cell(Fixture::BothAdded, R::Ours, CliAction::CheckoutOursAdd, None);
-    run_cell(Fixture::BothAdded, R::Theirs, CliAction::CheckoutTheirsAdd, None);
+    run_cell(
+        Fixture::BothAdded,
+        R::Ours,
+        CliAction::CheckoutOursAdd,
+        None,
+    );
+    run_cell(
+        Fixture::BothAdded,
+        R::Theirs,
+        CliAction::CheckoutTheirsAdd,
+        None,
+    );
     run_cell(
         Fixture::BothAdded,
         R::MarkResolved,
@@ -138,7 +158,12 @@ fn matrix_deleted_by_us() {
     use ConflictResolution as R;
     // Ours = keep our deletion.
     run_cell(Fixture::DeletedByUs, R::Ours, CliAction::Rm, None);
-    run_cell(Fixture::DeletedByUs, R::Theirs, CliAction::CheckoutTheirsAdd, None);
+    run_cell(
+        Fixture::DeletedByUs,
+        R::Theirs,
+        CliAction::CheckoutTheirsAdd,
+        None,
+    );
     // Worktree holds theirs' version after the merge -> MarkResolved = add it.
     run_cell(Fixture::DeletedByUs, R::MarkResolved, CliAction::Add, None);
 }
@@ -147,9 +172,19 @@ fn matrix_deleted_by_us() {
 fn matrix_deleted_by_them() {
     require_git!();
     use ConflictResolution as R;
-    run_cell(Fixture::DeletedByThem, R::Ours, CliAction::CheckoutOursAdd, None);
+    run_cell(
+        Fixture::DeletedByThem,
+        R::Ours,
+        CliAction::CheckoutOursAdd,
+        None,
+    );
     // Theirs = accept their deletion.
     run_cell(Fixture::DeletedByThem, R::Theirs, CliAction::Rm, None);
     // Worktree keeps ours' version -> MarkResolved = add it.
-    run_cell(Fixture::DeletedByThem, R::MarkResolved, CliAction::Add, None);
+    run_cell(
+        Fixture::DeletedByThem,
+        R::MarkResolved,
+        CliAction::Add,
+        None,
+    );
 }

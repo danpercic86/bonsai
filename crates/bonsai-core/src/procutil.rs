@@ -80,7 +80,6 @@ pub fn resolve_program(program: &str) -> Result<PathBuf, String> {
     Ok(PathBuf::from(program))
 }
 
-
 /// The launch-neutral working directory for every rung that already carries the
 /// target path as an argv token (audit LOW-1).
 ///

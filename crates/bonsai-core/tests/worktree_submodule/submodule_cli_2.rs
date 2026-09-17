@@ -11,14 +11,14 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{commit_fixed, file_url, git, init_repo};
 use bonsai_core::error::AppError;
 use bonsai_core::git::search::SpawnGitRunner;
 use bonsai_core::git::submodule::{
     add_submodule, init_submodule, list_submodules, remove_submodule, sync_submodule,
     update_submodule, SubmoduleStatus,
 };
-use crate::common;
-use crate::common::{commit_fixed, file_url, git, init_repo};
 
 macro_rules! require_git {
     () => {
@@ -88,8 +88,16 @@ fn status_letter_parity_and_init_sync_roundtrip() {
 
     // Fresh add → checked out at the pinned commit (v2), clean.
     let info = only(p);
-    assert_eq!(info.status, SubmoduleStatus::UpToDate, "clean matching → UpToDate");
-    assert_eq!(cli_status_char(p), ' ', "git status char is space for UpToDate");
+    assert_eq!(
+        info.status,
+        SubmoduleStatus::UpToDate,
+        "clean matching → UpToDate"
+    );
+    assert_eq!(
+        cli_status_char(p),
+        ' ',
+        "git status char is space for UpToDate"
+    );
     assert_eq!(info.wt_oid.as_deref(), Some(v2.as_str()), "workdir at v2");
 
     // init + sync are no-op-safe on an already-registered submodule.
@@ -99,8 +107,16 @@ fn status_letter_parity_and_init_sync_roundtrip() {
     // Check out v1 INSIDE the submodule → workdir commit != pinned (v2).
     git(&p.join(SUB_PATH), &["checkout", &v1]);
     let info = only(p);
-    assert_eq!(info.status, SubmoduleStatus::OutOfSync, "workdir != pinned → OutOfSync");
-    assert_eq!(cli_status_char(p), '+', "git status char is '+' for OutOfSync");
+    assert_eq!(
+        info.status,
+        SubmoduleStatus::OutOfSync,
+        "workdir != pinned → OutOfSync"
+    );
+    assert_eq!(
+        cli_status_char(p),
+        '+',
+        "git status char is '+' for OutOfSync"
+    );
 }
 
 // -------------------------------------------------- update safe-checkout
@@ -122,7 +138,10 @@ fn update_refuses_to_clobber_dirty_submodule() {
     std::fs::write(sub_wt.join("lib.txt"), "LOCAL UNCOMMITTED EDIT\n").expect("dirty");
 
     let res = update_submodule(p, SUB_PATH);
-    assert!(res.is_err(), "safe checkout must refuse to clobber a dirty submodule: {res:?}");
+    assert!(
+        res.is_err(),
+        "safe checkout must refuse to clobber a dirty submodule: {res:?}"
+    );
     assert_eq!(
         std::fs::read_to_string(sub_wt.join("lib.txt")).unwrap(),
         "LOCAL UNCOMMITTED EDIT\n",
@@ -144,7 +163,10 @@ fn missing_gitmodules_with_gitlink_is_clean() {
     std::fs::remove_file(p.join(".gitmodules")).expect("rm .gitmodules");
     // Must not panic; whatever git2 reports, it is a clean Result.
     let listed = list_submodules(p);
-    assert!(listed.is_ok(), "list must not panic on a gitlink without .gitmodules: {listed:?}");
+    assert!(
+        listed.is_ok(),
+        "list must not panic on a gitlink without .gitmodules: {listed:?}"
+    );
 }
 
 // ---------------------------------------------- F-A7-2 traversal refusal
@@ -168,7 +190,10 @@ fn remove_submodule_refuses_traversal_name() {
         Err(AppError::Git(m)) => assert!(m.contains("unsafe name"), "got: {m}"),
         other => panic!("traversal name must be refused, got {other:?}"),
     }
-    assert!(sentinel.exists(), "no file outside .git/modules was touched");
+    assert!(
+        sentinel.exists(),
+        "no file outside .git/modules was touched"
+    );
 }
 
 // ------------------------------------------------------- ext:: rejected
@@ -186,7 +211,10 @@ fn add_submodule_rejects_ext_url() {
 
     let res = add_submodule(p, "ext::sh -c \"touch pwned\"", "evil");
     assert!(res.is_err(), "ext:: URL must be rejected: {res:?}");
-    assert!(!p.join("pwned").exists(), "the ext:: helper command must not run");
+    assert!(
+        !p.join("pwned").exists(),
+        "the ext:: helper command must not run"
+    );
 }
 
 // ------------------------------------------ F-A7-10 add rollback + retry
@@ -210,5 +238,8 @@ fn add_failure_rolls_back_and_retry_succeeds() {
 
     // Retry with the good URL at the same path must NOT hit "already exists".
     let retry = add_submodule(p, &good_url, SUB_PATH);
-    assert!(retry.is_ok(), "retry after rollback must succeed: {retry:?}");
+    assert!(
+        retry.is_ok(),
+        "retry after rollback must succeed: {retry:?}"
+    );
 }

@@ -17,13 +17,13 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{git, scratch_dir};
 use bonsai_core::assets::{
     activate_profile, list_profiles, preview_profile, read_asset, save_profile, scan_inventory,
     ContextProfile, ProfileTarget, TargetWriteAction,
 };
 use bonsai_core::error::AppError;
-use crate::common;
-use crate::common::{git, scratch_dir};
 
 macro_rules! require_git {
     () => {
@@ -79,7 +79,10 @@ fn content_hash_matches_real_git_hash_object() {
     assert_eq!(claude.files.len(), 1);
 
     // Independent oracle: the actual git CLI's blob oid for the same file.
-    let cli_oid = git(root, &["-c", "core.autocrlf=false", "hash-object", "CLAUDE.md"]);
+    let cli_oid = git(
+        root,
+        &["-c", "core.autocrlf=false", "hash-object", "CLAUDE.md"],
+    );
     assert_eq!(
         claude.files[0].content_hash, cli_oid,
         "inventory contentHash must equal `git hash-object` of the raw bytes"
@@ -119,8 +122,14 @@ fn activate_writes_real_files_end_to_end() {
         "no current content for absent files"
     );
     // Stat the dir: the mapped files must NOT exist after a mere preview.
-    assert!(!root.join("CLAUDE.md").exists(), "preview must not write CLAUDE.md");
-    assert!(!root.join("AGENTS.md").exists(), "preview must not write AGENTS.md");
+    assert!(
+        !root.join("CLAUDE.md").exists(),
+        "preview must not write CLAUDE.md"
+    );
+    assert!(
+        !root.join("AGENTS.md").exists(),
+        "preview must not write AGENTS.md"
+    );
 
     // --- activate: writes the real files ---
     let act = activate_profile(root, "opus-rich").unwrap();
@@ -157,9 +166,15 @@ fn activate_writes_real_files_end_to_end() {
     // No `.bonsai-tmp` remnant left by the atomic temp+rename anywhere.
     assert!(!root.join("CLAUDE.md.bonsai-tmp").exists());
     assert!(!root.join("AGENTS.md.bonsai-tmp").exists());
-    assert!(!root.join(".bonsai").join("profiles.json.bonsai-tmp").exists());
+    assert!(!root
+        .join(".bonsai")
+        .join("profiles.json.bonsai-tmp")
+        .exists());
     // Belt-and-suspenders: scan the workdir + .bonsai for any stray temp file.
-    assert!(no_tmp_remnant(root), "no *.bonsai-tmp anywhere under the workdir");
+    assert!(
+        no_tmp_remnant(root),
+        "no *.bonsai-tmp anywhere under the workdir"
+    );
 
     // Re-activate: identical content → all Unchanged.
     let again = activate_profile(root, "opus-rich").unwrap();
@@ -210,7 +225,11 @@ fn drift_flips_to_in_sync_after_activation() {
     // Before: AGENTS.md drifts from the canonical CLAUDE.md.
     let before = scan_inventory(root, None).unwrap().drift;
     assert_eq!(before.canonical_id.as_deref(), Some("claude"));
-    let agents_before = before.entries.iter().find(|e| e.asset_id == "agents").unwrap();
+    let agents_before = before
+        .entries
+        .iter()
+        .find(|e| e.asset_id == "agents")
+        .unwrap();
     assert!(!agents_before.in_sync, "AGENTS.md starts drifted");
     assert!(!before.in_sync, "report starts out of sync");
 
@@ -218,15 +237,26 @@ fn drift_flips_to_in_sync_after_activation() {
     save_profile(root, profile("sync-up", vec![target("agents", canon)])).unwrap();
     let act = activate_profile(root, "sync-up").unwrap();
     assert_eq!(
-        act.results.iter().find(|r| r.asset_id == "agents").unwrap().action,
+        act.results
+            .iter()
+            .find(|r| r.asset_id == "agents")
+            .unwrap()
+            .action,
         TargetWriteAction::Written
     );
 
     // After: the two files share a normalized hash → mutually in sync.
     let after = scan_inventory(root, None).unwrap().drift;
     assert_eq!(after.canonical_id.as_deref(), Some("claude"));
-    let agents_after = after.entries.iter().find(|e| e.asset_id == "agents").unwrap();
-    assert!(agents_after.in_sync, "AGENTS.md is in sync after activation");
+    let agents_after = after
+        .entries
+        .iter()
+        .find(|e| e.asset_id == "agents")
+        .unwrap();
+    assert!(
+        agents_after.in_sync,
+        "AGENTS.md is in sync after activation"
+    );
     assert!(after.in_sync, "report is fully in sync after activation");
     assert_eq!(agents_after.normalized_hash, after.canonical_hash);
 }
@@ -241,7 +271,11 @@ fn path_safety_and_rules_dir_member_listing() {
 
     // Path-escape defense: `..`, POSIX-absolute, and Windows-absolute all rejected
     // as AppError::Other (validate_rel_path), before any read.
-    for bad in ["../escape.md", "/etc/passwd", "C:/Windows/system32/drivers/etc/hosts"] {
+    for bad in [
+        "../escape.md",
+        "/etc/passwd",
+        "C:/Windows/system32/drivers/etc/hosts",
+    ] {
         let err = read_asset(root, bad).unwrap_err();
         assert!(
             matches!(err, AppError::Other(_)),
@@ -262,7 +296,10 @@ fn path_safety_and_rules_dir_member_listing() {
     assert_eq!(cursor.files[1].path, ".cursor/rules/z-last.mdc");
     // It is inventoried but NOT drift-comparable (frontmatter dir).
     assert!(
-        !inv.drift.entries.iter().any(|e| e.asset_id == "cursorRules"),
+        !inv.drift
+            .entries
+            .iter()
+            .any(|e| e.asset_id == "cursorRules"),
         "rules-dir is not in the drift-comparable set"
     );
 }

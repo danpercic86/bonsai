@@ -157,7 +157,11 @@ pub enum AiOpIntent {
 /// command's args (dispatch table §6). Rust builds it from an [`AiOpIntent`] after
 /// resolving refs/oids; the model never yields an oid.
 #[derive(Debug, Clone, serde::Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum SafeOp {
     Reset {
         target_oid: String,
@@ -252,7 +256,11 @@ pub struct ProposedOperation {
 /// (`clippy::large_enum_variant`); `Box` is serde-transparent, so the wire shape
 /// (§8.2 `OperationPlan`) is unchanged.
 #[derive(Debug, Clone, serde::Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum PlanOutcome {
     Proposed {
         operation: Box<ProposedOperation>,
@@ -297,17 +305,16 @@ pub(crate) fn plan_from_reply(
     raw: &str,
     cost_usd: Option<f64>,
 ) -> Result<PlanOutcome, AppError> {
-    let intent = match extract_json_object(raw)
-        .and_then(|j| serde_json::from_str::<AiOpIntent>(&j).ok())
-    {
-        Some(i) => i,
-        None => {
-            return Ok(unsupported(
-                "I couldn't turn that into a safe operation.".to_string(),
-                cost_usd,
-            ))
-        }
-    };
+    let intent =
+        match extract_json_object(raw).and_then(|j| serde_json::from_str::<AiOpIntent>(&j).ok()) {
+            Some(i) => i,
+            None => {
+                return Ok(unsupported(
+                    "I couldn't turn that into a safe operation.".to_string(),
+                    cost_usd,
+                ))
+            }
+        };
     resolve_intent(repo, intent, cost_usd)
 }
 

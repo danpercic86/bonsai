@@ -99,9 +99,7 @@ pub fn rollback_and_map(
             ));
         }
         Err(_) => {
-            return AppError::Git(format!(
-                "{base} (your changes are safe at stash@{{0}})"
-            ));
+            return AppError::Git(format!("{base} (your changes are safe at stash@{{0}})"));
         }
     };
     // Attempt to restore the user's original dirty state. Most callers reach
@@ -227,7 +225,8 @@ mod tests {
         {
             let mut cfg = repo.config().expect("config");
             cfg.set_str("user.name", "Test User").expect("name");
-            cfg.set_str("user.email", "test@example.com").expect("email");
+            cfg.set_str("user.email", "test@example.com")
+                .expect("email");
             cfg.set_bool("core.autocrlf", false).expect("autocrlf");
         }
         std::fs::write(d.join("f.txt"), "base\n").expect("write");
@@ -265,7 +264,11 @@ mod tests {
             PopResult::Restored => {}
             PopResult::Conflicted(p) => panic!("expected clean restore, got conflicts {p:?}"),
         }
-        assert_eq!(read(d, "f.txt"), "ours\n", "OUR edit restored, not the foreign one");
+        assert_eq!(
+            read(d, "f.txt"),
+            "ours\n",
+            "OUR edit restored, not the foreign one"
+        );
 
         // Exactly the foreign stash survives.
         let list = crate::git::stash::list_stashes(d).expect("list");
@@ -325,7 +328,11 @@ mod tests {
         );
         assert_eq!(read(d, "f.txt"), "ours\n", "OUR edit restored");
         let list = crate::git::stash::list_stashes(d).expect("list");
-        assert_eq!(list.len(), 1, "ours dropped after clean restore; foreign retained");
+        assert_eq!(
+            list.len(),
+            1,
+            "ours dropped after clean restore; foreign retained"
+        );
         assert!(list[0].message.contains("foreign"));
     }
 
@@ -352,6 +359,9 @@ mod tests {
     fn rollback_and_map_none_is_passthrough() {
         let (_dir, mut repo) = init_with_base();
         let out = rollback_and_map(&mut repo, None, AppError::Git("boom".to_string()));
-        assert!(matches!(&out, AppError::Git(m) if m == "boom"), "got {out:?}");
+        assert!(
+            matches!(&out, AppError::Git(m) if m == "boom"),
+            "got {out:?}"
+        );
     }
 }

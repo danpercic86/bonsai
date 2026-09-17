@@ -55,7 +55,10 @@ fn seq_is_monotonic_across_kinds() {
     let events = log.lock().expect("lock");
     let seqs: Vec<u64> = events.iter().map(|e| e.seq).collect();
     assert_eq!(seqs, vec![0, 1, 2, 3, 4]);
-    assert_eq!(events[1].phase.as_ref().map(|p| p.hook.as_deref()), Some(Some("pre-commit")));
+    assert_eq!(
+        events[1].phase.as_ref().map(|p| p.hook.as_deref()),
+        Some(Some("pre-commit"))
+    );
     assert_eq!(events[2].line.as_deref(), Some("hello"));
     assert_eq!(events[3].kind, GitActivityKind::HookDone);
     assert_eq!(events[3].hook.as_deref(), Some("pre-commit"));
@@ -142,17 +145,27 @@ fn line_events_cap_then_finished_emits_one_truncation_marker() {
         .filter(|e| e.kind == GitActivityKind::StdoutLine)
         .filter_map(|e| e.line.as_deref())
         .collect();
-    let markers: Vec<&&str> = lines.iter().filter(|l| l.contains("output truncated")).collect();
+    let markers: Vec<&&str> = lines
+        .iter()
+        .filter(|l| l.contains("output truncated"))
+        .collect();
     assert_eq!(markers.len(), 1, "exactly one truncation marker");
     // Exactly CAP real "flood" lines + the single marker line.
-    assert_eq!(lines.len(), MAX_ACTIVITY_LINE_EVENTS + 1, "CAP lines + marker");
+    assert_eq!(
+        lines.len(),
+        MAX_ACTIVITY_LINE_EVENTS + 1,
+        "CAP lines + marker"
+    );
     assert!(
         markers[0].contains(&format!("{over} more lines suppressed")),
         "marker names the exact suppressed count: {}",
         markers[0]
     );
     // Finished is still the terminal event, AFTER the marker.
-    assert_eq!(events.last().map(|e| e.kind), Some(GitActivityKind::Finished));
+    assert_eq!(
+        events.last().map(|e| e.kind),
+        Some(GitActivityKind::Finished)
+    );
 }
 
 /// Under the cap: no marker, every line emitted normally.
@@ -164,9 +177,10 @@ fn no_truncation_marker_when_under_cap() {
     em.finished(Some(0), true);
     let events = log.lock().expect("lock");
     assert!(
-        !events
-            .iter()
-            .any(|e| e.line.as_deref().is_some_and(|l| l.contains("output truncated"))),
+        !events.iter().any(|e| e
+            .line
+            .as_deref()
+            .is_some_and(|l| l.contains("output truncated"))),
         "no marker under the cap"
     );
     // Both lines present, unchanged.

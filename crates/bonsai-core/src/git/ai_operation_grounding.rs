@@ -45,7 +45,11 @@ pub(crate) fn build_grounding(
             } else {
                 current_branch_name(repo)
             };
-            let merge = if head.parent_count() >= 2 { "yes" } else { "no" };
+            let merge = if head.parent_count() >= 2 {
+                "yes"
+            } else {
+                "no"
+            };
             let _ = writeln!(
                 s,
                 "HEAD: {label} at {} \"{}\"  (merge commit: {merge})",
@@ -66,7 +70,11 @@ pub(crate) fn build_grounding(
             _ => u.clone(),
         })
     });
-    let _ = writeln!(s, "UPSTREAM: {}", upstream.unwrap_or_else(|| "none".to_string()));
+    let _ = writeln!(
+        s,
+        "UPSTREAM: {}",
+        upstream.unwrap_or_else(|| "none".to_string())
+    );
 
     // Recent commits (first-parent, newest first).
     let _ = writeln!(s, "RECENT COMMITS (first-parent, newest first):");
@@ -83,7 +91,11 @@ pub(crate) fn build_grounding(
                     if let Ok(c) = repo.find_commit(oid) {
                         let date = epoch_to_ymd(c.time().seconds());
                         let author = String::from_utf8_lossy(c.author().name_bytes()).into_owned();
-                        let merge = if c.parent_count() >= 2 { "  [merge]" } else { "" };
+                        let merge = if c.parent_count() >= 2 {
+                            "  [merge]"
+                        } else {
+                            ""
+                        };
                         let _ = writeln!(
                             s,
                             "- {} {date} {author}  {}{merge}",
@@ -101,13 +113,21 @@ pub(crate) fn build_grounding(
     let _ = writeln!(
         s,
         "LOCAL BRANCHES: {}",
-        if locals.is_empty() { "(none)".to_string() } else { locals.join(", ") }
+        if locals.is_empty() {
+            "(none)".to_string()
+        } else {
+            locals.join(", ")
+        }
     );
     let remotes: Vec<&str> = refs.remote.iter().map(|b| b.name.as_str()).collect();
     let _ = writeln!(
         s,
         "REMOTE BRANCHES: {}",
-        if remotes.is_empty() { "(none)".to_string() } else { remotes.join(", ") }
+        if remotes.is_empty() {
+            "(none)".to_string()
+        } else {
+            remotes.join(", ")
+        }
     );
 
     // Working tree + changed (tracked-modified) paths.
@@ -190,7 +210,8 @@ mod tests {
         let repo = git2::Repository::init(dir.path()).expect("init repo");
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
         cfg.set_bool("core.autocrlf", false).expect("autocrlf");
         dir
     }
@@ -227,7 +248,8 @@ mod tests {
         let a = commit(p, "a.txt", "a\n", "A");
         let _b = commit(p, "b.txt", "b\n", "B");
         let repo = git2::Repository::open(p).expect("open");
-        repo.set_head_detached(git2::Oid::from_str(&a).unwrap()).expect("detach");
+        repo.set_head_detached(git2::Oid::from_str(&a).unwrap())
+            .expect("detach");
         let g = build_grounding(&repo, p, "x").expect("grounding");
         assert!(g.contains("HEAD: detached at"), "detached label: {g}");
     }
@@ -287,9 +309,16 @@ mod tests {
             std::fs::write(p.join(f), "y\n").unwrap();
         }
         let g = ground(p, "x");
-        let changed = g.lines().find(|l| l.starts_with("CHANGED PATHS:")).expect("changed line");
+        let changed = g
+            .lines()
+            .find(|l| l.starts_with("CHANGED PATHS:"))
+            .expect("changed line");
         assert!(changed.contains("(+5 more)"), "overflow note: {changed}");
-        assert_eq!(changed.matches(".txt").count(), GROUNDING_MAX_PATHS, "only 50 listed");
+        assert_eq!(
+            changed.matches(".txt").count(),
+            GROUNDING_MAX_PATHS,
+            "only 50 listed"
+        );
     }
 
     #[test]
@@ -303,8 +332,15 @@ mod tests {
             create_stash(p, Some(&format!("stash {i}")), StashScope::All).expect("stash");
         }
         let g = ground(p, "x");
-        let line = g.lines().find(|l| l.starts_with("STASHES:")).expect("stashes line");
-        assert_eq!(line.matches('[').count(), 10, "only 10 stashes listed: {line}");
+        let line = g
+            .lines()
+            .find(|l| l.starts_with("STASHES:"))
+            .expect("stashes line");
+        assert_eq!(
+            line.matches('[').count(),
+            10,
+            "only 10 stashes listed: {line}"
+        );
     }
 
     #[test]
@@ -338,7 +374,8 @@ mod tests {
             .unwrap()
             .write(git2::ObjectType::Commit, &buf)
             .expect("write raw commit");
-        repo.reference("refs/heads/master", oid, true, "seed").expect("branch ref");
+        repo.reference("refs/heads/master", oid, true, "seed")
+            .expect("branch ref");
         repo.set_head("refs/heads/master").expect("point HEAD");
         let repo = git2::Repository::open(p).expect("reopen");
         let g = build_grounding(&repo, p, "x").expect("grounding must not panic");

@@ -19,10 +19,7 @@ fn commit_details(commit: &git2::Commit) -> CommitDetails {
     let author = commit.author();
     CommitDetails {
         oid: commit.id().to_string(),
-        summary: commit
-            .summary_bytes()
-            .map(lossy)
-            .unwrap_or_default(),
+        summary: commit.summary_bytes().map(lossy).unwrap_or_default(),
         message: String::from_utf8_lossy(commit.message_bytes())
             .trim_end()
             .to_string(),
@@ -218,8 +215,7 @@ pub fn compare_head_diff(workdir: &Path, to_oid: &str) -> Result<CompareDiff, Ap
         summary: to_commit.summary_bytes().map(lossy).unwrap_or_default(),
     };
     let mut opts = build_diff_options(&[], false);
-    let mut diff =
-        repo.diff_tree_to_tree(old_tree.as_ref(), Some(&to_tree), Some(&mut opts))?;
+    let mut diff = repo.diff_tree_to_tree(old_tree.as_ref(), Some(&to_tree), Some(&mut opts))?;
     apply_find_similar(&mut diff)?;
     let files = collect_headers(&diff)?;
     Ok(CompareDiff { from, to, files })
@@ -245,8 +241,7 @@ pub fn compare_head_file_diff(
     let (_from, old_tree) = head_endpoint(&repo)?;
     let paths = pathspecs(path, orig_path);
     let mut opts = build_diff_options(&paths, full_context);
-    let mut diff =
-        repo.diff_tree_to_tree(old_tree.as_ref(), Some(&to_tree), Some(&mut opts))?;
+    let mut diff = repo.diff_tree_to_tree(old_tree.as_ref(), Some(&to_tree), Some(&mut opts))?;
     apply_find_similar(&mut diff)?;
     let fd = collect_file_diff(&diff)?
         .ok_or_else(|| AppError::Git(format!("path not changed in comparison: {path}")))?;

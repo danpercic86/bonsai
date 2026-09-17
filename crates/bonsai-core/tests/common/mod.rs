@@ -119,13 +119,17 @@ pub fn git_version_at_least(major: u32, minor: u32) -> bool {
 
 /// Runs `git <args>` in `dir`, asserting success; returns trimmed stdout.
 pub fn git(dir: &Path, args: &[&str]) -> String {
-    String::from_utf8_lossy(&git_raw(dir, args, &[])).trim().to_string()
+    String::from_utf8_lossy(&git_raw(dir, args, &[]))
+        .trim()
+        .to_string()
 }
 
 /// Runs `git <args>` in `dir` with extra env vars, asserting success;
 /// returns trimmed stdout.
 pub fn git_env(dir: &Path, args: &[&str], envs: &[(&str, &str)]) -> String {
-    String::from_utf8_lossy(&git_raw(dir, args, envs)).trim().to_string()
+    String::from_utf8_lossy(&git_raw(dir, args, envs))
+        .trim()
+        .to_string()
 }
 
 /// Runs `git <args>` in `dir`, asserting success; returns RAW stdout bytes
@@ -186,8 +190,8 @@ pub fn init_repo() -> tempfile::TempDir {
 /// The local config every fixture repo gets, written in-process. Exactly the
 /// key/value pairs the four `git config` invocations used to set.
 pub fn write_fixture_config(repo: &Path) {
-    let mut cfg = git2::Config::open(&repo.join(".git").join("config"))
-        .expect("open fixture repo config");
+    let mut cfg =
+        git2::Config::open(&repo.join(".git").join("config")).expect("open fixture repo config");
     for (key, value) in FIXTURE_CONFIG {
         cfg.set_str(key, value)
             .unwrap_or_else(|e| panic!("set {key}: {e}"));

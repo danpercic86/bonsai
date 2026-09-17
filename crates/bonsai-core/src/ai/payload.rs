@@ -229,7 +229,8 @@ mod tests {
         assert_eq!(out.files_shown, 1);
         assert_eq!(out.files_total, 1);
         assert!(
-            out.text.contains("===== FILE: src/main.rs (modified) ====="),
+            out.text
+                .contains("===== FILE: src/main.rs (modified) ====="),
             "{}",
             out.text
         );
@@ -278,8 +279,16 @@ mod tests {
             hunks: vec![],
         };
         let out = render_file_diffs(&[binary, too_large]);
-        assert!(out.text.contains("(binary file — diff omitted)"), "{}", out.text);
-        assert!(out.text.contains("(file too large — diff omitted)"), "{}", out.text);
+        assert!(
+            out.text.contains("(binary file — diff omitted)"),
+            "{}",
+            out.text
+        );
+        assert!(
+            out.text.contains("(file too large — diff omitted)"),
+            "{}",
+            out.text
+        );
         // No hunk headers for either placeholder file.
         assert!(!out.text.contains("@@"), "{}", out.text);
         assert_eq!(out.files_shown, 2);

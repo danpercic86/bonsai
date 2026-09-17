@@ -108,7 +108,12 @@ fn no_hostile_selection_picks_a_tool() {
     let probe = r"C:\Program Files\Microsoft VS Code\Code.exe";
     let env = FakeToolEnv::new().file(probe);
     let rows = vec![
-        row(ToolKind::Terminal, "cmd", TargetOs::Windows, built_in("cmd")),
+        row(
+            ToolKind::Terminal,
+            "cmd",
+            TargetOs::Windows,
+            built_in("cmd"),
+        ),
         row(
             ToolKind::Editor,
             "vscode",
@@ -131,7 +136,10 @@ fn no_hostile_selection_picks_a_tool() {
 fn custom_selects_only_when_a_path_was_browsed() {
     assert_eq!(coerce_tool_id(CUSTOM_ID, ToolKind::Editor, false), "");
     assert_eq!(coerce_tool_id(CUSTOM_ID, ToolKind::Editor, true), CUSTOM_ID);
-    assert_eq!(coerce_tool_id(CUSTOM_ID, ToolKind::Terminal, true), CUSTOM_ID);
+    assert_eq!(
+        coerce_tool_id(CUSTOM_ID, ToolKind::Terminal, true),
+        CUSTOM_ID
+    );
 
     let env = FakeToolEnv::new();
     let os = TargetOs::host();
@@ -219,7 +227,11 @@ fn assert_launch_provenance(entry: &'static ToolEntry, picked: &super::PickedToo
     let target = PathBuf::from("/tmp/target dir");
     let d = target.display().to_string();
     let spec = spec_from(picked, &target);
-    assert_eq!(spec.program, picked.program, "{}: the spec renames the program", entry.id);
+    assert_eq!(
+        spec.program, picked.program,
+        "{}: the spec renames the program",
+        entry.id
+    );
     let fixed: &[&str] = match picked.recipe {
         Recipe::DirLastArg(f) | Recipe::DirJoinedArg(f, _) | Recipe::DirCwd(f) => f,
         Recipe::MacOpen => &["-a"],
@@ -229,7 +241,11 @@ fn assert_launch_provenance(entry: &'static ToolEntry, picked: &super::PickedToo
             || picked.open_arg.as_deref() == Some(arg.as_str())
             || arg == "-a";
         let is_target = arg == &d || arg.ends_with(&d);
-        assert!(from_catalog || is_target, "{}: unaccounted argv token {arg:?}", entry.id);
+        assert!(
+            from_catalog || is_target,
+            "{}: unaccounted argv token {arg:?}",
+            entry.id
+        );
     }
     assert!(
         spec.cwd == crate::procutil::safe_cwd() || spec.cwd == target,
@@ -292,7 +308,10 @@ fn migration_can_never_produce_the_custom_pseudo_id_or_a_path() {
                 "{legacy:?} migrated to {id:?}, which is not a catalog id"
             );
             // A stored string never becomes a program string.
-            assert!(!id.contains(['/', '\\', ' ', ':']), "{id:?} looks like a path");
+            assert!(
+                !id.contains(['/', '\\', ' ', ':']),
+                "{id:?} looks like a path"
+            );
         }
     }
 }
@@ -359,7 +378,12 @@ fn the_logged_stem_keeps_no_directory_and_no_argument() {
 
 // ---- helpers -----------------------------------------------------------------
 
-fn row(kind: ToolKind, id: &str, os: TargetOs, res: Resolution) -> (&'static ToolEntry, Resolution) {
+fn row(
+    kind: ToolKind,
+    id: &str,
+    os: TargetOs,
+    res: Resolution,
+) -> (&'static ToolEntry, Resolution) {
     let entry = catalog::find_for(kind, id, os).expect("catalog row (AC8 pins totality)");
     (entry, res)
 }

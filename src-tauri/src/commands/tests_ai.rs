@@ -109,7 +109,13 @@ fn ai_summarize_range_happy() {
     let file = consent_file(base.path());
     write_stage_commit(&state, &id, dir.path(), "r.txt", "r\n", "range commit");
 
-    let res = block_on(ai_summarize_range_inner(&state, &file, &id, c0, "HEAD".into()));
+    let res = block_on(ai_summarize_range_inner(
+        &state,
+        &file,
+        &id,
+        c0,
+        "HEAD".into(),
+    ));
     gate_passed(&res);
 }
 
@@ -128,7 +134,10 @@ fn ai_digest_happy() {
         &state,
         &file,
         &id,
-        ai_explain::AiDigestRange::BetweenRefs { from: c0, to: "HEAD".into() },
+        ai_explain::AiDigestRange::BetweenRefs {
+            from: c0,
+            to: "HEAD".into(),
+        },
     ));
     gate_passed(&res);
 }
@@ -143,7 +152,14 @@ fn ai_explain_line_happy() {
     let base = tempfile::TempDir::new().expect("base");
     let file = consent_file(base.path());
 
-    let res = block_on(ai_explain_line_inner(&state, &file, &id, "a.txt".into(), 1, None));
+    let res = block_on(ai_explain_line_inner(
+        &state,
+        &file,
+        &id,
+        "a.txt".into(),
+        1,
+        None,
+    ));
     gate_passed(&res);
 }
 
@@ -166,7 +182,12 @@ fn ai_resolve_conflict_happy() {
     let out = block_on(merge_branch_inner(&state, &id, "feature".into(), None)).expect("merge");
     assert!(matches!(out, MergeOutcome::Conflicts { .. }), "{out:?}");
 
-    let res = block_on(ai_resolve_conflict_inner(&state, &file, &id, "a.txt".into()));
+    let res = block_on(ai_resolve_conflict_inner(
+        &state,
+        &file,
+        &id,
+        "a.txt".into(),
+    ));
     gate_passed(&res);
     block_on(abort_merge_inner(&state, &id)).expect("cleanup");
 }
@@ -205,8 +226,13 @@ fn ai_plan_operation_happy() {
     let base = tempfile::TempDir::new().expect("base");
     let file = consent_file(base.path());
 
-    let res = block_on(ai_plan_operation_inner(&state, &file, &id, "delete the feature branch".into()))
-        .expect("plan is Ok even when unmappable");
+    let res = block_on(ai_plan_operation_inner(
+        &state,
+        &file,
+        &id,
+        "delete the feature branch".into(),
+    ))
+    .expect("plan is Ok even when unmappable");
     let _ = res; // PlanOutcome (supported or unsupported) — both are Ok.
 }
 
@@ -235,13 +261,23 @@ fn ai_changelog_happy() {
     let (dir, id, c0) = fixture_repo(&state);
     let base = tempfile::TempDir::new().expect("base");
     let file = consent_file(base.path());
-    write_stage_commit(&state, &id, dir.path(), "ch.txt", "ch\n", "changelog commit");
+    write_stage_commit(
+        &state,
+        &id,
+        dir.path(),
+        "ch.txt",
+        "ch\n",
+        "changelog commit",
+    );
 
     let res = block_on(ai_changelog_inner(
         &state,
         &file,
         &id,
-        ai_changelog::ChangelogRange::BetweenRefs { from: c0, to: "HEAD".into() },
+        ai_changelog::ChangelogRange::BetweenRefs {
+            from: c0,
+            to: "HEAD".into(),
+        },
     ));
     gate_passed(&res);
 }
@@ -257,7 +293,13 @@ fn ai_generate_pr_description_happy() {
     let file = consent_file(base.path());
     write_stage_commit(&state, &id, dir.path(), "pr.txt", "pr\n", "pr commit");
 
-    let res = block_on(ai_generate_pr_description_inner(&state, &file, &id, c0, "HEAD".into()));
+    let res = block_on(ai_generate_pr_description_inner(
+        &state,
+        &file,
+        &id,
+        c0,
+        "HEAD".into(),
+    ));
     gate_passed(&res);
 }
 
@@ -327,7 +369,12 @@ fn ai_commands_refuse_without_consent() {
 
     let a = block_on(generate_commit_message_inner(&state, &no_consent, &id));
     assert!(matches!(a, Err(AppError::AiUnavailable(_))), "{a:?}");
-    let b = block_on(ai_plan_operation_inner(&state, &no_consent, &id, "x".into()));
+    let b = block_on(ai_plan_operation_inner(
+        &state,
+        &no_consent,
+        &id,
+        "x".into(),
+    ));
     assert!(matches!(b, Err(AppError::AiUnavailable(_))), "{b:?}");
     let c = block_on(ai_analyze_diff_inner(
         &state,

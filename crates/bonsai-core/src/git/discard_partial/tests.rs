@@ -4,7 +4,8 @@ fn init(dir: &Path) -> git2::Repository {
     let repo = git2::Repository::init(dir).expect("init repo");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     drop(cfg);
     repo
@@ -51,12 +52,12 @@ fn invalid_path_rejected() {
     let dir = crate::testutil::scratch_dir();
     let s = vec![sel(LineKind::Add, None, Some(1))];
     for bad in ["", "../escape", "/abs", "a\\b"] {
-        let err = discard_partial(dir.path(), bad, None, &s)
-            .expect_err(&format!("must reject {bad:?}"));
+        let err =
+            discard_partial(dir.path(), bad, None, &s).expect_err(&format!("must reject {bad:?}"));
         assert!(matches!(err, AppError::Other(m) if m.contains("invalid path")));
     }
-    let err = discard_partial(dir.path(), "ok.txt", Some("../escape"), &s)
-        .expect_err("bad orig_path");
+    let err =
+        discard_partial(dir.path(), "ok.txt", Some("../escape"), &s).expect_err("bad orig_path");
     assert!(matches!(err, AppError::Other(m) if m.contains("invalid path")));
 }
 
@@ -75,7 +76,10 @@ fn untracked_rejected() {
         matches!(&err, AppError::Git(m) if m.contains("not a tracked file")),
         "got: {err:?}"
     );
-    assert_eq!(std::fs::read(d.join("new.txt")).expect("read"), b"precious\n");
+    assert_eq!(
+        std::fs::read(d.join("new.txt")).expect("read"),
+        b"precious\n"
+    );
 }
 
 /// Binary diff -> unsupported (§6.1.4).
@@ -133,15 +137,17 @@ fn renamed_rejected() {
     // rename partner as orig_path — the pathspec matches both unpaired
     // deltas and the multi-delta guard rejects before any write.
     let s = vec![sel(LineKind::Del, Some(1), None)];
-    let err =
-        discard_partial(d, "old.txt", Some("new.txt"), &s).expect_err("renamed diff");
+    let err = discard_partial(d, "old.txt", Some("new.txt"), &s).expect_err("renamed diff");
     assert!(
         matches!(&err, AppError::Git(m) if m.contains("multiple")),
         "got: {err:?}"
     );
     // Nothing changed on disk.
     assert!(!d.join("old.txt").exists());
-    assert_eq!(std::fs::read(d.join("new.txt")).expect("read"), body.as_bytes());
+    assert_eq!(
+        std::fs::read(d.join("new.txt")).expect("read"),
+        body.as_bytes()
+    );
 }
 
 /// Stale coordinates and clean-file pathspec both -> stale (§6.1.5).

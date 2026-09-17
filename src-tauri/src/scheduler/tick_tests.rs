@@ -27,7 +27,10 @@ fn auto_fetch_updates_remote_tracking_ref() {
     // Tick 0: first sight — baseline only, nothing runs (D13).
     drive_tick(&repos, &sched, 0, &emit);
     assert!(job_statuses(&events).is_empty());
-    assert_eq!(rev_parse(&work, "refs/remotes/origin/main"), rev_parse(&work, "HEAD"));
+    assert_eq!(
+        rev_parse(&work, "refs/remotes/origin/main"),
+        rev_parse(&work, "HEAD")
+    );
 
     // One interval later: the fetch runs and moves origin/main.
     drive_tick(&repos, &sched, MIN, &emit);

@@ -14,10 +14,10 @@
 //! Keep this file to a SINGLE #[test]: tests within one binary run on
 //! parallel threads, and the process-global setup must not race repo opens.
 
+use crate::common;
 use bonsai_core::error::AppError;
 use bonsai_core::git::commit::create_commit;
 use bonsai_core::git::stage::stage_paths;
-use crate::common;
 
 #[test]
 fn commit_without_identity_fails_then_local_identity_fixes_it() {
@@ -45,11 +45,16 @@ fn commit_without_identity_fails_then_local_identity_fixes_it() {
     stage_paths(dir.path(), &["first.txt".to_string()]).expect("stage_paths");
 
     // No identity anywhere -> ConfigMissing naming BOTH keys.
-    match create_commit(dir.path(), "first commit", None, false).expect_err("identity is not configured") {
+    match create_commit(dir.path(), "first commit", None, false)
+        .expect_err("identity is not configured")
+    {
         AppError::ConfigMissing(m) => {
             assert!(m.contains("user.name"), "must name user.name, got: {m}");
             assert!(m.contains("user.email"), "must name user.email, got: {m}");
-            assert!(m.contains("git config --global"), "must hint the fix, got: {m}");
+            assert!(
+                m.contains("git config --global"),
+                "must hint the fix, got: {m}"
+            );
         }
         other => panic!("expected ConfigMissing, got: {other:?}"),
     }
@@ -60,10 +65,13 @@ fn commit_without_identity_fails_then_local_identity_fixes_it() {
     // for the other levels) makes the same commit succeed.
     {
         let mut cfg = repo.config().expect("open repo config");
-        cfg.set_str("user.name", "Local User").expect("set user.name");
-        cfg.set_str("user.email", "local@example.com").expect("set user.email");
+        cfg.set_str("user.name", "Local User")
+            .expect("set user.name");
+        cfg.set_str("user.email", "local@example.com")
+            .expect("set user.email");
     }
-    let res = create_commit(dir.path(), "first commit", None, false).expect("commit with local identity");
+    let res =
+        create_commit(dir.path(), "first commit", None, false).expect("commit with local identity");
     assert_eq!(res.summary, "first commit");
     assert!(res.branch.is_some(), "first commit creates the branch");
 

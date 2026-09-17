@@ -12,7 +12,10 @@ pub async fn get_status(
 }
 
 /// Runtime-free core of `get_status` (unit-testable without a Tauri app).
-pub(crate) async fn get_status_inner(state: &AppState, repo_id: &str) -> Result<StatusSnapshot, AppError> {
+pub(crate) async fn get_status_inner(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<StatusSnapshot, AppError> {
     // P88b/B2b + FU-B2c: resolve path + handle-cache generation, then route the
     // scan through the timeout-aware handle cache (`with_repo_timed`), which bumps
     // `repo_opens` ONCE per actual open — no inline bump here. FU-B2c MOVED the

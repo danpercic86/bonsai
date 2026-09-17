@@ -161,9 +161,7 @@ pub(crate) fn collect_file_diff(diff: &git2::Diff) -> Result<Option<FileDiff>, A
         s.status = map_status(delta.status());
         s.path = path;
         s.orig_path = match delta.status() {
-            git2::Delta::Renamed | git2::Delta::Copied => {
-                delta.old_file().path_bytes().map(lossy)
-            }
+            git2::Delta::Renamed | git2::Delta::Copied => delta.old_file().path_bytes().map(lossy),
             _ => None,
         };
         if delta.flags().is_binary() {

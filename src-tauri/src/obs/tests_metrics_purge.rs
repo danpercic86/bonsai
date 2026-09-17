@@ -23,8 +23,14 @@ fn purge_removes_every_file_reports_a_subdir_and_keeps_the_dir_when_one_survives
 
     assert_eq!(c.deleted_files, 3, "all three metrics files removed");
     assert_eq!(c.deleted_bytes, 350);
-    assert_eq!(c.failed_files, 1, "the subdirectory is reported, not recursed");
-    assert!(!c.dir_removed, "a surviving entry means the folder is still there");
+    assert_eq!(
+        c.failed_files, 1,
+        "the subdirectory is reported, not recursed"
+    );
+    assert!(
+        !c.dir_removed,
+        "a surviving entry means the folder is still there"
+    );
     assert!(dir.join("nested").exists(), "never recursed into");
     assert!(!dir.join("usage.json").exists());
     assert!(!dir.join("usage.json.bak").exists());
@@ -77,7 +83,10 @@ fn purge_never_touches_a_sibling_of_the_metrics_dir() {
     let c = purge_metrics_dir(&dir);
 
     assert!(c.dir_removed);
-    assert!(root.path().join("settings.json").exists(), "settings.json survives");
+    assert!(
+        root.path().join("settings.json").exists(),
+        "settings.json survives"
+    );
     assert!(root.path().join("logs").exists(), "logs/ survives");
 }
 

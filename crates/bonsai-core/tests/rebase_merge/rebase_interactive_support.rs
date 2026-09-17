@@ -39,7 +39,9 @@ pub(crate) fn tree_of(dir: &Path, r: &str) -> String {
 }
 
 pub(crate) fn msg_of(dir: &Path, r: &str) -> String {
-    git(dir, &["log", "-1", "--format=%B", r]).trim().to_string()
+    git(dir, &["log", "-1", "--format=%B", r])
+        .trim()
+        .to_string()
 }
 
 pub(crate) fn author_of(dir: &Path, r: &str) -> String {
@@ -57,7 +59,10 @@ pub(crate) fn repo_state(dir: &Path) -> git2::RepositoryState {
 }
 
 pub(crate) fn has_bonsai_dir(dir: &Path) -> bool {
-    dir.join(".git").join("bonsai-rebase").join("state.json").exists()
+    dir.join(".git")
+        .join("bonsai-rebase")
+        .join("state.json")
+        .exists()
 }
 
 pub(crate) fn symbolic_head(dir: &Path) -> String {

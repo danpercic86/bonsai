@@ -51,7 +51,11 @@ fn worktree_snapshot(root: &Path) -> BTreeMap<String, Vec<u8>> {
             if p.is_dir() {
                 stack.push(p);
             } else if let Ok(bytes) = std::fs::read(&p) {
-                let rel = p.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
+                let rel = p
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/");
                 out.insert(rel, bytes);
             }
         }
@@ -88,15 +92,20 @@ fn base_repo(n: usize) -> (tempfile::TempDir, git2::Repository) {
     {
         let mut index = repo.index().expect("index");
         for i in 0..n {
-            write(dir.path(), &format!("t{i}"), &content(1000 + i as u32, "base"));
+            write(
+                dir.path(),
+                &format!("t{i}"),
+                &content(1000 + i as u32, "base"),
+            );
             index.add_path(Path::new(&format!("t{i}"))).expect("add");
         }
         index.write().expect("write index");
         let tree_oid = index.write_tree().expect("wt");
         let tree = repo.find_tree(tree_oid).expect("tree");
-        let sig =
-            git2::Signature::new("Prop Bot", "prop@bonsai.local", &git2::Time::new(1000, 0)).unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, "base", &tree, &[]).expect("commit");
+        let sig = git2::Signature::new("Prop Bot", "prop@bonsai.local", &git2::Time::new(1000, 0))
+            .unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "base", &tree, &[])
+            .expect("commit");
     }
     (dir, repo)
 }
@@ -212,8 +221,38 @@ macro_rules! band {
 }
 
 // 5 bands tiling 1..=5 (width 1 each) with 10 cases per band per property.
-band!(stash_all_with_untracked_roundtrip_b1_n1, stash_all_tracked_only_roundtrip_b1_n1, 1usize, 1, 10);
-band!(stash_all_with_untracked_roundtrip_b2_n2, stash_all_tracked_only_roundtrip_b2_n2, 2usize, 2, 10);
-band!(stash_all_with_untracked_roundtrip_b3_n3, stash_all_tracked_only_roundtrip_b3_n3, 3usize, 3, 10);
-band!(stash_all_with_untracked_roundtrip_b4_n4, stash_all_tracked_only_roundtrip_b4_n4, 4usize, 4, 10);
-band!(stash_all_with_untracked_roundtrip_b5_n5, stash_all_tracked_only_roundtrip_b5_n5, 5usize, 5, 10);
+band!(
+    stash_all_with_untracked_roundtrip_b1_n1,
+    stash_all_tracked_only_roundtrip_b1_n1,
+    1usize,
+    1,
+    10
+);
+band!(
+    stash_all_with_untracked_roundtrip_b2_n2,
+    stash_all_tracked_only_roundtrip_b2_n2,
+    2usize,
+    2,
+    10
+);
+band!(
+    stash_all_with_untracked_roundtrip_b3_n3,
+    stash_all_tracked_only_roundtrip_b3_n3,
+    3usize,
+    3,
+    10
+);
+band!(
+    stash_all_with_untracked_roundtrip_b4_n4,
+    stash_all_tracked_only_roundtrip_b4_n4,
+    4usize,
+    4,
+    10
+);
+band!(
+    stash_all_with_untracked_roundtrip_b5_n5,
+    stash_all_tracked_only_roundtrip_b5_n5,
+    5usize,
+    5,
+    10
+);

@@ -152,7 +152,14 @@ fn gather_staged(workdir: &Path) -> Result<Vec<FileDiff>, AppError> {
     }
     let mut file_diffs = Vec::with_capacity(staged.len());
     for entry in &staged {
-        let fd = workdir_file_diff(workdir, &entry.path, entry.orig_path.as_deref(), true, false, false)?;
+        let fd = workdir_file_diff(
+            workdir,
+            &entry.path,
+            entry.orig_path.as_deref(),
+            true,
+            false,
+            false,
+        )?;
         file_diffs.push(fd);
     }
     Ok(file_diffs)
@@ -289,7 +296,10 @@ pub(crate) fn cap_review_payload(text: String) -> String {
 
 /// Gathers `target`'s file diffs and the payload text prefix (empty for
 /// non-commit targets). Reuses the existing public diff fns; no new plumbing.
-fn build_payload(workdir: &Path, target: &AiDiffTarget) -> Result<(String, Vec<FileDiff>), AppError> {
+fn build_payload(
+    workdir: &Path,
+    target: &AiDiffTarget,
+) -> Result<(String, Vec<FileDiff>), AppError> {
     match target {
         AiDiffTarget::Commit { oid } => {
             let cd = commit_diff(workdir, oid)?;
@@ -305,7 +315,8 @@ fn build_payload(workdir: &Path, target: &AiDiffTarget) -> Result<(String, Vec<F
             );
             let mut file_diffs = Vec::with_capacity(cd.files.len());
             for h in &cd.files {
-                let fd = commit_file_diff(workdir, oid, &h.path, h.orig_path.as_deref(), false, false)?;
+                let fd =
+                    commit_file_diff(workdir, oid, &h.path, h.orig_path.as_deref(), false, false)?;
                 file_diffs.push(fd);
             }
             Ok((prefix, file_diffs))
@@ -394,8 +405,8 @@ pub(crate) use digest::resolve_digest_range;
 pub(crate) use digest::{commit_meta_line, format_commit_meta};
 
 #[cfg(test)]
+mod digest_tests;
+#[cfg(test)]
 mod test_support;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod digest_tests;

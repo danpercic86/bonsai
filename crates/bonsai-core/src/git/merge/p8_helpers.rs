@@ -9,7 +9,8 @@ pub(super) fn p8_init(dir: &Path) -> git2::Repository {
     let repo = git2::Repository::init(dir).expect("init repo");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     drop(cfg);
     repo
@@ -49,8 +50,15 @@ pub(super) fn p8_commit_on_ref(
         tb.insert(name, blob, 0o100644).expect("insert");
     }
     let tree = repo.find_tree(tb.write().expect("tree oid")).expect("tree");
-    repo.commit(Some(refname), &sig, &sig, &format!("{msg}\n"), &tree, &[parent])
-        .expect("commit on ref")
+    repo.commit(
+        Some(refname),
+        &sig,
+        &sig,
+        &format!("{msg}\n"),
+        &tree,
+        &[parent],
+    )
+    .expect("commit on ref")
 }
 
 pub(super) fn p8_head_oid(repo: &git2::Repository) -> git2::Oid {
@@ -95,9 +103,7 @@ pub(super) fn p8_git_cli_autostash_ff_oracle() -> Option<(String, String)> {
     if !probe.status.success() {
         return None;
     }
-    let run = |args: &[&str]| -> bool {
-        git(args).map(|o| o.status.success()).unwrap_or(false)
-    };
+    let run = |args: &[&str]| -> bool { git(args).map(|o| o.status.success()).unwrap_or(false) };
     if !run(&["init", "-q"]) {
         return None;
     }

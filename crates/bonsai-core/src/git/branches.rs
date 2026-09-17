@@ -86,7 +86,9 @@ fn open_repo_at(workdir: &Path) -> Result<git2::Repository, AppError> {
 /// Case-insensitive name ordering (ties broken case-sensitively so the
 /// order is total and stable).
 fn ci_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    a.to_lowercase().cmp(&b.to_lowercase()).then_with(|| a.cmp(b))
+    a.to_lowercase()
+        .cmp(&b.to_lowercase())
+        .then_with(|| a.cmp(b))
 }
 
 /// Backend-authoritative branch-name validation (mirrors
@@ -110,14 +112,14 @@ pub(crate) fn validate_branch_name(name: &str) -> Result<(), AppError> {
 }
 
 #[cfg(test)]
-mod create_branch_here_tests;
-#[cfg(test)]
 mod checkout_autostash_tests;
 #[cfg(test)]
-mod rename_branch_tests;
+mod checkout_autostash_untracked_tests;
 #[cfg(test)]
 mod checkout_commit_detached_tests;
 #[cfg(test)]
-mod checkout_autostash_untracked_tests;
+mod create_branch_here_tests;
+#[cfg(test)]
+mod rename_branch_tests;
 #[cfg(test)]
 mod unborn_boot_tests;

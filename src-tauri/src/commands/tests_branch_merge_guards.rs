@@ -14,12 +14,9 @@ fn compare_commands_require_an_open_repo() {
     let state = AppState::default();
     let oid = "0123456789abcdef0123456789abcdef01234567".to_string();
 
-    let err = tauri::async_runtime::block_on(compare_with_head_inner(
-        &state,
-        MISSING_ID,
-        oid.clone(),
-    ))
-    .expect_err("compare_with_head with no repo");
+    let err =
+        tauri::async_runtime::block_on(compare_with_head_inner(&state, MISSING_ID, oid.clone()))
+            .expect_err("compare_with_head with no repo");
     assert!(matches!(err, AppError::NoRepo));
 
     let err = tauri::async_runtime::block_on(compare_with_head_file_diff_inner(
@@ -266,12 +263,9 @@ fn merge_commands_require_an_open_repo() {
 fn rebase_commands_require_an_open_repo() {
     let state = AppState::default();
 
-    let err = tauri::async_runtime::block_on(rebase_branch_inner(
-        &state,
-        MISSING_ID,
-        "main".to_string(),
-    ))
-    .expect_err("rebase_branch with no repo");
+    let err =
+        tauri::async_runtime::block_on(rebase_branch_inner(&state, MISSING_ID, "main".to_string()))
+            .expect_err("rebase_branch with no repo");
     assert!(matches!(err, AppError::NoRepo));
 
     let err = tauri::async_runtime::block_on(rebase_continue_inner(&state, MISSING_ID))
@@ -336,4 +330,3 @@ fn bisect_commands_require_an_open_repo() {
         .expect_err("bisect_reset with no repo");
     assert!(matches!(err, AppError::NoRepo));
 }
-

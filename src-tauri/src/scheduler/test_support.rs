@@ -87,7 +87,9 @@ pub(super) fn collecting_emitter() -> (EmitFn, Arc<StdMutex<Vec<SchedulerEvent>>
     (emit, events)
 }
 
-pub(super) fn job_statuses(events: &Arc<StdMutex<Vec<SchedulerEvent>>>) -> Vec<JobStatusChangedPayload> {
+pub(super) fn job_statuses(
+    events: &Arc<StdMutex<Vec<SchedulerEvent>>>,
+) -> Vec<JobStatusChangedPayload> {
     events
         .lock()
         .expect("events lock")

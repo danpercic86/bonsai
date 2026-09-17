@@ -39,14 +39,26 @@ struct CuratedKey {
 /// Behaviour). All current curated writes use `set_str` — the enum keys are
 /// tri-state STRINGS (true/false/input/only/…), never libgit2 bools.
 const CURATED_KEYS: &[CuratedKey] = &[
-    CuratedKey { key: "user.name", kind: ValueKind::Text, enum_values: &[] },
-    CuratedKey { key: "user.email", kind: ValueKind::Text, enum_values: &[] },
+    CuratedKey {
+        key: "user.name",
+        kind: ValueKind::Text,
+        enum_values: &[],
+    },
+    CuratedKey {
+        key: "user.email",
+        kind: ValueKind::Text,
+        enum_values: &[],
+    },
     CuratedKey {
         key: "core.autocrlf",
         kind: ValueKind::Enum,
         enum_values: &["true", "false", "input"],
     },
-    CuratedKey { key: "init.defaultBranch", kind: ValueKind::Text, enum_values: &[] },
+    CuratedKey {
+        key: "init.defaultBranch",
+        kind: ValueKind::Text,
+        enum_values: &[],
+    },
     CuratedKey {
         key: "pull.ff",
         kind: ValueKind::Enum,
@@ -194,7 +206,10 @@ pub fn read_config(workdir: &Path, level: ConfigLevelArg) -> Result<ConfigView, 
     let mut curated = Vec::with_capacity(CURATED_KEYS.len());
     for ck in CURATED_KEYS {
         let (effective_value, effective_level) = match merged.get_entry(ck.key) {
-            Ok(e) => (e.value().ok().map(str::to_string), Some(map_level(e.level()))),
+            Ok(e) => (
+                e.value().ok().map(str::to_string),
+                Some(map_level(e.level())),
+            ),
             Err(_) => (None, None),
         };
         curated.push(CuratedEntry {
@@ -214,13 +229,20 @@ pub fn read_config(workdir: &Path, level: ConfigLevelArg) -> Result<ConfigView, 
     let mut advanced: BTreeMap<String, ConfigEntry> = BTreeMap::new();
     target.entries(None)?.for_each(|e| {
         let name = String::from_utf8_lossy(e.name_bytes()).into_owned();
-        if CURATED_KEYS.iter().any(|ck| ck.key.eq_ignore_ascii_case(&name)) {
+        if CURATED_KEYS
+            .iter()
+            .any(|ck| ck.key.eq_ignore_ascii_case(&name))
+        {
             return;
         }
         let value = String::from_utf8_lossy(e.value_bytes()).into_owned();
         advanced.insert(
             name.clone(),
-            ConfigEntry { name, value, level: level_name },
+            ConfigEntry {
+                name,
+                value,
+                level: level_name,
+            },
         );
     })?;
 

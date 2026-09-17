@@ -8,18 +8,19 @@
 
 use std::path::Path;
 
+use crate::common;
 use bonsai_core::error::AppError;
 use bonsai_core::git::commit::create_commit;
 use bonsai_core::git::search::{search_commits, SearchField, SearchQuery, SpawnGitRunner};
 use bonsai_core::git::stage::stage_paths;
-use crate::common;
 
 fn init_repo() -> tempfile::TempDir {
     let dir = common::scratch_dir();
     let repo = git2::Repository::init(dir.path()).expect("init");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     dir
 }
@@ -70,7 +71,11 @@ fn adversarial_query_text_is_literal() {
         let res = search_commits(p, &SpawnGitRunner, &q(SearchField::Message, needle))
             .expect("search ok");
         let got = oids(&res);
-        assert_eq!(got, vec![expected[i].clone()], "literal match for {needle:?}: {got:?}");
+        assert_eq!(
+            got,
+            vec![expected[i].clone()],
+            "literal match for {needle:?}: {got:?}"
+        );
     }
 }
 
@@ -81,7 +86,10 @@ fn blank_query_is_empty() {
     for text in ["", "   ", "\t\n"] {
         let res = search_commits(dir.path(), &SpawnGitRunner, &q(SearchField::Message, text))
             .expect("ok");
-        assert!(res.matches.is_empty() && !res.truncated, "blank {text:?} → empty");
+        assert!(
+            res.matches.is_empty() && !res.truncated,
+            "blank {text:?} → empty"
+        );
     }
 }
 
@@ -89,8 +97,12 @@ fn blank_query_is_empty() {
 #[test]
 fn unborn_head_is_empty() {
     let dir = init_repo();
-    let res = search_commits(dir.path(), &SpawnGitRunner, &q(SearchField::Message, "anything"))
-        .expect("ok");
+    let res = search_commits(
+        dir.path(),
+        &SpawnGitRunner,
+        &q(SearchField::Message, "anything"),
+    )
+    .expect("ok");
     assert!(res.matches.is_empty() && !res.truncated);
 }
 
@@ -100,7 +112,12 @@ fn unborn_head_is_empty() {
 fn scope_ref_leading_dash_is_rejected() {
     let dir = init_repo();
     commit(dir.path(), "a.txt", "a\n", "seed");
-    for field in [SearchField::Message, SearchField::All, SearchField::Content, SearchField::Path] {
+    for field in [
+        SearchField::Message,
+        SearchField::All,
+        SearchField::Content,
+        SearchField::Path,
+    ] {
         let mut query = q(field, "seed");
         query.scope_ref = Some("-x".to_string());
         let err = search_commits(dir.path(), &SpawnGitRunner, &query)
@@ -118,8 +135,7 @@ fn unicode_case_insensitive_fold() {
     let hit = commit(p, "u.txt", "u\n", "Résumé build — CAFÉ Ünïcode ЖЖ");
     // Lowercased needle with different original casing still matches.
     for needle in ["café", "жж", "résumé", "ünïcode"] {
-        let res = search_commits(p, &SpawnGitRunner, &q(SearchField::Message, needle))
-            .expect("ok");
+        let res = search_commits(p, &SpawnGitRunner, &q(SearchField::Message, needle)).expect("ok");
         assert_eq!(oids(&res), vec![hit.clone()], "unicode fold for {needle:?}");
     }
 }
@@ -164,7 +180,10 @@ fn dangling_and_garbled_refs_survive() {
 
     let res = search_commits(p, &SpawnGitRunner, &q(SearchField::All, "findable"))
         .expect("bad refs must not abort the search");
-    assert!(oids(&res).contains(&hit), "reachable HEAD commit still found");
+    assert!(
+        oids(&res).contains(&hit),
+        "reachable HEAD commit still found"
+    );
 }
 
 /// F-A6-C twin-pair: Content mode under the default (case-INsensitive) must fold
@@ -189,9 +208,6 @@ fn content_pickaxe_is_case_insensitive_like_cli() {
     );
 
     // Oracle: `git log -i -S foobarbaz --all` returns the same commit.
-    let cli = common::git(
-        p,
-        &["log", "-i", "--format=%H", "-Sfoobarbaz", "--all"],
-    );
+    let cli = common::git(p, &["log", "-i", "--format=%H", "-Sfoobarbaz", "--all"]);
     assert!(cli.lines().any(|l| l == target), "CLI twin agrees: {cli}");
 }

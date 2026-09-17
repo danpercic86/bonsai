@@ -8,13 +8,13 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use crate::common::{commit_fixed, git};
 use bonsai_core::error::AppError;
 use bonsai_core::git::worktree_copy::{
     add_worktree_with_changes, classify_copy, list_copy_candidates, CopyAction, CopyGroup,
     CopySelection, CopyVerdict,
 };
-use crate::common;
-use crate::common::{commit_fixed, git};
 
 macro_rules! require_git {
     () => {
@@ -92,12 +92,8 @@ fn classify_unborn_head() {
     // Make HEAD unborn: point it at a branch with no commits.
     git(&fx.main, &["symbolic-ref", "HEAD", "refs/heads/unborn"]);
 
-    let plan = classify_copy(
-        &fx.main,
-        "feature",
-        &[s("shared.txt"), s("ghost.txt")],
-    )
-    .expect("classify");
+    let plan =
+        classify_copy(&fx.main, "feature", &[s("shared.txt"), s("ghost.txt")]).expect("classify");
     assert_eq!(plan.len(), 2);
     // present on target, base None → conflict
     assert_eq!(plan[0].path, "shared.txt");
@@ -125,7 +121,11 @@ fn classify_equal_vs_diverged() {
 
     let plan = classify_copy(&fx.main, "feature", &[s("f.txt"), s("g.txt")]).expect("classify");
     assert_eq!(plan[0].verdict, CopyVerdict::Clean, "f.txt: target==base");
-    assert_eq!(plan[1].verdict, CopyVerdict::Conflict, "g.txt: target diverged");
+    assert_eq!(
+        plan[1].verdict,
+        CopyVerdict::Conflict,
+        "g.txt: target diverged"
+    );
 }
 
 /// A path that is a DIRECTORY on the target side → not a blob → treated as absent
@@ -270,7 +270,10 @@ fn add_containment_guard_rejects_escapes() {
         Err(AppError::Git(_)) => {}
         other => panic!("expected Git error for ../escape, got {other:?}"),
     }
-    assert!(!escape_target.exists(), "no stray file outside worktree root");
+    assert!(
+        !escape_target.exists(),
+        "no stray file outside worktree root"
+    );
 
     // Case 2: absolute path.
     let abs_target = fx.root.join("abs-escape.txt");
@@ -314,18 +317,14 @@ fn add_empty_selection_is_plain_worktree() {
     // An untracked file in main that must NOT leak into the worktree.
     write(&fx.main, "leak.txt", "should not copy\n");
 
-    let info =
-        add_worktree_with_changes(&fx.main, "feature", "wt-plain", &[]).expect("add empty");
+    let info = add_worktree_with_changes(&fx.main, "feature", "wt-plain", &[]).expect("add empty");
     let wt_root = PathBuf::from(&info.abs_path);
     assert!(wt_root.join("conf.txt").exists(), "branch checkout present");
     assert!(
         !wt_root.join("leak.txt").exists(),
         "empty selection must not copy the untracked file"
     );
-    assert!(
-        !wt_root.join("copyme.txt").exists(),
-        "no other stray files"
-    );
+    assert!(!wt_root.join("copyme.txt").exists(), "no other stray files");
 }
 
 // ---------------------------------------------------------------------------
@@ -349,7 +348,11 @@ fn list_ignored_vs_untracked() {
     let cands = list_copy_candidates(&fx.main).expect("list");
 
     let ignored: Vec<_> = cands.iter().filter(|c| c.path == "ignored.txt").collect();
-    assert_eq!(ignored.len(), 1, "ignored.txt appears exactly once: {cands:?}");
+    assert_eq!(
+        ignored.len(),
+        1,
+        "ignored.txt appears exactly once: {cands:?}"
+    );
     assert_eq!(ignored[0].group, CopyGroup::Ignored);
 
     let untracked: Vec<_> = cands.iter().filter(|c| c.path == "untracked.txt").collect();
@@ -413,9 +416,15 @@ fn list_rename_new_path_delete_excluded() {
 
     let cands = list_copy_candidates(&fx.main).expect("list");
     let paths: Vec<_> = cands.iter().map(|c| c.path.as_str()).collect();
-    assert!(paths.contains(&"newname.txt"), "rename new path present: {cands:?}");
+    assert!(
+        paths.contains(&"newname.txt"),
+        "rename new path present: {cands:?}"
+    );
     assert!(!paths.contains(&"oldname.txt"), "rename old path absent");
-    assert!(!paths.contains(&"todelete.txt"), "deleted file must be excluded");
+    assert!(
+        !paths.contains(&"todelete.txt"),
+        "deleted file must be excluded"
+    );
 }
 
 /// Audit §3.1: the branch being checked out into the new worktree may carry a

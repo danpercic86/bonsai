@@ -80,7 +80,8 @@ fn abort_with_empty_touched_set_preserves_unrelated_unstaged_edit() {
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
         cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     }
     let commit_all = |msg: &str, files: &[(&str, &str)]| {
@@ -107,7 +108,9 @@ fn abort_with_empty_touched_set_preserves_unrelated_unstaged_edit() {
         // Commit the divergent topic-side change directly on the branch.
         let sig = git2::Signature::now("Test User", "test@example.com").expect("sig");
         let base = repo.find_commit(base_oid).expect("base commit");
-        let mut tb = repo.treebuilder(Some(&base.tree().expect("tree"))).expect("tb");
+        let mut tb = repo
+            .treebuilder(Some(&base.tree().expect("tree")))
+            .expect("tb");
         let blob = repo.blob(b"topic\n").expect("blob");
         tb.insert("a.txt", blob, 0o100644).expect("insert");
         let tree = repo.find_tree(tb.write().expect("tree oid")).expect("tree");
@@ -148,7 +151,10 @@ fn abort_with_empty_touched_set_preserves_unrelated_unstaged_edit() {
     assert_eq!(repo.state(), git2::RepositoryState::Clean);
     let unrelated =
         std::fs::read_to_string(dir.path().join("unrelated.txt")).expect("read unrelated");
-    assert_eq!(unrelated, "edited but not staged\n", "unstaged edit clobbered");
+    assert_eq!(
+        unrelated, "edited but not staged\n",
+        "unstaged edit clobbered"
+    );
     let a = std::fs::read_to_string(dir.path().join("a.txt")).expect("read a.txt");
     assert_eq!(a, "main\n", "a.txt must be back at HEAD's version");
 }

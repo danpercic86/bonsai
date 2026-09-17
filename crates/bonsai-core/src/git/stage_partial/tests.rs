@@ -10,7 +10,10 @@ fn split_empty_is_no_lines() {
 
 #[test]
 fn split_keeps_lf_and_trailing_no_newline() {
-    assert_eq!(split_keep_terminator(b"a\nb\nc"), vec![&b"a\n"[..], b"b\n", b"c"]);
+    assert_eq!(
+        split_keep_terminator(b"a\nb\nc"),
+        vec![&b"a\n"[..], b"b\n", b"c"]
+    );
     assert_eq!(split_keep_terminator(b"a\nb\n"), vec![&b"a\n"[..], b"b\n"]);
     assert_eq!(split_keep_terminator(b"solo"), vec![&b"solo"[..]]);
     // A lone newline is one line "\n".
@@ -83,12 +86,26 @@ fn stage_crlf_modification_is_byte_exact() {
     };
     // Accept the modification: pick both the del and the add.
     let hunks = std::slice::from_ref(&hunk);
-    let got = reconstruct(Direction::Stage, hunks, &old_lines, &new_lines, &set(&[2]), &set(&[2]))
-        .expect("reconstruct");
+    let got = reconstruct(
+        Direction::Stage,
+        hunks,
+        &old_lines,
+        &new_lines,
+        &set(&[2]),
+        &set(&[2]),
+    )
+    .expect("reconstruct");
     assert_eq!(assemble(&got), new, "CRLF must survive byte-for-byte");
     // Reject everything: back to the index bytes.
-    let none = reconstruct(Direction::Stage, hunks, &old_lines, &new_lines, &set(&[]), &set(&[]))
-        .expect("reconstruct");
+    let none = reconstruct(
+        Direction::Stage,
+        hunks,
+        &old_lines,
+        &new_lines,
+        &set(&[]),
+        &set(&[]),
+    )
+    .expect("reconstruct");
     assert_eq!(assemble(&none), old);
 }
 
@@ -114,13 +131,27 @@ fn stage_no_newline_eof_is_byte_exact() {
         ],
     };
     let hunks = std::slice::from_ref(&hunk);
-    let full = reconstruct(Direction::Stage, hunks, &old_lines, &new_lines, &set(&[3]), &set(&[3]))
-        .expect("reconstruct");
+    let full = reconstruct(
+        Direction::Stage,
+        hunks,
+        &old_lines,
+        &new_lines,
+        &set(&[3]),
+        &set(&[3]),
+    )
+    .expect("reconstruct");
     assert_eq!(assemble(&full), new); // "a\nb\nd", no trailing newline
 
     // Stage only the deletion of "c": "b" keeps its own newline.
-    let del_only = reconstruct(Direction::Stage, hunks, &old_lines, &new_lines, &set(&[]), &set(&[3]))
-        .expect("reconstruct");
+    let del_only = reconstruct(
+        Direction::Stage,
+        hunks,
+        &old_lines,
+        &new_lines,
+        &set(&[]),
+        &set(&[3]),
+    )
+    .expect("reconstruct");
     assert_eq!(assemble(&del_only), b"a\nb\n");
 }
 
@@ -147,12 +178,26 @@ fn unstage_restores_head_line_for_selected_del() {
     };
     // Unstage BOTH the add and the del -> index reverts to HEAD.
     let hunks = std::slice::from_ref(&hunk);
-    let both = reconstruct(Direction::Unstage, hunks, &old_lines, &new_lines, &set(&[2]), &set(&[2]))
-        .expect("reconstruct");
+    let both = reconstruct(
+        Direction::Unstage,
+        hunks,
+        &old_lines,
+        &new_lines,
+        &set(&[2]),
+        &set(&[2]),
+    )
+    .expect("reconstruct");
     assert_eq!(assemble(&both), head);
     // Unstage only the add -> "x" removed but "b" not restored yet.
-    let add_only = reconstruct(Direction::Unstage, hunks, &old_lines, &new_lines, &set(&[2]), &set(&[]))
-        .expect("reconstruct");
+    let add_only = reconstruct(
+        Direction::Unstage,
+        hunks,
+        &old_lines,
+        &new_lines,
+        &set(&[2]),
+        &set(&[]),
+    )
+    .expect("reconstruct");
     assert_eq!(assemble(&add_only), b"a\nc\n");
 }
 
@@ -278,8 +323,15 @@ fn stage_partial_applies_checkin_filters_under_autocrlf() {
     // Oracle: the blob oid `git add` would stage, then reset the index back
     // to HEAD so the partial stage starts from a clean index.
     idx.add_path(Path::new("f.txt")).expect("oracle add");
-    let expected_oid = idx.get_path(Path::new("f.txt"), 0).expect("oracle entry").id;
-    let head_tree = repo.head().expect("head").peel_to_tree().expect("head tree");
+    let expected_oid = idx
+        .get_path(Path::new("f.txt"), 0)
+        .expect("oracle entry")
+        .id;
+    let head_tree = repo
+        .head()
+        .expect("head")
+        .peel_to_tree()
+        .expect("head tree");
     idx.read_tree(&head_tree).expect("reset index");
     idx.write().expect("write reset index");
     drop(head_tree);
@@ -318,11 +370,11 @@ fn invalid_paths_are_rejected() {
         new_no: Some(1),
     }];
     for bad in ["", "../escape", "/abs", "a\\b"] {
-        let err = stage_partial(dir.path(), bad, None, &sel)
-            .expect_err(&format!("must reject {bad:?}"));
+        let err =
+            stage_partial(dir.path(), bad, None, &sel).expect_err(&format!("must reject {bad:?}"));
         assert!(matches!(err, AppError::Other(m) if m.contains("invalid path")));
     }
-    let err = stage_partial(dir.path(), "ok.txt", Some("../escape"), &sel)
-        .expect_err("bad orig_path");
+    let err =
+        stage_partial(dir.path(), "ok.txt", Some("../escape"), &sel).expect_err("bad orig_path");
     assert!(matches!(err, AppError::Other(m) if m.contains("invalid path")));
 }

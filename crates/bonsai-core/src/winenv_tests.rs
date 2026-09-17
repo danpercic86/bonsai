@@ -95,7 +95,10 @@ fn rehydrate_path_applies_and_reports_the_added_entries() {
 
     let (out, writes) = rehydrate(&env);
     assert!(out.applied);
-    assert_eq!(out.added, vec![r"C:\Users\dev\AppData\Local\Programs\Git\cmd"]);
+    assert_eq!(
+        out.added,
+        vec![r"C:\Users\dev\AppData\Local\Programs\Git\cmd"]
+    );
     assert_eq!(
         writes,
         vec![r"C:\Windows\system32;C:\installer-only;C:\Users\dev\AppData\Local\Programs\Git\cmd"]
@@ -174,7 +177,10 @@ fn rehydrate_path_refuses_an_over_long_merged_value() {
         .with_var("PATH", r"C:\installer-only");
     let (out, writes) = rehydrate(&env);
     assert_eq!(out, PathRehydration::default());
-    assert!(writes.is_empty(), "set_var must never see an over-long value");
+    assert!(
+        writes.is_empty(),
+        "set_var must never see an over-long value"
+    );
 }
 
 // ---- the real host seam -------------------------------------------------------

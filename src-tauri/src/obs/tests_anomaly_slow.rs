@@ -17,7 +17,10 @@ fn slow_command_fires_once_on_outlier() {
     }
     h.feed(ipc_result(100, "get_graph", 4000.0));
     assert_eq!(h.count("slow-command"), 1, "exactly one slow-command");
-    assert_eq!(severity_of(h.find("slow-command").unwrap()), Some(AnomalySeverity::Warn));
+    assert_eq!(
+        severity_of(h.find("slow-command").unwrap()),
+        Some(AnomalySeverity::Warn)
+    );
 }
 
 /// Pins the FORMULA composition (not just the clamp): with 50 `get_graph`@300ms
@@ -49,7 +52,11 @@ fn slow_command_silent_on_uniform_high_baseline() {
     for i in 0..50 {
         h.feed(ipc_result(i, "get_graph", 900.0));
     }
-    assert_eq!(h.count("slow-command"), 0, "a big repo's normal cost is the baseline");
+    assert_eq!(
+        h.count("slow-command"),
+        0,
+        "a big repo's normal cost is the baseline"
+    );
 }
 
 // ---- §12 row-5 (c): below MIN_SAMPLES only the >10s catch-all fires ----------
@@ -60,10 +67,17 @@ fn slow_command_cold_start_only_hard_catch_all() {
     for i in 0..3 {
         h.feed(ipc_result(i, "diff_compute", 900.0));
     }
-    assert_eq!(h.count("slow-command"), 0, "cold start fires nothing on the calibrated path");
+    assert_eq!(
+        h.count("slow-command"),
+        0,
+        "cold start fires nothing on the calibrated path"
+    );
     h.feed(ipc_result(10, "diff_compute", 11_000.0));
     assert_eq!(h.count("slow-command"), 1);
-    assert_eq!(severity_of(h.find("slow-command").unwrap()), Some(AnomalySeverity::Error));
+    assert_eq!(
+        severity_of(h.find("slow-command").unwrap()),
+        Some(AnomalySeverity::Error)
+    );
 }
 
 // ---- §12 row-5 (d): rate limit caps repeats at 1 per cmd per 10s -------------
@@ -84,20 +98,46 @@ fn slow_command_rate_limited_to_one_per_10s() {
 fn slow_phase_attributes_to_dominant_phase() {
     let mut h = H::new();
     let span_seq = h.feed(with_trace(
-        span(1000, "graph.get", 1000.0, Some(vec![("lane", 800.0)]), None, None, None, None, None),
+        span(
+            1000,
+            "graph.get",
+            1000.0,
+            Some(vec![("lane", 800.0)]),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ),
         "t1",
     ));
     let result_seq = h.feed(with_trace(ipc_result(1010, "get_graph", 11_000.0), "t1"));
     let a = h.find("slow-phase").expect("dominant phase → slow-phase");
-    assert!(matches!(&a.payload, crate::obs::record::LogPayload::Anomaly { detail, .. } if detail.contains("lane")));
-    assert_eq!(refs_of(a), &[span_seq, result_seq], "references both the span and the result");
+    assert!(
+        matches!(&a.payload, crate::obs::record::LogPayload::Anomaly { detail, .. } if detail.contains("lane"))
+    );
+    assert_eq!(
+        refs_of(a),
+        &[span_seq, result_seq],
+        "references both the span and the result"
+    );
 }
 
 #[test]
 fn slow_phase_true_negative_no_dominant_phase() {
     let mut h = H::new();
     h.feed(with_trace(
-        span(1000, "graph.get", 1000.0, Some(vec![("lane", 400.0), ("revwalk", 400.0)]), None, None, None, None, None),
+        span(
+            1000,
+            "graph.get",
+            1000.0,
+            Some(vec![("lane", 400.0), ("revwalk", 400.0)]),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ),
         "t1",
     ));
     h.feed(with_trace(ipc_result(1010, "get_graph", 11_000.0), "t1"));
@@ -110,7 +150,17 @@ fn slow_phase_true_negative_no_dominant_phase() {
 fn cache_collapse_true_positive() {
     let mut h = H::new();
     for i in 0..5 {
-        h.feed(span(1000 + i, "graph.get", 10.0, None, None, None, None, Some("redecorate"), None));
+        h.feed(span(
+            1000 + i,
+            "graph.get",
+            10.0,
+            None,
+            None,
+            None,
+            None,
+            Some("redecorate"),
+            None,
+        ));
     }
     assert_eq!(h.count("cache-collapse"), 1);
 }
@@ -120,7 +170,17 @@ fn cache_collapse_suppressed_by_intervening_mutation() {
     let mut h = H::new();
     h.feed(ipc_call(900, "commit", "x")); // a real invalidation
     for i in 0..5 {
-        h.feed(span(1000 + i, "graph.get", 10.0, None, None, None, None, Some("redecorate"), None));
+        h.feed(span(
+            1000 + i,
+            "graph.get",
+            10.0,
+            None,
+            None,
+            None,
+            None,
+            Some("redecorate"),
+            None,
+        ));
     }
     assert_eq!(h.count("cache-collapse"), 0);
 }
@@ -131,7 +191,17 @@ fn cache_collapse_suppressed_by_intervening_mutation() {
 fn queue_delay_true_positive() {
     let mut h = H::new();
     for i in 0..3 {
-        h.feed(span(1000 + i * 100, "graph.get", 10.0, None, Some(150), None, None, None, None));
+        h.feed(span(
+            1000 + i * 100,
+            "graph.get",
+            10.0,
+            None,
+            Some(150),
+            None,
+            None,
+            None,
+            None,
+        ));
     }
     assert_eq!(h.count("queue-delay"), 1);
 }
@@ -140,7 +210,17 @@ fn queue_delay_true_positive() {
 fn queue_delay_true_negative_below_threshold() {
     let mut h = H::new();
     for i in 0..3 {
-        h.feed(span(1000 + i * 100, "graph.get", 10.0, None, Some(50), None, None, None, None));
+        h.feed(span(
+            1000 + i * 100,
+            "graph.get",
+            10.0,
+            None,
+            Some(50),
+            None,
+            None,
+            None,
+            None,
+        ));
     }
     assert_eq!(h.count("queue-delay"), 0);
 }
@@ -151,7 +231,17 @@ fn queue_delay_true_negative_below_threshold() {
 fn pool_saturation_true_positive() {
     let mut h = H::new();
     for i in 0..3 {
-        h.feed(span(1000 + i * 100, "graph.get", 10.0, None, None, Some((5, 4)), None, None, None));
+        h.feed(span(
+            1000 + i * 100,
+            "graph.get",
+            10.0,
+            None,
+            None,
+            Some((5, 4)),
+            None,
+            None,
+            None,
+        ));
     }
     assert_eq!(h.count("pool-saturation"), 1);
 }
@@ -160,7 +250,17 @@ fn pool_saturation_true_positive() {
 fn pool_saturation_true_negative() {
     let mut h = H::new();
     for i in 0..3 {
-        h.feed(span(1000 + i * 100, "graph.get", 10.0, None, None, Some((3, 4)), None, None, None));
+        h.feed(span(
+            1000 + i * 100,
+            "graph.get",
+            10.0,
+            None,
+            None,
+            Some((3, 4)),
+            None,
+            None,
+            None,
+        ));
     }
     assert_eq!(h.count("pool-saturation"), 0);
 }
@@ -170,22 +270,57 @@ fn pool_saturation_true_negative() {
 #[test]
 fn watchdog_pressure_true_positive_deadline() {
     let mut h = H::new();
-    h.feed(span(1000, "graph.get", 10.0, None, None, None, Some(0.9), None, None));
-    let a = h.find("watchdog-pressure").expect("deadlineFrac ≥ 0.8 fires");
+    h.feed(span(
+        1000,
+        "graph.get",
+        10.0,
+        None,
+        None,
+        None,
+        Some(0.9),
+        None,
+        None,
+    ));
+    let a = h
+        .find("watchdog-pressure")
+        .expect("deadlineFrac ≥ 0.8 fires");
     assert_eq!(severity_of(a), Some(AnomalySeverity::Warn));
 }
 
 #[test]
 fn watchdog_pressure_timeout_is_error() {
     let mut h = H::new();
-    h.feed(span(1000, "graph.get", 10.0, None, None, None, None, None, Some("timeout")));
-    assert_eq!(severity_of(h.find("watchdog-pressure").unwrap()), Some(AnomalySeverity::Error));
+    h.feed(span(
+        1000,
+        "graph.get",
+        10.0,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some("timeout"),
+    ));
+    assert_eq!(
+        severity_of(h.find("watchdog-pressure").unwrap()),
+        Some(AnomalySeverity::Error)
+    );
 }
 
 #[test]
 fn watchdog_pressure_true_negative() {
     let mut h = H::new();
-    h.feed(span(1000, "graph.get", 10.0, None, None, None, Some(0.5), None, None));
+    h.feed(span(
+        1000,
+        "graph.get",
+        10.0,
+        None,
+        None,
+        None,
+        Some(0.5),
+        None,
+        None,
+    ));
     assert_eq!(h.count("watchdog-pressure"), 0);
 }
 
@@ -198,5 +333,9 @@ fn baseline_map_stays_at_cap() {
         let cmd = format!("cmd_{i}");
         h.feed(ipc_result(i as i64, &cmd, 5.0));
     }
-    assert_eq!(h.detector().baseline_len(), 200, "LRU eviction holds the cap");
+    assert_eq!(
+        h.detector().baseline_len(),
+        200,
+        "LRU eviction holds the cap"
+    );
 }

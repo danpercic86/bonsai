@@ -256,11 +256,13 @@ pub fn read_status_with(repo: &git2::Repository) -> Result<StatusSnapshot, AppEr
             // `wt_modified_is_stat_clean`). Everywhere else git uses nsec mtime
             // and agrees with libgit2, so always emit.
             #[cfg(windows)]
-            let stat_clean = racy_ctx.as_ref().is_some_and(|(index, index_mtime_secs, wd)| {
-                index
-                    .as_ref()
-                    .is_some_and(|idx| wt_modified_is_stat_clean(idx, *index_mtime_secs, wd, &path))
-            });
+            let stat_clean = racy_ctx
+                .as_ref()
+                .is_some_and(|(index, index_mtime_secs, wd)| {
+                    index.as_ref().is_some_and(|idx| {
+                        wt_modified_is_stat_clean(idx, *index_mtime_secs, wd, &path)
+                    })
+                });
             #[cfg(not(windows))]
             let stat_clean = false;
             if !stat_clean {

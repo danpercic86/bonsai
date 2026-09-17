@@ -50,7 +50,14 @@ pub(crate) async fn get_workdir_file_diff_inner(
         // dependency, §3.1.2), so the whole diff is one `hunks` phase.
         let res = {
             let _p = recorder.phase("hunks");
-            workdir_file_diff(&workdir, &path, orig_path.as_deref(), staged, full_context, intraline)
+            workdir_file_diff(
+                &workdir,
+                &path,
+                orig_path.as_deref(),
+                staged,
+                full_context,
+                intraline,
+            )
         };
         let outcome = if res.is_ok() {
             crate::obs::phase::SpanOutcome::Ok
@@ -122,7 +129,14 @@ pub(crate) async fn get_commit_file_diff_inner(
 ) -> Result<FileDiff, AppError> {
     let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        commit_file_diff(&workdir, &oid, &path, orig_path.as_deref(), full_context, intraline)
+        commit_file_diff(
+            &workdir,
+            &oid,
+            &path,
+            orig_path.as_deref(),
+            full_context,
+            intraline,
+        )
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -185,7 +199,14 @@ pub(crate) async fn compare_with_head_file_diff_inner(
 ) -> Result<FileDiff, AppError> {
     let workdir = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        compare_head_file_diff(&workdir, &oid, &path, orig_path.as_deref(), full_context, intraline)
+        compare_head_file_diff(
+            &workdir,
+            &oid,
+            &path,
+            orig_path.as_deref(),
+            full_context,
+            intraline,
+        )
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?

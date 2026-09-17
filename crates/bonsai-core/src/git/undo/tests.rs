@@ -75,7 +75,10 @@ fn undo_kind_wire_strings() {
         (UndoKind::Unknown, "unknown"),
     ];
     for (kind, wire) in cases {
-        assert_eq!(serde_json::to_value(kind).expect("json"), serde_json::json!(wire));
+        assert_eq!(
+            serde_json::to_value(kind).expect("json"),
+            serde_json::json!(wire)
+        );
     }
 }
 
@@ -90,10 +93,19 @@ fn classify_truth_table() {
         ("commit (initial): base", UndoKind::Commit),
         ("commit (merge): resolve", UndoKind::Commit),
         ("commit (amend): tidy message", UndoKind::Amend),
-        ("merge feature: Merge made by the 'ort' strategy.", UndoKind::Merge),
+        (
+            "merge feature: Merge made by the 'ort' strategy.",
+            UndoKind::Merge,
+        ),
         ("pull: Merge made by the 'ort' strategy.", UndoKind::Merge),
-        ("rebase (finish): returning to refs/heads/main", UndoKind::Rebase),
-        ("rebase -i (finish): returning to refs/heads/main", UndoKind::Rebase),
+        (
+            "rebase (finish): returning to refs/heads/main",
+            UndoKind::Rebase,
+        ),
+        (
+            "rebase -i (finish): returning to refs/heads/main",
+            UndoKind::Rebase,
+        ),
         ("rebase (start): checkout main", UndoKind::Rebase),
         ("pull: Fast-forward", UndoKind::FastForward),
         ("merge: Fast-forward", UndoKind::FastForward),
@@ -101,7 +113,10 @@ fn classify_truth_table() {
         ("cherry-pick: add feature", UndoKind::CherryPick),
         ("revert: Revert \"add feature\"", UndoKind::Revert),
         ("reset: moving to HEAD~1", UndoKind::Reset),
-        ("checkout: moving from feature to main", UndoKind::BranchSwitch),
+        (
+            "checkout: moving from feature to main",
+            UndoKind::BranchSwitch,
+        ),
         ("something totally unexpected", UndoKind::Unknown),
         ("", UndoKind::Unknown),
     ];
@@ -135,7 +150,8 @@ fn init_repo(dir: &Path) -> git2::Repository {
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
     }
     repo
 }
@@ -143,7 +159,9 @@ fn init_repo(dir: &Path) -> git2::Repository {
 fn commit_file(dir: &Path, name: &str, content: &str, msg: &str) -> String {
     std::fs::write(dir.join(name), content).expect("write");
     crate::git::stage::stage_paths(dir, &[name.to_string()]).expect("stage");
-    crate::git::commit::create_commit(dir, msg, None, false).expect("commit").oid
+    crate::git::commit::create_commit(dir, msg, None, false)
+        .expect("commit")
+        .oid
 }
 
 /// Empty reflog / unborn HEAD → not undoable, kind Unknown, "nothing to undo".
@@ -168,7 +186,10 @@ fn describe_initial_commit_is_not_undoable() {
     let plan = describe_last_undo(dir.path()).expect("describe");
     assert_eq!(plan.kind, UndoKind::Commit);
     assert!(!plan.undoable, "initial commit is not undoable");
-    assert_eq!(plan.reason.as_deref(), Some("cannot undo the initial commit"));
+    assert_eq!(
+        plan.reason.as_deref(),
+        Some("cannot undo the initial commit")
+    );
     assert_eq!(plan.target_oid, "", "root target is reported as empty");
     assert_eq!(plan.reset_mode, None);
 }
@@ -187,7 +208,10 @@ fn describe_second_commit_is_mixed_undoable() {
     assert!(plan.undoable);
     assert_eq!(plan.reset_mode, Some(ResetMode::Mixed));
     assert!(!plan.requires_clean_worktree);
-    assert_eq!(plan.target_oid, c1, "target = the previous HEAD (reflog oldOid)");
+    assert_eq!(
+        plan.target_oid, c1,
+        "target = the previous HEAD (reflog oldOid)"
+    );
     assert_eq!(plan.target_short, &c1[..SHORT_LEN]);
 }
 
@@ -288,7 +312,12 @@ fn describe_matches_git_reflog_oracle() {
     // --- branch switch → BranchSwitch, not undoable
     run_git(d, &["checkout", "-q", "feature"]);
     let p = describe_last_undo(d).expect("describe checkout");
-    assert_eq!(p.kind, UndoKind::BranchSwitch, "reflog msg: {:?}", p.summary);
+    assert_eq!(
+        p.kind,
+        UndoKind::BranchSwitch,
+        "reflog msg: {:?}",
+        p.summary
+    );
     assert!(!p.undoable);
     assert!(p.reason.is_some());
 }

@@ -10,12 +10,12 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use crate::common::{commit_fixed, git, git_ok};
 use bonsai_core::error::AppError;
 use bonsai_core::git::worktree::{
     add_worktree, list_worktrees, lock_worktree, remove_worktree, unlock_worktree, WorktreeInfo,
 };
-use crate::common;
-use crate::common::{commit_fixed, git, git_ok};
 
 macro_rules! require_git {
     () => {
@@ -116,11 +116,20 @@ fn list_with_linked_worktrees() {
     let wt_feature = fx.root.join("wt-feature");
     let wt_detached = fx.root.join("wt-detached");
 
-    git(&fx.main, &["worktree", "add", wt_feature.to_str().unwrap(), "feature"]);
+    git(
+        &fx.main,
+        &["worktree", "add", wt_feature.to_str().unwrap(), "feature"],
+    );
     // A detached worktree at HEAD (branch == None on our side).
     git(
         &fx.main,
-        &["worktree", "add", "--detach", wt_detached.to_str().unwrap(), "HEAD"],
+        &[
+            "worktree",
+            "add",
+            "--detach",
+            wt_detached.to_str().unwrap(),
+            "HEAD",
+        ],
     );
 
     let rows = list_worktrees(&fx.main).expect("list");
@@ -162,7 +171,10 @@ fn list_from_linked_worktree_finds_main() {
     require_git!();
     let fx = setup();
     let wt_feature = fx.root.join("wt-feature");
-    git(&fx.main, &["worktree", "add", wt_feature.to_str().unwrap(), "feature"]);
+    git(
+        &fx.main,
+        &["worktree", "add", wt_feature.to_str().unwrap(), "feature"],
+    );
 
     let rows = list_worktrees(&wt_feature).expect("list from linked");
     let main = rows.iter().find(|r| r.is_main).expect("main row present");
@@ -182,7 +194,10 @@ fn list_reports_locked_worktree() {
     require_git!();
     let fx = setup();
     let wt_feature = fx.root.join("wt-feature");
-    git(&fx.main, &["worktree", "add", wt_feature.to_str().unwrap(), "feature"]);
+    git(
+        &fx.main,
+        &["worktree", "add", wt_feature.to_str().unwrap(), "feature"],
+    );
 
     // `git worktree lock --reason` may vary by version; fall back to no reason.
     let with_reason = git_ok(
@@ -197,7 +212,10 @@ fn list_reports_locked_worktree() {
     );
     if !with_reason {
         assert!(
-            git_ok(&fx.main, &["worktree", "lock", wt_feature.to_str().unwrap()]),
+            git_ok(
+                &fx.main,
+                &["worktree", "lock", wt_feature.to_str().unwrap()]
+            ),
             "git worktree lock failed"
         );
     }
@@ -224,7 +242,10 @@ fn list_stale_worktree_does_not_panic() {
     require_git!();
     let fx = setup();
     let wt_feature = fx.root.join("wt-feature");
-    git(&fx.main, &["worktree", "add", wt_feature.to_str().unwrap(), "feature"]);
+    git(
+        &fx.main,
+        &["worktree", "add", wt_feature.to_str().unwrap(), "feature"],
+    );
     std::fs::remove_dir_all(&wt_feature).expect("delete worktree dir");
 
     let rows = list_worktrees(&fx.main).expect("list must not fail on stale worktree");
@@ -287,7 +308,12 @@ fn add_worktree_name_decoupled_from_branch() {
     assert_eq!(canon(Path::new(&row.abs_path)), canon(&expected));
     assert!(expected.is_dir(), "name-derived worktree dir must exist");
     // The branch-named leaf must NOT have been used.
-    assert!(!fx.root.join(".worktrees").join("main").join("feature").exists());
+    assert!(!fx
+        .root
+        .join(".worktrees")
+        .join("main")
+        .join("feature")
+        .exists());
 
     // (b) the checked-out branch is still `feature` — via the returned row AND the
     //     git CLI porcelain oracle.
@@ -327,8 +353,18 @@ fn add_worktree_sanitizes_and_suffixes_collisions() {
     );
     // Both collision-sibling directories REALLY exist on disk (canon() falls
     // back lexically, so set-equality alone does not prove existence).
-    assert!(fx.root.join(".worktrees").join("main").join("feature").is_dir());
-    assert!(fx.root.join(".worktrees").join("main").join("feature-2").is_dir());
+    assert!(fx
+        .root
+        .join(".worktrees")
+        .join("main")
+        .join("feature")
+        .is_dir());
+    assert!(fx
+        .root
+        .join(".worktrees")
+        .join("main")
+        .join("feature-2")
+        .is_dir());
 
     assert_eq!(
         sut_worktree_paths(&list_worktrees(&fx.main).expect("list")),
@@ -355,7 +391,12 @@ fn add_worktree_refusals() {
     // pre-created by add_worktree before the checkout refusal fires; the load-
     // bearing check is that no worktree LEAF was created for the refused add.)
     assert_eq!(list_worktrees(&fx.main).expect("list").len(), 1);
-    assert!(!fx.root.join(".worktrees").join("main").join("main").exists());
+    assert!(!fx
+        .root
+        .join(".worktrees")
+        .join("main")
+        .join("main")
+        .exists());
 }
 
 /// §7.2 #5: lock (with reason) / unlock round-trip, cross-checked with the
@@ -372,7 +413,10 @@ fn lock_unlock_round_trip() {
     assert!(feat.locked);
     assert_eq!(feat.lock_reason.as_deref(), Some("pinned for QA"));
     let porcelain = git(&fx.main, &["worktree", "list", "--porcelain"]);
-    assert!(porcelain.contains("locked"), "oracle must show locked:\n{porcelain}");
+    assert!(
+        porcelain.contains("locked"),
+        "oracle must show locked:\n{porcelain}"
+    );
 
     unlock_worktree(&fx.main, &row.name).expect("unlock");
     let rows = list_worktrees(&fx.main).expect("list");
@@ -380,7 +424,10 @@ fn lock_unlock_round_trip() {
     assert!(!feat.locked);
     assert_eq!(feat.lock_reason, None);
     let porcelain = git(&fx.main, &["worktree", "list", "--porcelain"]);
-    assert!(!porcelain.contains("locked"), "oracle must be unlocked:\n{porcelain}");
+    assert!(
+        !porcelain.contains("locked"),
+        "oracle must be unlocked:\n{porcelain}"
+    );
 
     // Blank/unknown names are refused.
     match lock_worktree(&fx.main, "no-such-wt", None) {
@@ -452,7 +499,13 @@ fn add_then_list_from_inside_new_worktree_flips_current() {
     let from_main = list_worktrees(&fx.main).expect("list from main");
     let r = from_main.iter().find(|r| r.name == row.name).expect("row");
     assert!(!r.is_current);
-    assert!(from_main.iter().find(|r| r.is_main).expect("main").is_current);
+    assert!(
+        from_main
+            .iter()
+            .find(|r| r.is_main)
+            .expect("main")
+            .is_current
+    );
 
     // From INSIDE the created worktree, is_current flips.
     let from_wt = list_worktrees(&wt_dir).expect("list from inside worktree");

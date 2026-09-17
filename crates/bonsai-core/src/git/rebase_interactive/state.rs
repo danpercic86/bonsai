@@ -31,9 +31,7 @@ pub(super) enum StateReadError {
     Corrupt(serde_json::Error),
 }
 
-pub(super) fn read_state_raw(
-    repo: &git2::Repository,
-) -> Result<InteractiveState, StateReadError> {
+pub(super) fn read_state_raw(repo: &git2::Repository) -> Result<InteractiveState, StateReadError> {
     let raw = match std::fs::read_to_string(state_path(repo)) {
         Ok(r) => r,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(StateReadError::Missing),
@@ -46,9 +44,7 @@ pub(super) fn read_state_raw(
 /// unreadable → the REAL io error; corrupt → `Git`.
 pub(crate) fn read_state(repo: &git2::Repository) -> Result<InteractiveState, AppError> {
     read_state_raw(repo).map_err(|e| match e {
-        StateReadError::Missing => {
-            AppError::Git("interactive rebase state is missing".to_string())
-        }
+        StateReadError::Missing => AppError::Git("interactive rebase state is missing".to_string()),
         StateReadError::Io(e) => {
             AppError::Git(format!("failed to read interactive rebase state: {e}"))
         }
@@ -133,7 +129,9 @@ pub(super) fn validate_todos(
         }
         Some(op) => {
             if !matches!(op.action, RebaseAction::Pick | RebaseAction::Reword) {
-                return Err(AppError::Git("a squash/fixup must follow a pick".to_string()));
+                return Err(AppError::Git(
+                    "a squash/fixup must follow a pick".to_string(),
+                ));
             }
         }
     }

@@ -195,8 +195,15 @@ pub async fn ai_generate_asset(
     // Resolve the settings-file path at the AppHandle boundary so the inner stays
     // runtime-free (mirrors `generate_commit_message`), then delegate.
     let file = settings::settings_file(&app)?;
-    ai_generate_asset_inner(state.inner(), &file, &repo_id, source_asset_id, target_agent, guidance)
-        .await
+    ai_generate_asset_inner(
+        state.inner(),
+        &file,
+        &repo_id,
+        source_asset_id,
+        target_agent,
+        guidance,
+    )
+    .await
 }
 
 /// Runtime-free core of `ai_generate_asset`. The consent gate is enforced HERE,
@@ -236,9 +243,14 @@ pub(crate) async fn ai_generate_asset_inner(
         }
     };
     tauri::async_runtime::spawn_blocking(move || {
-        assets::generate_asset(&workdir, &content, &target_agent, guidance.as_deref(), RunOpts::default())
+        assets::generate_asset(
+            &workdir,
+            &content,
+            &target_agent,
+            guidance.as_deref(),
+            RunOpts::default(),
+        )
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
-

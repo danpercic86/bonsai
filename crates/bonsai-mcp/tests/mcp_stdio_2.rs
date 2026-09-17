@@ -227,7 +227,11 @@ fn read_tools_on_unborn_head_repo_return() {
     let repo = common::init_repo();
     let mut c = McpClient::connect(repo.path(), false);
 
-    for tool in ["bonsai_get_graph", "bonsai_get_status", "bonsai_list_branches"] {
+    for tool in [
+        "bonsai_get_graph",
+        "bonsai_get_status",
+        "bonsai_list_branches",
+    ] {
         let resp = c.call_tool(tool, json!({}));
         assert!(
             is_well_formed_reply(&resp),

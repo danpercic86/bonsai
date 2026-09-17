@@ -76,7 +76,12 @@ fn resolve_undo_last_commit(
     }
     let head = match head_commit(repo)? {
         Some(c) => c,
-        None => return Ok(unsupported("there are no commits to undo yet.".to_string(), cost_usd)),
+        None => {
+            return Ok(unsupported(
+                "there are no commits to undo yet.".to_string(),
+                cost_usd,
+            ))
+        }
     };
     if head.parent_count() < 1 {
         return Ok(unsupported(
@@ -124,7 +129,12 @@ fn resolve_undo_last_merge(
     }
     let head = match head_commit(repo)? {
         Some(c) => c,
-        None => return Ok(unsupported("there are no commits yet.".to_string(), cost_usd)),
+        None => {
+            return Ok(unsupported(
+                "there are no commits yet.".to_string(),
+                cost_usd,
+            ))
+        }
     };
     if head.parent_count() < 2 {
         return Ok(unsupported(
@@ -371,7 +381,12 @@ fn resolve_stash_changes(
     }
     let workdir = match repo.workdir() {
         Some(w) => w,
-        None => return Ok(unsupported("this repository has no working tree.".to_string(), cost_usd)),
+        None => {
+            return Ok(unsupported(
+                "this repository has no working tree.".to_string(),
+                cost_usd,
+            ))
+        }
     };
     let status = read_status(workdir)?;
     let has_changes = !status.staged.is_empty()
@@ -379,7 +394,10 @@ fn resolve_stash_changes(
         || !status.conflicted.is_empty()
         || (include_untracked && !status.untracked.is_empty());
     if !has_changes {
-        return Ok(unsupported("you have no changes to stash.".to_string(), cost_usd));
+        return Ok(unsupported(
+            "you have no changes to stash.".to_string(),
+            cost_usd,
+        ));
     }
     let op = SafeOp::Stash {
         message,
@@ -404,7 +422,12 @@ fn resolve_discard_changes(
     }
     let workdir = match repo.workdir() {
         Some(w) => w,
-        None => return Ok(unsupported("this repository has no working tree.".to_string(), cost_usd)),
+        None => {
+            return Ok(unsupported(
+                "this repository has no working tree.".to_string(),
+                cost_usd,
+            ))
+        }
     };
     let status = read_status(workdir)?;
     let modified: std::collections::HashSet<&str> =
@@ -427,7 +450,8 @@ fn resolve_discard_changes(
     let op = SafeOp::Discard { paths: kept };
     let preview = build_preview(repo, &op)?;
     let rationale =
-        "Interpreted your request as discarding your uncommitted changes to those files.".to_string();
+        "Interpreted your request as discarding your uncommitted changes to those files."
+            .to_string();
     Ok(proposed(op, preview, rationale, cost_usd))
 }
 
@@ -454,7 +478,8 @@ fn resolve_merge_branch(
         name: branch.to_string(),
     };
     let preview = build_preview(repo, &op)?;
-    let rationale = format!("Interpreted your request as merging `{shown}` into the current branch.");
+    let rationale =
+        format!("Interpreted your request as merging `{shown}` into the current branch.");
     Ok(proposed(op, preview, rationale, cost_usd))
 }
 
@@ -515,8 +540,8 @@ fn op_in_progress_reason(repo: &git2::Repository) -> Option<String> {
 }
 
 #[cfg(test)]
+mod resolution_tests;
+#[cfg(test)]
 mod test_support;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod resolution_tests;

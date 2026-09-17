@@ -123,8 +123,15 @@ fn p34_staged_preserves_untracked() {
     let res = create_stash(d, None, StashScope::Staged).expect("create_stash staged");
     assert!(res.created);
 
-    assert!(d.join("u.txt").exists(), "untracked survives a staged stash");
-    assert_eq!(s9_read(d, "u.txt"), "untracked\n", "untracked content intact");
+    assert!(
+        d.join("u.txt").exists(),
+        "untracked survives a staged stash"
+    );
+    assert_eq!(
+        s9_read(d, "u.txt"),
+        "untracked\n",
+        "untracked content intact"
+    );
     assert_eq!(list_stashes(d).expect("list").len(), 1);
 }
 

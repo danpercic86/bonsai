@@ -52,7 +52,11 @@ fn ensure_within_accepts_legit_paths() {
     for rel in ["a/b/c.txt", "a/b/new.txt", "top.txt", "x/y/z.txt"] {
         let got =
             ensure_within_workdir(wd, rel).unwrap_or_else(|e| panic!("must accept {rel:?}: {e:?}"));
-        assert_eq!(got, wd.join(rel), "returns the plain joined path for {rel:?}");
+        assert_eq!(
+            got,
+            wd.join(rel),
+            "returns the plain joined path for {rel:?}"
+        );
     }
 }
 
@@ -229,10 +233,11 @@ fn stage_paths_rejects_symlinked_ancestor_escape() {
     // Nothing staged…
     let index = repo.index().expect("index");
     assert_eq!(index.len(), 0, "no index entry may be created");
-    assert!(index.get_path(std::path::Path::new("link/secret.txt"), 0).is_none());
+    assert!(index
+        .get_path(std::path::Path::new("link/secret.txt"), 0)
+        .is_none());
     // …and the external file's content was never written into the ODB.
-    let secret_oid =
-        git2::Oid::hash_object(git2::ObjectType::Blob, b"SECRET").expect("hash blob");
+    let secret_oid = git2::Oid::hash_object(git2::ObjectType::Blob, b"SECRET").expect("hash blob");
     assert!(
         !repo.odb().expect("odb").exists(secret_oid),
         "out-of-repo file content must NOT enter the object database"
@@ -296,8 +301,7 @@ fn stage_paths_stages_leaf_symlink_as_a_link() {
             "the staged blob is the LINK TEXT, never the target's content"
         );
     }
-    let secret_oid =
-        git2::Oid::hash_object(git2::ObjectType::Blob, b"SECRET").expect("hash blob");
+    let secret_oid = git2::Oid::hash_object(git2::ObjectType::Blob, b"SECRET").expect("hash blob");
     assert!(
         !repo.odb().expect("odb").exists(secret_oid),
         "the symlink target's content must NOT enter the object database"

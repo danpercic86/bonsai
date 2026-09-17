@@ -125,7 +125,11 @@ impl Sink {
         self.texts().iter().any(|t| t.contains(needle))
     }
     pub fn of_kind(&self, kind: AiRunEventKind) -> Vec<AiRunEvent> {
-        self.lock().iter().filter(|e| e.kind == kind).cloned().collect()
+        self.lock()
+            .iter()
+            .filter(|e| e.kind == kind)
+            .cloned()
+            .collect()
     }
 }
 

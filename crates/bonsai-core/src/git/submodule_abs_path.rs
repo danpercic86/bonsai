@@ -93,7 +93,10 @@ mod tests {
     #[test]
     fn control_relative_path_is_contained() {
         let got = contained_abs_path(&wd(), Path::new("vendor/lib"));
-        assert!(got.is_some(), "a plain relative submodule path must be admitted");
+        assert!(
+            got.is_some(),
+            "a plain relative submodule path must be admitted"
+        );
         let s = got.unwrap();
         assert!(s.contains("vendor"), "{s}");
         assert!(s.starts_with(wd().to_string_lossy().as_ref()), "{s}");
@@ -102,13 +105,19 @@ mod tests {
     #[test]
     fn rooted_path_is_rejected() {
         // libgit2 hands `sm.path()` back verbatim for a rooted value.
-        assert_eq!(contained_abs_path(&wd(), Path::new("/Windows/System32")), None);
+        assert_eq!(
+            contained_abs_path(&wd(), Path::new("/Windows/System32")),
+            None
+        );
     }
 
     #[test]
     fn parent_traversal_is_rejected() {
         assert_eq!(contained_abs_path(&wd(), Path::new("../escape")), None);
-        assert_eq!(contained_abs_path(&wd(), Path::new("vendor/../../escape")), None);
+        assert_eq!(
+            contained_abs_path(&wd(), Path::new("vendor/../../escape")),
+            None
+        );
     }
 
     #[test]

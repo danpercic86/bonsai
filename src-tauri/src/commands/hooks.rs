@@ -57,7 +57,10 @@ pub(crate) async fn get_repo_hooks_disclosure_inner(
         let s = settings::load_from(&file);
         let workdir_str = workdir.to_string_lossy().to_string();
         let acknowledged = settings::hooks_ack_contains(&s, &workdir_str);
-        Ok(RepoHooksDisclosure { has_hooks, acknowledged })
+        Ok(RepoHooksDisclosure {
+            has_hooks,
+            acknowledged,
+        })
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
@@ -164,11 +167,13 @@ mod tests {
         let sdir = tempfile::TempDir::new().expect("settings dir");
         let sfile = settings_file(&sdir);
 
-        let got =
-            tauri::async_runtime::block_on(get_repo_hooks_disclosure_inner(&state, &sfile, MISSING_ID));
+        let got = tauri::async_runtime::block_on(get_repo_hooks_disclosure_inner(
+            &state, &sfile, MISSING_ID,
+        ));
         assert!(matches!(got, Err(AppError::NoRepo)));
 
-        let acked = tauri::async_runtime::block_on(ack_repo_hooks_inner(&state, &sfile, MISSING_ID));
+        let acked =
+            tauri::async_runtime::block_on(ack_repo_hooks_inner(&state, &sfile, MISSING_ID));
         assert!(matches!(acked, Err(AppError::NoRepo)));
     }
 }

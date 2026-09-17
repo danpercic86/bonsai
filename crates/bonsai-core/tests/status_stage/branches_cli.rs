@@ -9,12 +9,10 @@
 
 use std::path::Path;
 
-use bonsai_core::error::AppError;
-use bonsai_core::git::branches::{
-    checkout_branch, create_branch, delete_branch, list_refs,
-};
 use crate::common;
 use crate::common::{assert_same_status, commit_fixed, git, git_ok, init_repo};
+use bonsai_core::error::AppError;
+use bonsai_core::git::branches::{checkout_branch, create_branch, delete_branch, list_refs};
 
 macro_rules! require_git {
     () => {
@@ -28,7 +26,11 @@ macro_rules! require_git {
 /// Case-insensitive sort matching `list_refs`'s ordering (ties broken
 /// case-sensitively).
 fn ci_sort(v: &mut [String]) {
-    v.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()).then_with(|| a.cmp(b)));
+    v.sort_by(|a, b| {
+        a.to_lowercase()
+            .cmp(&b.to_lowercase())
+            .then_with(|| a.cmp(b))
+    });
 }
 
 /// Lines of trimmed `git` stdout (empty output -> empty vec).
@@ -90,8 +92,10 @@ fn list_local_branches_matches_cli() {
     let snap = list_refs(path).expect("list_refs");
 
     // Names + order.
-    let mut expected =
-        lines(&git(path, &["for-each-ref", "refs/heads", "--format=%(refname:short)"]));
+    let mut expected = lines(&git(
+        path,
+        &["for-each-ref", "refs/heads", "--format=%(refname:short)"],
+    ));
     ci_sort(&mut expected);
     let ours: Vec<String> = snap.local.iter().map(|b| b.name.clone()).collect();
     assert_eq!(ours, expected);
@@ -99,7 +103,12 @@ fn list_local_branches_matches_cli() {
     // is_head.
     let current = git(path, &["branch", "--show-current"]);
     for b in &snap.local {
-        assert_eq!(b.is_head, b.name == current, "is_head mismatch for {}", b.name);
+        assert_eq!(
+            b.is_head,
+            b.name == current,
+            "is_head mismatch for {}",
+            b.name
+        );
     }
     assert!(!snap.head.unborn && !snap.head.detached);
     assert_eq!(snap.head.branch_name.as_deref(), Some(current.as_str()));
@@ -114,8 +123,16 @@ fn list_local_branches_matches_cli() {
                 "--format=%(upstream:short)",
             ],
         );
-        let expected_upstream = if upstream.is_empty() { None } else { Some(upstream) };
-        assert_eq!(b.upstream, expected_upstream, "upstream mismatch for {}", b.name);
+        let expected_upstream = if upstream.is_empty() {
+            None
+        } else {
+            Some(upstream)
+        };
+        assert_eq!(
+            b.upstream, expected_upstream,
+            "upstream mismatch for {}",
+            b.name
+        );
     }
 
     // Ahead/behind for the branches with an upstream.
@@ -143,8 +160,15 @@ fn list_local_branches_matches_cli() {
     assert_eq!((old.ahead, old.behind), (Some(0), Some(1)));
 
     // No upstream -> all three None.
-    let zeta = snap.local.iter().find(|b| b.name == "Zeta-topic").expect("zeta");
-    assert_eq!((zeta.upstream.as_deref(), zeta.ahead, zeta.behind), (None, None, None));
+    let zeta = snap
+        .local
+        .iter()
+        .find(|b| b.name == "Zeta-topic")
+        .expect("zeta");
+    assert_eq!(
+        (zeta.upstream.as_deref(), zeta.ahead, zeta.behind),
+        (None, None, None)
+    );
 }
 
 /// §6.1.2: remote-tracking list matches `git for-each-ref refs/remotes`
@@ -165,18 +189,27 @@ fn list_remote_branches_excludes_origin_head() {
     // Symbolic origin/HEAD entry, exactly what a clone would have.
     git(
         path,
-        &["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"],
+        &[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main",
+        ],
     );
 
     let snap = list_refs(path).expect("list_refs");
 
-    let mut expected: Vec<String> =
-        lines(&git(path, &["for-each-ref", "refs/remotes", "--format=%(refname:short)"]))
-            .into_iter()
-            .filter(|n| n != "origin/HEAD" && n != "origin")
-            .collect();
+    let mut expected: Vec<String> = lines(&git(
+        path,
+        &["for-each-ref", "refs/remotes", "--format=%(refname:short)"],
+    ))
+    .into_iter()
+    .filter(|n| n != "origin/HEAD" && n != "origin")
+    .collect();
     ci_sort(&mut expected);
-    assert!(!expected.is_empty(), "fixture must have remote-tracking refs");
+    assert!(
+        !expected.is_empty(),
+        "fixture must have remote-tracking refs"
+    );
     let ours: Vec<String> = snap.remote.iter().map(|r| r.name.clone()).collect();
     assert_eq!(ours, expected);
     assert!(!ours.iter().any(|n| n.ends_with("/HEAD")));
@@ -268,17 +301,19 @@ fn create_invalid_names_rejected() {
     let before = git(path, &["for-each-ref"]);
 
     let invalid = [
-        "", " ", "a b", "a..b", "a.lock", "/a", "a/", "a~1", "a^", "a:b", "a?", "a[b", "@{u}",
-        "-x",
+        "", " ", "a b", "a..b", "a.lock", "/a", "a/", "a~1", "a^", "a:b", "a?", "a[b", "@{u}", "-x",
     ];
     for name in invalid {
         assert!(
             !git_ok(path, &["check-ref-format", "--branch", name]),
             "oracle: git accepts {name:?} but the fixture assumes it is invalid"
         );
-        let err = create_branch(path, name)
-            .expect_err(&format!("create_branch({name:?}) must fail"));
-        assert!(matches!(err, AppError::InvalidName(_)), "{name:?}: got {err:?}");
+        let err =
+            create_branch(path, name).expect_err(&format!("create_branch({name:?}) must fail"));
+        assert!(
+            matches!(err, AppError::InvalidName(_)),
+            "{name:?}: got {err:?}"
+        );
     }
 
     assert_eq!(git(path, &["for-each-ref"]), before);
@@ -293,7 +328,10 @@ fn create_branch_on_unborn_repo_fails() {
     let err = create_branch(dir.path(), "topic").expect_err("create on unborn must fail");
     match err {
         AppError::Git(m) => {
-            assert_eq!(m, "cannot create a branch: the repository has no commits yet")
+            assert_eq!(
+                m,
+                "cannot create a branch: the repository has no commits yet"
+            )
         }
         other => panic!("expected Git error, got {other:?}"),
     }
@@ -396,7 +434,10 @@ fn checkout_current_branch_is_noop() {
     let dir = checkout_repo();
 
     checkout_branch(dir.path(), "main").expect("checkout current branch");
-    assert_eq!(git(dir.path(), &["symbolic-ref", "HEAD"]), "refs/heads/main");
+    assert_eq!(
+        git(dir.path(), &["symbolic-ref", "HEAD"]),
+        "refs/heads/main"
+    );
     assert!(git(dir.path(), &["status", "--porcelain"]).is_empty());
 }
 
@@ -422,7 +463,10 @@ fn delete_merged_branch() {
     git(b.path(), &["branch", "merged"]);
 
     delete_branch(a.path(), "merged").expect("delete merged branch");
-    assert!(!git_ok(a.path(), &["rev-parse", "--verify", "refs/heads/merged"]));
+    assert!(!git_ok(
+        a.path(),
+        &["rev-parse", "--verify", "refs/heads/merged"]
+    ));
     assert!(git_ok(b.path(), &["branch", "-d", "merged"]));
 }
 
@@ -452,7 +496,10 @@ fn delete_unmerged_branch_blocked() {
         }
         other => panic!("expected UnmergedBranch, got {other:?}"),
     }
-    assert!(git_ok(a.path(), &["rev-parse", "--verify", "refs/heads/topic"]));
+    assert!(git_ok(
+        a.path(),
+        &["rev-parse", "--verify", "refs/heads/topic"]
+    ));
     assert!(!git_ok(b.path(), &["branch", "-d", "topic"]));
 }
 
@@ -465,11 +512,17 @@ fn delete_current_branch_blocked() {
     let err = delete_branch(dir.path(), "main").expect_err("delete current must fail");
     match err {
         AppError::Git(m) => {
-            assert_eq!(m, "cannot delete 'main': it is the currently checked-out branch")
+            assert_eq!(
+                m,
+                "cannot delete 'main': it is the currently checked-out branch"
+            )
         }
         other => panic!("expected Git error, got {other:?}"),
     }
-    assert!(git_ok(dir.path(), &["rev-parse", "--verify", "refs/heads/main"]));
+    assert!(git_ok(
+        dir.path(),
+        &["rev-parse", "--verify", "refs/heads/main"]
+    ));
 }
 
 /// §6.4.4: nonexistent -> BranchNotFound.
@@ -493,5 +546,8 @@ fn delete_merged_branch_while_detached() {
     git(path, &["checkout", "--detach", "HEAD"]);
 
     delete_branch(path, "extra").expect("delete merged branch while detached");
-    assert!(!git_ok(path, &["rev-parse", "--verify", "refs/heads/extra"]));
+    assert!(!git_ok(
+        path,
+        &["rev-parse", "--verify", "refs/heads/extra"]
+    ));
 }

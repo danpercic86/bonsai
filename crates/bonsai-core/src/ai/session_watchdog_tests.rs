@@ -49,7 +49,10 @@ fn stream_slow_watchdog_fails_and_keeps_the_collected_log() {
             drive(
                 clock_ref,
                 "payload",
-                RunLimits { idle_timeout: WATCHDOG_IDLE, ..RunLimits::default() },
+                RunLimits {
+                    idle_timeout: WATCHDOG_IDLE,
+                    ..RunLimits::default()
+                },
                 &ctl,
                 &collect,
             )
@@ -122,7 +125,10 @@ fn watchdog_does_not_fire_while_awaiting_input() {
                 "payload",
                 // A live watchdog, and (below) a human who takes far longer than it
                 // to answer. Without the D3 pause this run would be killed.
-                RunLimits { idle_timeout: WATCHDOG_IDLE, ..RunLimits::default() },
+                RunLimits {
+                    idle_timeout: WATCHDOG_IDLE,
+                    ..RunLimits::default()
+                },
                 &ctl,
                 &collect,
             )
@@ -136,11 +142,15 @@ fn watchdog_does_not_fire_while_awaiting_input() {
             wait_until(|| clock.reads() >= ticks_before + 4, STUB_STARTUP_BUDGET),
             "the tick loop stopped consulting the clock — it is no longer awaiting"
         );
-        reg.reply(&run_id, "take theirs".to_string()).expect("reply accepted");
+        reg.reply(&run_id, "take theirs".to_string())
+            .expect("reply accepted");
         handle.join().expect("session thread should not panic")
     })
     .expect("D3: a run waiting on a human must never be killed");
     reg.finish(&run_id);
     assert_eq!(res.text, "ANSWERED_BODY");
-    assert!(sink.of_kind(AiRunEventKind::Failed).is_empty(), "no watchdog failure");
+    assert!(
+        sink.of_kind(AiRunEventKind::Failed).is_empty(),
+        "no watchdog failure"
+    );
 }

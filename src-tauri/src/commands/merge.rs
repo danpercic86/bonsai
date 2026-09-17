@@ -14,7 +14,10 @@ pub async fn get_op_state(
 }
 
 /// Runtime-free core of `get_op_state` (unit-testable without a Tauri app).
-pub(crate) async fn get_op_state_inner(state: &AppState, repo_id: &str) -> Result<RepoOpState, AppError> {
+pub(crate) async fn get_op_state_inner(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<RepoOpState, AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || read_op_state(&path))
         .await
@@ -80,17 +83,22 @@ pub(crate) async fn commit_merge_inner(
     skip_hooks: Option<bool>,
 ) -> Result<CommitResult, AppError> {
     let target = activity_target(state, repo_id, GitActivityCategory::MergeCommit).await;
-    with_activity(state.git_activity_hub(), GitActivityCategory::MergeCommit, target, move |emitter| async move {
-        let path = repo_path(state, repo_id)?;
-        let skip = skip_hooks.unwrap_or(false);
-        tauri::async_runtime::spawn_blocking(move || {
-            let rec: Option<&dyn GitActivityRecorder> =
-                emitter.as_deref().map(|e| e as &dyn GitActivityRecorder);
-            merge::commit_merge_with_activity(&path, &message, sign, skip, rec)
-        })
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
-    })
+    with_activity(
+        state.git_activity_hub(),
+        GitActivityCategory::MergeCommit,
+        target,
+        move |emitter| async move {
+            let path = repo_path(state, repo_id)?;
+            let skip = skip_hooks.unwrap_or(false);
+            tauri::async_runtime::spawn_blocking(move || {
+                let rec: Option<&dyn GitActivityRecorder> =
+                    emitter.as_deref().map(|e| e as &dyn GitActivityRecorder);
+                merge::commit_merge_with_activity(&path, &message, sign, skip, rec)
+            })
+            .await
+            .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+        },
+    )
     .await
 }
 

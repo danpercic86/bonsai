@@ -80,16 +80,12 @@ pub fn create_branch_here(
     // result is unbound); it is re-looked-up in step 4 for the actual
     // `branch()` call so no `Commit` borrow of `repo` is held across the
     // `&mut repo` auto-stash below.
-    repo.find_commit(target_oid).map_err(|_| {
-        AppError::Git(format!("cannot create branch: commit '{oid}' not found"))
-    })?;
+    repo.find_commit(target_oid)
+        .map_err(|_| AppError::Git(format!("cannot create branch: commit '{oid}' not found")))?;
 
     // 2. Pre-check branch existence BEFORE any side effect, so a `BranchExists`
     //    can never strand a stash.
-    if repo
-        .find_branch(name, git2::BranchType::Local)
-        .is_ok()
-    {
+    if repo.find_branch(name, git2::BranchType::Local).is_ok() {
         return Err(AppError::BranchExists(format!(
             "branch '{name}' already exists"
         )));

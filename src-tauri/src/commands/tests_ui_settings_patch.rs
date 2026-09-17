@@ -294,7 +294,10 @@ fn set_ui_settings_patch_auto_fetch_and_graph() {
             ..Default::default()
         },
     );
-    assert_eq!(s.auto_fetch.interval_minutes, settings::AUTO_FETCH_INTERVAL_MIN);
+    assert_eq!(
+        s.auto_fetch.interval_minutes,
+        settings::AUTO_FETCH_INTERVAL_MIN
+    );
 
     // Out-of-range interval (999) clamps to the max on write.
     apply_patch(
@@ -307,7 +310,10 @@ fn set_ui_settings_patch_auto_fetch_and_graph() {
             ..Default::default()
         },
     );
-    assert_eq!(s.auto_fetch.interval_minutes, settings::AUTO_FETCH_INTERVAL_MAX);
+    assert_eq!(
+        s.auto_fetch.interval_minutes,
+        settings::AUTO_FETCH_INTERVAL_MAX
+    );
 
     // Below-min / above-max graph knobs clamp to their bounds on write.
     apply_patch(

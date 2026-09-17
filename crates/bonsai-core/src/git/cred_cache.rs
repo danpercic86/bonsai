@@ -236,8 +236,8 @@ impl CredCache {
                 key: &key,
             };
             let filled = (self.fill)(req.repo_path.as_deref(), &req.url); // BLOCKING, no lock held
-            // ONLY a real fill is stored: a NoCredentials / GitUnavailable
-            // outcome must never be cached (P70) — the next op re-asks.
+                                                                          // ONLY a real fill is stored: a NoCredentials / GitUnavailable
+                                                                          // outcome must never be cached (P70) — the next op re-asks.
             if let FillOutcome::Filled { username, password } = &filled {
                 let mut g = self.lock();
                 if let Some(slot) = g.get_mut(&key) {
@@ -313,8 +313,8 @@ impl CredCache {
                 key: &key,
             };
             let filled = (this.fill)(req.repo_path.as_deref(), &req.url); // BLOCKING, no lock held
-            // Fire-and-forget: a non-`Filled` outcome (no creds, or git not
-            // launchable) is simply ignored — nothing is cached (P70).
+                                                                          // Fire-and-forget: a non-`Filled` outcome (no creds, or git not
+                                                                          // launchable) is simply ignored — nothing is cached (P70).
             if let FillOutcome::Filled { username, password } = filled {
                 let mut g2 = this.lock();
                 if let Some(slot) = g2.get_mut(&key) {

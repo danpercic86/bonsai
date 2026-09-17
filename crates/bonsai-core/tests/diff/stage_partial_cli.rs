@@ -19,14 +19,14 @@
 
 use std::path::Path;
 
-use bonsai_core::error::AppError;
-use bonsai_core::git::diff::{workdir_file_diff, LineKind};
-use bonsai_core::git::stage_partial::{stage_partial, unstage_partial, LineSelection};
 use crate::common;
 use crate::common::{commit_fixed, git, git_raw, init_repo};
 use crate::stage_partial_helpers::{
     all_changed, hunk_changed, numbered, numbered_edited, repo_with, staged_bytes, write, xy,
 };
+use bonsai_core::error::AppError;
+use bonsai_core::git::diff::{workdir_file_diff, LineKind};
+use bonsai_core::git::stage_partial::{stage_partial, unstage_partial, LineSelection};
 
 macro_rules! require_git {
     () => {
@@ -245,7 +245,11 @@ fn range_across_two_hunks() {
     // Select the changed lines from BOTH hunks (whole-file, via all_changed).
     stage_partial(p, "f.txt", None, &all_changed(&fd)).expect("stage across hunks");
     assert_eq!(staged_bytes(p, "f.txt"), edited, "both edits now staged");
-    assert_eq!(xy(p, "f.txt").as_deref(), Some("M "), "nothing left unstaged");
+    assert_eq!(
+        xy(p, "f.txt").as_deref(),
+        Some("M "),
+        "nothing left unstaged"
+    );
 }
 
 // Scenario 14: rejections.
@@ -255,14 +259,21 @@ fn rejections() {
     let dir = init_repo();
     let p = dir.path();
 
-    let add1 = vec![LineSelection { kind: LineKind::Add, old_no: None, new_no: Some(1) }];
+    let add1 = vec![LineSelection {
+        kind: LineKind::Add,
+        old_no: None,
+        new_no: Some(1),
+    }];
 
     // empty selection -> Ok (no-op), even with no file.
     stage_partial(p, "whatever.txt", None, &[]).expect("empty selection is Ok");
 
     // invalid / escaping path -> AppError::Other("invalid path...").
     let err = stage_partial(p, "../escape", None, &add1).expect_err("escaping path");
-    assert!(matches!(&err, AppError::Other(m) if m.contains("invalid path")), "{err:?}");
+    assert!(
+        matches!(&err, AppError::Other(m) if m.contains("invalid path")),
+        "{err:?}"
+    );
 
     // binary file -> rejected.
     let blob: Vec<u8> = (0u8..=255).cycle().take(1024).collect();
@@ -273,16 +284,26 @@ fn rejections() {
     modified[10] = 0xAA;
     write(p, "b.bin", &modified);
     let err = stage_partial(p, "b.bin", None, &add1).expect_err("binary");
-    assert!(matches!(&err, AppError::Other(m) if m.contains("binary")), "{err:?}");
+    assert!(
+        matches!(&err, AppError::Other(m) if m.contains("binary")),
+        "{err:?}"
+    );
 
     // too_large -> rejected. 6000-line deletion busts the 5000 cap.
     write(p, "big.txt", &numbered(6000));
     git(p, &["add", "-A"]);
     commit_fixed(p, "big base");
     std::fs::remove_file(p.join("big.txt")).expect("remove big");
-    let del_big = vec![LineSelection { kind: LineKind::Del, old_no: Some(1), new_no: None }];
+    let del_big = vec![LineSelection {
+        kind: LineKind::Del,
+        old_no: Some(1),
+        new_no: None,
+    }];
     let err = stage_partial(p, "big.txt", None, &del_big).expect_err("too_large");
-    assert!(matches!(&err, AppError::Other(m) if m.contains("too-large")), "{err:?}");
+    assert!(
+        matches!(&err, AppError::Other(m) if m.contains("too-large")),
+        "{err:?}"
+    );
 
     // renamed -> rejected. A STAGED rename is detectable in the HEAD->index
     // (unstage) diff via find_similar; the stage direction (index->workdir)
@@ -294,20 +315,31 @@ fn rejections() {
     git(p, &["mv", "old.txt", "new.txt"]);
     write(p, "new.txt", &numbered_edited(20, &[(10, "line 10 X")]));
     git(p, &["add", "-A"]);
-    let staged = workdir_file_diff(p, "new.txt", Some("old.txt"), true, false, false).expect("diff");
+    let staged =
+        workdir_file_diff(p, "new.txt", Some("old.txt"), true, false, false).expect("diff");
     assert_eq!(staged.status, bonsai_core::git::status::FileStatus::Renamed);
-    let err = unstage_partial(p, "new.txt", Some("old.txt"), &all_changed(&staged))
-        .expect_err("renamed");
-    assert!(matches!(&err, AppError::Other(m) if m.contains("renamed")), "{err:?}");
+    let err =
+        unstage_partial(p, "new.txt", Some("old.txt"), &all_changed(&staged)).expect_err("renamed");
+    assert!(
+        matches!(&err, AppError::Other(m) if m.contains("renamed")),
+        "{err:?}"
+    );
 
     // stale -> a selection coordinate absent from the recomputed diff.
     write(p, "s.txt", b"a\nb\nc\n");
     git(p, &["add", "-A"]);
     commit_fixed(p, "s base");
     write(p, "s.txt", b"a\nB\nc\n"); // only line 2 changed
-    let bogus = vec![LineSelection { kind: LineKind::Add, old_no: None, new_no: Some(99) }];
+    let bogus = vec![LineSelection {
+        kind: LineKind::Add,
+        old_no: None,
+        new_no: Some(99),
+    }];
     let err = stage_partial(p, "s.txt", None, &bogus).expect_err("stale");
-    assert!(matches!(&err, AppError::Other(m) if m.contains("stale")), "{err:?}");
+    assert!(
+        matches!(&err, AppError::Other(m) if m.contains("stale")),
+        "{err:?}"
+    );
 }
 
 // Scenario 16: full-context regression (§6.2 #16).

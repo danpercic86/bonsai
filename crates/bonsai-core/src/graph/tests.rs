@@ -21,13 +21,20 @@ pub(super) fn init_repo() -> (tempfile::TempDir, git2::Repository) {
 
 /// Creates a commit from an in-memory tree with an EXPLICIT timestamp
 /// (walk-order determinism depends on distinct times). No ref is updated.
-pub(super) fn commit(repo: &git2::Repository, msg: &str, parents: &[git2::Oid], t: i64) -> git2::Oid {
+pub(super) fn commit(
+    repo: &git2::Repository,
+    msg: &str,
+    parents: &[git2::Oid],
+    t: i64,
+) -> git2::Oid {
     let sig = git2::Signature::new("Test User", "test@example.com", &git2::Time::new(t, 0))
         .expect("signature");
     let blob = repo.blob(msg.as_bytes()).expect("blob");
     let mut tb = repo.treebuilder(None).expect("treebuilder");
     tb.insert("f.txt", blob, 0o100_644).expect("tree insert");
-    let tree = repo.find_tree(tb.write().expect("write tree")).expect("find tree");
+    let tree = repo
+        .find_tree(tb.write().expect("write tree"))
+        .expect("find tree");
     let parent_commits: Vec<git2::Commit> = parents
         .iter()
         .map(|p| repo.find_commit(*p).expect("find parent"))
@@ -43,7 +50,8 @@ pub(super) fn branch(repo: &git2::Repository, name: &str, oid: git2::Oid) {
 }
 
 pub(super) fn set_head(repo: &git2::Repository, name: &str) {
-    repo.set_head(&format!("refs/heads/{name}")).expect("set head");
+    repo.set_head(&format!("refs/heads/{name}"))
+        .expect("set head");
 }
 
 pub(super) fn ids(l: &GraphLayout) -> Vec<String> {

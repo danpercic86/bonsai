@@ -12,12 +12,12 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{assert_same_status, commit_fixed, git, init_repo, porcelain_records};
 use bonsai_core::error::AppError;
 use bonsai_core::git::stash::{
     apply_stash, create_stash, drop_stash, list_stashes, pop_stash, ApplyStashOutcome, StashScope,
 };
-use crate::common;
-use crate::common::{assert_same_status, commit_fixed, git, init_repo, porcelain_records};
 
 macro_rules! require_git {
     () => {
@@ -76,7 +76,11 @@ fn apply_onto_different_branch_clean_twin_pair() {
         }
     }
 
-    assert_eq!(read(a.path(), "f.txt"), b"changed\n", "bonsai restored the edit");
+    assert_eq!(
+        read(a.path(), "f.txt"),
+        b"changed\n",
+        "bonsai restored the edit"
+    );
     assert_same_status(a.path(), b.path());
     // The stash survives an apply (never dropped) on both sides.
     assert_eq!(list_stashes(a.path()).expect("list").len(), 1);
@@ -98,16 +102,20 @@ fn message_newlines_unicode_native_and_staged_then_drop_by_index() {
 
     // Native (All): a tracked edit.
     std::fs::write(path.join("f.txt"), "native-edit\n").expect("edit");
-    assert!(create_stash(path, Some(msg_native), StashScope::All)
-        .expect("native create")
-        .created);
+    assert!(
+        create_stash(path, Some(msg_native), StashScope::All)
+            .expect("native create")
+            .created
+    );
 
     // Staged: a staged edit of the same file (folded into a staged-scope stash).
     std::fs::write(path.join("f.txt"), "staged-edit\n").expect("edit2");
     git(path, &["add", "f.txt"]);
-    assert!(create_stash(path, Some(msg_staged), StashScope::Staged)
-        .expect("staged create")
-        .created);
+    assert!(
+        create_stash(path, Some(msg_staged), StashScope::Staged)
+            .expect("staged create")
+            .created
+    );
 
     let list = list_stashes(path).expect("list");
     assert_eq!(list.len(), 2, "two stashes on the stack");
@@ -115,14 +123,28 @@ fn message_newlines_unicode_native_and_staged_then_drop_by_index() {
     // stored as reflog SUBJECTS, so embedded newlines are normalized to spaces
     // (standard git behavior) — the point is that NOTHING is truncated at the
     // newline and the unicode/emoji survive intact.
-    assert!(list[0].message.contains("café") && list[0].message.contains("日本語")
-        && list[0].message.contains('🎋'), "staged msg (no truncation): {:?}", list[0].message);
-    assert!(list[1].message.contains("line-α") && list[1].message.contains('🚀')
-        && list[1].message.contains('✨'), "native msg (no truncation): {:?}", list[1].message);
+    assert!(
+        list[0].message.contains("café")
+            && list[0].message.contains("日本語")
+            && list[0].message.contains('🎋'),
+        "staged msg (no truncation): {:?}",
+        list[0].message
+    );
+    assert!(
+        list[1].message.contains("line-α")
+            && list[1].message.contains('🚀')
+            && list[1].message.contains('✨'),
+        "native msg (no truncation): {:?}",
+        list[1].message
+    );
 
     // Reflog intact: `refs/stash` reflog has exactly 2 entries.
     let reflog = git(path, &["reflog", "show", "refs/stash"]);
-    assert_eq!(reflog.lines().count(), 2, "stash reflog has 2 entries:\n{reflog}");
+    assert_eq!(
+        reflog.lines().count(),
+        2,
+        "stash reflog has 2 entries:\n{reflog}"
+    );
 
     // Drop stash@{1} (the native one) by index → the staged entry remains @ 0.
     let native_oid = list[1].oid.clone();
@@ -160,8 +182,16 @@ fn expected_oid_stale_blocks_then_matching_succeeds() {
             other => panic!("{op}: expected Git 'stash list changed', got {other:?}"),
         }
     }
-    assert_eq!(list_stashes(path).expect("list").len(), 1, "stash still present");
-    assert_eq!(read(path, "f.txt"), b"base\n", "worktree untouched by stale-oid attempts");
+    assert_eq!(
+        list_stashes(path).expect("list").len(),
+        1,
+        "stash still present"
+    );
+    assert_eq!(
+        read(path, "f.txt"),
+        b"base\n",
+        "worktree untouched by stale-oid attempts"
+    );
 
     // Matching oid → pop succeeds and drops.
     match pop_stash(path, 0, false, Some(&real_oid)).expect("pop with matching oid") {
@@ -169,7 +199,10 @@ fn expected_oid_stale_blocks_then_matching_succeeds() {
         other => panic!("expected Applied, got {other:?}"),
     }
     assert_eq!(read(path, "f.txt"), b"edit\n", "edit restored");
-    assert!(list_stashes(path).expect("list").is_empty(), "stash dropped after clean pop");
+    assert!(
+        list_stashes(path).expect("list").is_empty(),
+        "stash dropped after clean pop"
+    );
 }
 
 // --------------------------------------------------- binary + multi-MB staged
@@ -183,18 +216,30 @@ fn binary_and_multi_mb_staged_round_trip() {
     let path = dir.path();
 
     // Binary content with embedded NULs + a >2 MiB blob.
-    let binary: Vec<u8> = (0u16..4096).flat_map(|n| [n as u8, (n >> 8) as u8, 0u8]).collect();
-    let big: Vec<u8> = (0u32..(3 * 1024 * 1024)).map(|n| (n.wrapping_mul(2654435761) >> 13) as u8).collect();
+    let binary: Vec<u8> = (0u16..4096)
+        .flat_map(|n| [n as u8, (n >> 8) as u8, 0u8])
+        .collect();
+    let big: Vec<u8> = (0u32..(3 * 1024 * 1024))
+        .map(|n| (n.wrapping_mul(2654435761) >> 13) as u8)
+        .collect();
     std::fs::write(path.join("bin.dat"), &binary).expect("write bin");
     std::fs::write(path.join("big.dat"), &big).expect("write big");
     git(path, &["add", "-A"]);
-    assert!(create_stash(path, Some("staged binaries"), StashScope::Staged)
-        .expect("stash staged")
-        .created);
+    assert!(
+        create_stash(path, Some("staged binaries"), StashScope::Staged)
+            .expect("stash staged")
+            .created
+    );
 
     // Staged scope reset the folded paths back to HEAD (absent from the tree).
-    assert!(!path.join("bin.dat").exists(), "bin.dat removed after staged stash");
-    assert!(!path.join("big.dat").exists(), "big.dat removed after staged stash");
+    assert!(
+        !path.join("bin.dat").exists(),
+        "bin.dat removed after staged stash"
+    );
+    assert!(
+        !path.join("big.dat").exists(),
+        "big.dat removed after staged stash"
+    );
 
     match pop_stash(path, 0, false, None).expect("pop") {
         ApplyStashOutcome::Applied => {}
@@ -228,15 +273,21 @@ fn staged_modify_then_unstaged_delete_staged_scope() {
 
     // After the staged stash the path returns to HEAD (base content) on disk.
     let recs = porcelain_records(path);
-    assert!(recs.is_empty() || recs.iter().all(|(t, _)| !t.starts_with("D")),
-        "no dangling staged deletion after stash: {recs:?}");
+    assert!(
+        recs.is_empty() || recs.iter().all(|(t, _)| !t.starts_with("D")),
+        "no dangling staged deletion after stash: {recs:?}"
+    );
 
     // Pop replays the folded diff as an unstaged edit.
     match pop_stash(path, 0, false, None).expect("pop") {
         ApplyStashOutcome::Applied => {}
         other => panic!("expected Applied, got {other:?}"),
     }
-    assert_eq!(read(path, "f.txt"), b"staged-content\n", "staged content restored");
+    assert_eq!(
+        read(path, "f.txt"),
+        b"staged-content\n",
+        "staged content restored"
+    );
 }
 
 // --------------------------------------------------------- unborn HEAD, bare
@@ -246,7 +297,11 @@ fn staged_modify_then_unstaged_delete_staged_scope() {
 #[test]
 fn create_on_unborn_head_errors_cleanly_all_scopes() {
     require_git!();
-    for scope in [StashScope::All, StashScope::AllWithUntracked, StashScope::Staged] {
+    for scope in [
+        StashScope::All,
+        StashScope::AllWithUntracked,
+        StashScope::Staged,
+    ] {
         let dir = init_repo(); // no commits → unborn HEAD
         let path = dir.path();
         std::fs::write(path.join("f.txt"), "x\n").expect("write");
@@ -255,7 +310,10 @@ fn create_on_unborn_head_errors_cleanly_all_scopes() {
             Err(_) => {} // clean AppError (no panic)
             // A `created:false` (nothing stashed) is also acceptable & lossless:
             // the staged content stays in the index untouched.
-            Ok(r) => assert!(!r.created, "{scope:?}: unborn must not claim a stash was created"),
+            Ok(r) => assert!(
+                !r.created,
+                "{scope:?}: unborn must not claim a stash was created"
+            ),
         }
         // The staged content is never lost.
         assert!(path.join("f.txt").exists(), "{scope:?}: file survives");
@@ -294,13 +352,22 @@ fn index_lock_blocks_ops_and_lock_preserved() {
     std::fs::write(&lock, b"").expect("create lock");
 
     // create needs the index lock → errors, lock preserved.
-    assert!(create_stash(path, None, StashScope::All).is_err(), "create blocked by lock");
+    assert!(
+        create_stash(path, None, StashScope::All).is_err(),
+        "create blocked by lock"
+    );
     assert!(lock.exists(), "create must not delete the lock");
 
     // apply/pop write the index → blocked, lock preserved.
-    assert!(apply_stash(path, 0, false, None).is_err(), "apply blocked by lock");
+    assert!(
+        apply_stash(path, 0, false, None).is_err(),
+        "apply blocked by lock"
+    );
     assert!(lock.exists(), "apply must not delete the lock");
-    assert!(pop_stash(path, 0, false, None).is_err(), "pop blocked by lock");
+    assert!(
+        pop_stash(path, 0, false, None).is_err(),
+        "pop blocked by lock"
+    );
     assert!(lock.exists(), "pop must not delete the lock");
 
     // drop touches only the stash reflog (no index) — whatever its result, the
@@ -311,5 +378,8 @@ fn index_lock_blocks_ops_and_lock_preserved() {
     std::fs::remove_file(&lock).ok();
     // The stash was still there through the blocked apply/pop (drop's effect is
     // index-independent, so we don't assert on the post-drop count here).
-    assert!(list_stashes(path).is_ok(), "list_stashes still works after the lock storm");
+    assert!(
+        list_stashes(path).is_ok(),
+        "list_stashes still works after the lock storm"
+    );
 }

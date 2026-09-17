@@ -54,4 +54,3 @@ pub(super) fn collect_stashes(repo: &mut git2::Repository) -> Result<Vec<StashSe
     }
     Ok(out) // ascending by index (stash@{0} first)
 }
-

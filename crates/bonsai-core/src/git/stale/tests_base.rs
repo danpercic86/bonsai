@@ -61,7 +61,7 @@ fn base_identity_protects_main_for_refname_oid_and_tag() {
 
     branch_at(&repo, "dead", c1); // merged, below the tip
     branch_at(&repo, "twin", c2); // merged, AT the base tip
-    // HEAD off main so the base guard (not the current guard) is exercised.
+                                  // HEAD off main so the base guard (not the current guard) is exercised.
     branch_at(&repo, "topic", c2);
     crate::git::branches::checkout_branch(d, "topic").expect("checkout");
 
@@ -77,16 +77,21 @@ fn base_identity_protects_main_for_refname_oid_and_tag() {
     ] {
         let report = find_stale_branches(d, Some(spec)).expect("classify");
         let names: Vec<&str> = report.branches.iter().map(|b| b.name.as_str()).collect();
-        assert!(!names.contains(&"main"), "base {spec}: main never listed: {names:?}");
-        assert!(names.contains(&"dead"), "base {spec}: dead still listed: {names:?}");
+        assert!(
+            !names.contains(&"main"),
+            "base {spec}: main never listed: {names:?}"
+        );
+        assert!(
+            names.contains(&"dead"),
+            "base {spec}: dead still listed: {names:?}"
+        );
         assert_eq!(
             !names.contains(&"twin"),
             twin_protected,
             "base {spec}: twin protection mismatch: {names:?}"
         );
 
-        let results =
-            delete_branches(d, &["main".to_string()], Some(spec)).expect("delete");
+        let results = delete_branches(d, &["main".to_string()], Some(spec)).expect("delete");
         assert_eq!(
             results[0].status,
             BranchDeleteStatus::SkippedBase,
@@ -114,13 +119,21 @@ fn remote_base_protects_local_counterpart() {
 
     let report = find_stale_branches(d, Some("origin/main")).expect("classify");
     let names: Vec<&str> = report.branches.iter().map(|b| b.name.as_str()).collect();
-    assert!(!names.contains(&"main"), "local counterpart never listed: {names:?}");
-    assert!(names.contains(&"dead"), "other merged branches still listed");
+    assert!(
+        !names.contains(&"main"),
+        "local counterpart never listed: {names:?}"
+    );
+    assert!(
+        names.contains(&"dead"),
+        "other merged branches still listed"
+    );
 
-    let results = delete_branches(d, &["main".to_string()], Some("origin/main"))
-        .expect("delete");
+    let results = delete_branches(d, &["main".to_string()], Some("origin/main")).expect("delete");
     assert_eq!(results[0].status, BranchDeleteStatus::SkippedBase);
-    assert!(branch_exists(d, "main"), "local main survives a remote base");
+    assert!(
+        branch_exists(d, "main"),
+        "local main survives a remote base"
+    );
 }
 
 /// The repo's default branch (origin/HEAD target) is never auto-classified
@@ -149,8 +162,14 @@ fn default_branch_never_auto_classified() {
 
     let report = find_stale_branches(d, Some("main")).expect("classify");
     let names: Vec<&str> = report.branches.iter().map(|b| b.name.as_str()).collect();
-    assert!(!names.contains(&"dev"), "default branch never listed: {names:?}");
-    assert!(names.contains(&"dead"), "ordinary merged branch still listed");
+    assert!(
+        !names.contains(&"dev"),
+        "default branch never listed: {names:?}"
+    );
+    assert!(
+        names.contains(&"dead"),
+        "ordinary merged branch still listed"
+    );
 
     let results = delete_branches(d, &["dev".to_string()], Some("main")).expect("delete");
     assert_eq!(results[0].status, BranchDeleteStatus::SkippedBase);
@@ -212,8 +231,14 @@ fn dangling_branch_ref_is_skipped_not_fatal() {
 
     let report = find_stale_branches(d, Some("main")).expect("scan survives");
     let names: Vec<&str> = report.branches.iter().map(|b| b.name.as_str()).collect();
-    assert!(names.contains(&"dead"), "healthy stale branch listed: {names:?}");
-    assert!(!names.contains(&"dangling"), "dangling ref never classified");
+    assert!(
+        names.contains(&"dead"),
+        "healthy stale branch listed: {names:?}"
+    );
+    assert!(
+        !names.contains(&"dangling"),
+        "dangling ref never classified"
+    );
 
     let results = delete_branches(
         d,

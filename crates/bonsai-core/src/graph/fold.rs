@@ -219,13 +219,18 @@ pub fn fold_spans_of_chunks(
                 }
                 edges.extend(batch_edges.iter().map(|e| (e.from, e.to, e.lane)));
             }
-            GraphChunk::Done {
-                head_index: hi, ..
-            } => head_index = *hi,
+            GraphChunk::Done { head_index: hi, .. } => head_index = *hi,
             GraphChunk::Meta { .. } => {}
         }
     }
-    compute_fold_spans(&lanes, &refs_empty, edges, head_index, merge_rows, first_parent)
+    compute_fold_spans(
+        &lanes,
+        &refs_empty,
+        edges,
+        head_index,
+        merge_rows,
+        first_parent,
+    )
 }
 
 #[cfg(test)]
@@ -379,7 +384,14 @@ mod tests {
         let (lanes, mut refs_empty, edges) = chain(10);
         refs_empty[0] = false;
         let spans = compute_fold_spans(&lanes, &refs_empty, edges, Some(0), &[], false);
-        assert_eq!(spans, vec![FoldSpan { start: 1, count: 8, lane: 0 }]);
+        assert_eq!(
+            spans,
+            vec![FoldSpan {
+                start: 1,
+                count: 8,
+                lane: 0
+            }]
+        );
     }
 
     /// Batch form == incremental FoldScan on a branching shape (guard for the

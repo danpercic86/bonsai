@@ -176,7 +176,8 @@ pub fn build_repo(shape: &RepoShape) -> (tempfile::TempDir, PathBuf) {
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Prop Bot").expect("name");
-        cfg.set_str("user.email", "prop@bonsai.local").expect("email");
+        cfg.set_str("user.email", "prop@bonsai.local")
+            .expect("email");
         cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     }
 
@@ -185,7 +186,9 @@ pub fn build_repo(shape: &RepoShape) -> (tempfile::TempDir, PathBuf) {
         let blob = repo.blob(i.to_string().as_bytes()).expect("blob");
         let mut tb = repo.treebuilder(None).expect("treebuilder");
         tb.insert("n.txt", blob, 0o100_644).expect("tree insert");
-        let tree = repo.find_tree(tb.write().expect("write tree")).expect("find tree");
+        let tree = repo
+            .find_tree(tb.write().expect("write tree"))
+            .expect("find tree");
         let t = BASE_TS + spec.ts_offset;
         let sig = git2::Signature::new("Prop Bot", "prop@bonsai.local", &git2::Time::new(t, 0))
             .expect("signature");
@@ -379,16 +382,31 @@ pub fn porcelain_tuples(dir: &std::path::Path) -> std::collections::BTreeSet<Sta
             continue;
         }
         if is_conflict_code(x, y) {
-            set.insert(("conflicted".to_string(), path, None, "conflicted".to_string()));
+            set.insert((
+                "conflicted".to_string(),
+                path,
+                None,
+                "conflicted".to_string(),
+            ));
             continue;
         }
         if let Some(status) = index_column_status(x) {
             let orig_for_row = if x == 'R' { orig.clone() } else { None };
-            set.insert(("staged".to_string(), path.clone(), orig_for_row, status.to_string()));
+            set.insert((
+                "staged".to_string(),
+                path.clone(),
+                orig_for_row,
+                status.to_string(),
+            ));
         }
         if let Some(status) = worktree_column_status(y) {
             let orig_for_row = if y == 'R' { orig.clone() } else { None };
-            set.insert(("unstaged".to_string(), path.clone(), orig_for_row, status.to_string()));
+            set.insert((
+                "unstaged".to_string(),
+                path.clone(),
+                orig_for_row,
+                status.to_string(),
+            ));
         }
     }
     set

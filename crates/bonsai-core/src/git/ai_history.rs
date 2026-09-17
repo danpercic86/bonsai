@@ -32,7 +32,8 @@ pub const SYNTH_DIFF_K: usize = 8;
 const HISTORY_SYSTEM_PROMPT: &str = "You are answering a developer's question about a git repository's history, using ONLY the commits provided on standard input. Explain the WHY — the intent and evolution — and cite the specific commits by their short hash (e.g. a1b2c3d). If the provided commits do not contain the answer, say so plainly rather than guessing. Be concise. Output prose only — no markdown code fences.";
 
 /// The `-p` positional prompt (contract §3.5, verbatim single line).
-const HISTORY_PROMPT: &str = "Answer the question on standard input from the provided commits, citing commit hashes.";
+const HISTORY_PROMPT: &str =
+    "Answer the question on standard input from the provided commits, citing commit hashes.";
 
 /// AI answer grounded in retrieved commits (contract §2.2). Serialize camelCase
 /// (mirrored in TS). Prose `text` mirrors `AiAnalysis`, plus the citations and
@@ -153,7 +154,14 @@ pub(crate) fn build_history_payload(
         let date = epoch_to_ymd(cd.details.author_ts);
         let mut file_diffs: Vec<FileDiff> = Vec::with_capacity(cd.files.len());
         for h in &cd.files {
-            let fd = commit_file_diff(workdir, &hit.oid, &h.path, h.orig_path.as_deref(), false, false)?;
+            let fd = commit_file_diff(
+                workdir,
+                &hit.oid,
+                &h.path,
+                h.orig_path.as_deref(),
+                false,
+                false,
+            )?;
             file_diffs.push(fd);
         }
         let rendered = payload::render_file_diffs(&file_diffs);
@@ -317,7 +325,8 @@ mod tests {
         {
             let mut cfg = repo.config().expect("config");
             cfg.set_str("user.name", "Test User").expect("name");
-            cfg.set_str("user.email", "test@example.com").expect("email");
+            cfg.set_str("user.email", "test@example.com")
+                .expect("email");
             cfg.set_bool("core.autocrlf", false).expect("autocrlf");
         }
         (dir, repo)
@@ -345,7 +354,9 @@ mod tests {
             let blob = repo.blob(content.as_bytes()).expect("blob");
             tb.insert(name, blob, 0o100_644).expect("insert");
         }
-        let tree = repo.find_tree(tb.write().expect("write tree")).expect("tree");
+        let tree = repo
+            .find_tree(tb.write().expect("write tree"))
+            .expect("tree");
         let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
         repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &parents)
             .expect("commit")
@@ -367,7 +378,13 @@ mod tests {
             "wire the zebracorn subsystem",
             3000,
         );
-        let _c3 = mk_commit(&repo, Some(c2), &[("d.txt", "delta\n")], "delta cleanup", 4000);
+        let _c3 = mk_commit(
+            &repo,
+            Some(c2),
+            &[("d.txt", "delta\n")],
+            "delta cleanup",
+            4000,
+        );
         let idx = crate::testutil::scratch_dir();
         build_index(dir.path(), idx.path(), |_p| {}).expect("build index");
 
@@ -382,15 +399,18 @@ mod tests {
         .expect("search");
         assert!(!results.hits.is_empty(), "the keyword commit is retrieved");
 
-        let payload = build_history_payload(dir.path(), "why zebracorn?", &results.hits)
-            .expect("payload");
+        let payload =
+            build_history_payload(dir.path(), "why zebracorn?", &results.hits).expect("payload");
 
         assert!(payload.contains("QUESTION:\nwhy zebracorn?"), "{payload}");
         assert!(
             payload.contains("RELEVANT COMMITS (most relevant first):"),
             "{payload}"
         );
-        assert!(payload.contains("===== TOP MATCHES IN DETAIL ====="), "{payload}");
+        assert!(
+            payload.contains("===== TOP MATCHES IN DETAIL ====="),
+            "{payload}"
+        );
         assert!(payload.contains("MESSAGE:"), "{payload}");
         assert!(payload.contains("CHANGES:"), "{payload}");
         // The top hit is c2; its short-7 heads a COMMIT line and its real diff

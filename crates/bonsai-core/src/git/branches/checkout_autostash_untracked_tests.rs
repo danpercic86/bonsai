@@ -23,7 +23,8 @@ fn u_init(dir: &Path) -> git2::Repository {
             .expect("init repo");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     drop(cfg);
     repo
@@ -34,8 +35,11 @@ fn u_commit(dir: &Path, msg: &str, files: &[(&str, &str)]) {
     for (name, content) in files {
         std::fs::write(dir.join(name), content).expect("write file");
     }
-    stage_paths(dir, &files.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>())
-        .expect("stage");
+    stage_paths(
+        dir,
+        &files.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>(),
+    )
+    .expect("stage");
     crate::git::commit::create_commit(dir, msg, None, false).expect("commit");
 }
 
@@ -200,7 +204,10 @@ fn conflicting_tracked_pop_keeps_untracked_on_disk() {
     std::fs::write(dir.join("src/deep/n.txt"), "nested new\n").expect("write");
 
     let res = checkout_branch_autostash(dir, "feat").expect("switch");
-    assert!(matches!(res.apply, Some(ApplyStashOutcome::Conflicts { .. })));
+    assert!(matches!(
+        res.apply,
+        Some(ApplyStashOutcome::Conflicts { .. })
+    ));
     assert_eq!(list_stashes(dir).expect("list").len(), 1);
     assert!(dir.join("src/deep/n.txt").exists());
 }

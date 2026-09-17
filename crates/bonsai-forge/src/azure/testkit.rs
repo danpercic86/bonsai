@@ -38,7 +38,9 @@ impl HttpTransport for FakeTransport {
         // Sentinel: status 0 ⇒ the TRANSPORT itself fails (a network blip), which
         // is a different failure class from any HTTP status.
         if status == 0 {
-            return Err(AppError::NetworkError("request failed (simulated)".to_string()));
+            return Err(AppError::NetworkError(
+                "request failed (simulated)".to_string(),
+            ));
         }
         Ok(HttpResponse {
             status,

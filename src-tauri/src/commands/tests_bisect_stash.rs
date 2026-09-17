@@ -11,14 +11,24 @@ fn block_on<F: std::future::Future>(f: F) -> F::Output {
 fn linear_history(state: &AppState, id: &str, dir: &std::path::Path, c0: String) -> Vec<String> {
     let mut oids = vec![c0];
     for i in 1..=4 {
-        let c = write_stage_commit(state, id, dir, "a.txt", &format!("v{i}\n"), &format!("C{i}"));
+        let c = write_stage_commit(
+            state,
+            id,
+            dir,
+            "a.txt",
+            &format!("v{i}\n"),
+            &format!("C{i}"),
+        );
         oids.push(c.oid);
     }
     oids
 }
 
 fn is_detached(dir: &std::path::Path) -> bool {
-    git2::Repository::open(dir).expect("open").head_detached().expect("detached?")
+    git2::Repository::open(dir)
+        .expect("open")
+        .head_detached()
+        .expect("detached?")
 }
 
 /// `commit` is bad iff it IS the culprit or a descendant of it.
@@ -42,10 +52,19 @@ fn start_bisect_happy_detaches_at_midpoint() {
     let (dir, id, c0) = fixture_repo(&state);
     let oids = linear_history(&state, &id, dir.path(), c0);
 
-    let out = block_on(start_bisect_inner(&state, &id, oids[4].clone(), vec![oids[0].clone()]))
-        .expect("start");
+    let out = block_on(start_bisect_inner(
+        &state,
+        &id,
+        oids[4].clone(),
+        vec![oids[0].clone()],
+    ))
+    .expect("start");
     match &out {
-        BisectOutcome::Testing { current, revisions_remaining, .. } => {
+        BisectOutcome::Testing {
+            current,
+            revisions_remaining,
+            ..
+        } => {
             assert!(
                 oids[1..4].contains(current),
                 "midpoint must be strictly between good and bad, got {current}"
@@ -71,22 +90,37 @@ fn start_bisect_guards() {
     let (dir, id, c0) = fixture_repo(&state);
     let oids = linear_history(&state, &id, dir.path(), c0);
 
-    let err = block_on(start_bisect_inner(&state, &id, oids[2].clone(), vec![oids[2].clone()]))
-        .expect_err("good == bad must error");
+    let err = block_on(start_bisect_inner(
+        &state,
+        &id,
+        oids[2].clone(),
+        vec![oids[2].clone()],
+    ))
+    .expect_err("good == bad must error");
     assert!(matches!(err, AppError::Git(_)), "{err:?}");
 
     // Pause a conflicting merge, then try to bisect.
     let main = head_branch(dir.path()).expect("head");
-    block_on(create_branch_here_inner(&state, &id, "side".into(), oids[4].clone()))
-        .expect("branch");
+    block_on(create_branch_here_inner(
+        &state,
+        &id,
+        "side".into(),
+        oids[4].clone(),
+    ))
+    .expect("branch");
     write_stage_commit(&state, &id, dir.path(), "a.txt", "side\n", "side edit");
     block_on(checkout_branch_inner(&state, &id, main)).expect("back");
     write_stage_commit(&state, &id, dir.path(), "a.txt", "main2\n", "main edit");
     let out = block_on(merge_branch_inner(&state, &id, "side".into(), None)).expect("merge");
     assert!(matches!(out, MergeOutcome::Conflicts { .. }), "{out:?}");
 
-    let err = block_on(start_bisect_inner(&state, &id, oids[4].clone(), vec![oids[0].clone()]))
-        .expect_err("mid-merge bisect must be refused");
+    let err = block_on(start_bisect_inner(
+        &state,
+        &id,
+        oids[4].clone(),
+        vec![oids[0].clone()],
+    ))
+    .expect_err("mid-merge bisect must be refused");
     assert!(matches!(err, AppError::OperationInProgress(_)), "{err:?}");
     block_on(abort_merge_inner(&state, &id)).expect("cleanup abort");
 }
@@ -99,8 +133,13 @@ fn bisect_mark_converges_on_culprit() {
     let oids = linear_history(&state, &id, dir.path(), c0);
     let culprit = oids[3].clone();
 
-    let mut out = block_on(start_bisect_inner(&state, &id, oids[4].clone(), vec![oids[0].clone()]))
-        .expect("start");
+    let mut out = block_on(start_bisect_inner(
+        &state,
+        &id,
+        oids[4].clone(),
+        vec![oids[0].clone()],
+    ))
+    .expect("start");
     let mut steps = 0;
     let verdict = loop {
         match out {
@@ -125,8 +164,13 @@ fn bisect_skip_moves_off_current() {
     let (dir, id, c0) = fixture_repo(&state);
     let oids = linear_history(&state, &id, dir.path(), c0);
 
-    let out = block_on(start_bisect_inner(&state, &id, oids[4].clone(), vec![oids[0].clone()]))
-        .expect("start");
+    let out = block_on(start_bisect_inner(
+        &state,
+        &id,
+        oids[4].clone(),
+        vec![oids[0].clone()],
+    ))
+    .expect("start");
     let first = match out {
         BisectOutcome::Testing { current, .. } => current,
         other => panic!("expected Testing, got {other:?}"),
@@ -150,8 +194,13 @@ fn bisect_reset_restores_branch() {
     let oids = linear_history(&state, &id, dir.path(), c0);
     let main = head_branch(dir.path()).expect("head");
 
-    block_on(start_bisect_inner(&state, &id, oids[4].clone(), vec![oids[0].clone()]))
-        .expect("start");
+    block_on(start_bisect_inner(
+        &state,
+        &id,
+        oids[4].clone(),
+        vec![oids[0].clone()],
+    ))
+    .expect("start");
     assert!(is_detached(dir.path()));
 
     block_on(bisect_reset_inner(&state, &id)).expect("reset");
@@ -183,7 +232,10 @@ fn stash_chain_create_list_apply_drop_pop() {
     ))
     .expect("create stash");
     assert!(res.created);
-    assert_eq!(std::fs::read_to_string(dir.path().join("a.txt")).unwrap(), "base\n");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "base\n"
+    );
     assert!(!dir.path().join("u.txt").exists(), "untracked captured too");
 
     let list = block_on(list_stashes_inner(&state, &id)).expect("list");
@@ -194,24 +246,54 @@ fn stash_chain_create_list_apply_drop_pop() {
     // Apply keeps the entry.
     let out = block_on(apply_stash_inner(&state, &id, 0, false, None)).expect("apply");
     assert_eq!(out, ApplyStashOutcome::Applied);
-    assert_eq!(std::fs::read_to_string(dir.path().join("a.txt")).unwrap(), "edited\n");
-    assert_eq!(std::fs::read_to_string(dir.path().join("u.txt")).unwrap(), "untracked\n");
-    assert_eq!(block_on(list_stashes_inner(&state, &id)).expect("list").len(), 1);
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "edited\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("u.txt")).unwrap(),
+        "untracked\n"
+    );
+    assert_eq!(
+        block_on(list_stashes_inner(&state, &id))
+            .expect("list")
+            .len(),
+        1
+    );
 
     // Stash the re-applied changes again → two entries; drop the newest.
-    block_on(create_stash_inner(&state, &id, Some("second".into()), StashScope::AllWithUntracked))
-        .expect("second stash");
-    assert_eq!(block_on(list_stashes_inner(&state, &id)).expect("list").len(), 2);
+    block_on(create_stash_inner(
+        &state,
+        &id,
+        Some("second".into()),
+        StashScope::AllWithUntracked,
+    ))
+    .expect("second stash");
+    assert_eq!(
+        block_on(list_stashes_inner(&state, &id))
+            .expect("list")
+            .len(),
+        2
+    );
     block_on(drop_stash_inner(&state, &id, 0, None)).expect("drop");
     let list = block_on(list_stashes_inner(&state, &id)).expect("list");
     assert_eq!(list.len(), 1);
-    assert!(list[0].message.contains("my stash"), "index shifted: {}", list[0].message);
+    assert!(
+        list[0].message.contains("my stash"),
+        "index shifted: {}",
+        list[0].message
+    );
 
     // Pop the survivor cleanly → empty stack, changes in the worktree.
     let out = block_on(pop_stash_inner(&state, &id, 0, false, None)).expect("pop");
     assert_eq!(out, ApplyStashOutcome::Applied);
-    assert!(block_on(list_stashes_inner(&state, &id)).expect("list").is_empty());
-    assert_eq!(std::fs::read_to_string(dir.path().join("a.txt")).unwrap(), "edited\n");
+    assert!(block_on(list_stashes_inner(&state, &id))
+        .expect("list")
+        .is_empty());
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "edited\n"
+    );
 }
 
 /// create_stash on a clean tree is created:false (not an error); drop with a
@@ -224,7 +306,9 @@ fn stash_clean_tree_and_bad_index() {
     let res = block_on(create_stash_inner(&state, &id, None, StashScope::All))
         .expect("clean tree must not error");
     assert!(!res.created, "created:false on a clean tree");
-    assert!(block_on(list_stashes_inner(&state, &id)).expect("list").is_empty());
+    assert!(block_on(list_stashes_inner(&state, &id))
+        .expect("list")
+        .is_empty());
 
     let err = block_on(drop_stash_inner(&state, &id, usize::MAX, None)).expect_err("huge index");
     assert!(matches!(err, AppError::Git(_)), "{err:?}");
@@ -250,7 +334,9 @@ fn pop_with_conflict_retains_stash() {
         other => panic!("expected Conflicts, got {other:?}"),
     }
     assert_eq!(
-        block_on(list_stashes_inner(&state, &id)).expect("list").len(),
+        block_on(list_stashes_inner(&state, &id))
+            .expect("list")
+            .len(),
         1,
         "conflicted pop must RETAIN the stash"
     );

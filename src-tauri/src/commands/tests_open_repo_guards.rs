@@ -21,8 +21,7 @@ fn failed_open_leaves_other_entries_untouched() {
     git2::Repository::init(repo_dir.path()).expect("init repo");
     let a = open(&state, repo_dir.path()).expect("open repo A");
     assert!(a.info.is_repo && !a.info.bare);
-    tauri::async_runtime::block_on(get_status_inner(&state, &a.repo_id))
-        .expect("status of repo A");
+    tauri::async_runtime::block_on(get_status_inner(&state, &a.repo_id)).expect("status of repo A");
 
     // Now open a plain directory: not a repo. No entry is created for it…
     let non_repo_dir = tempfile::TempDir::new().expect("create temp dir");
@@ -51,21 +50,25 @@ fn get_repo_health_requires_open_repo() {
     let dir = init_repo_with_identity();
     let opened = open(&state, dir.path()).expect("open repo");
     write_stage_commit(&state, &opened.repo_id, dir.path(), "a.txt", "a\n", "C0");
-    let health =
-        tauri::async_runtime::block_on(get_repo_health_inner(&state, &opened.repo_id))
-            .expect("health never errors for an open repo");
+    let health = tauri::async_runtime::block_on(get_repo_health_inner(&state, &opened.repo_id))
+        .expect("health never errors for an open repo");
     assert!(health.stats.data.is_some(), "{:?}", health.stats.error);
-    assert!(health.branches.data.is_some(), "{:?}", health.branches.error);
+    assert!(
+        health.branches.data.is_some(),
+        "{:?}",
+        health.branches.error
+    );
     assert!(
         health.working_state.data.is_some(),
         "{:?}",
         health.working_state.error
     );
-    assert!(health.structure.data.is_some(), "{:?}", health.structure.error);
-    assert_eq!(
-        health.stats.data.as_ref().map(|s| s.commit_count),
-        Some(1)
+    assert!(
+        health.structure.data.is_some(),
+        "{:?}",
+        health.structure.error
     );
+    assert_eq!(health.stats.data.as_ref().map(|s| s.commit_count), Some(1));
     assert!(health.generated_at > 0);
 }
 
@@ -81,7 +84,9 @@ fn get_graph_no_repo_and_unborn() {
 
     let repo_dir = tempfile::TempDir::new().expect("create temp dir");
     git2::Repository::init(repo_dir.path()).expect("init repo");
-    let id = open(&state, repo_dir.path()).expect("open unborn repo").repo_id;
+    let id = open(&state, repo_dir.path())
+        .expect("open unborn repo")
+        .repo_id;
 
     let layout = tauri::async_runtime::block_on(get_graph_inner(&state, &id, None))
         .expect("empty layout for unborn repo");
@@ -127,9 +132,14 @@ fn mutation_commands_require_an_open_repo() {
         .expect_err("unstage with no repo");
     assert!(matches!(err, AppError::NoRepo));
 
-    let err =
-        tauri::async_runtime::block_on(commit_inner(&state, MISSING_ID, "msg".to_string(), None, None))
-            .expect_err("commit with no repo");
+    let err = tauri::async_runtime::block_on(commit_inner(
+        &state,
+        MISSING_ID,
+        "msg".to_string(),
+        None,
+        None,
+    ))
+    .expect_err("commit with no repo");
     assert!(matches!(err, AppError::NoRepo));
 }
 
@@ -150,12 +160,9 @@ fn tag_commands_require_an_open_repo() {
     .expect_err("create_tag with no repo");
     assert!(matches!(err, AppError::NoRepo));
 
-    let err = tauri::async_runtime::block_on(delete_tag_inner(
-        &state,
-        MISSING_ID,
-        "v1".to_string(),
-    ))
-    .expect_err("delete_tag with no repo");
+    let err =
+        tauri::async_runtime::block_on(delete_tag_inner(&state, MISSING_ID, "v1".to_string()))
+            .expect_err("delete_tag with no repo");
     assert!(matches!(err, AppError::NoRepo));
 
     let err = tauri::async_runtime::block_on(push_tag_inner(
@@ -281,12 +288,9 @@ fn blame_commands_require_an_open_repo() {
 fn read_reflog_requires_an_open_repo() {
     let state = AppState::default();
 
-    let err = tauri::async_runtime::block_on(read_reflog_inner(
-        &state,
-        MISSING_ID,
-        "HEAD".to_string(),
-    ))
-    .expect_err("read_reflog with no repo");
+    let err =
+        tauri::async_runtime::block_on(read_reflog_inner(&state, MISSING_ID, "HEAD".to_string()))
+            .expect_err("read_reflog with no repo");
     assert!(matches!(err, AppError::NoRepo));
 }
 
@@ -296,12 +300,9 @@ fn read_reflog_requires_an_open_repo() {
 fn config_commands_require_an_open_repo() {
     let state = AppState::default();
 
-    let err = tauri::async_runtime::block_on(get_config_inner(
-        &state,
-        MISSING_ID,
-        ConfigLevelArg::Local,
-    ))
-    .expect_err("get_config with no repo");
+    let err =
+        tauri::async_runtime::block_on(get_config_inner(&state, MISSING_ID, ConfigLevelArg::Local))
+            .expect_err("get_config with no repo");
     assert!(matches!(err, AppError::NoRepo));
 
     let err = tauri::async_runtime::block_on(set_config_inner(

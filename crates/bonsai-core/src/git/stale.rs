@@ -112,7 +112,9 @@ fn open_repo_at(workdir: &Path) -> Result<git2::Repository, AppError> {
 /// Case-insensitive name ordering (ties broken case-sensitively so the order
 /// is total and stable) — matches `branches::ci_cmp`.
 fn ci_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    a.to_lowercase().cmp(&b.to_lowercase()).then_with(|| a.cmp(b))
+    a.to_lowercase()
+        .cmp(&b.to_lowercase())
+        .then_with(|| a.cmp(b))
 }
 
 /// Resolved base identity for the stale scan (F-A7-1 / F-A7-4).
@@ -261,11 +263,7 @@ fn resolve_stale_base<'r>(
 /// - configured but the remote-tracking ref is missing → `(Some(reconstructed), true)`
 ///   (reconstructed from `branch.<name>.remote` + short of `branch.<name>.merge`;
 ///   `None` if that read hiccups, but `gone` is still true).
-fn upstream_state(
-    cfg: &git2::Config,
-    name: &str,
-    branch: &git2::Branch,
-) -> (Option<String>, bool) {
+fn upstream_state(cfg: &git2::Config, name: &str, branch: &git2::Branch) -> (Option<String>, bool) {
     let configured = cfg.get_string(&format!("branch.{name}.merge")).is_ok();
     if !configured {
         return (None, false);
@@ -325,7 +323,10 @@ fn stale_scan(
         let (branch, _) = match item {
             Ok(b) => b,
             Err(e) => {
-                eprintln!("bonsai: skipping unreadable local branch ref: {}", e.message());
+                eprintln!(
+                    "bonsai: skipping unreadable local branch ref: {}",
+                    e.message()
+                );
                 continue;
             }
         };
@@ -450,6 +451,6 @@ pub(crate) use delete::recheck_tip;
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]
-mod tests_detect;
-#[cfg(test)]
 mod tests_base;
+#[cfg(test)]
+mod tests_detect;

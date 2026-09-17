@@ -16,13 +16,13 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{commit_fixed, git, init_repo};
 use bonsai_core::ai::{run_claude, RunOpts, DEFAULT_MODEL};
 use bonsai_core::error::AppError;
 use bonsai_core::git::ai_resolve::ai_resolve_conflict;
 use bonsai_core::git::conflict::{resolve_conflict_text, MAX_CONFLICT_BYTES};
 use bonsai_core::git::merge::{commit_merge, merge_branch, MergeOutcome};
-use crate::common;
-use crate::common::{commit_fixed, git, init_repo};
 
 const STUB_BODY: &str = "MERGED_BODY_OK";
 const STUB_MODE_ENV: &str = "BONSAI_STUB_MODE";
@@ -114,7 +114,10 @@ fn both_modified_conflict() -> tempfile::TempDir {
 
     match merge_branch(d, "topic", false).expect("merge") {
         MergeOutcome::Conflicts { paths, .. } => {
-            assert!(paths.iter().any(|p| p == "a.txt"), "expected a.txt conflict");
+            assert!(
+                paths.iter().any(|p| p == "a.txt"),
+                "expected a.txt conflict"
+            );
         }
         other => panic!("expected Conflicts, got {other:?}"),
     }
@@ -140,7 +143,10 @@ fn deleted_by_them_conflict() -> tempfile::TempDir {
 
     match merge_branch(d, "topic", false).expect("merge") {
         MergeOutcome::Conflicts { paths, .. } => {
-            assert!(paths.iter().any(|p| p == "a.txt"), "expected a.txt conflict");
+            assert!(
+                paths.iter().any(|p| p == "a.txt"),
+                "expected a.txt conflict"
+            );
         }
         other => panic!("expected Conflicts, got {other:?}"),
     }
@@ -163,8 +169,15 @@ fn proposal_returns_stub_body_and_writes_nothing() {
         ai_resolve_conflict(d, "a.txt", RunOpts::default()).expect("proposal on a text conflict");
 
     assert_eq!(proposal.path, "a.txt");
-    assert_eq!(proposal.proposed_text, STUB_BODY, "text must be the stub body");
-    assert_eq!(proposal.cost_usd, Some(0.012), "cost parsed from the envelope");
+    assert_eq!(
+        proposal.proposed_text, STUB_BODY,
+        "text must be the stub body"
+    );
+    assert_eq!(
+        proposal.cost_usd,
+        Some(0.012),
+        "cost parsed from the envelope"
+    );
 
     // WRITES NOTHING: still conflicted, worktree bytes unchanged, no stage-0.
     assert!(is_conflicted(d, "a.txt"), "a.txt must still be conflicted");
@@ -197,7 +210,10 @@ fn applying_proposal_clears_conflict_and_commit_merge_finalizes() {
     resolve_conflict_text(d, "a.txt", &proposal.proposed_text).expect("apply proposal");
 
     // Conflict gone; stage-0 blob == the applied bytes; worktree bytes match.
-    assert!(!is_conflicted(d, "a.txt"), "a.txt must no longer be conflicted");
+    assert!(
+        !is_conflicted(d, "a.txt"),
+        "a.txt must no longer be conflicted"
+    );
     assert_eq!(
         stage0_blob(d, "a.txt").as_deref(),
         Some(proposal.proposed_text.as_bytes()),
@@ -316,8 +332,9 @@ fn leftover_markers_proposal_is_staged_verbatim_not_rejected() {
     let dir = both_modified_conflict();
     let d = dir.path();
 
-    let proposal = ai_resolve_conflict(d, "a.txt", RunOpts::default())
-        .expect("a markerful proposal is still a valid AiResult (run_claude does not scan markers)");
+    let proposal = ai_resolve_conflict(d, "a.txt", RunOpts::default()).expect(
+        "a markerful proposal is still a valid AiResult (run_claude does not scan markers)",
+    );
     assert_eq!(
         proposal.proposed_text, MARKER_BODY,
         "the proposal body carries leftover conflict markers verbatim"
@@ -370,7 +387,10 @@ fn empty_proposal_maps_to_ai_failed() {
         other => panic!("expected AiFailed, got {other:?}"),
     }
     // WRITES NOTHING on failure: a.txt is still conflicted.
-    assert!(is_conflicted(dir.path(), "a.txt"), "still conflicted after a failed proposal");
+    assert!(
+        is_conflicted(dir.path(), "a.txt"),
+        "still conflicted after a failed proposal"
+    );
 }
 
 #[test]
@@ -389,7 +409,10 @@ fn whitespace_only_proposal_maps_to_ai_failed() {
         ),
         other => panic!("expected AiFailed, got {other:?}"),
     }
-    assert!(is_conflicted(dir.path(), "a.txt"), "still conflicted after a failed proposal");
+    assert!(
+        is_conflicted(dir.path(), "a.txt"),
+        "still conflicted after a failed proposal"
+    );
 }
 
 // ---- CRLF in the proposed body ----
@@ -445,8 +468,14 @@ fn crlf_proposal_is_staged_verbatim_no_normalization() {
 fn default_run_opts_model_is_none_and_default_model_is_sonnet() {
     // Pure consts: RunOpts::default() carries no explicit model, so run_claude
     // substitutes DEFAULT_MODEL, which is "sonnet".
-    assert!(RunOpts::default().model.is_none(), "RunOpts::default().model must be None");
-    assert_eq!(DEFAULT_MODEL, "sonnet", "the default resolution model is sonnet");
+    assert!(
+        RunOpts::default().model.is_none(),
+        "RunOpts::default().model must be None"
+    );
+    assert_eq!(
+        DEFAULT_MODEL, "sonnet",
+        "the default resolution model is sonnet"
+    );
 }
 
 #[test]
@@ -458,15 +487,23 @@ fn default_opts_spawn_model_sonnet_in_argv() {
     set_stub_mode("check_model");
 
     // RunOpts::default() → model None → run_claude passes `--model sonnet`.
-    let res = run_claude(Path::new("."), "prompt", Some("payload"), RunOpts::default())
-        .expect("default opts must spawn --model sonnet");
+    let res = run_claude(
+        Path::new("."),
+        "prompt",
+        Some("payload"),
+        RunOpts::default(),
+    )
+    .expect("default opts must spawn --model sonnet");
     assert_eq!(
         res.text, "MODEL_IS_SONNET",
         "the stub confirms `--model sonnet` was on the argv"
     );
 
     // An explicit non-default model overrides it: the stub no longer sees sonnet.
-    let opts = RunOpts { model: Some("opus".to_string()), ..RunOpts::default() };
+    let opts = RunOpts {
+        model: Some("opus".to_string()),
+        ..RunOpts::default()
+    };
     let err = run_claude(Path::new("."), "prompt", Some("payload"), opts)
         .expect_err("explicit --model opus is NOT sonnet");
     assert!(

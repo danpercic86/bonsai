@@ -46,9 +46,9 @@ pub use api::{
 pub(crate) use api::{commit_trees, head_endpoint, maybe_annotate, pathspecs};
 
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod compare_tests;
 #[cfg(test)]
 #[path = "diff/stash_tree_tests.rs"]
 mod stash_tree_tests;
+#[cfg(test)]
+mod tests;

@@ -83,7 +83,11 @@ fn p0_is_the_low_end_not_the_max_when_bucket_zero_is_empty() {
     assert_eq!(p0, 500, "p0 is the containing bucket's lower bound");
     assert!(p0 < h.max_ms as u32, "p0 must not report the maximum");
     // The ratified §8.1 method is unchanged by the empty-bucket skip.
-    assert_eq!(h.percentile_ms(0.95), Some(900), "p95 still clamps to max_ms");
+    assert_eq!(
+        h.percentile_ms(0.95),
+        Some(900),
+        "p95 still clamps to max_ms"
+    );
     assert_eq!(h.percentile_ms(1.0), Some(900));
 }
 

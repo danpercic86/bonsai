@@ -228,14 +228,14 @@ mod tests {
     use super::*;
     use crate::ai::testutil::env_lock;
 
-
     /// git2-init a scratch repo with identity + autocrlf off (mirrors `ai_explain`).
     fn init_scratch() -> tempfile::TempDir {
         let dir = crate::testutil::scratch_dir();
         let repo = git2::Repository::init(dir.path()).expect("init repo");
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
         cfg.set_bool("core.autocrlf", false).expect("autocrlf");
         dir
     }
@@ -415,7 +415,10 @@ mod tests {
     #[test]
     fn empty_range_fails_before_cli() {
         let _g = env_lock();
-        std::env::set_var(ai::CLAUDE_BIN_ENV, "D:/nonexistent/claude-must-not-spawn.exe");
+        std::env::set_var(
+            ai::CLAUDE_BIN_ENV,
+            "D:/nonexistent/claude-must-not-spawn.exe",
+        );
 
         let (dir, _) = tag_fixture();
         let err = generate_changelog(
@@ -431,7 +434,9 @@ mod tests {
 
         match err {
             AppError::AiFailed(m) => assert_eq!(m, "no changes between v3 and v3"),
-            other => panic!("expected AiFailed (pre-CLI), got {other:?} — a spawn would be AiUnavailable"),
+            other => panic!(
+                "expected AiFailed (pre-CLI), got {other:?} — a spawn would be AiUnavailable"
+            ),
         }
     }
 
@@ -440,7 +445,10 @@ mod tests {
     #[test]
     fn no_earlier_tag_fails_before_cli() {
         let _g = env_lock();
-        std::env::set_var(ai::CLAUDE_BIN_ENV, "D:/nonexistent/claude-must-not-spawn.exe");
+        std::env::set_var(
+            ai::CLAUDE_BIN_ENV,
+            "D:/nonexistent/claude-must-not-spawn.exe",
+        );
 
         let dir = init_scratch();
         let repo = git2::Repository::open(dir.path()).expect("open");
@@ -459,11 +467,12 @@ mod tests {
         std::env::remove_var(ai::CLAUDE_BIN_ENV);
 
         match err {
-            AppError::AiFailed(m) => assert!(
-                m.contains("no earlier tag found before HEAD"),
-                "got {m}"
+            AppError::AiFailed(m) => {
+                assert!(m.contains("no earlier tag found before HEAD"), "got {m}")
+            }
+            other => panic!(
+                "expected AiFailed (pre-CLI), got {other:?} — a spawn would be AiUnavailable"
             ),
-            other => panic!("expected AiFailed (pre-CLI), got {other:?} — a spawn would be AiUnavailable"),
         }
     }
 

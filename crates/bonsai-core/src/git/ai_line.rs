@@ -79,8 +79,8 @@ pub fn explain_line(
 
     // 3. The introducing commit's full message (lossy UTF-8).
     let repo = open_workdir_repo(workdir)?;
-    let oid = git2::Oid::from_str(&bl.oid)
-        .map_err(|_| AppError::Git("invalid commit id".to_string()))?;
+    let oid =
+        git2::Oid::from_str(&bl.oid).map_err(|_| AppError::Git("invalid commit id".to_string()))?;
     let commit = repo.find_commit(oid)?;
     let message = String::from_utf8_lossy(commit.message_bytes()).into_owned();
 
@@ -162,14 +162,19 @@ mod tests {
             &fd,
         );
         assert!(payload.contains("LINE 3 of src/a.rs:"), "{payload}");
-        assert!(payload.contains("    if x.is_none() { return; }"), "{payload}");
+        assert!(
+            payload.contains("    if x.is_none() { return; }"),
+            "{payload}"
+        );
         assert!(
             payload.contains("INTRODUCED BY COMMIT abcdef1  add null guard"),
             "{payload}"
         );
         assert!(payload.contains("AUTHOR Ada  2023-11-14"), "{payload}");
         assert!(
-            payload.contains("MESSAGE:\nadd null guard\n\nGuards against a null deref on the hot path."),
+            payload.contains(
+                "MESSAGE:\nadd null guard\n\nGuards against a null deref on the hot path."
+            ),
             "{payload}"
         );
         assert!(

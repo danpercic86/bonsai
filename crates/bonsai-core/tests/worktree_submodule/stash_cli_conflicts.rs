@@ -6,11 +6,11 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{assert_same_status, commit_fixed, git, init_repo};
 use bonsai_core::git::stash::{
     apply_stash, create_stash, list_stashes, pop_stash, ApplyStashOutcome, StashScope,
 };
-use crate::common;
-use crate::common::{assert_same_status, commit_fixed, git, init_repo};
 
 macro_rules! require_git {
     () => {
@@ -64,7 +64,10 @@ fn apply_onto_different_branch_conflicting_twin_pair() {
             git(dir, &["checkout", "other"]);
             match apply_stash(dir, 0, false, None).expect("apply") {
                 ApplyStashOutcome::Conflicts { paths } => {
-                    assert!(paths.iter().any(|p| p == "f.txt"), "f.txt conflicted: {paths:?}");
+                    assert!(
+                        paths.iter().any(|p| p == "f.txt"),
+                        "f.txt conflicted: {paths:?}"
+                    );
                 }
                 other => panic!("expected Conflicts, got {other:?}"),
             }
@@ -74,7 +77,11 @@ fn apply_onto_different_branch_conflicting_twin_pair() {
     // Same conflicted porcelain on both sides (both show f.txt unmerged).
     assert_same_status(a.path(), b.path());
     // bonsai never drops on conflict.
-    assert_eq!(list_stashes(a.path()).expect("list").len(), 1, "stash retained on conflict");
+    assert_eq!(
+        list_stashes(a.path()).expect("list").len(),
+        1,
+        "stash retained on conflict"
+    );
 }
 
 // -------------------------------------------------- untracked-file collision
@@ -94,10 +101,15 @@ fn untracked_collision_never_clobbers() {
 
         // Stash an UNTRACKED file, then recreate it with DIFFERENT content.
         std::fs::write(path.join("u.txt"), "stashed-content\n").expect("write u");
-        assert!(create_stash(path, Some("wip"), StashScope::AllWithUntracked)
-            .expect("create")
-            .created);
-        assert!(!path.join("u.txt").exists(), "untracked file moved into stash");
+        assert!(
+            create_stash(path, Some("wip"), StashScope::AllWithUntracked)
+                .expect("create")
+                .created
+        );
+        assert!(
+            !path.join("u.txt").exists(),
+            "untracked file moved into stash"
+        );
         std::fs::write(path.join("u.txt"), "existing-content\n").expect("recreate u");
 
         let outcome = if pop {
@@ -110,16 +122,25 @@ fn untracked_collision_never_clobbers() {
         match &outcome {
             Err(_) => {}
             Ok(ApplyStashOutcome::Applied) => {
-                panic!("{}: collision must not resolve to a clean Applied", if pop { "pop" } else { "apply" })
+                panic!(
+                    "{}: collision must not resolve to a clean Applied",
+                    if pop { "pop" } else { "apply" }
+                )
             }
             Ok(_) => {}
         }
         // The KEY property: the on-disk untracked file is untouched.
-        assert_eq!(read(path, "u.txt"), b"existing-content\n",
-            "existing untracked content must never be clobbered");
+        assert_eq!(
+            read(path, "u.txt"),
+            b"existing-content\n",
+            "existing untracked content must never be clobbered"
+        );
         // The stash is retained (blobs live only there).
-        assert_eq!(list_stashes(path).expect("list").len(), 1,
-            "stash retained after a blocked collision");
+        assert_eq!(
+            list_stashes(path).expect("list").len(),
+            1,
+            "stash retained after a blocked collision"
+        );
     }
 }
 
@@ -153,7 +174,11 @@ fn second_op_with_conflicted_index_errors_no_corruption() {
             ApplyStashOutcome::Conflicts { .. } => {}
             other => panic!("expected first apply to conflict, got {other:?}"),
         }
-        assert_eq!(list_stashes(path).expect("list").len(), 2, "both stashes still present");
+        assert_eq!(
+            list_stashes(path).expect("list").len(),
+            2,
+            "both stashes still present"
+        );
 
         // A SECOND op with the conflicted index must not corrupt anything.
         let outcome = if pop {

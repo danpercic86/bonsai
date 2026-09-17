@@ -213,16 +213,18 @@ pub fn merge_branch_gated(
         }
         let to = incoming_id.to_string();
         if let Some(oid) = stash_oid {
-            return Ok(match autostash::pop_after_success(&mut repo, workdir, oid)? {
-                PopResult::Restored => MergeOutcome::FastForwarded {
-                    branch: head_branch,
-                    to,
-                    stashed: true,
+            return Ok(
+                match autostash::pop_after_success(&mut repo, workdir, oid)? {
+                    PopResult::Restored => MergeOutcome::FastForwarded {
+                        branch: head_branch,
+                        to,
+                        stashed: true,
+                    },
+                    PopResult::Conflicted(paths) => {
+                        MergeOutcome::StashPopConflicts { head: to, paths }
+                    }
                 },
-                PopResult::Conflicted(paths) => {
-                    MergeOutcome::StashPopConflicts { head: to, paths }
-                }
-            });
+            );
         }
         return Ok(MergeOutcome::FastForwarded {
             branch: head_branch,
@@ -336,10 +338,17 @@ pub fn merge_branch_gated(
     let result = finalize_merge_commit(&mut repo, &message, None, hooks, None)?;
     let oid = result.oid;
     if let Some(stash) = stash_oid {
-        return Ok(match autostash::pop_after_success(&mut repo, workdir, stash)? {
-            PopResult::Restored => MergeOutcome::Merged { oid, stashed: true },
-            PopResult::Conflicted(paths) => MergeOutcome::StashPopConflicts { head: oid, paths },
-        });
+        return Ok(
+            match autostash::pop_after_success(&mut repo, workdir, stash)? {
+                PopResult::Restored => MergeOutcome::Merged { oid, stashed: true },
+                PopResult::Conflicted(paths) => {
+                    MergeOutcome::StashPopConflicts { head: oid, paths }
+                }
+            },
+        );
     }
-    Ok(MergeOutcome::Merged { oid, stashed: false })
+    Ok(MergeOutcome::Merged {
+        oid,
+        stashed: false,
+    })
 }

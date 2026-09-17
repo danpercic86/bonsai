@@ -9,7 +9,7 @@ use std::sync::Arc;
 use super::record::{LogLevel, LogPayload, LogRecord, LogSource, RedactionMode};
 use super::redact::Redactor;
 use super::sink::Sink;
-use super::writer::{list_log_files, part_name, LogWriter, Limits, WriterConfig};
+use super::writer::{list_log_files, part_name, Limits, LogWriter, WriterConfig};
 use super::ObsState;
 
 fn cfg(dir: &Path) -> WriterConfig {
@@ -119,7 +119,11 @@ fn producers_never_block_and_overflow_is_accounted_for() {
 #[test]
 fn drop_records_report_the_backpressure_gap() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let mut w = LogWriter::open(cfg(dir.path()), std::sync::Arc::new(super::redact::Redactor::with_salt([3; 16]))).expect("open");
+    let mut w = LogWriter::open(
+        cfg(dir.path()),
+        std::sync::Arc::new(super::redact::Redactor::with_salt([3; 16])),
+    )
+    .expect("open");
     let name = w.active_file().to_string();
     w.write_record(rec(1)).expect("write");
     let dropped = AtomicU64::new(7);
@@ -140,7 +144,10 @@ fn drop_records_report_the_backpressure_gap() {
         .collect();
     assert_eq!(drops.len(), 2, "one record per reporting gap: {drops:?}");
     assert_eq!(drops[0]["dropped"], 7);
-    assert_eq!(drops[0]["sinceSeq"], 2, "the last seq written before the gap");
+    assert_eq!(
+        drops[0]["sinceSeq"], 2,
+        "the last seq written before the gap"
+    );
     assert_eq!(drops[1]["dropped"], 2);
 }
 
@@ -150,7 +157,8 @@ fn stopping_the_sink_deletes_nothing() {
     let dir = tempfile::tempdir().expect("tempdir");
     // A file from an EARLIER session, plus a non-log sibling.
     std::fs::write(
-        dir.path().join("bonsai-2026-08-01T10-00-00-s00000001.jsonl"),
+        dir.path()
+            .join("bonsai-2026-08-01T10-00-00-s00000001.jsonl"),
         "{}\n",
     )
     .expect("seed");
@@ -240,7 +248,10 @@ fn roll_and_purge_rolls_forward_and_erases_the_past() {
 
     let reply = sink.roll_and_purge(exports.clone()).expect("purge");
     assert_eq!(reply.deleted_exports, 1, "the prior export was purged");
-    assert!(reply.deleted_files >= 2, "prior log part(s) + the export removed");
+    assert!(
+        reply.deleted_files >= 2,
+        "prior log part(s) + the export removed"
+    );
     assert!(reply.active_file.ends_with(".jsonl"));
 
     for i in 50..60 {
@@ -279,7 +290,10 @@ fn dropped_parts_is_visible_through_the_sink() {
         sink.enqueue(rec(i));
     }
     sink.shutdown();
-    assert!(sink.dropped_parts() > 0, "cap evictions are visible to the UI");
+    assert!(
+        sink.dropped_parts() > 0,
+        "cap evictions are visible to the UI"
+    );
 }
 
 /// §8.4 — a PERSISTENT write failure surfaces as `write_failed`, and a recovered

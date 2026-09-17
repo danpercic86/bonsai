@@ -3,8 +3,8 @@
 //! disk" invariant.
 
 use super::{load, save};
-use crate::obs::metrics::{DayBucket, MetricTotals, MetricsFile};
 use crate::obs::histogram::Histogram;
+use crate::obs::metrics::{DayBucket, MetricTotals, MetricsFile};
 
 fn scratch(name: &str) -> std::path::PathBuf {
     let mut p = std::env::temp_dir();

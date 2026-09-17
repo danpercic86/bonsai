@@ -66,7 +66,11 @@ fn args_hash_is_8_hex_stable_and_salt_dependent() {
     let h = a.hash_args(r#"{"repoId":"/x"}"#);
     assert_eq!(h.len(), 8);
     assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
-    assert_eq!(h, a.hash_args(r#"{"repoId":"/x"}"#), "must be deterministic");
+    assert_eq!(
+        h,
+        a.hash_args(r#"{"repoId":"/x"}"#),
+        "must be deterministic"
+    );
     assert_ne!(h, a.hash_args(r#"{"repoId":"/y"}"#), "content must matter");
     assert_ne!(h, b.hash_args(r#"{"repoId":"/x"}"#), "salt must matter");
 }
@@ -130,9 +134,12 @@ fn scrubber_catches_every_credential_fixture() {
     // And the secret bytes themselves are gone, not merely annotated.
     assert!(!scrub_string(fixtures[0], None).contains("1234567890abcdef"));
     assert!(!scrub_string("glpat-abcdefghij1234567890", None).contains("abcdefghij"));
-    assert!(!scrub_string("Authorization: Basic am9lOnN1cGVyc2VjcmV0MTIz", None).contains("am9lOn"));
     assert!(
-        !scrub_string("https://user:sup3rs3cret@github.com/org/repo.git", None).contains("sup3rs3cret")
+        !scrub_string("Authorization: Basic am9lOnN1cGVyc2VjcmV0MTIz", None).contains("am9lOn")
+    );
+    assert!(
+        !scrub_string("https://user:sup3rs3cret@github.com/org/repo.git", None)
+            .contains("sup3rs3cret")
     );
 }
 
@@ -157,7 +164,10 @@ fn increment3_layer_a_jwt_and_keyvalue() {
     let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.SflKxwRJSMeKKF2QT4fwpM";
     let out = scrub_string(jwt, None);
     assert!(out.contains(REDACTED_TOKEN), "bare JWT survived: {out}");
-    assert!(!out.contains("SflKxwRJSMeKKF2QT4fwpM"), "JWT signature leaked: {out}");
+    assert!(
+        !out.contains("SflKxwRJSMeKKF2QT4fwpM"),
+        "JWT signature leaked: {out}"
+    );
 
     // Plain-text credential-helper lines: `password=…` and `password: …`.
     for line in [
@@ -166,7 +176,10 @@ fn increment3_layer_a_jwt_and_keyvalue() {
         "the token=abc123def456 was rejected",
     ] {
         let o = scrub_string(line, None);
-        assert!(o.contains(REDACTED_TOKEN), "credential pair survived: {line} -> {o}");
+        assert!(
+            o.contains(REDACTED_TOKEN),
+            "credential pair survived: {line} -> {o}"
+        );
     }
     assert!(!scrub_string("password=hunter2secret", None).contains("hunter2secret"));
 

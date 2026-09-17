@@ -1,0 +1,10 @@
+# Bonsai — rustfmt configuration (adopted 2026-09-17, user ruling).
+#
+# Deliberately close to stock rustfmt. The only setting is the edition, which
+# rustfmt cannot infer when invoked outside cargo (every crate here is 2021).
+#
+# Why stock: a 2026-09-03 measurement compared the default against
+# `use_small_heuristics = "Max"` and Max was WORSE — 2065 dirty hunks vs 1773.
+# Stock is both the better-measured choice and the one a new contributor's
+# editor already does on save.
+edition = "2021"

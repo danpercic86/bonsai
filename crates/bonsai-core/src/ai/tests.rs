@@ -10,8 +10,13 @@ use std::time::{Duration, Instant};
 fn run_claude_success_strips_and_parses() {
     let _g = env_lock();
     set_mode("success");
-    let res = run_claude(Path::new("."), "prompt", Some("payload"), RunOpts::default())
-        .expect("success stub should yield Ok");
+    let res = run_claude(
+        Path::new("."),
+        "prompt",
+        Some("payload"),
+        RunOpts::default(),
+    )
+    .expect("success stub should yield Ok");
     assert_eq!(res.text, "MERGED_BODY_OK");
     assert_eq!(res.cost_usd, Some(0.012));
     assert_eq!(res.session_id.as_deref(), Some("sess-abc"));
@@ -21,8 +26,13 @@ fn run_claude_success_strips_and_parses() {
 fn run_claude_strips_code_fence() {
     let _g = env_lock();
     set_mode("success_fence");
-    let res = run_claude(Path::new("."), "prompt", Some("payload"), RunOpts::default())
-        .expect("fence stub should yield Ok");
+    let res = run_claude(
+        Path::new("."),
+        "prompt",
+        Some("payload"),
+        RunOpts::default(),
+    )
+    .expect("fence stub should yield Ok");
     assert_eq!(res.text, "MERGED_FENCED");
 }
 
@@ -30,8 +40,13 @@ fn run_claude_strips_code_fence() {
 fn run_claude_is_error_maps_to_ai_failed() {
     let _g = env_lock();
     set_mode("error");
-    let err = run_claude(Path::new("."), "prompt", Some("payload"), RunOpts::default())
-        .expect_err("is_error envelope should map to Err");
+    let err = run_claude(
+        Path::new("."),
+        "prompt",
+        Some("payload"),
+        RunOpts::default(),
+    )
+    .expect_err("is_error envelope should map to Err");
     match err {
         AppError::AiFailed(m) => assert_eq!(m, "boom"),
         other => panic!("expected AiFailed, got {other:?}"),
@@ -42,8 +57,13 @@ fn run_claude_is_error_maps_to_ai_failed() {
 fn run_claude_nonzero_exit_maps_to_ai_failed() {
     let _g = env_lock();
     set_mode("nonzero");
-    let err = run_claude(Path::new("."), "prompt", Some("payload"), RunOpts::default())
-        .expect_err("non-zero exit should map to Err");
+    let err = run_claude(
+        Path::new("."),
+        "prompt",
+        Some("payload"),
+        RunOpts::default(),
+    )
+    .expect_err("non-zero exit should map to Err");
     match err {
         AppError::AiFailed(m) => assert!(
             m.contains("something broke"),
@@ -57,14 +77,20 @@ fn run_claude_nonzero_exit_maps_to_ai_failed() {
 fn run_claude_slow_times_out_and_reaps_child() {
     let _g = env_lock();
     set_mode("slow");
-    let opts = RunOpts { timeout: Duration::from_secs(1), ..RunOpts::default() };
+    let opts = RunOpts {
+        timeout: Duration::from_secs(1),
+        ..RunOpts::default()
+    };
     let start = Instant::now();
     let err = run_claude(Path::new("."), "prompt", Some("payload"), opts)
         .expect_err("slow stub past the timeout should map to Err");
     let elapsed = start.elapsed();
     match err {
         AppError::AiFailed(m) => {
-            assert!(m.contains("timed out"), "expected timeout message, got: {m}");
+            assert!(
+                m.contains("timed out"),
+                "expected timeout message, got: {m}"
+            );
         }
         other => panic!("expected AiFailed, got {other:?}"),
     }
@@ -147,7 +173,11 @@ fn strip_fence_only_removes_matching_fences() {
 
 #[test]
 fn stub_path_points_at_a_committed_fixture() {
-    assert!(stub_path().is_file(), "stub fixture missing: {:?}", stub_path());
+    assert!(
+        stub_path().is_file(),
+        "stub fixture missing: {:?}",
+        stub_path()
+    );
 }
 
 // ---- P68a: the `parse_result_envelope` extraction (spike §1.3) ----
@@ -171,7 +201,10 @@ fn parse_result_envelope_reproduces_all_five_branches() {
     // 1. Unparseable + non-zero exit -> stderr tail (capped at 500 chars).
     let err = parse_result_envelope("not json", false, "  boom happened  ")
         .expect_err("unparseable + failure -> Err");
-    assert!(matches!(&err, AppError::AiFailed(m) if m == "boom happened"), "got {err:?}");
+    assert!(
+        matches!(&err, AppError::AiFailed(m) if m == "boom happened"),
+        "got {err:?}"
+    );
     let long = "x".repeat(900);
     let err = parse_result_envelope("not json", false, &long).expect_err("Err");
     match err {
@@ -193,16 +226,22 @@ fn parse_result_envelope_reproduces_all_five_branches() {
     );
 
     // 3. Explicit error envelope: result wins, else subtype, else a constant.
-    let err = parse_result_envelope(r#"{"is_error":true,"result":"boom"}"#, true, "")
-        .expect_err("Err");
-    assert!(matches!(&err, AppError::AiFailed(m) if m == "boom"), "got {err:?}");
+    let err =
+        parse_result_envelope(r#"{"is_error":true,"result":"boom"}"#, true, "").expect_err("Err");
+    assert!(
+        matches!(&err, AppError::AiFailed(m) if m == "boom"),
+        "got {err:?}"
+    );
     let err = parse_result_envelope(
         r#"{"is_error":true,"result":null,"subtype":"error_max_turns"}"#,
         true,
         "",
     )
     .expect_err("Err");
-    assert!(matches!(&err, AppError::AiFailed(m) if m == "error_max_turns"), "got {err:?}");
+    assert!(
+        matches!(&err, AppError::AiFailed(m) if m == "error_max_turns"),
+        "got {err:?}"
+    );
     let err = parse_result_envelope(r#"{"is_error":true}"#, true, "").expect_err("Err");
     assert!(
         matches!(&err, AppError::AiFailed(m) if m == "Claude reported an error"),
@@ -210,7 +249,11 @@ fn parse_result_envelope_reproduces_all_five_branches() {
     );
 
     // 4. Empty / blank / absent result.
-    for body in [r#"{"result":""}"#, r#"{"result":"  \n\t "}"#, r#"{"result":null}"#] {
+    for body in [
+        r#"{"result":""}"#,
+        r#"{"result":"  \n\t "}"#,
+        r#"{"result":null}"#,
+    ] {
         let err = parse_result_envelope(body, true, "").expect_err("Err");
         assert!(
             matches!(&err, AppError::AiFailed(m) if m == "Claude returned no output"),
@@ -241,7 +284,10 @@ fn tool_policy_args_are_the_verified_allowlist() {
     assert_eq!(d.tools, ToolPolicy::ReadOnly);
     assert_eq!(d.max_budget_usd, None);
     assert!(!d.include_partial_messages);
-    assert!(d.interactive, "streaming defaults to the interactive mechanism");
+    assert!(
+        d.interactive,
+        "streaming defaults to the interactive mechanism"
+    );
 }
 
 #[test]

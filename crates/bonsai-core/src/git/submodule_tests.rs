@@ -274,7 +274,10 @@ fn deinit_clean_no_force_omits_dash_f() {
     assert_eq!(outcome, SubmoduleDeinitOutcome::Deinitialized);
     let calls = runner.calls.borrow();
     assert_eq!(calls.len(), 1);
-    assert!(!calls[0].contains(&"-f".to_string()), "clean deinit must omit -f");
+    assert!(
+        !calls[0].contains(&"-f".to_string()),
+        "clean deinit must omit -f"
+    );
 }
 
 /// P82 AC#2: `force=false` on a DIRTY submodule returns `DirtyNeedsForce` and
@@ -287,7 +290,11 @@ fn deinit_dirty_no_force_refuses_without_running() {
     let runner = RecordRunner::default();
     let outcome = deinit_submodule(sup.path(), &runner, &name, false).expect("deinit");
     assert_eq!(outcome, SubmoduleDeinitOutcome::DirtyNeedsForce);
-    assert_eq!(runner.calls.borrow().len(), 0, "must not run git when refusing");
+    assert_eq!(
+        runner.calls.borrow().len(),
+        0,
+        "must not run git when refusing"
+    );
 }
 
 /// P82 AC#4: `force=true` on a DIRTY submodule discards and runs WITH `-f`.
@@ -299,7 +306,10 @@ fn deinit_dirty_force_runs_with_dash_f() {
     let outcome = deinit_submodule(sup.path(), &runner, &name, true).expect("deinit");
     assert_eq!(outcome, SubmoduleDeinitOutcome::Deinitialized);
     let calls = runner.calls.borrow();
-    assert!(calls[0].contains(&"-f".to_string()), "forced deinit must pass -f");
+    assert!(
+        calls[0].contains(&"-f".to_string()),
+        "forced deinit must pass -f"
+    );
 }
 
 /// P82 AC#2/#4: `remove_submodule` mirrors the deinit dirty/force semantics
@@ -319,7 +329,10 @@ fn remove_dirty_no_force_refuses_then_force_runs_with_dash_f() {
     assert_eq!(removed, SubmoduleRemoveOutcome::Removed);
     let calls = force_runner.calls.borrow();
     assert_eq!(calls.len(), 2, "deinit + rm");
-    assert!(calls.iter().all(|c| c.contains(&"-f".to_string())), "both forced");
+    assert!(
+        calls.iter().all(|c| c.contains(&"-f".to_string())),
+        "both forced"
+    );
 }
 
 /// F-A7-10: a failed clone rolls back the add-setup residue (.gitmodules

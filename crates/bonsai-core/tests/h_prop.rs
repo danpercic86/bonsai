@@ -10,6 +10,8 @@
 #[path = "prop_common/mod.rs"]
 mod prop_common;
 
+#[path = "prop/corrupt_repo_cli.rs"]
+mod corrupt_repo_cli;
 #[path = "prop/prop_graph_layout.rs"]
 mod prop_graph_layout;
 #[path = "prop/prop_history_index.rs"]
@@ -20,7 +22,5 @@ mod prop_intraline;
 mod prop_stash_roundtrip;
 #[path = "prop/prop_status.rs"]
 mod prop_status;
-#[path = "prop/corrupt_repo_cli.rs"]
-mod corrupt_repo_cli;
 #[path = "prop/race_lifecycle_cli.rs"]
 mod race_lifecycle_cli;

@@ -203,7 +203,10 @@ fn reattach_rejects_hostile_name_before_touching_disk() {
     for hostile in ["../escape", "..", "/abs", "C:/abs", "a//b", "", "   "] {
         match reattach_module_gitdir(&repo, &sm, hostile) {
             Err(AppError::Git(m)) => {
-                assert!(m.contains("unsafe name"), "wrong refusal for {hostile:?}: {m}")
+                assert!(
+                    m.contains("unsafe name"),
+                    "wrong refusal for {hostile:?}: {m}"
+                )
             }
             other => panic!("hostile name {hostile:?} must be refused, got {other:?}"),
         }
@@ -225,8 +228,14 @@ fn reattach_rejects_hostile_name_before_touching_disk() {
         before,
         "no new entry was created under .git/modules"
     );
-    assert!(!root.join("escape").exists(), "no escaped folder was created");
-    assert!(!root.join("..").join("escape").exists(), "nothing above the repo either");
+    assert!(
+        !root.join("escape").exists(),
+        "no escaped folder was created"
+    );
+    assert!(
+        !root.join("..").join("escape").exists(),
+        "nothing above the repo either"
+    );
 }
 
 /// OPEN-1's decided default: when name and path differ and BOTH
@@ -273,7 +282,15 @@ fn module_gitdir_rejects_escaping_key() {
     // thing stopping resolution is the guard (not a failing canonicalize).
     std::fs::create_dir_all(root.join(".git/escape")).expect("mkdir escape");
 
-    for key in ["../escape", "..", "sub/../../escape", "/abs", "", ".", "./escape"] {
+    for key in [
+        "../escape",
+        "..",
+        "sub/../../escape",
+        "/abs",
+        "",
+        ".",
+        "./escape",
+    ] {
         let got = module_gitdir(&repo, key, key).expect("module_gitdir");
         assert_eq!(got, None, "escaping key must not resolve: {key:?}");
     }
@@ -319,7 +336,10 @@ fn remove_cached_git_dir_uses_commondir() {
     let wt_repo = git2::Repository::open(wt.path()).expect("open worktree repo");
     assert_ne!(
         wt_repo.path().canonicalize().expect("canon wt path"),
-        wt_repo.commondir().canonicalize().expect("canon wt commondir"),
+        wt_repo
+            .commondir()
+            .canonicalize()
+            .expect("canon wt commondir"),
         "in a linked worktree path() != commondir()"
     );
     assert!(

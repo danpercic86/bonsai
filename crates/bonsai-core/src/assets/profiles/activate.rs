@@ -10,18 +10,14 @@ use super::store::{
 };
 use super::worktree::{calling_worktree_key, ensure_targets_clean, resolve_worktree_root};
 use super::{
-    ProfileActivation, ProfilePreviewEntry, TargetWriteAction, TargetWriteResult,
-    MAIN_WORKTREE_KEY,
+    ProfileActivation, ProfilePreviewEntry, TargetWriteAction, TargetWriteResult, MAIN_WORKTREE_KEY,
 };
 
 /// Blocking. Compute, WITHOUT WRITING, the per-target before/after for the named
 /// profile's activation against the CALLING worktree's files. Thin wrapper over
 /// `preview_profile_for_worktree` (P31 D5); non-repo dirs keep pure-P24
 /// behavior on `workdir` directly.
-pub fn preview_profile(
-    workdir: &Path,
-    name: &str,
-) -> Result<Vec<ProfilePreviewEntry>, AppError> {
+pub fn preview_profile(workdir: &Path, name: &str) -> Result<Vec<ProfilePreviewEntry>, AppError> {
     let key = calling_worktree_key(workdir)?;
     preview_profile_for_worktree(workdir, &key, name)
 }

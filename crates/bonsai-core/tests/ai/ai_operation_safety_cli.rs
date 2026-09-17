@@ -27,11 +27,11 @@
 
 use std::path::Path;
 
+use crate::common;
 use bonsai_core::ai::RunOpts;
 use bonsai_core::git::ai_operation::{plan_operation, PlanOutcome, ProposedOperation, SafeOp};
 use bonsai_core::git::commit::create_commit;
 use bonsai_core::git::stage::stage_paths;
-use crate::common;
 
 const STUB_MODE_ENV: &str = "BONSAI_STUB_MODE";
 const CLAUDE_BIN_ENV: &str = "BONSAI_CLAUDE_BIN";
@@ -49,7 +49,8 @@ fn init_repo() -> tempfile::TempDir {
     let repo = git2::Repository::init(dir.path()).expect("init");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     dir
 }
@@ -68,7 +69,11 @@ fn envelope(result: &str) -> String {
 /// Byte-snapshot of the state a plan MUST NOT touch: HEAD oid, raw index, a.txt.
 fn snapshot(p: &Path) -> (Option<String>, Vec<u8>, Vec<u8>) {
     let repo = git2::Repository::open(p).expect("open");
-    let head = repo.head().ok().and_then(|r| r.target()).map(|o| o.to_string());
+    let head = repo
+        .head()
+        .ok()
+        .and_then(|r| r.target())
+        .map(|o| o.to_string());
     let index = std::fs::read(repo.path().join("index")).unwrap_or_default();
     let file = std::fs::read(p.join("a.txt")).unwrap_or_default();
     (head, index, file)
@@ -111,8 +116,11 @@ fn rich_repo() -> (tempfile::TempDir, String, String) {
     let a = commit(p, "a.txt", "a\n", "A");
     let b = commit(p, "b.txt", "b\n", "B");
     let repo = git2::Repository::open(p).expect("open");
-    let head_c = repo.find_commit(git2::Oid::from_str(&b).unwrap()).expect("B");
-    repo.branch("feature", &head_c, false).expect("feature branch");
+    let head_c = repo
+        .find_commit(git2::Oid::from_str(&b).unwrap())
+        .expect("B");
+    repo.branch("feature", &head_c, false)
+        .expect("feature branch");
     // dirty a.txt so stash + discard have real changes to act on.
     std::fs::write(p.join("a.txt"), "changed\n").expect("edit a.txt");
     (dir, a, b)
@@ -141,7 +149,11 @@ fn ai_operation_safety_each_valid_intent_resolves_end_to_end() {
         &format!(r#"{{"intent":"resetToCommit","commit":"{short_a}","keepChanges":true}}"#),
     ));
     match &op.op {
-        SafeOp::Reset { target_oid, target_short, .. } => {
+        SafeOp::Reset {
+            target_oid,
+            target_short,
+            ..
+        } => {
             assert_eq!(target_oid, &a, "target resolved to A's FULL oid");
             assert_eq!(target_short, &short_a);
         }
@@ -150,8 +162,14 @@ fn ai_operation_safety_each_valid_intent_resolves_end_to_end() {
     // The preview's moving ref points at the RESOLVED short oid — not decoy text.
     assert_eq!(op.preview.ref_changes.len(), 1);
     assert_eq!(op.preview.ref_changes[0].to_short, short_a);
-    assert!(op.preview.summary.contains(&short_a), "summary uses resolved short");
-    assert!(!op.preview.summary.contains("zzdecoy"), "no decoy ref leaked in");
+    assert!(
+        op.preview.summary.contains(&short_a),
+        "summary uses resolved short"
+    );
+    assert!(
+        !op.preview.summary.contains("zzdecoy"),
+        "no decoy ref leaked in"
+    );
 
     // revertCommit → Revert; short derived from resolved oid.
     let op = expect_proposed(plan_with_reply(
@@ -181,7 +199,9 @@ fn ai_operation_safety_each_valid_intent_resolves_end_to_end() {
         "new branch",
         r#"{"intent":"createBranch","name":"new-feature","atCommit":null}"#,
     ));
-    assert!(matches!(op.op, SafeOp::CreateBranch { ref name, at_oid: None } if name == "new-feature"));
+    assert!(
+        matches!(op.op, SafeOp::CreateBranch { ref name, at_oid: None } if name == "new-feature")
+    );
 
     // deleteBranch(feature) → DeleteBranch (non-current local).
     let op = expect_proposed(plan_with_reply(
@@ -224,7 +244,11 @@ fn ai_operation_safety_each_valid_intent_resolves_end_to_end() {
     assert!(matches!(&op.op, SafeOp::Discard { paths } if paths == &vec!["a.txt".to_string()]));
 
     // undoLastMerge on a NON-merge HEAD → Unsupported (calm).
-    let reason = expect_unsupported(plan_with_reply(p, "undo merge", r#"{"intent":"undoLastMerge"}"#));
+    let reason = expect_unsupported(plan_with_reply(
+        p,
+        "undo merge",
+        r#"{"intent":"undoLastMerge"}"#,
+    ));
     assert!(reason.contains("isn't a merge"), "got: {reason}");
 }
 
@@ -261,7 +285,11 @@ fn ai_operation_safety_malformed_corpus_is_unsupported_and_writes_nothing() {
             reason.chars().count()
         );
         assert!(!reason.contains('\u{202e}') && !reason.contains('\x1b'));
-        assert_eq!(snapshot(p), before, "malformed reply must mutate nothing: {short_reply:?}");
+        assert_eq!(
+            snapshot(p),
+            before,
+            "malformed reply must mutate nothing: {short_reply:?}"
+        );
     }
 }
 
@@ -341,8 +369,10 @@ fn ai_operation_safety_adversarial_repo_routes_through_git2() {
 
     // Branch refs literally named like CLI flags (only reachable via plumbing).
     let repo = git2::Repository::open(p).expect("open");
-    repo.reference("refs/heads/--force", a_oid, true, "seed").expect("--force ref");
-    repo.reference("refs/heads/-D", a_oid, true, "seed").expect("-D ref");
+    repo.reference("refs/heads/--force", a_oid, true, "seed")
+        .expect("--force ref");
+    repo.reference("refs/heads/-D", a_oid, true, "seed")
+        .expect("-D ref");
 
     // deleteBranch{"--force"} → normal Proposed via find_branch (no shell).
     let op = expect_proposed(plan_with_reply(

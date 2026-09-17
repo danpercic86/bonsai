@@ -16,14 +16,14 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{commit_fixed, git, init_repo};
 use bonsai_core::error::AppError;
 use bonsai_core::git::bisect::{bisect_reset, start_bisect, BisectOutcome};
 use bonsai_core::git::commit::create_commit;
 use bonsai_core::git::rebase::{rebase_abort, rebase_branch, RebaseOutcome};
 use bonsai_core::git::rebase_interactive::start_interactive_rebase;
 use bonsai_core::git::stage::stage_paths;
-use crate::common;
-use crate::common::{commit_fixed, git, init_repo};
 
 macro_rules! require_git {
     () => {
@@ -72,7 +72,10 @@ fn corrupt_bisect_state_is_salvaged_by_reset() {
         other => panic!("expected Testing, got {other:?}"),
     }
     let state_dir = d.join(".git").join("bonsai-bisect");
-    assert!(state_dir.join("state.json").exists(), "bisect state present");
+    assert!(
+        state_dir.join("state.json").exists(),
+        "bisect state present"
+    );
 
     // Corrupt the state (truncated JSON) and record where HEAD sits.
     std::fs::write(state_dir.join("state.json"), "{ \"version\": 1, \"orig").expect("corrupt");
@@ -81,8 +84,14 @@ fn corrupt_bisect_state_is_salvaged_by_reset() {
     let err = bisect_reset(d).expect_err("corrupt state -> salvage error");
     let msg = err.to_string();
     assert!(msg.contains("corrupt"), "explains corruption: {msg}");
-    assert!(msg.contains("cleared"), "explains the state was cleared: {msg}");
-    assert!(msg.contains("HEAD was left"), "explains HEAD untouched: {msg}");
+    assert!(
+        msg.contains("cleared"),
+        "explains the state was cleared: {msg}"
+    );
+    assert!(
+        msg.contains("HEAD was left"),
+        "explains HEAD untouched: {msg}"
+    );
 
     // State dir gone, HEAD untouched (still on the detached midpoint).
     assert!(!state_dir.exists(), "state dir removed by salvage");
@@ -118,7 +127,10 @@ fn unreadable_bisect_state_surfaces_real_io_error() {
         msg.contains("failed to read bisect state"),
         "real io error surfaced: {msg}"
     );
-    assert!(!msg.contains("missing"), "must not claim the state is missing: {msg}");
+    assert!(
+        !msg.contains("missing"),
+        "must not claim the state is missing: {msg}"
+    );
     assert!(
         state_dir.exists(),
         "an io error must NOT trigger salvage deletion"
@@ -159,8 +171,14 @@ fn corrupt_interactive_state_is_salvaged_by_abort() {
     let err = rebase_abort(d).expect_err("corrupt state -> salvage error");
     let msg = err.to_string();
     assert!(msg.contains("corrupt"), "explains corruption: {msg}");
-    assert!(msg.contains("cleared"), "explains the state was cleared: {msg}");
-    assert!(msg.contains("HEAD was left"), "explains HEAD untouched: {msg}");
+    assert!(
+        msg.contains("cleared"),
+        "explains the state was cleared: {msg}"
+    );
+    assert!(
+        msg.contains("HEAD was left"),
+        "explains HEAD untouched: {msg}"
+    );
 
     assert!(!state_dir.exists(), "state dir removed by salvage");
     assert_eq!(rev(d, "HEAD"), head_before, "HEAD left where it was");
@@ -242,13 +260,20 @@ fn plain_rebase_abort_refuses_untracked_clobber_then_retries() {
     git(d, &["checkout", "topic"]);
 
     match rebase_branch(d, "main").expect("rebase") {
-        RebaseOutcome::Conflicts { paths, current_step, .. } => {
+        RebaseOutcome::Conflicts {
+            paths,
+            current_step,
+            ..
+        } => {
             assert_eq!(paths, vec!["a.txt".to_string()]);
             assert_eq!(current_step, 1, "paused on t1 — t2 not yet replayed");
         }
         other => panic!("expected Conflicts, got {other:?}"),
     }
-    assert!(!d.join("generated.txt").exists(), "t2's file not in worktree yet");
+    assert!(
+        !d.join("generated.txt").exists(),
+        "t2's file not in worktree yet"
+    );
 
     // User creates an untracked file colliding with the orig-head tree.
     write(d, "generated.txt", "precious untracked work\n");

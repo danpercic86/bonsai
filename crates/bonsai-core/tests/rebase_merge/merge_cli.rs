@@ -10,14 +10,14 @@
 
 use std::path::Path;
 
-use bonsai_core::git::merge::{merge_branch, MergeOutcome};
-use bonsai_core::git::opstate::{read_op_state, RepoOpState};
 use crate::common;
 use crate::common::{commit_fixed, git, init_repo};
 use crate::merge_support::{
     cli_conflicted, cli_merge, git_fail, head_oid, message, parents, repo_state, require_git,
     script_clean_diverged, script_conflict, tree_oid, twin_pair, write,
 };
+use bonsai_core::git::merge::{merge_branch, MergeOutcome};
+use bonsai_core::git::opstate::{read_op_state, RepoOpState};
 
 // ============================================================ §9.1 clean merge
 
@@ -106,11 +106,17 @@ fn merging_an_ancestor_is_up_to_date() {
     commit_fixed(d, "main change");
     let pre = head_oid(d);
 
-    assert_eq!(merge_branch(d, "topic", false).expect("merge"), MergeOutcome::UpToDate);
+    assert_eq!(
+        merge_branch(d, "topic", false).expect("merge"),
+        MergeOutcome::UpToDate
+    );
     assert_eq!(head_oid(d), pre, "HEAD must not move");
 
     // Merging the current branch by name also falls out as UpToDate.
-    assert_eq!(merge_branch(d, "main", false).expect("merge self"), MergeOutcome::UpToDate);
+    assert_eq!(
+        merge_branch(d, "main", false).expect("merge self"),
+        MergeOutcome::UpToDate
+    );
     assert_eq!(head_oid(d), pre);
 }
 
@@ -130,7 +136,10 @@ fn remote_tracking_merge_matches_cli_twin() {
     // core.autocrlf is set AT CLONE TIME so the checkout itself is LF-clean
     // (a post-clone `git config` flip would make checked-out files look
     // locally modified under a CRLF-converting global config).
-    git(root, &["clone", "-c", "core.autocrlf=false", &bare_s, "seed"]);
+    git(
+        root,
+        &["clone", "-c", "core.autocrlf=false", &bare_s, "seed"],
+    );
     let seed = root.join("seed");
     git(&seed, &["config", "user.name", "Test User"]);
     git(&seed, &["config", "user.email", "test@example.com"]);
@@ -200,7 +209,11 @@ fn conflicted_merge_matches_cli_conflicted_set() {
     };
 
     git_fail(twin.path(), &["merge", "topic"]);
-    assert_eq!(paths, cli_conflicted(twin.path()), "conflicted path sets differ");
+    assert_eq!(
+        paths,
+        cli_conflicted(twin.path()),
+        "conflicted path sets differ"
+    );
 
     assert_eq!(repo_state(bonsai.path()), git2::RepositoryState::Merge);
 
@@ -214,7 +227,10 @@ fn conflicted_merge_matches_cli_conflicted_set() {
     match read_op_state(bonsai.path()).expect("op state") {
         RepoOpState::Merge { incoming, message } => {
             assert_eq!(incoming, "topic");
-            assert!(message.starts_with("Merge branch 'topic'"), "got: {message}");
+            assert!(
+                message.starts_with("Merge branch 'topic'"),
+                "got: {message}"
+            );
             assert!(message.contains("Conflicts:\n\ta.txt"), "got: {message}");
         }
         other => panic!("expected Merge op state, got {other:?}"),

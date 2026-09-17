@@ -138,7 +138,9 @@ impl AnomalyDetector {
                 out.push(self.anomaly(
                     "dup-ipc",
                     AnomalySeverity::Warn,
-                    format!("{cmd}: duplicate call within {W_DUP_IPC_MS}ms, no intervening mutation"),
+                    format!(
+                        "{cmd}: duplicate call within {W_DUP_IPC_MS}ms, no intervening mutation"
+                    ),
                     vec![prior_seq, seq],
                     Vec::new(),
                     ts,
@@ -195,7 +197,10 @@ impl AnomalyDetector {
             out.push(self.anomaly(
                 "effect-thrash",
                 AnomalySeverity::Warn,
-                format!("{component}.{effect}: ran {}× within {W_EFFECT_MS}ms", refs.len()),
+                format!(
+                    "{component}.{effect}: ran {}× within {W_EFFECT_MS}ms",
+                    refs.len()
+                ),
                 refs,
                 Vec::new(),
                 ts,

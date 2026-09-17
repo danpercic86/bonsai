@@ -7,7 +7,8 @@ fn init_scratch() -> tempfile::TempDir {
     let repo = git2::Repository::init(dir.path()).expect("init repo");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     dir
 }
@@ -29,11 +30,15 @@ fn blame_line_targets_single_line() {
 
     std::fs::write(p.join("f.txt"), "a\nb2\nc\n").expect("write");
     stage_paths(p, &["f.txt".into()]).expect("stage");
-    let c2 = create_commit(p, "edit line 2", None, false).expect("commit").oid;
+    let c2 = create_commit(p, "edit line 2", None, false)
+        .expect("commit")
+        .oid;
 
     std::fs::write(p.join("f.txt"), "a\nb2\nc3\n").expect("write");
     stage_paths(p, &["f.txt".into()]).expect("stage");
-    let c3 = create_commit(p, "edit line 3", None, false).expect("commit").oid;
+    let c3 = create_commit(p, "edit line 3", None, false)
+        .expect("commit")
+        .oid;
 
     let l1 = blame_line(p, "f.txt", 1, None).expect("blame l1");
     assert_eq!(l1.oid, c1, "line 1 last touched by the first commit");
@@ -70,11 +75,15 @@ fn blame_line_honors_at_oid() {
     // c1 introduces line 2 as "old"; c2 rewrites the SAME line to "new".
     std::fs::write(p.join("f.txt"), "a\nold\nc\n").expect("write");
     stage_paths(p, &["f.txt".into()]).expect("stage");
-    let c1 = create_commit(p, "introduce old", None, false).expect("commit").oid;
+    let c1 = create_commit(p, "introduce old", None, false)
+        .expect("commit")
+        .oid;
 
     std::fs::write(p.join("f.txt"), "a\nnew\nc\n").expect("write");
     stage_paths(p, &["f.txt".into()]).expect("stage");
-    let c2 = create_commit(p, "rewrite line 2", None, false).expect("commit").oid;
+    let c2 = create_commit(p, "rewrite line 2", None, false)
+        .expect("commit")
+        .oid;
 
     // At HEAD (both None and the explicit HEAD oid) line 2 blames to c2.
     let head = blame_line(p, "f.txt", 2, None).expect("blame at HEAD");
@@ -86,8 +95,14 @@ fn blame_line_honors_at_oid() {
     // At the PAST commit the same line blames to c1 with the OLD text —
     // proving `at_oid` seeds the blame walk, not HEAD.
     let past = blame_line(p, "f.txt", 2, Some(&c1)).expect("blame at c1");
-    assert_eq!(past.oid, c1, "at c1 the line must blame to c1, not HEAD's c2");
-    assert_eq!(past.line_text, "old", "line text must come from the c1 blob");
+    assert_eq!(
+        past.oid, c1,
+        "at c1 the line must blame to c1, not HEAD's c2"
+    );
+    assert_eq!(
+        past.line_text, "old",
+        "line text must come from the c1 blob"
+    );
     assert_eq!(past.summary, "introduce old");
     assert_ne!(past.oid, head.oid, "past and HEAD blames must differ");
 }

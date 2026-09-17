@@ -71,10 +71,13 @@ pub(crate) fn ok_null() -> CallToolResult {
 /// content (via its custom `Serialize`) plus a human `"<kind>: <message>"` text.
 /// `is_error = true`.
 pub(crate) fn err_result(e: AppError) -> CallToolResult {
-    let value = serde_json::to_value(&e).unwrap_or_else(|_| {
-        serde_json::json!({ "kind": "other", "message": "unserializable error" })
-    });
-    let kind = value.get("kind").and_then(|v| v.as_str()).unwrap_or("other");
+    let value = serde_json::to_value(&e).unwrap_or_else(
+        |_| serde_json::json!({ "kind": "other", "message": "unserializable error" }),
+    );
+    let kind = value
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .unwrap_or("other");
     let message = value.get("message").and_then(|v| v.as_str()).unwrap_or("");
     let text = format!("{kind}: {message}");
     let mut result = CallToolResult::structured_error(value);

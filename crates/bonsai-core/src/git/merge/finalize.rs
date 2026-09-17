@@ -106,9 +106,9 @@ pub(crate) fn finalize_merge_commit(
         // Unsigned path: byte-identical to pre-P58.
         repo.commit(Some("HEAD"), &sig, &sig, &full, &tree, &parent_refs)?
     } else {
-        let workdir = workdir_buf.as_deref().ok_or_else(|| {
-            AppError::Git("cannot sign a merge in a bare repository".to_string())
-        })?;
+        let workdir = workdir_buf
+            .as_deref()
+            .ok_or_else(|| AppError::Git("cannot sign a merge in a bare repository".to_string()))?;
         let parent_oids: Vec<git2::Oid> = parents.iter().map(git2::Commit::id).collect();
         signing::create_signed_commit(
             &SpawnGitExec,
@@ -130,9 +130,14 @@ pub(crate) fn finalize_merge_commit(
     let mut hook_warning: Option<String> = None;
     if run_pre_post {
         if let Some(wd) = workdir_buf.as_deref() {
-            hook_warning =
-                run_hook_nonblocking_streaming(&SpawnGitExec, wd, HookName::PostCommit, &[], activity)
-                    .warning(HookName::PostCommit);
+            hook_warning = run_hook_nonblocking_streaming(
+                &SpawnGitExec,
+                wd,
+                HookName::PostCommit,
+                &[],
+                activity,
+            )
+            .warning(HookName::PostCommit);
         }
     }
 

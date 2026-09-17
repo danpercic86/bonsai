@@ -12,11 +12,13 @@ use crate::git::stash::{list_stashes, ApplyStashOutcome};
 
 /// Init a scratch repo with a deterministic identity + autocrlf off, HEAD "main".
 fn cd_init(dir: &Path) -> git2::Repository {
-    let repo = git2::Repository::init_opts(dir, git2::RepositoryInitOptions::new().initial_head("main"))
-        .expect("init repo");
+    let repo =
+        git2::Repository::init_opts(dir, git2::RepositoryInitOptions::new().initial_head("main"))
+            .expect("init repo");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     drop(cfg);
     repo
@@ -78,7 +80,12 @@ fn cd_1_clean_detach_at_oid() {
     let d = dir.path();
     let repo = cd_init(d);
     cd_commit(d, "C0", &[("a.txt", "base\n")]);
-    let c0 = repo.head().expect("HEAD").target().expect("oid").to_string();
+    let c0 = repo
+        .head()
+        .expect("HEAD")
+        .target()
+        .expect("oid")
+        .to_string();
     // Advance so C0 is a non-tip commit.
     cd_commit(d, "C1", &[("b.txt", "b1\n")]);
     assert_eq!(cd_head_branch(d).as_deref(), Some("main"));
@@ -114,7 +121,12 @@ fn cd_2_dirty_clean_reapply() {
     let repo = cd_init(d);
     // a.txt is set at C0 and untouched at C1, so the stashed edit re-applies clean.
     cd_commit(d, "C0", &[("a.txt", "base\n")]);
-    let c0 = repo.head().expect("HEAD").target().expect("oid").to_string();
+    let c0 = repo
+        .head()
+        .expect("HEAD")
+        .target()
+        .expect("oid")
+        .to_string();
     cd_commit(d, "C1", &[("b.txt", "b1\n")]);
 
     // Dirty: unstaged edit to a.txt (unchanged at C0 → clean carry-over).
@@ -153,7 +165,12 @@ fn cd_3_dirty_conflicting_reapply_retains_stash() {
     let repo = cd_init(d);
     // a.txt differs between C0 and C1; the dirty edit vs both differs → conflict.
     cd_commit(d, "C0", &[("a.txt", "target-side\n")]);
-    let c0 = repo.head().expect("HEAD").target().expect("oid").to_string();
+    let c0 = repo
+        .head()
+        .expect("HEAD")
+        .target()
+        .expect("oid")
+        .to_string();
     cd_commit(d, "C1", &[("a.txt", "main-side\n")]);
 
     // Dirty edit to a.txt (stash base == C1 "main-side").
@@ -207,7 +224,12 @@ fn cd_4_already_detached_at_oid_noop() {
     let d = dir.path();
     let repo = cd_init(d);
     cd_commit(d, "C0", &[("a.txt", "base\n")]);
-    let c0 = repo.head().expect("HEAD").target().expect("oid").to_string();
+    let c0 = repo
+        .head()
+        .expect("HEAD")
+        .target()
+        .expect("oid")
+        .to_string();
     cd_commit(d, "C1", &[("b.txt", "b1\n")]);
 
     // First detach (clean) onto C0.

@@ -31,9 +31,7 @@ fn fixture_repo() -> (tempfile::TempDir, std::path::PathBuf) {
     (dir, workdir)
 }
 
-fn watch_into_channel(
-    workdir: &Path,
-) -> (WatcherHandle, mpsc::Receiver<(Instant, BurstClass)>) {
+fn watch_into_channel(workdir: &Path) -> (WatcherHandle, mpsc::Receiver<(Instant, BurstClass)>) {
     let (tx, rx): (Sender<(Instant, BurstClass)>, _) = channel();
     let handle = spawn_watcher(
         workdir,
@@ -120,7 +118,10 @@ fn storm_coalesces() {
         }
     }
     assert!(count >= 1, "storm produced no callback");
-    assert!(count <= 2, "storm produced {count} callbacks, expected <= 2");
+    assert!(
+        count <= 2,
+        "storm produced {count} callbacks, expected <= 2"
+    );
 }
 
 #[test]
@@ -248,8 +249,16 @@ fn watcher_record_shape() {
 /// fold the debounce loop also uses) fails the two mixed cases below.
 #[test]
 fn burst_accumulation_is_conservative() {
-    let wt = WatchTick { paths: 3, relevant: 2, refs: false };
-    let rf = WatchTick { paths: 1, relevant: 1, refs: true };
+    let wt = WatchTick {
+        paths: 3,
+        relevant: 2,
+        refs: false,
+    };
+    let rf = WatchTick {
+        paths: 1,
+        relevant: 1,
+        refs: true,
+    };
 
     // Worktree + Worktree → Worktree.
     assert_eq!(accumulate(wt, &[wt]).2, BurstClass::Worktree);
@@ -303,8 +312,12 @@ fn mixed_burst_classifies_as_refs() {
     for i in 0..10 {
         std::fs::write(workdir.join(format!("m{i}.txt")), "x").unwrap();
     }
-    std::fs::write(workdir.join(".git").join("HEAD"), "ref: refs/heads/main
-").unwrap();
+    std::fs::write(
+        workdir.join(".git").join("HEAD"),
+        "ref: refs/heads/main
+",
+    )
+    .unwrap();
     for i in 10..20 {
         std::fs::write(workdir.join(format!("m{i}.txt")), "x").unwrap();
     }
@@ -324,5 +337,8 @@ fn mixed_burst_classifies_as_refs() {
             Err(_) => break,
         }
     }
-    assert!(saw_refs, "a burst containing .git/HEAD must classify as Refs");
+    assert!(
+        saw_refs,
+        "a burst containing .git/HEAD must classify as Refs"
+    );
 }

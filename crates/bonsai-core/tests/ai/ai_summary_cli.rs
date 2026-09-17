@@ -18,11 +18,11 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{commit_fixed, git, init_repo};
 use bonsai_core::ai::RunOpts;
 use bonsai_core::error::AppError;
 use bonsai_core::git::ai_summary::{summarize_range, AI_SUMMARY_MAX_COMMITS};
-use crate::common;
-use crate::common::{commit_fixed, git, init_repo};
 
 const STUB_BODY: &str = "MERGED_BODY_OK";
 const STUB_MODE_ENV: &str = "BONSAI_STUB_MODE";
@@ -113,7 +113,11 @@ fn diverged_range_counts_unique_commits_and_uses_merge_base() {
     std::env::remove_var(STDIN_DUMP_ENV);
 
     assert_eq!(summary.text, STUB_BODY, "text must be the stub body");
-    assert_eq!(summary.cost_usd, Some(0.012), "cost parsed from the envelope");
+    assert_eq!(
+        summary.cost_usd,
+        Some(0.012),
+        "cost parsed from the envelope"
+    );
     assert_eq!(summary.base, "main", "base echoed verbatim");
     assert_eq!(summary.target, "feature", "target echoed verbatim");
     assert_eq!(
@@ -221,9 +225,17 @@ fn bad_ref_maps_to_git() {
 /// `churn.txt`. Cheap: no per-commit subprocess. Returns the final commit oid.
 fn add_commits_git2(dir: &Path, n: usize) -> String {
     let repo = git2::Repository::open(dir).expect("open repo");
-    let sig = git2::Signature::new("Loop Author", "loop@example.com", &git2::Time::new(1_600_000_000, 0))
-        .expect("signature");
-    let mut parent = repo.head().expect("head").peel_to_commit().expect("head commit");
+    let sig = git2::Signature::new(
+        "Loop Author",
+        "loop@example.com",
+        &git2::Time::new(1_600_000_000, 0),
+    )
+    .expect("signature");
+    let mut parent = repo
+        .head()
+        .expect("head")
+        .peel_to_commit()
+        .expect("head commit");
     let mut last = parent.id();
     for i in 0..n {
         let churn = dir.join("churn.txt");
@@ -234,7 +246,14 @@ fn add_commits_git2(dir: &Path, n: usize) -> String {
         let tree_oid = index.write_tree().expect("write tree");
         let tree = repo.find_tree(tree_oid).expect("find tree");
         last = repo
-            .commit(Some("HEAD"), &sig, &sig, &format!("loop commit {i}"), &tree, &[&parent])
+            .commit(
+                Some("HEAD"),
+                &sig,
+                &sig,
+                &format!("loop commit {i}"),
+                &tree,
+                &[&parent],
+            )
             .expect("commit");
         parent = repo.find_commit(last).expect("find new commit");
     }
@@ -259,15 +278,18 @@ fn exceeding_commit_cap_appends_truncation_note() {
 
     // Oracle: feature has exactly `over` unique commits vs main.
     let unique = rev_list_count(d, "main..feature");
-    assert_eq!(unique as usize, over, "fixture sanity: {over} unique commits");
+    assert_eq!(
+        unique as usize, over,
+        "fixture sanity: {over} unique commits"
+    );
 
     let dump = d.join("dump.txt");
     std::env::set_var(CLAUDE_BIN_ENV, stub_path());
     std::env::set_var(STUB_MODE_ENV, "dump_stdin");
     std::env::set_var(STDIN_DUMP_ENV, &dump);
 
-    let summary = summarize_range(d, "main", "feature", RunOpts::default())
-        .expect("over-cap range → Ok");
+    let summary =
+        summarize_range(d, "main", "feature", RunOpts::default()).expect("over-cap range → Ok");
 
     std::env::remove_var(STDIN_DUMP_ENV);
 

@@ -17,7 +17,6 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-
 use crate::error::AppError;
 use crate::git::cred::{acquire_cred, evict_fresh_on_auth_fail, map_remote_err, CredAttempts};
 use crate::git::diff::{
@@ -94,7 +93,11 @@ fn fetch_target(repo: &git2::Repository, t: &FetchTarget) -> Result<(), AppError
 
     let refspecs = [t.refspec.as_str()];
     if let Err(e) = remote.fetch(&refspecs, Some(&mut opts), None) {
-        return Err(evict_fresh_on_auth_fail(repo, &attempts, map_remote_err(e, "pr-diff")));
+        return Err(evict_fresh_on_auth_fail(
+            repo,
+            &attempts,
+            map_remote_err(e, "pr-diff"),
+        ));
     }
     Ok(())
 }
@@ -189,8 +192,12 @@ pub fn pr_diff_headers(
     apply_find_similar(&mut diff)?;
     let files = collect_headers(&diff)?;
 
-    let additions = files.iter().fold(0u32, |a, f| a.saturating_add(f.additions));
-    let deletions = files.iter().fold(0u32, |a, f| a.saturating_add(f.deletions));
+    let additions = files
+        .iter()
+        .fold(0u32, |a, f| a.saturating_add(f.additions));
+    let deletions = files
+        .iter()
+        .fold(0u32, |a, f| a.saturating_add(f.deletions));
     let changed_files = u32::try_from(files.len()).unwrap_or(u32::MAX);
 
     Ok(PrDiffStats {

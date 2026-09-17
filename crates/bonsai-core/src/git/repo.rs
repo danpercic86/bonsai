@@ -179,7 +179,11 @@ mod tests {
     /// Reads the default branch name from the fixture's symbolic HEAD target.
     fn head_branch_name(repo: &git2::Repository) -> String {
         let head_ref = repo.find_reference("HEAD").expect("find HEAD");
-        let target = head_ref.symbolic_target().ok().flatten().expect("symbolic HEAD");
+        let target = head_ref
+            .symbolic_target()
+            .ok()
+            .flatten()
+            .expect("symbolic HEAD");
         target
             .strip_prefix("refs/heads/")
             .unwrap_or(target)

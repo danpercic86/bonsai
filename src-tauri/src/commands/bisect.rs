@@ -64,7 +64,10 @@ pub async fn bisect_skip(
 }
 
 /// Runtime-free core of `bisect_skip` (unit-testable without a Tauri app).
-pub(crate) async fn bisect_skip_inner(state: &AppState, repo_id: &str) -> Result<BisectOutcome, AppError> {
+pub(crate) async fn bisect_skip_inner(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<BisectOutcome, AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || bisect::bisect_skip(&path))
         .await

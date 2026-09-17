@@ -61,30 +61,26 @@ pub async fn open_repo(
     path: String,
 ) -> Result<OpenRepoResult, AppError> {
     let emit_app = app.clone();
-    let result = open_repo_inner(
-        state.inner(),
-        path,
-        move |repo_id: String| {
-            let emit_app = emit_app.clone();
-            Box::new(move |class: crate::watcher::BurstClass| {
-                // P91 §2.4: the fs watcher callback fires outside any command
-                // trace, so a `root("watcher")` is the honest causality here.
-                crate::obs::emit_logged(
-                    &emit_app,
-                    "repo-changed",
-                    RepoChangedPayload {
-                        repo_id: repo_id.clone(),
-                        reason: match class {
-                            crate::watcher::PathClass::Refs => "fs",
-                            crate::watcher::PathClass::Worktree => "fsWorktree",
-                        }
-                        .to_string(),
-                    },
-                    &crate::obs::TraceMeta::root("watcher"),
-                );
-            })
-        },
-    )
+    let result = open_repo_inner(state.inner(), path, move |repo_id: String| {
+        let emit_app = emit_app.clone();
+        Box::new(move |class: crate::watcher::BurstClass| {
+            // P91 §2.4: the fs watcher callback fires outside any command
+            // trace, so a `root("watcher")` is the honest causality here.
+            crate::obs::emit_logged(
+                &emit_app,
+                "repo-changed",
+                RepoChangedPayload {
+                    repo_id: repo_id.clone(),
+                    reason: match class {
+                        crate::watcher::PathClass::Refs => "fs",
+                        crate::watcher::PathClass::Worktree => "fsWorktree",
+                    }
+                    .to_string(),
+                },
+                &crate::obs::TraceMeta::root("watcher"),
+            );
+        })
+    })
     .await?;
     let info = &result.info;
 
@@ -274,7 +270,9 @@ where
         let watcher = match spawn_watcher(&workdir, on_change) {
             Ok(handle) => Some(handle),
             Err(e) => {
-                eprintln!("bonsai: file watcher failed to start (falling back to manual refresh): {e}");
+                eprintln!(
+                    "bonsai: file watcher failed to start (falling back to manual refresh): {e}"
+                );
                 None
             }
         };

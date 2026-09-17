@@ -33,10 +33,7 @@ fn layout_31k_under_500ms() {
         assert_eq!(layout.nodes.len(), 31_000);
     }
 
-    let min = timings_ms
-        .iter()
-        .copied()
-        .fold(f64::INFINITY, f64::min);
+    let min = timings_ms.iter().copied().fold(f64::INFINITY, f64::min);
     println!("[perf-gate] compute_graph timings: {timings_ms:.1?} ms (best {min:.1} ms)");
     assert!(
         min < 500.0,
@@ -80,8 +77,12 @@ fn first_parent_layout_not_slower_than_full() {
         let min = timings_ms.iter().copied().fold(f64::INFINITY, f64::min);
         (timings_ms, min)
     };
-    let (full_t, full_min) =
-        time3(&|| compute_graph(&path).expect("compute_graph failed").nodes.len());
+    let (full_t, full_min) = time3(&|| {
+        compute_graph(&path)
+            .expect("compute_graph failed")
+            .nodes
+            .len()
+    });
     let (fp_t, fp_min) = time3(&|| {
         compute_graph_with(&path, &fp)
             .expect("compute_graph_with failed")
@@ -124,10 +125,7 @@ fn serialize_31k_report() {
         bytes as f64 / 1e6
     );
 
-    let min = timings_ms
-        .iter()
-        .copied()
-        .fold(f64::INFINITY, f64::min);
+    let min = timings_ms.iter().copied().fold(f64::INFINITY, f64::min);
     assert!(
         min < 250.0,
         "serialize soft ceiling breached: {min:.1} ms (limit 250 ms) — \

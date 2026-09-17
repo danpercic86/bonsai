@@ -178,7 +178,11 @@ impl SlowState {
             out.push(build_anomaly(
                 "slow-phase",
                 AnomalySeverity::Info,
-                format!("phase {phase} = {pms:.0}ms ({:.0}% of {:.0}ms)", share * 100.0, span.ms),
+                format!(
+                    "phase {phase} = {pms:.0}ms ({:.0}% of {:.0}ms)",
+                    share * 100.0,
+                    span.ms
+                ),
                 vec![span.seq, result_seq],
                 vec![trace.to_string()],
                 ts,
@@ -227,12 +231,17 @@ impl SlowState {
         if queued_ms.map(|q| q > QUEUE_MS_THRESHOLD).unwrap_or(false) {
             self.queue.push((ts, seq));
             self.queue.retain(|(t, _)| *t >= ts - W_SATURATION_MS);
-            if self.queue.len() >= QUEUE_DELAY_MIN && rate_ok(&mut self.queue_last_fire, ts, W_SATURATION_MS) {
+            if self.queue.len() >= QUEUE_DELAY_MIN
+                && rate_ok(&mut self.queue_last_fire, ts, W_SATURATION_MS)
+            {
                 let refs: Vec<u64> = self.queue.iter().map(|(_, s)| *s).collect();
                 out.push(build_anomaly(
                     "queue-delay",
                     AnomalySeverity::Warn,
-                    format!("{} spans queued > {QUEUE_MS_THRESHOLD}ms within {W_SATURATION_MS}ms", refs.len()),
+                    format!(
+                        "{} spans queued > {QUEUE_MS_THRESHOLD}ms within {W_SATURATION_MS}ms",
+                        refs.len()
+                    ),
                     refs,
                     Vec::new(),
                     ts,
@@ -252,7 +261,10 @@ impl SlowState {
                     out.push(build_anomaly(
                         "pool-saturation",
                         AnomalySeverity::Warn,
-                        format!("{} spans at pool cap {max} within {W_SATURATION_MS}ms", refs.len()),
+                        format!(
+                            "{} spans at pool cap {max} within {W_SATURATION_MS}ms",
+                            refs.len()
+                        ),
                         refs,
                         Vec::new(),
                         ts,
@@ -263,7 +275,11 @@ impl SlowState {
 
         // watchdog-pressure (no window: fires per qualifying span)
         let timeout = outcome.as_deref() == Some("timeout");
-        if timeout || deadline_frac.map(|f| f >= DEADLINE_FRAC_THRESHOLD).unwrap_or(false) {
+        if timeout
+            || deadline_frac
+                .map(|f| f >= DEADLINE_FRAC_THRESHOLD)
+                .unwrap_or(false)
+        {
             let severity = if timeout {
                 AnomalySeverity::Error
             } else {
@@ -273,7 +289,10 @@ impl SlowState {
             out.push(build_anomaly(
                 "watchdog-pressure",
                 severity,
-                format!("{op}: deadlineFrac {frac:.2}{}", if timeout { " (timeout)" } else { "" }),
+                format!(
+                    "{op}: deadlineFrac {frac:.2}{}",
+                    if timeout { " (timeout)" } else { "" }
+                ),
                 vec![seq],
                 rec.trace.iter().cloned().collect(),
                 ts,
@@ -350,7 +369,10 @@ impl SlowState {
         out.push(build_anomaly(
             "jank-trace",
             AnomalySeverity::Warn,
-            format!("worst frame {worst_ms:.0}ms overlapped {} span(s)", refs.len() - 1),
+            format!(
+                "worst frame {worst_ms:.0}ms overlapped {} span(s)",
+                refs.len() - 1
+            ),
             refs,
             traces,
             ts,

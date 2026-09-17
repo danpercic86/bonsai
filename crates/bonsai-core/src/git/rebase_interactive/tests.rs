@@ -16,7 +16,8 @@ fn linear_repo(n: usize) -> (tempfile::TempDir, Vec<String>) {
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
     }
     let s = sig();
     let mut oids = Vec::new();
@@ -27,7 +28,9 @@ fn linear_repo(n: usize) -> (tempfile::TempDir, Vec<String>) {
         idx.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
             .expect("add");
         idx.write().expect("write index");
-        let tree = repo.find_tree(idx.write_tree().expect("tree")).expect("find tree");
+        let tree = repo
+            .find_tree(idx.write_tree().expect("tree"))
+            .expect("find tree");
         let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
         let oid = repo
             .commit(Some("HEAD"), &s, &s, &format!("c{i}"), &tree, &parent_refs)

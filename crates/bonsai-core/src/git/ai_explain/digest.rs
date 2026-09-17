@@ -204,7 +204,8 @@ pub fn digest_changes(
 
     // Range diff: exactly the gather_branch pipeline (P28 §3).
     let mut opts_diff = build_diff_options(&[], false);
-    let mut diff = repo.diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut opts_diff))?;
+    let mut diff =
+        repo.diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut opts_diff))?;
     apply_find_similar(&mut diff)?;
     let files = collect_file_diffs(&diff)?;
 

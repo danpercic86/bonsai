@@ -254,7 +254,11 @@ const WIN_WELL_KNOWN: [(&str, &str); 4] = [
 ];
 
 /// Well-known Unix install locations, in probe order.
-const UNIX_WELL_KNOWN: [&str; 3] = ["/usr/bin/git", "/usr/local/bin/git", "/opt/homebrew/bin/git"];
+const UNIX_WELL_KNOWN: [&str; 3] = [
+    "/usr/bin/git",
+    "/usr/local/bin/git",
+    "/opt/homebrew/bin/git",
+];
 
 /// Join a Windows base directory and a backslash-relative suffix into ONE path,
 /// independently of the HOST separator, so the Windows ladder behaves

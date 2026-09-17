@@ -130,7 +130,7 @@ fn no_user_derived_key_reaches_a_histogram() {
     store.observe_ipc_result("C:/Users/dan/secret-repo", 5.0, None, day);
     store.observe_ipc_result("feature/RED-42", 5.0, None, day);
     store.observe_ipc_result("getGraph", 5.0, None, day); // the one legit name
-    // A non-allow-listed span op is dropped whole.
+                                                          // A non-allow-listed span op is dropped whole.
     store.observe_span("evil.op", 9.0, &[], None, day);
     let snap = store.snapshot();
     let keys: Vec<&String> = snap.days[0].totals.durations.keys().collect();
@@ -150,10 +150,22 @@ fn histogram_key_set_stays_within_allow_list() {
         "graph.get",
         20.0,
         &[
-            PhaseTiming { name: "lane".into(), ms: 5.0, n: None },
-            PhaseTiming { name: "revwalk".into(), ms: 8.0, n: None },
+            PhaseTiming {
+                name: "lane".into(),
+                ms: 5.0,
+                n: None,
+            },
+            PhaseTiming {
+                name: "revwalk".into(),
+                ms: 8.0,
+                n: None,
+            },
             // Not in the graph.get phase allow-list — must be dropped.
-            PhaseTiming { name: "sneaky".into(), ms: 3.0, n: None },
+            PhaseTiming {
+                name: "sneaky".into(),
+                ms: 3.0,
+                n: None,
+            },
         ],
         Some(2),
         day,
@@ -189,14 +201,21 @@ fn stored_size_is_independent_of_observation_count() {
     for _ in 0..2_000_000u64 {
         store_b.observe_ipc_result("getStatus", 3.0, None, day);
     }
-    store_a.flush(&perf(0, 0, 0), 1_756_000_000).expect("flush a");
-    store_b.flush(&perf(0, 0, 0), 1_756_000_000).expect("flush b");
+    store_a
+        .flush(&perf(0, 0, 0), 1_756_000_000)
+        .expect("flush a");
+    store_b
+        .flush(&perf(0, 0, 0), 1_756_000_000)
+        .expect("flush b");
     let size_a = std::fs::metadata(&path_a).unwrap().len();
     let size_b = std::fs::metadata(&path_b).unwrap().len();
     // 1,000,000 and 2,000,000 share a digit width, as do their 3× sums, so the
     // file is byte-identical: no raw sample is retained, only the 8 bucket
     // counters + aggregates.
-    assert_eq!(size_a, size_b, "usage.json size must not grow with sample count");
+    assert_eq!(
+        size_a, size_b,
+        "usage.json size must not grow with sample count"
+    );
     let _ = std::fs::remove_file(&path_a);
     let _ = std::fs::remove_file(&path_b);
 }
@@ -228,7 +247,11 @@ fn percentiles_are_on_snapshot_but_absent_from_disk() {
 fn lane_percentiles_are_per_day_comparable() {
     let path = scratch("twoday");
     let store = MetricsState::for_test(path.clone(), 1_756_000_000);
-    let lane = |ms: f64| PhaseTiming { name: "lane".into(), ms, n: None };
+    let lane = |ms: f64| PhaseTiming {
+        name: "lane".into(),
+        ms,
+        n: None,
+    };
     // Day 1: fast lane (~5 ms). Day 2: slow lane (~300 ms) — a regression.
     for _ in 0..40 {
         store.observe_span("graph.get", 50.0, &[lane(5.0)], None, "2026-08-27");
@@ -237,8 +260,16 @@ fn lane_percentiles_are_per_day_comparable() {
         store.observe_span("graph.get", 400.0, &[lane(300.0)], None, "2026-08-28");
     }
     let snap = store.snapshot();
-    let d1 = &snap.days[0].totals.durations.get("op.graph.get.lane").unwrap();
-    let d2 = &snap.days[1].totals.durations.get("op.graph.get.lane").unwrap();
+    let d1 = &snap.days[0]
+        .totals
+        .durations
+        .get("op.graph.get.lane")
+        .unwrap();
+    let d2 = &snap.days[1]
+        .totals
+        .durations
+        .get("op.graph.get.lane")
+        .unwrap();
     let p95_1 = d1.p95_ms.unwrap();
     let p95_2 = d2.p95_ms.unwrap();
     assert!(
@@ -258,7 +289,9 @@ fn percentile_matches_brute_force_within_one_bucket() {
     let mut s: u64 = 0x1234_5678;
     let mut h = Histogram::default();
     for _ in 0..10_000 {
-        s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let v = (s >> 33) % 600;
         samples.push(v);
         h.observe(v);
@@ -320,7 +353,11 @@ fn metrics_reset_appears_in_no_catalog_row() {
         .parent()
         .expect("workspace root")
         .to_path_buf();
-    let catalog = root.join("src").join("components").join("settings").join("catalog");
+    let catalog = root
+        .join("src")
+        .join("components")
+        .join("settings")
+        .join("catalog");
     let mut hits = Vec::new();
     scan_dir_for(&catalog, &["metrics_reset", "metricsReset"], &mut hits);
     assert!(

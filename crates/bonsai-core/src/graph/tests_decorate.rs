@@ -20,9 +20,8 @@ fn ref_pills_stacking() {
     let obj = repo.find_object(c, None).expect("find object");
     repo.tag_lightweight("v1.0", &obj, true)
         .expect("lightweight tag");
-    let sig =
-        git2::Signature::new("Test User", "test@example.com", &git2::Time::new(2, 0))
-            .expect("signature");
+    let sig = git2::Signature::new("Test User", "test@example.com", &git2::Time::new(2, 0))
+        .expect("signature");
     repo.tag("v1.1-notes", &obj, &sig, "annotated notes tag", true)
         .expect("annotated tag");
 
@@ -112,16 +111,12 @@ fn annotated_tag_to_blob_skipped() {
     set_head(&repo, "main");
     let blob = repo.blob(b"just a blob").expect("blob");
     let obj = repo.find_object(blob, None).expect("find blob object");
-    let sig =
-        git2::Signature::new("Test User", "test@example.com", &git2::Time::new(2, 0))
-            .expect("signature");
+    let sig = git2::Signature::new("Test User", "test@example.com", &git2::Time::new(2, 0))
+        .expect("signature");
     repo.tag("blob-tag", &obj, &sig, "tag on a blob", false)
         .expect("tag blob");
 
     let l = compute_graph(dir.path()).expect("compute_graph");
     assert_eq!(l.nodes.len(), 1);
-    assert!(l.nodes[0]
-        .refs
-        .iter()
-        .all(|r| r.kind != RefKind::Tag));
+    assert!(l.nodes[0].refs.iter().all(|r| r.kind != RefKind::Tag));
 }

@@ -296,11 +296,11 @@ mod tests {
     fn normalize_folds_eol_bom_trailing_and_edge_blanks() {
         let canonical = "line one\nline two\n";
         let variants: &[&[u8]] = &[
-            b"line one\r\nline two\r\n",            // CRLF
-            b"\xEF\xBB\xBFline one\nline two\n",     // leading BOM
-            b"line one   \nline two\t\n",           // trailing whitespace
-            b"\n\nline one\nline two\n\n\n",         // edge blank lines
-            b"line one\nline two",                   // missing final newline
+            b"line one\r\nline two\r\n",         // CRLF
+            b"\xEF\xBB\xBFline one\nline two\n", // leading BOM
+            b"line one   \nline two\t\n",        // trailing whitespace
+            b"\n\nline one\nline two\n\n\n",     // edge blank lines
+            b"line one\nline two",               // missing final newline
         ];
         for v in variants {
             assert_eq!(normalize(v), canonical, "variant {v:?}");

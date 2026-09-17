@@ -51,7 +51,13 @@ fn terminal_ladder_windows_auto() {
 fn terminal_ladder_macos_auto() {
     assert_eq!(
         terminal_ladder(TargetOs::MacOs, None, &p()),
-        vec![spec("open", &["-a", "Terminal", "/tmp/work"], &safe_cwd(), false, true)]
+        vec![spec(
+            "open",
+            &["-a", "Terminal", "/tmp/work"],
+            &safe_cwd(),
+            false,
+            true
+        )]
     );
 }
 
@@ -60,8 +66,20 @@ fn terminal_ladder_linux_auto() {
     assert_eq!(
         terminal_ladder(TargetOs::Linux, None, &p()),
         vec![
-            spec("gnome-terminal", &["--working-directory=/tmp/work"], &safe_cwd(), false, false),
-            spec("konsole", &["--workdir", "/tmp/work"], &safe_cwd(), false, false),
+            spec(
+                "gnome-terminal",
+                &["--working-directory=/tmp/work"],
+                &safe_cwd(),
+                false,
+                false
+            ),
+            spec(
+                "konsole",
+                &["--workdir", "/tmp/work"],
+                &safe_cwd(),
+                false,
+                false
+            ),
             spec("x-terminal-emulator", &[], &p(), false, false),
         ]
     );
@@ -127,7 +145,13 @@ fn editor_ladder_macos_auto() {
     assert_eq!(
         editor_ladder(TargetOs::MacOs, None, &p()),
         vec![
-            spec("open", &["-a", "Visual Studio Code", "/tmp/work"], &safe_cwd(), true, true),
+            spec(
+                "open",
+                &["-a", "Visual Studio Code", "/tmp/work"],
+                &safe_cwd(),
+                true,
+                true
+            ),
             spec(
                 "open",
                 &["-a", "Visual Studio Code - Insiders", "/tmp/work"],
@@ -147,10 +171,19 @@ fn editor_ladder_macos_auto() {
 fn editor_ladder_macos_marks_open_specs_wait_for_exit() {
     let ladder = editor_ladder(TargetOs::MacOs, None, &p());
     assert_eq!(ladder.len(), 3);
-    assert!(ladder[0].wait_for_exit, "open -a VS Code waits for its exit code");
-    assert!(ladder[1].wait_for_exit, "open -a Insiders waits for its exit code");
+    assert!(
+        ladder[0].wait_for_exit,
+        "open -a VS Code waits for its exit code"
+    );
+    assert!(
+        ladder[1].wait_for_exit,
+        "open -a Insiders waits for its exit code"
+    );
     assert_eq!(ladder[2].program, "code");
-    assert!(!ladder[2].wait_for_exit, "the `code` CLI rung stays detached");
+    assert!(
+        !ladder[2].wait_for_exit,
+        "the `code` CLI rung stays detached"
+    );
 }
 
 /// The Windows/Linux ladders NEVER wait — `explorer` exits non-zero after a
@@ -159,12 +192,23 @@ fn editor_ladder_macos_marks_open_specs_wait_for_exit() {
 fn windows_and_linux_specs_never_wait_for_exit() {
     for os in [TargetOs::Windows, TargetOs::Linux] {
         for s in editor_ladder(os, None, &p()) {
-            assert!(!s.wait_for_exit, "{os:?} editor `{}` must not wait", s.program);
+            assert!(
+                !s.wait_for_exit,
+                "{os:?} editor `{}` must not wait",
+                s.program
+            );
         }
         for s in terminal_ladder(os, None, &p()) {
-            assert!(!s.wait_for_exit, "{os:?} terminal `{}` must not wait", s.program);
+            assert!(
+                !s.wait_for_exit,
+                "{os:?} terminal `{}` must not wait",
+                s.program
+            );
         }
-        assert!(!reveal_spec(os, &p()).wait_for_exit, "{os:?} reveal must not wait");
+        assert!(
+            !reveal_spec(os, &p()).wait_for_exit,
+            "{os:?} reveal must not wait"
+        );
     }
 }
 
@@ -184,8 +228,8 @@ fn all_candidates_fail_errors_naming_last_program() {
     // wt → powershell → cmd all fail: ExternalToolFailed names the LAST
     // program (cmd) and the "terminal" label.
     let runner = FakeRunner::new(&[]);
-    let err = open_in_terminal(&runner, TargetOs::Windows, None, &p())
-        .expect_err("all candidates fail");
+    let err =
+        open_in_terminal(&runner, TargetOs::Windows, None, &p()).expect_err("all candidates fail");
     assert!(matches!(err, AppError::ExternalToolFailed(_)));
     let msg = err.to_string();
     assert!(msg.contains("cmd"), "message names last program: {msg}");
@@ -202,8 +246,7 @@ fn reveal_single_candidate_success_and_failure() {
 
     // Failure: the single candidate fails ⇒ ExternalToolFailed naming it.
     let bad = FakeRunner::new(&[]);
-    let err = reveal_in_file_manager(&bad, TargetOs::Windows, &p())
-        .expect_err("reveal fails");
+    let err = reveal_in_file_manager(&bad, TargetOs::Windows, &p()).expect_err("reveal fails");
     assert!(matches!(err, AppError::ExternalToolFailed(_)));
     assert!(err.to_string().contains("explorer"));
 }

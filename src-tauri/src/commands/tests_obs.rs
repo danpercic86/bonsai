@@ -45,9 +45,21 @@ fn zip_names(path: &str) -> Vec<String> {
 #[test]
 fn exports_every_part_of_the_named_session() {
     let fx = fixture();
-    seed(&fx.logs, "bonsai-2026-08-26T10-00-00-sold.jsonl", "{\"a\":1}\n");
-    seed(&fx.logs, "bonsai-2026-08-27T10-00-00-snew.jsonl", "{\"b\":1}\n");
-    seed(&fx.logs, "bonsai-2026-08-27T10-00-00-snew-1.jsonl", "{\"b\":2}\n");
+    seed(
+        &fx.logs,
+        "bonsai-2026-08-26T10-00-00-sold.jsonl",
+        "{\"a\":1}\n",
+    );
+    seed(
+        &fx.logs,
+        "bonsai-2026-08-27T10-00-00-snew.jsonl",
+        "{\"b\":1}\n",
+    );
+    seed(
+        &fx.logs,
+        "bonsai-2026-08-27T10-00-00-snew-1.jsonl",
+        "{\"b\":2}\n",
+    );
 
     let out = export_session(&fx.logs, &fx.exports, Some("snew".into())).expect("export");
     assert_eq!(
@@ -80,7 +92,10 @@ fn default_destination_is_exports_and_never_logs() {
         .map(|e| e.file_name().to_string_lossy().to_ascii_lowercase())
         .filter(|n| n.ends_with(".zip"))
         .collect();
-    assert!(stray.is_empty(), "a zip was created inside logs/: {stray:?}");
+    assert!(
+        stray.is_empty(),
+        "a zip was created inside logs/: {stray:?}"
+    );
     // The log file itself is untouched by an export.
     assert_eq!(writer::list_log_files(&fx.logs).len(), 1);
 }
@@ -95,7 +110,10 @@ fn exports_the_newest_session_when_dev_mode_is_off() {
     seed(&fx.logs, "bonsai-2026-08-27T10-00-00-snew.jsonl", "{}\n");
 
     let out = export_session(&fx.logs, &fx.exports, None).expect("export");
-    assert_eq!(zip_names(&out), vec!["bonsai-2026-08-27T10-00-00-snew.jsonl"]);
+    assert_eq!(
+        zip_names(&out),
+        vec!["bonsai-2026-08-27T10-00-00-snew.jsonl"]
+    );
 }
 
 #[test]
@@ -181,7 +199,13 @@ fn write_failed_is_a_bool_and_carries_no_error_text() {
         "writeFailed must be a bare boolean on the wire",
     );
     let json = value.to_string();
-    for leak in ["os error", "cannot write", "cannot flush", "denied", "Permission"] {
+    for leak in [
+        "os error",
+        "cannot write",
+        "cannot flush",
+        "denied",
+        "Permission",
+    ] {
         assert!(
             !json.contains(leak),
             "the io::Error phrase {leak:?} must never reach the LogSessionInfo payload",

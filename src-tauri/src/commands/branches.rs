@@ -254,11 +254,9 @@ pub(crate) async fn list_stale_branches_inner(
     base: Option<String>,
 ) -> Result<StaleReport, AppError> {
     let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        stale::find_stale_branches(&path, base.as_deref())
-    })
-    .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    tauri::async_runtime::spawn_blocking(move || stale::find_stale_branches(&path, base.as_deref()))
+        .await
+        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Batch-deletes the caller-supplied branch names that are STILL safe against a

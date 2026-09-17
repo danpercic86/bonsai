@@ -76,7 +76,10 @@ fn v1_store_loads_byte_safe_and_migrates_on_save() {
     let saved = save_profile(tmp.path(), profile("haiku", vec![])).unwrap();
     assert_eq!(saved.version, 2);
     assert_eq!(
-        saved.worktree_activations.get(MAIN_WORKTREE_KEY).map(String::as_str),
+        saved
+            .worktree_activations
+            .get(MAIN_WORKTREE_KEY)
+            .map(String::as_str),
         Some("opus")
     );
     assert_eq!(saved.active_profile.as_deref(), Some("opus"));
@@ -105,15 +108,20 @@ fn persist_garbage_collects_stale_worktree_keys() {
     save_profile(&main, profile("p", vec![])).unwrap();
     // Inject a stale key directly into the store file.
     let path = main.join(".bonsai").join("profiles.json");
-    let mut v: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let mut v: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     v["worktreeActivations"] = serde_json::json!({ "ghost": "p", "feature-x": "p" });
     std::fs::write(&path, serde_json::to_vec_pretty(&v).unwrap()).unwrap();
 
     let store = save_profile(&main, profile("q", vec![])).unwrap();
-    assert!(!store.worktree_activations.contains_key("ghost"), "stale key GC'd");
+    assert!(
+        !store.worktree_activations.contains_key("ghost"),
+        "stale key GC'd"
+    );
     assert_eq!(
-        store.worktree_activations.get("feature-x").map(String::as_str),
+        store
+            .worktree_activations
+            .get("feature-x")
+            .map(String::as_str),
         Some("p"),
         "live worktree key kept"
     );
@@ -130,7 +138,10 @@ fn linked_worktree_reads_and_writes_the_main_store() {
     // save via the LINKED worktree lands in the MAIN store.
     save_profile(&wx, profile("p", vec![target("claude", "# p\n")])).unwrap();
     assert!(main.join(".bonsai").join("profiles.json").is_file());
-    assert!(!wx.join(".bonsai").exists(), "no .bonsai in the linked worktree");
+    assert!(
+        !wx.join(".bonsai").exists(),
+        "no .bonsai in the linked worktree"
+    );
     assert_eq!(list_profiles(&wx).unwrap().profiles.len(), 1);
     assert_eq!(list_profiles(&main).unwrap().profiles.len(), 1);
 }
@@ -158,20 +169,35 @@ fn activate_into_linked_worktree_writes_only_there() {
     assert_eq!(act.results.len(), 2);
 
     // Byte-exact writes INSIDE the linked worktree.
-    assert_eq!(std::fs::read(wx.join("CLAUDE.md")).unwrap(), b"# wt claude\n");
-    assert_eq!(std::fs::read(wx.join("AGENTS.md")).unwrap(), b"# wt agents\n");
+    assert_eq!(
+        std::fs::read(wx.join("CLAUDE.md")).unwrap(),
+        b"# wt claude\n"
+    );
+    assert_eq!(
+        std::fs::read(wx.join("AGENTS.md")).unwrap(),
+        b"# wt agents\n"
+    );
     assert!(!wx.join("CLAUDE.md.bonsai-tmp").exists());
     assert!(!wx.join("AGENTS.md.bonsai-tmp").exists());
     // Main + sibling worktree untouched (byte-compare).
-    assert_eq!(std::fs::read(main.join("CLAUDE.md")).unwrap(), main_claude_before);
+    assert_eq!(
+        std::fs::read(main.join("CLAUDE.md")).unwrap(),
+        main_claude_before
+    );
     assert!(!main.join("AGENTS.md").exists());
-    assert_eq!(std::fs::read(wy.join("CLAUDE.md")).unwrap(), wy_claude_before);
+    assert_eq!(
+        std::fs::read(wy.join("CLAUDE.md")).unwrap(),
+        wy_claude_before
+    );
     assert!(!wy.join("AGENTS.md").exists());
 
     // Map persisted; legacy mirror NOT set (key != "@main").
     let store = list_profiles(&main).unwrap();
     assert_eq!(
-        store.worktree_activations.get("feature-x").map(String::as_str),
+        store
+            .worktree_activations
+            .get("feature-x")
+            .map(String::as_str),
         Some("p")
     );
     assert_eq!(store.active_profile, None);
@@ -192,7 +218,10 @@ fn legacy_activate_records_main_key_and_mirror() {
     // Wrapper from the MAIN worktree → "@main" + legacy mirror.
     let act = activate_profile(&main, "p").unwrap();
     assert_eq!(
-        act.store.worktree_activations.get(MAIN_WORKTREE_KEY).map(String::as_str),
+        act.store
+            .worktree_activations
+            .get(MAIN_WORKTREE_KEY)
+            .map(String::as_str),
         Some("p")
     );
     assert_eq!(act.store.active_profile.as_deref(), Some("p"));
@@ -200,7 +229,10 @@ fn legacy_activate_records_main_key_and_mirror() {
     save_profile(&main, profile("q", vec![target("gemini", "# g\n")])).unwrap();
     let act2 = activate_profile(&wx, "q").unwrap();
     assert_eq!(
-        act2.store.worktree_activations.get("feature-x").map(String::as_str),
+        act2.store
+            .worktree_activations
+            .get("feature-x")
+            .map(String::as_str),
         Some("q")
     );
     assert!(wx.join("GEMINI.md").is_file());
@@ -219,10 +251,7 @@ fn dirty_tracked_target_blocks_all_writes() {
         &main,
         profile(
             "p",
-            vec![
-                target("agents", "# a\n"),
-                target("claude", "# machine\n"),
-            ],
+            vec![target("agents", "# a\n"), target("claude", "# machine\n")],
         ),
     )
     .unwrap();
@@ -233,8 +262,14 @@ fn dirty_tracked_target_blocks_all_writes() {
         "expected dirty-target Git error, got {err:?}"
     );
     // ZERO files written: target #1 not created, target #2 byte-preserved.
-    assert!(!wx.join("AGENTS.md").exists(), "all targets checked before any write");
-    assert_eq!(std::fs::read(wx.join("CLAUDE.md")).unwrap(), b"# human edit\n");
+    assert!(
+        !wx.join("AGENTS.md").exists(),
+        "all targets checked before any write"
+    );
+    assert_eq!(
+        std::fs::read(wx.join("CLAUDE.md")).unwrap(),
+        b"# human edit\n"
+    );
 
     // UNTRACKED target file does NOT block (prior uncommitted activation).
     std::fs::write(wx.join("GEMINI.md"), b"# old untracked\n").unwrap();
@@ -291,7 +326,10 @@ fn wrapper_propagates_identity_errors_for_real_repos() {
     // Nothing was written anywhere, and no activation was recorded.
     assert!(!main.join("GEMINI.md").exists());
     assert!(!wx.join("GEMINI.md").exists());
-    assert!(list_profiles(&main).unwrap().worktree_activations.is_empty());
+    assert!(list_profiles(&main)
+        .unwrap()
+        .worktree_activations
+        .is_empty());
     assert!(matches!(
         preview_profile(&wx, "p").unwrap_err(),
         AppError::Git(_)
@@ -340,7 +378,10 @@ fn written_paths_are_contained_in_the_target_worktree() {
     let (_dir, main, wx, _wy) = git_fixture();
     save_profile(
         &main,
-        profile("p", vec![target("agents", "# a\n"), target("gemini", "# g\n")]),
+        profile(
+            "p",
+            vec![target("agents", "# a\n"), target("gemini", "# g\n")],
+        ),
     )
     .unwrap();
     let act = activate_profile_for_worktree(&main, "feature-x", "p").unwrap();

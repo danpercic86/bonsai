@@ -42,7 +42,9 @@ pub fn validate_asset_name(name: &str) -> Result<(), AppError> {
         || reserved
         || trailing_dot_or_space;
     if bad {
-        return Err(AppError::InvalidName(format!("invalid asset name: '{name}'")));
+        return Err(AppError::InvalidName(format!(
+            "invalid asset name: '{name}'"
+        )));
     }
     Ok(())
 }

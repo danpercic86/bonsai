@@ -252,7 +252,8 @@ mod tests {
         let repo = git2::Repository::init(dir.path()).expect("init");
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
         dir
     }
 
@@ -266,21 +267,34 @@ mod tests {
 
         // 25 paths → 20 listed + "(+5 more)".
         let paths: Vec<String> = (0..25).map(|i| format!("f{i:02}.txt")).collect();
-        let preview =
-            build_preview(&repo, &SafeOp::Discard { paths: paths.clone() }).expect("preview");
+        let preview = build_preview(
+            &repo,
+            &SafeOp::Discard {
+                paths: paths.clone(),
+            },
+        )
+        .expect("preview");
         let warn = preview.worktree_warning.expect("warning present");
         assert!(warn.contains("f00.txt"), "first path listed: {warn}");
         assert!(warn.contains("f19.txt"), "20th path listed: {warn}");
         assert!(!warn.contains("f20.txt"), "21st path NOT listed: {warn}");
         assert!(warn.contains("(+5 more)"), "overflow note: {warn}");
-        assert!(preview.summary.contains("25 file"), "summary keeps the real count");
+        assert!(
+            preview.summary.contains("25 file"),
+            "summary keeps the real count"
+        );
 
         // Exactly at the cap → all listed, no note.
-        let paths: Vec<String> = (0..MAX_PREVIEW_DROPPED).map(|i| format!("g{i}.txt")).collect();
+        let paths: Vec<String> = (0..MAX_PREVIEW_DROPPED)
+            .map(|i| format!("g{i}.txt"))
+            .collect();
         let preview = build_preview(&repo, &SafeOp::Discard { paths }).expect("preview");
         let warn = preview.worktree_warning.expect("warning present");
         assert!(warn.contains("g19.txt"), "all paths listed: {warn}");
-        assert!(!warn.contains("more)"), "no overflow note at the cap: {warn}");
+        assert!(
+            !warn.contains("more)"),
+            "no overflow note at the cap: {warn}"
+        );
     }
 
     /// F-A2-1: the stash message (free model text) is sanitized in the preview
@@ -314,7 +328,8 @@ mod tests {
         {
             let mut cfg = repo.config().expect("config");
             cfg.set_str("user.name", "Test User").expect("name");
-            cfg.set_str("user.email", "test@example.com").expect("email");
+            cfg.set_str("user.email", "test@example.com")
+                .expect("email");
             cfg.set_bool("core.autocrlf", false).expect("autocrlf");
         }
         let p = dir.path();
@@ -322,7 +337,11 @@ mod tests {
         for i in 0..n {
             std::fs::write(p.join("a.txt"), format!("v{i}\n")).expect("write");
             stage_paths(p, &["a.txt".to_string()]).expect("stage");
-            oids.push(create_commit(p, &format!("c{i}"), None, false).expect("commit").oid);
+            oids.push(
+                create_commit(p, &format!("c{i}"), None, false)
+                    .expect("commit")
+                    .oid,
+            );
         }
         (dir, oids)
     }
@@ -338,20 +357,67 @@ mod tests {
 
         let cases: Vec<(SafeOp, &str, DangerLevel)> = vec![
             (
-                SafeOp::Reset { target_oid: full.clone(), target_short: short.clone(), mode: ResetMode::Mixed },
+                SafeOp::Reset {
+                    target_oid: full.clone(),
+                    target_short: short.clone(),
+                    mode: ResetMode::Mixed,
+                },
                 "Reset branch",
                 DangerLevel::Caution,
             ),
-            (SafeOp::Revert { oid: full.clone(), short: short.clone() }, "Revert commit", DangerLevel::Caution),
-            (SafeOp::SwitchBranch { name: "x".into(), remote: false }, "Switch branch", DangerLevel::Safe),
-            (SafeOp::CreateBranch { name: "x".into(), at_oid: None }, "Create branch", DangerLevel::Safe),
-            (SafeOp::DeleteBranch { name: "x".into() }, "Delete branch", DangerLevel::Caution),
-            (SafeOp::Stash { message: None, include_untracked: false }, "Stash changes", DangerLevel::Safe),
-            (SafeOp::Discard { paths: vec!["a.txt".into()] }, "Discard changes", DangerLevel::Destructive),
-            (SafeOp::Merge { name: "x".into() }, "Merge branch", DangerLevel::Caution),
+            (
+                SafeOp::Revert {
+                    oid: full.clone(),
+                    short: short.clone(),
+                },
+                "Revert commit",
+                DangerLevel::Caution,
+            ),
+            (
+                SafeOp::SwitchBranch {
+                    name: "x".into(),
+                    remote: false,
+                },
+                "Switch branch",
+                DangerLevel::Safe,
+            ),
+            (
+                SafeOp::CreateBranch {
+                    name: "x".into(),
+                    at_oid: None,
+                },
+                "Create branch",
+                DangerLevel::Safe,
+            ),
+            (
+                SafeOp::DeleteBranch { name: "x".into() },
+                "Delete branch",
+                DangerLevel::Caution,
+            ),
+            (
+                SafeOp::Stash {
+                    message: None,
+                    include_untracked: false,
+                },
+                "Stash changes",
+                DangerLevel::Safe,
+            ),
+            (
+                SafeOp::Discard {
+                    paths: vec!["a.txt".into()],
+                },
+                "Discard changes",
+                DangerLevel::Destructive,
+            ),
+            (
+                SafeOp::Merge { name: "x".into() },
+                "Merge branch",
+                DangerLevel::Caution,
+            ),
         ];
         for (op, title, danger) in cases {
-            let pv = build_preview(&repo, &op).unwrap_or_else(|e| panic!("{title} previews: {e:?}"));
+            let pv =
+                build_preview(&repo, &op).unwrap_or_else(|e| panic!("{title} previews: {e:?}"));
             assert_eq!(pv.title, title);
             assert_eq!(
                 std::mem::discriminant(&pv.danger),
@@ -380,7 +446,11 @@ mod tests {
         assert!(matches!(hard.danger, DangerLevel::Destructive));
         assert!(hard.worktree_warning.is_some(), "hard warns about discard");
         assert_eq!(hard.ref_changes[0].to_short, target_short);
-        assert_eq!(hard.dropped_commits.len(), 1, "one commit leaves the branch");
+        assert_eq!(
+            hard.dropped_commits.len(),
+            1,
+            "one commit leaves the branch"
+        );
 
         let mixed = build_preview(&repo, &mk(ResetMode::Mixed)).expect("mixed");
         assert!(matches!(mixed.danger, DangerLevel::Caution));
@@ -398,13 +468,25 @@ mod tests {
         let target_short: String = target.chars().take(7).collect();
         let pv = build_preview(
             &repo,
-            &SafeOp::Reset { target_oid: target, target_short, mode: ResetMode::Mixed },
+            &SafeOp::Reset {
+                target_oid: target,
+                target_short,
+                mode: ResetMode::Mixed,
+            },
         )
         .expect("preview");
-        assert_eq!(pv.dropped_commits.len(), MAX_PREVIEW_DROPPED, "listed capped");
+        assert_eq!(
+            pv.dropped_commits.len(),
+            MAX_PREVIEW_DROPPED,
+            "listed capped"
+        );
         // total dropped = n-1 (everything after the root) → overflow of n-1-20.
         let overflow = (n - 1) - MAX_PREVIEW_DROPPED;
-        assert!(pv.summary.contains(&format!("(+{overflow} more)")), "summary: {}", pv.summary);
+        assert!(
+            pv.summary.contains(&format!("(+{overflow} more)")),
+            "summary: {}",
+            pv.summary
+        );
     }
 
     /// "Impossible" (fail-safe) states: a Reset with a non-hex target oid and a
@@ -427,7 +509,10 @@ mod tests {
 
         let bad_revert = build_preview(
             &repo,
-            &SafeOp::Revert { oid: "f".repeat(40), short: "fffffff".to_string() },
+            &SafeOp::Revert {
+                oid: "f".repeat(40),
+                short: "fffffff".to_string(),
+            },
         );
         assert!(bad_revert.is_err(), "unresolvable revert oid → Err");
     }

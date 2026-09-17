@@ -163,8 +163,14 @@ fn instruction_configs() -> Vec<(&'static str, BonsaiServer)> {
             "standalone-readonly-allow-hooks",
             BonsaiServer::new(repo, false, true),
         ),
-        ("embedded-readonly", BonsaiServer::with_session(session(), false)),
-        ("embedded-write", BonsaiServer::with_session(session(), true)),
+        (
+            "embedded-readonly",
+            BonsaiServer::with_session(session(), false),
+        ),
+        (
+            "embedded-write",
+            BonsaiServer::with_session(session(), true),
+        ),
     ]
 }
 
@@ -254,12 +260,7 @@ fn tool_descriptions_match_the_checked_in_snapshot() {
 /// calling convention (review 2026-09-11 — previously unpinned).
 #[test]
 fn tool_parameter_schemas_match_the_checked_in_snapshot() {
-    assert_snapshot(
-        "parameter schema",
-        SCHEMAS_REL,
-        SCHEMAS,
-        &render_schemas(),
-    );
+    assert_snapshot("parameter schema", SCHEMAS_REL, SCHEMAS, &render_schemas());
 }
 
 /// `get_info().instructions` is read once per session, before any tool call,

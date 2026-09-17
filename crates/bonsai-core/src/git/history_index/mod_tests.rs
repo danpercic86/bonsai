@@ -18,7 +18,8 @@ fn init_scratch() -> (tempfile::TempDir, git2::Repository) {
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
         cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     }
     (dir, repo)
@@ -46,7 +47,9 @@ fn mk_commit(
         let blob = repo.blob(content.as_bytes()).expect("blob");
         tb.insert(name, blob, 0o100_644).expect("insert");
     }
-    let tree = repo.find_tree(tb.write().expect("write tree")).expect("tree");
+    let tree = repo
+        .find_tree(tb.write().expect("write tree"))
+        .expect("tree");
     let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
     repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &parents)
         .expect("commit")
@@ -56,8 +59,20 @@ fn mk_commit(
 /// "zebracorn". Returns (repo dir, index dir, [c0..c3]).
 fn build_fixture() -> (tempfile::TempDir, tempfile::TempDir, [git2::Oid; 4]) {
     let (dir, repo) = init_scratch();
-    let c0 = mk_commit(&repo, None, &[("a.txt", "alpha groundwork\n")], "seed alpha", 1000);
-    let c1 = mk_commit(&repo, Some(c0), &[("b.txt", "beta body\n")], "add beta module", 2000);
+    let c0 = mk_commit(
+        &repo,
+        None,
+        &[("a.txt", "alpha groundwork\n")],
+        "seed alpha",
+        1000,
+    );
+    let c1 = mk_commit(
+        &repo,
+        Some(c0),
+        &[("b.txt", "beta body\n")],
+        "add beta module",
+        2000,
+    );
     let c2 = mk_commit(
         &repo,
         Some(c1),
@@ -65,7 +80,13 @@ fn build_fixture() -> (tempfile::TempDir, tempfile::TempDir, [git2::Oid; 4]) {
         "wire the zebracorn subsystem",
         3000,
     );
-    let c3 = mk_commit(&repo, Some(c2), &[("d.txt", "delta done\n")], "delta cleanup", 4000);
+    let c3 = mk_commit(
+        &repo,
+        Some(c2),
+        &[("d.txt", "delta done\n")],
+        "delta cleanup",
+        4000,
+    );
     let idx = crate::testutil::scratch_dir();
     (dir, idx, [c0, c1, c2, c3])
 }
@@ -95,7 +116,11 @@ fn build_then_search_finds_expected() {
     )
     .expect("search");
     assert!(!results.hits.is_empty(), "the keyword commit is retrieved");
-    assert_eq!(results.hits[0].oid, c2.to_string(), "unique-term commit ranks first");
+    assert_eq!(
+        results.hits[0].oid,
+        c2.to_string(),
+        "unique-term commit ranks first"
+    );
     assert!(!results.index_stale);
     assert_eq!(results.indexed_commits, 4);
 }
@@ -111,7 +136,13 @@ fn incremental_build_only_documents_new() {
 
     // Append one commit, then rebuild.
     let repo = git2::Repository::open(dir.path()).expect("open");
-    mk_commit(&repo, Some(c3), &[("e.txt", "epsilon\n")], "add epsilon", 5000);
+    mk_commit(
+        &repo,
+        Some(c3),
+        &[("e.txt", "epsilon\n")],
+        "add epsilon",
+        5000,
+    );
     let mut ticks: Vec<IndexProgress> = Vec::new();
     build_index(dir.path(), idx.path(), |p| ticks.push(p)).expect("build 2");
 
@@ -172,7 +203,9 @@ fn build_skips_unreadable_object_and_indexes_the_rest() {
 
     // Locate + corrupt the loose blob object for c.txt ("zebracorn ...").
     let repo = git2::Repository::open(dir.path()).expect("open");
-    let blob_oid = repo.blob(b"zebracorn special payload\n").expect("hash blob");
+    let blob_oid = repo
+        .blob(b"zebracorn special payload\n")
+        .expect("hash blob");
     let hex = blob_oid.to_string();
     let obj_path = dir
         .path()
@@ -180,18 +213,25 @@ fn build_skips_unreadable_object_and_indexes_the_rest() {
         .join("objects")
         .join(&hex[..2])
         .join(&hex[2..]);
-    assert!(obj_path.exists(), "loose blob present: {}", obj_path.display());
+    assert!(
+        obj_path.exists(),
+        "loose blob present: {}",
+        obj_path.display()
+    );
     // Clear any read-only bit git set (Windows attr / *nix 0444) before overwrite.
     let mut perms = std::fs::metadata(&obj_path).expect("meta").permissions();
     perms.set_readonly(false);
     let _ = std::fs::set_permissions(&obj_path, perms);
     std::fs::write(&obj_path, b"corrupt-not-zlib").expect("corrupt object");
 
-    let status =
-        build_index(dir.path(), idx.path(), silent).expect("build tolerates bad object");
+    let status = build_index(dir.path(), idx.path(), silent).expect("build tolerates bad object");
     assert!(status.built);
     let store = store::load(idx.path()).expect("load");
-    assert_eq!(store.docs.len(), 3, "3 good commits indexed, corrupt one skipped");
+    assert_eq!(
+        store.docs.len(),
+        3,
+        "3 good commits indexed, corrupt one skipped"
+    );
     assert!(
         !store.docs.contains_key(&c2.to_string()),
         "the unreadable commit is skipped"
@@ -331,5 +371,8 @@ fn index_status_wire_shape_is_camel_case() {
         head_oid: Some("deadbeef".to_string()),
         ..base
     };
-    assert_eq!(serde_json::to_value(&some).expect("json")["headOid"], "deadbeef");
+    assert_eq!(
+        serde_json::to_value(&some).expect("json")["headOid"],
+        "deadbeef"
+    );
 }

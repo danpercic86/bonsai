@@ -63,7 +63,11 @@ fn validate_web_url_rejects_every_non_web_form_without_echoing_it() {
         // LOW-3: userinfo impersonation. Every other rule passes; the apparent
         // host is NOT the host the browser would navigate to.
         ("https://github.com@evil.example/x", "evil.example", NO_HOST),
-        ("https://github.com%2Foctocat@evil.example/", "evil.example", NO_HOST),
+        (
+            "https://github.com%2Foctocat@evil.example/",
+            "evil.example",
+            NO_HOST,
+        ),
         // LOW-2: control characters outside the host (the old check was host-only).
         ("https://ok.example.com/a\nb", "ok.example", MALFORMED),
         ("https://ok.example.com/a\tb", "ok.example", MALFORMED),
@@ -160,7 +164,10 @@ fn url_ladder_never_uses_a_shell_and_keeps_the_url_in_one_token() {
                 1,
                 "URL must occupy exactly one argv token: {s:?}"
             );
-            assert!(s.args.iter().any(|a| a == OK_URL), "URL not a whole token: {s:?}");
+            assert!(
+                s.args.iter().any(|a| a == OK_URL),
+                "URL not a whole token: {s:?}"
+            );
             for banned in ["cmd", "start", "/c", "powershell"] {
                 assert!(!s.program.contains(banned), "shell in program: {s:?}");
                 assert!(

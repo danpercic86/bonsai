@@ -14,7 +14,8 @@ fn init(d: &Path) -> git2::Repository {
     let repo = git2::Repository::init(d).expect("init repo");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     drop(cfg);
     repo
@@ -109,7 +110,11 @@ fn staged_delete_plus_rewrite_folds_worktree_content() {
     let outcome = pop_stash(d, 0, false, None).expect("pop");
     assert_eq!(outcome, ApplyStashOutcome::Applied);
     assert_eq!(read(d, "a.txt"), "rewritten\n", "content restored");
-    assert_eq!(staged_paths(d), Vec::<String>::new(), "restored as UNSTAGED");
+    assert_eq!(
+        staged_paths(d),
+        Vec::<String>::new(),
+        "restored as UNSTAGED"
+    );
     assert_eq!(list_stashes(d).expect("list").len(), 0, "clean pop drops");
 }
 
@@ -209,7 +214,8 @@ fn non_utf8_stash_path_errors_instead_of_silent_drop() {
     let untracked_tree = {
         let mut tb = repo.treebuilder(None).expect("treebuilder");
         let blob = repo.blob(b"payload\n").expect("blob");
-        tb.insert(&b"\xffbad.txt"[..], blob, 0o100644).expect("insert");
+        tb.insert(&b"\xffbad.txt"[..], blob, 0o100644)
+            .expect("insert");
         repo.find_tree(tb.write().expect("tree oid")).expect("tree")
     };
     let untracked_commit = repo
@@ -260,8 +266,14 @@ fn escape_pathspec_truth_table() {
         Some(r"foo\[1\].txt")
     );
     assert_eq!(escape_pathspec("a*b?c").as_deref(), Some(r"a\*b\?c"));
-    assert_eq!(escape_pathspec(r"back\slash").as_deref(), Some(r"back\\slash"));
-    assert_eq!(escape_pathspec("dir/[x]/f").as_deref(), Some(r"dir/\[x\]/f"));
+    assert_eq!(
+        escape_pathspec(r"back\slash").as_deref(),
+        Some(r"back\\slash")
+    );
+    assert_eq!(
+        escape_pathspec("dir/[x]/f").as_deref(),
+        Some(r"dir/\[x\]/f")
+    );
 }
 
 /// End-to-end (non-Windows: a real `NUL` file is legal there): a skip-reserved

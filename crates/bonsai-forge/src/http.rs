@@ -218,7 +218,10 @@ mod tests {
         assert_eq!(redact_header_value("Authorization", "Bearer x"), REDACTED);
         assert_eq!(redact_header_value("authorization", "Bearer x"), REDACTED);
         assert_eq!(redact_header_value("X-Auth-Token", "abc"), REDACTED);
-        assert_eq!(redact_header_value("Accept", "application/json"), "application/json");
+        assert_eq!(
+            redact_header_value("Accept", "application/json"),
+            "application/json"
+        );
     }
 
     #[test]
@@ -229,7 +232,10 @@ mod tests {
             body: "SECRET-PRIVATE-REPO-DATA".into(),
         };
         let dbg = format!("{resp:?}");
-        assert!(!dbg.contains("SECRET-PRIVATE-REPO-DATA"), "body leaked: {dbg}");
+        assert!(
+            !dbg.contains("SECRET-PRIVATE-REPO-DATA"),
+            "body leaked: {dbg}"
+        );
         assert!(dbg.contains("body_len"));
     }
 

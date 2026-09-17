@@ -131,7 +131,12 @@ pub(super) fn is_device_prefix(value: &str) -> bool {
     let mut cs = value.chars();
     matches!(
         (cs.next(), cs.next(), cs.next(), cs.next()),
-        (Some('\\' | '/'), Some('\\' | '/'), Some('?' | '.'), Some('\\' | '/'))
+        (
+            Some('\\' | '/'),
+            Some('\\' | '/'),
+            Some('?' | '.'),
+            Some('\\' | '/')
+        )
     )
 }
 

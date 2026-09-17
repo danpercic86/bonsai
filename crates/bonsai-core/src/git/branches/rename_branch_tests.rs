@@ -12,7 +12,8 @@ fn rb_init(dir: &Path) -> git2::Repository {
     let repo = git2::Repository::init(dir).expect("init repo");
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "Test User").expect("name");
-    cfg.set_str("user.email", "test@example.com").expect("email");
+    cfg.set_str("user.email", "test@example.com")
+        .expect("email");
     cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     drop(cfg);
     repo
@@ -47,8 +48,13 @@ fn rb_set_upstream(repo: &git2::Repository, local: &str, oid: git2::Oid) {
         repo.remote("origin", "https://example.invalid/x.git")
             .expect("remote");
     }
-    repo.reference(&format!("refs/remotes/origin/{local}"), oid, true, "seed upstream")
-        .expect("remote-tracking ref");
+    repo.reference(
+        &format!("refs/remotes/origin/{local}"),
+        oid,
+        true,
+        "seed upstream",
+    )
+    .expect("remote-tracking ref");
     let mut cfg = repo.config().expect("config");
     cfg.set_str(&format!("branch.{local}.remote"), "origin")
         .expect("remote cfg");
@@ -100,7 +106,10 @@ fn rename_moves_ref_preserving_tip() {
     rb_branch_at_head(&repo, "old");
 
     let res = rename_branch(d, "old", "new").expect("rename");
-    assert!(!res.was_head, "renaming a non-checked-out branch → was_head=false");
+    assert!(
+        !res.was_head,
+        "renaming a non-checked-out branch → was_head=false"
+    );
 
     assert!(rb_branch_absent(d, "old"), "old ref must be gone");
     let repo = git2::Repository::open(d).expect("reopen");
@@ -138,7 +147,9 @@ fn rename_preserves_upstream() {
     let repo = git2::Repository::open(d).expect("reopen");
     let cfg = repo.config().expect("config");
     assert_eq!(
-        cfg.get_string("branch.feature-renamed.remote").ok().as_deref(),
+        cfg.get_string("branch.feature-renamed.remote")
+            .ok()
+            .as_deref(),
         Some("origin"),
         "config section moved to the new name"
     );
@@ -173,10 +184,17 @@ fn rename_checked_out_branch_moves_head() {
     let cur = rb_head_branch(d).expect("head branch");
 
     let res = rename_branch(d, &cur, "trunk").expect("rename current");
-    assert!(res.was_head, "renaming the checked-out branch → was_head=true");
+    assert!(
+        res.was_head,
+        "renaming the checked-out branch → was_head=true"
+    );
     // HEAD now resolves to refs/heads/trunk: it is an attached symref whose
     // branch is `trunk`, the old ref is gone, and the new ref exists.
-    assert_eq!(rb_head_branch(d).as_deref(), Some("trunk"), "HEAD followed the rename");
+    assert_eq!(
+        rb_head_branch(d).as_deref(),
+        Some("trunk"),
+        "HEAD followed the rename"
+    );
     assert!(rb_branch_absent(d, &cur), "the old ref must be gone");
     assert!(!rb_branch_absent(d, "trunk"), "the renamed ref must exist");
 }
@@ -197,7 +215,10 @@ fn rename_to_existing_name_is_branch_exists() {
         Err(AppError::BranchExists(_)) => {}
         other => panic!("expected BranchExists, got {other:?}"),
     }
-    assert!(!rb_branch_absent(d, "old"), "old must survive a refused rename");
+    assert!(
+        !rb_branch_absent(d, "old"),
+        "old must survive a refused rename"
+    );
     assert!(!rb_branch_absent(d, "taken"), "taken must survive");
 }
 
@@ -228,7 +249,10 @@ fn rename_to_invalid_name_is_invalid_name() {
             other => panic!("expected InvalidName for {bad:?}, got {other:?}"),
         }
     }
-    assert!(!rb_branch_absent(d, "old"), "invalid new name must not touch old");
+    assert!(
+        !rb_branch_absent(d, "old"),
+        "invalid new name must not touch old"
+    );
 }
 
 // ------------------------------------------------------- CLI-oracle parity
@@ -255,7 +279,11 @@ fn rename_matches_git_cli_oracle() {
     rename_branch(d, "feature", "feature2").expect("our rename");
 
     let git = |args: &[&str]| -> Option<String> {
-        let o = Command::new("git").args(args).current_dir(d).output().ok()?;
+        let o = Command::new("git")
+            .args(args)
+            .current_dir(d)
+            .output()
+            .ok()?;
         o.status
             .success()
             .then(|| String::from_utf8_lossy(&o.stdout).trim().to_string())

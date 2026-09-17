@@ -6,9 +6,7 @@ use std::collections::HashSet;
 
 use crate::error::AppError;
 
-use super::{
-    checkout_commit, estimated_steps, oid, BisectOutcome, BisectProgress, BisectState,
-};
+use super::{checkout_commit, estimated_steps, oid, BisectOutcome, BisectProgress, BisectState};
 
 // ---------------------------------------------------------------- on-disk state
 
@@ -114,8 +112,11 @@ enum Next {
 
 fn pick_next(repo: &git2::Repository, state: &BisectState) -> Result<Next, AppError> {
     let bad = oid(&state.bad)?;
-    let skipped: HashSet<git2::Oid> =
-        state.skipped.iter().filter_map(|s| git2::Oid::from_str(s).ok()).collect();
+    let skipped: HashSet<git2::Oid> = state
+        .skipped
+        .iter()
+        .filter_map(|s| git2::Oid::from_str(s).ok())
+        .collect();
     let cand = candidate_oids(repo, state)?;
     // Testable = candidates minus `bad` (already known bad) minus skipped.
     let testable: Vec<git2::Oid> = cand
@@ -188,8 +189,11 @@ pub(super) fn progress_from_state(
         (0, 0)
     } else {
         let bad = oid(&state.bad)?;
-        let skipped: HashSet<git2::Oid> =
-            state.skipped.iter().filter_map(|s| git2::Oid::from_str(s).ok()).collect();
+        let skipped: HashSet<git2::Oid> = state
+            .skipped
+            .iter()
+            .filter_map(|s| git2::Oid::from_str(s).ok())
+            .collect();
         let cand = candidate_oids(repo, state)?;
         let testable = cand
             .iter()

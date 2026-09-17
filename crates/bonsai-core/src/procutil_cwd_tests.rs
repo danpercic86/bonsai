@@ -16,5 +16,9 @@ fn safe_cwd_is_an_existing_directory_that_is_not_the_repo() {
     // The test binary's own directory — never a repo working tree, which is the
     // whole point of LOW-1. `"."` would mean the process cwd leaked back in; the
     // documented fallback is `temp_dir()`, which is also never a repo.
-    assert_ne!(cwd, PathBuf::from("."), "the cwd must never be the process cwd");
+    assert_ne!(
+        cwd,
+        PathBuf::from("."),
+        "the cwd must never be the process cwd"
+    );
 }

@@ -33,23 +33,43 @@ fn workdir_file_diff_unstaged_then_staged() {
     std::fs::write(dir.path().join("a.txt"), "base\nADDED\n").expect("write");
 
     let unstaged = block_on(get_workdir_file_diff_inner(
-        &state, &id, "a.txt".into(), None, false, false, false,
+        &state,
+        &id,
+        "a.txt".into(),
+        None,
+        false,
+        false,
+        false,
     ))
     .expect("unstaged diff");
     assert_eq!(unstaged.path, "a.txt");
     assert!(!unstaged.binary);
     assert!(
-        unstaged.hunks.iter().flat_map(|h| &h.lines).any(|l| l.content == "ADDED"),
+        unstaged
+            .hunks
+            .iter()
+            .flat_map(|h| &h.lines)
+            .any(|l| l.content == "ADDED"),
         "unstaged diff must contain the added line"
     );
 
     block_on(stage_inner(&state, &id, vec!["a.txt".into()])).expect("stage");
     let staged = block_on(get_workdir_file_diff_inner(
-        &state, &id, "a.txt".into(), None, true, false, false,
+        &state,
+        &id,
+        "a.txt".into(),
+        None,
+        true,
+        false,
+        false,
     ))
     .expect("staged diff");
     assert!(
-        staged.hunks.iter().flat_map(|h| &h.lines).any(|l| l.content == "ADDED"),
+        staged
+            .hunks
+            .iter()
+            .flat_map(|h| &h.lines)
+            .any(|l| l.content == "ADDED"),
         "staged (HEAD vs index) diff must carry the added line"
     );
 }
@@ -64,18 +84,40 @@ fn workdir_file_diff_intraline_spans() {
     std::fs::write(dir.path().join("i.txt"), "hello brave world\n").expect("write");
 
     let on = block_on(get_workdir_file_diff_inner(
-        &state, &id, "i.txt".into(), None, false, false, true,
+        &state,
+        &id,
+        "i.txt".into(),
+        None,
+        false,
+        false,
+        true,
     ))
     .expect("intraline on");
-    let any_span = on.hunks.iter().flat_map(|h| &h.lines).any(|l| !l.spans.is_empty());
-    assert!(any_span, "a paired modified line must carry intraline spans");
+    let any_span = on
+        .hunks
+        .iter()
+        .flat_map(|h| &h.lines)
+        .any(|l| !l.spans.is_empty());
+    assert!(
+        any_span,
+        "a paired modified line must carry intraline spans"
+    );
 
     let off = block_on(get_workdir_file_diff_inner(
-        &state, &id, "i.txt".into(), None, false, false, false,
+        &state,
+        &id,
+        "i.txt".into(),
+        None,
+        false,
+        false,
+        false,
     ))
     .expect("intraline off");
     assert!(
-        off.hunks.iter().flat_map(|h| &h.lines).all(|l| l.spans.is_empty()),
+        off.hunks
+            .iter()
+            .flat_map(|h| &h.lines)
+            .all(|l| l.spans.is_empty()),
         "intraline=false must emit no spans"
     );
 }
@@ -85,7 +127,13 @@ fn workdir_file_diff_intraline_spans() {
 fn workdir_file_diff_no_repo() {
     let state = AppState::default();
     let err = block_on(get_workdir_file_diff_inner(
-        &state, MISSING_ID, "a.txt".into(), None, false, false, false,
+        &state,
+        MISSING_ID,
+        "a.txt".into(),
+        None,
+        false,
+        false,
+        false,
     ))
     .expect_err("no repo");
     assert!(matches!(err, AppError::NoRepo), "{err:?}");
@@ -101,18 +149,31 @@ fn commit_diff_root_and_file_and_bad_oid() {
     let state = AppState::default();
     let (dir, id, c0) = fixture_repo(&state);
 
-    let cd: CommitDiff = block_on(get_commit_diff_inner(&state, &id, c0.clone())).expect("root diff");
+    let cd: CommitDiff =
+        block_on(get_commit_diff_inner(&state, &id, c0.clone())).expect("root diff");
     assert_eq!(cd.details.oid, c0);
     assert!(cd.details.parents.is_empty(), "root commit has no parent");
-    assert!(cd.files.iter().any(|f| f.path == "a.txt"), "a.txt is in the root tree");
+    assert!(
+        cd.files.iter().any(|f| f.path == "a.txt"),
+        "a.txt is in the root tree"
+    );
 
     let fd: FileDiff = block_on(get_commit_file_diff_inner(
-        &state, &id, c0.clone(), "a.txt".into(), None, false, false,
+        &state,
+        &id,
+        c0.clone(),
+        "a.txt".into(),
+        None,
+        false,
+        false,
     ))
     .expect("root file diff");
     assert_eq!(fd.path, "a.txt");
     assert!(
-        fd.hunks.iter().flat_map(|h| &h.lines).any(|l| l.content == "base"),
+        fd.hunks
+            .iter()
+            .flat_map(|h| &h.lines)
+            .any(|l| l.content == "base"),
         "root file diff shows the added content"
     );
 
@@ -133,7 +194,11 @@ fn commit_diff_against_first_parent() {
     let cd = block_on(get_commit_diff_inner(&state, &id, c1.clone())).expect("diff");
     assert_eq!(cd.details.parents.len(), 1);
     let paths: Vec<&str> = cd.files.iter().map(|f| f.path.as_str()).collect();
-    assert_eq!(paths, vec!["b.txt"], "only the file introduced by C1: {paths:?}");
+    assert_eq!(
+        paths,
+        vec!["b.txt"],
+        "only the file introduced by C1: {paths:?}"
+    );
 }
 
 // ============================================================ compare with HEAD
@@ -146,12 +211,22 @@ fn compare_with_head_happy_and_bad_oid() {
     let (dir, id, c0) = fixture_repo(&state);
     write_stage_commit(&state, &id, dir.path(), "c.txt", "extra\n", "C1");
 
-    let cmp: CompareDiff = block_on(compare_with_head_inner(&state, &id, c0.clone())).expect("compare");
+    let cmp: CompareDiff =
+        block_on(compare_with_head_inner(&state, &id, c0.clone())).expect("compare");
     // HEAD(new) has c.txt that the root(old) lacks → c.txt appears in the delta.
-    assert!(cmp.files.iter().any(|f| f.path == "c.txt"), "delta must include c.txt");
+    assert!(
+        cmp.files.iter().any(|f| f.path == "c.txt"),
+        "delta must include c.txt"
+    );
 
     let fd = block_on(compare_with_head_file_diff_inner(
-        &state, &id, c0, "c.txt".into(), None, false, false,
+        &state,
+        &id,
+        c0,
+        "c.txt".into(),
+        None,
+        false,
+        false,
     ))
     .expect("compare file diff");
     assert_eq!(fd.path, "c.txt");
@@ -179,7 +254,11 @@ fn image_diff_added_deleted_zero_byte_and_non_image() {
     let added = block_on(get_image_diff_inner(
         &state,
         &id,
-        ImageDiffRequest::Workdir { path: "logo.png".into(), orig_path: None, staged: false },
+        ImageDiffRequest::Workdir {
+            path: "logo.png".into(),
+            orig_path: None,
+            staged: false,
+        },
     ))
     .expect("added image");
     assert!(added.old.is_none(), "no old side for an added image");
@@ -193,7 +272,11 @@ fn image_diff_added_deleted_zero_byte_and_non_image() {
     let deleted = block_on(get_image_diff_inner(
         &state,
         &id,
-        ImageDiffRequest::Workdir { path: "logo.png".into(), orig_path: None, staged: false },
+        ImageDiffRequest::Workdir {
+            path: "logo.png".into(),
+            orig_path: None,
+            staged: false,
+        },
     ))
     .expect("deleted image");
     assert!(deleted.old.is_some(), "old side (index blob) present");
@@ -204,10 +287,17 @@ fn image_diff_added_deleted_zero_byte_and_non_image() {
     let zero = block_on(get_image_diff_inner(
         &state,
         &id,
-        ImageDiffRequest::Workdir { path: "empty.png".into(), orig_path: None, staged: false },
+        ImageDiffRequest::Workdir {
+            path: "empty.png".into(),
+            orig_path: None,
+            staged: false,
+        },
     ))
     .expect("zero byte");
-    assert!(zero.old.is_none() && zero.new.is_none(), "0-byte side is absent, not empty base64");
+    assert!(
+        zero.old.is_none() && zero.new.is_none(),
+        "0-byte side is absent, not empty base64"
+    );
     assert!(!zero.new_too_large, "0-byte is not over-cap");
 
     // NON-IMAGE extension: octet-stream mime (a.txt exists from the fixture).
@@ -215,7 +305,11 @@ fn image_diff_added_deleted_zero_byte_and_non_image() {
     let non = block_on(get_image_diff_inner(
         &state,
         &id,
-        ImageDiffRequest::Workdir { path: "a.txt".into(), orig_path: None, staged: false },
+        ImageDiffRequest::Workdir {
+            path: "a.txt".into(),
+            orig_path: None,
+            staged: false,
+        },
     ))
     .expect("non image");
     if let Some(side) = non.new {
@@ -232,10 +326,17 @@ fn image_diff_rejects_traversal_path() {
     let err = block_on(get_image_diff_inner(
         &state,
         &id,
-        ImageDiffRequest::Workdir { path: "../evil.png".into(), orig_path: None, staged: false },
+        ImageDiffRequest::Workdir {
+            path: "../evil.png".into(),
+            orig_path: None,
+            staged: false,
+        },
     ))
     .expect_err("traversal rejected");
-    assert!(matches!(err, AppError::Other(_) | AppError::InvalidName(_)), "{err:?}");
+    assert!(
+        matches!(err, AppError::Other(_) | AppError::InvalidName(_)),
+        "{err:?}"
+    );
 }
 
 // ============================================================ search
@@ -248,18 +349,36 @@ fn search_message_author_and_empty() {
     let (dir, id, _c0) = fixture_repo(&state);
     write_stage_commit(&state, &id, dir.path(), "d.txt", "d\n", "unique-needle-msg");
 
-    let by_msg = block_on(search_commits_inner(&state, &id, query("unique-needle", SearchField::Message)))
-        .expect("message search");
+    let by_msg = block_on(search_commits_inner(
+        &state,
+        &id,
+        query("unique-needle", SearchField::Message),
+    ))
+    .expect("message search");
     assert_eq!(by_msg.matches.len(), 1, "one commit carries the needle");
     assert!(by_msg.matches[0].summary.contains("unique-needle-msg"));
 
-    let by_author = block_on(search_commits_inner(&state, &id, query("Test User", SearchField::Author)))
-        .expect("author search");
-    assert!(!by_author.matches.is_empty(), "the fixture author matches every commit");
+    let by_author = block_on(search_commits_inner(
+        &state,
+        &id,
+        query("Test User", SearchField::Author),
+    ))
+    .expect("author search");
+    assert!(
+        !by_author.matches.is_empty(),
+        "the fixture author matches every commit"
+    );
 
-    let empty = block_on(search_commits_inner(&state, &id, query("   ", SearchField::Message)))
-        .expect("empty query");
-    assert!(empty.matches.is_empty() && !empty.truncated, "whitespace query ⇒ no matches");
+    let empty = block_on(search_commits_inner(
+        &state,
+        &id,
+        query("   ", SearchField::Message),
+    ))
+    .expect("empty query");
+    assert!(
+        empty.matches.is_empty() && !empty.truncated,
+        "whitespace query ⇒ no matches"
+    );
     let _ = dir;
 }
 
@@ -273,15 +392,36 @@ fn search_path_content_and_bad_regex() {
     }
     let state = AppState::default();
     let (dir, id, _c0) = fixture_repo(&state);
-    write_stage_commit(&state, &id, dir.path(), "needle.txt", "content-token\n", "adds needle");
+    write_stage_commit(
+        &state,
+        &id,
+        dir.path(),
+        "needle.txt",
+        "content-token\n",
+        "adds needle",
+    );
 
-    let by_path = block_on(search_commits_inner(&state, &id, query("needle.txt", SearchField::Path)))
-        .expect("path search");
-    assert!(!by_path.matches.is_empty(), "the commit that added needle.txt matches");
+    let by_path = block_on(search_commits_inner(
+        &state,
+        &id,
+        query("needle.txt", SearchField::Path),
+    ))
+    .expect("path search");
+    assert!(
+        !by_path.matches.is_empty(),
+        "the commit that added needle.txt matches"
+    );
 
-    let by_content = block_on(search_commits_inner(&state, &id, query("content-token", SearchField::Content)))
-        .expect("content search");
-    assert!(!by_content.matches.is_empty(), "the pickaxe finds the added token");
+    let by_content = block_on(search_commits_inner(
+        &state,
+        &id,
+        query("content-token", SearchField::Content),
+    ))
+    .expect("content search");
+    assert!(
+        !by_content.matches.is_empty(),
+        "the pickaxe finds the added token"
+    );
 
     let mut bad = query("[unterminated", SearchField::Content);
     bad.regex = true;
@@ -299,15 +439,18 @@ fn blame_happy_and_bad_path() {
     let state = AppState::default();
     let (dir, id, c0) = fixture_repo(&state);
 
-    let lines: Vec<BlameLine> = block_on(blame_file_inner(&state, &id, "a.txt".into(), None))
-        .expect("blame a.txt");
+    let lines: Vec<BlameLine> =
+        block_on(blame_file_inner(&state, &id, "a.txt".into(), None)).expect("blame a.txt");
     assert_eq!(lines.len(), 1, "a.txt has one line");
     assert_eq!(lines[0].oid, c0, "the only line was introduced by C0");
     assert_eq!(lines[0].line_text, "base");
 
     let err = block_on(blame_file_inner(&state, &id, "no/such/file".into(), None))
         .expect_err("blame missing path");
-    assert!(matches!(err, AppError::Git(_) | AppError::Other(_)), "{err:?}");
+    assert!(
+        matches!(err, AppError::Git(_) | AppError::Other(_)),
+        "{err:?}"
+    );
     let _ = dir;
 }
 
@@ -317,11 +460,18 @@ fn file_history_limit_caps_rows() {
     let state = AppState::default();
     let (dir, id, _c0) = fixture_repo(&state);
     for i in 1..=3 {
-        write_stage_commit(&state, &id, dir.path(), "a.txt", &format!("v{i}\n"), &format!("edit {i}"));
+        write_stage_commit(
+            &state,
+            &id,
+            dir.path(),
+            "a.txt",
+            &format!("v{i}\n"),
+            &format!("edit {i}"),
+        );
     }
 
-    let all: Vec<FileHistoryEntry> = block_on(file_history_inner(&state, &id, "a.txt".into(), 0))
-        .expect("full history");
+    let all: Vec<FileHistoryEntry> =
+        block_on(file_history_inner(&state, &id, "a.txt".into(), 0)).expect("full history");
     assert_eq!(all.len(), 4, "root + 3 edits touch a.txt");
     assert_eq!(all[0].summary, "edit 3", "newest first");
 
@@ -340,9 +490,12 @@ fn reflog_head_and_never_updated() {
     let (dir, id, _c0) = fixture_repo(&state);
     write_stage_commit(&state, &id, dir.path(), "a.txt", "v1\n", "second");
 
-    let entries: Vec<ReflogEntry> = block_on(read_reflog_inner(&state, &id, "HEAD".into()))
-        .expect("HEAD reflog");
-    assert!(entries.len() >= 2, "at least two HEAD updates (root + second)");
+    let entries: Vec<ReflogEntry> =
+        block_on(read_reflog_inner(&state, &id, "HEAD".into())).expect("HEAD reflog");
+    assert!(
+        entries.len() >= 2,
+        "at least two HEAD updates (root + second)"
+    );
     assert_eq!(entries[0].index, 0, "newest first");
 
     // Never-updated: a fresh unborn-HEAD repo has an empty HEAD reflog.
@@ -363,7 +516,14 @@ fn reflog_head_and_never_updated() {
 fn history_index_build_status_search_lifecycle() {
     let state = AppState::default();
     let (dir, id, _c0) = fixture_repo(&state);
-    write_stage_commit(&state, &id, dir.path(), "e.txt", "authentication refactor\n", "rework auth layer");
+    write_stage_commit(
+        &state,
+        &id,
+        dir.path(),
+        "e.txt",
+        "authentication refactor\n",
+        "rework auth layer",
+    );
 
     let base = tempfile::TempDir::new().expect("index base");
 
@@ -380,7 +540,10 @@ fn history_index_build_status_search_lifecycle() {
         &state,
         base.path(),
         &id,
-        HistoryQuery { text: "auth".into(), top_k: 0 },
+        HistoryQuery {
+            text: "auth".into(),
+            top_k: 0,
+        },
     ))
     .expect("search");
     assert!(!results.index_stale, "index exists");
@@ -403,7 +566,10 @@ fn history_search_without_index_is_stale_not_error() {
         &state,
         base.path(),
         &id,
-        HistoryQuery { text: "anything".into(), top_k: 0 },
+        HistoryQuery {
+            text: "anything".into(),
+            top_k: 0,
+        },
     ))
     .expect("search without an index is Ok");
     assert!(results.index_stale, "no index ⇒ stale");

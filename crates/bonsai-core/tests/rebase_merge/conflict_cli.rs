@@ -12,13 +12,13 @@
 
 use std::collections::BTreeMap;
 
+use crate::common;
+use crate::conflict_support::{cli_stage_presence, conflicted_pair, require_git, Fixture};
 use bonsai_core::error::AppError;
 use bonsai_core::git::conflict::{
     get_conflict, list_conflicts, resolve_conflict, ConflictKind, ConflictResolution,
     MAX_CONFLICT_BYTES,
 };
-use crate::common;
-use crate::conflict_support::{cli_stage_presence, conflicted_pair, require_git, Fixture};
 
 // ============================================================ §9.1 kind derivation vs ls-files -u
 
@@ -81,7 +81,11 @@ fn marker_text_is_byte_identical_to_cli_worktree_file() {
         String::from_utf8_lossy(&cli_bytes).into_owned(),
         "marker view must be byte-identical to the CLI's conflicted worktree file"
     );
-    assert!(view.text.contains("<<<<<<<") && view.text.contains("=======") && view.text.contains(">>>>>>>"));
+    assert!(
+        view.text.contains("<<<<<<<")
+            && view.text.contains("=======")
+            && view.text.contains(">>>>>>>")
+    );
 }
 
 #[test]

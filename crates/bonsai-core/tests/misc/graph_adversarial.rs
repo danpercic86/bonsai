@@ -34,7 +34,9 @@ fn commit(repo: &git2::Repository, msg: &str, parents: &[git2::Oid], t: i64) -> 
     let blob = repo.blob(msg.as_bytes()).expect("blob");
     let mut tb = repo.treebuilder(None).expect("treebuilder");
     tb.insert("f.txt", blob, 0o100_644).expect("tree insert");
-    let tree = repo.find_tree(tb.write().expect("write tree")).expect("find tree");
+    let tree = repo
+        .find_tree(tb.write().expect("write tree"))
+        .expect("find tree");
     let parent_commits: Vec<git2::Commit> = parents
         .iter()
         .map(|p| repo.find_commit(*p).expect("find parent"))
@@ -50,7 +52,8 @@ fn branch(repo: &git2::Repository, name: &str, oid: git2::Oid) {
 }
 
 fn set_head(repo: &git2::Repository, name: &str) {
-    repo.set_head(&format!("refs/heads/{name}")).expect("set head");
+    repo.set_head(&format!("refs/heads/{name}"))
+        .expect("set head");
 }
 
 /// Contract §1.1 structural invariants every layout must satisfy:
@@ -156,7 +159,10 @@ fn ancestor_branch_tip_gets_mid_history_pill() {
     assert_eq!(ids, vec![c2.to_string(), c1.to_string(), c0.to_string()]);
 
     // Pure linear geometry: one lane, chain edges only.
-    assert_eq!(l.nodes.iter().map(|n| n.lane).collect::<Vec<_>>(), vec![0, 0, 0]);
+    assert_eq!(
+        l.nodes.iter().map(|n| n.lane).collect::<Vec<_>>(),
+        vec![0, 0, 0]
+    );
     assert_eq!(l.lane_count, 1);
     let tuples: Vec<_> = l.edges.iter().map(|e| (e.from, e.to, e.lane)).collect();
     assert_eq!(tuples, vec![(0, 1, 0), (1, 2, 0)]);

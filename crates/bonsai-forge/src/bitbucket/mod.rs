@@ -120,7 +120,8 @@ impl ForgeProvider for BitbucketProvider {
         self.require_supported()?;
         let page = query.page.max(1);
         let per_page = query.per_page.clamp(1, MAX_PER_PAGE);
-        let url = rest::pull_requests_url(self.workspace(), self.slug(), query.state, per_page, page);
+        let url =
+            rest::pull_requests_url(self.workspace(), self.slug(), query.state, per_page, page);
         let resp = rest::get(self.transport(), &url, self.token.as_deref())?;
         let (items, has_next) = dto::parse_pr_list(&resp.body)?;
         Ok(PrPage {
@@ -165,7 +166,7 @@ impl ForgeProvider for BitbucketProvider {
     fn merge_pr(&self, number: u64, input: &MergePrInput) -> Result<PrDetail, AppError> {
         self.require_supported()?;
         let token = self.require_token()?; // merge REQUIRES auth
-        // Unsupported method ⇒ error BEFORE any request is sent.
+                                           // Unsupported method ⇒ error BEFORE any request is sent.
         let body = dto::merge_body(input)?;
         let url = rest::merge_pull_request_url(self.workspace(), self.slug(), number);
         // 200 returns the merged PR; not-mergeable statuses map in `post_merge`.

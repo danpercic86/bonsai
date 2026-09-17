@@ -146,7 +146,11 @@ mod tests {
 
         let ranked = rank(&index, &docs, &terms(&["auth"]), 20);
         let oids: Vec<&str> = ranked.iter().map(|(o, _)| *o).collect();
-        assert_eq!(oids, vec!["1", "3"], "only auth-bearing docs, strongest first");
+        assert_eq!(
+            oids,
+            vec!["1", "3"],
+            "only auth-bearing docs, strongest first"
+        );
         for (_, s) in &ranked {
             assert!(*s > 0.0);
         }
@@ -200,6 +204,9 @@ mod tests {
         let mut docs = BTreeMap::new();
         docs.insert("1".to_string(), doc(1, &[("a2", 1)]));
         let index = Bm25Index::build_stats(&docs);
-        assert!(rank(&index, &docs, &[], 5).is_empty(), "empty query => no hits");
+        assert!(
+            rank(&index, &docs, &[], 5).is_empty(),
+            "empty query => no hits"
+        );
     }
 }

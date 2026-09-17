@@ -211,12 +211,16 @@ pub fn classify_line(raw: &str) -> LineOutcome {
     };
     match v.get("type").and_then(Value::as_str) {
         Some("system") => classify_system(&v),
-        Some("rate_limit_event") => {
-            log_one(&format!("rate limit: {}", truncate_text(&compact(&v, trimmed), MAX_RATE_LIMIT_TEXT)))
-        }
+        Some("rate_limit_event") => log_one(&format!(
+            "rate limit: {}",
+            truncate_text(&compact(&v, trimmed), MAX_RATE_LIMIT_TEXT)
+        )),
         // A11: `--replay-user-messages` would otherwise dump the whole payload
         // (up to a few hundred KB) into the dock log. Size only, never content.
-        Some("user") => log_one(&format!("» sent {} bytes to Claude", user_payload_bytes(&v, trimmed))),
+        Some("user") => log_one(&format!(
+            "» sent {} bytes to Claude",
+            user_payload_bytes(&v, trimmed)
+        )),
         Some("assistant") => classify_assistant(&v),
         Some("result") => LineOutcome::Result,
         // `--include-partial-messages` (setting-gated, default off): the delta
@@ -245,8 +249,14 @@ fn classify_system(v: &Value) -> LineOutcome {
                 .and_then(Value::as_array)
                 .map(|a| a.iter().filter_map(Value::as_str).collect())
                 .unwrap_or_default();
-            let tools = if tools.is_empty() { "none".to_string() } else { tools.join(", ") };
-            log_one(&format!("session {session} · model {model} · tools: {tools}"))
+            let tools = if tools.is_empty() {
+                "none".to_string()
+            } else {
+                tools.join(", ")
+            };
+            log_one(&format!(
+                "session {session} · model {model} · tools: {tools}"
+            ))
         }
         // A4: resets the watchdog (the session does that for every stdout line)
         // and emits NO log line — one heartbeat per second would drown the dock.
@@ -256,13 +266,19 @@ fn classify_system(v: &Value) -> LineOutcome {
         // tokens, `estimated_tokens_delta` the step. Forward the cumulative value;
         // a missing/negative/non-integer field degrades to `None`, never an error
         // (D12), and the session then treats the line as pure liveness.
-        Some("thinking_tokens") => LineOutcome::Heartbeat(
-            v.get("estimated_tokens").and_then(Value::as_u64),
-        ),
+        Some("thinking_tokens") => {
+            LineOutcome::Heartbeat(v.get("estimated_tokens").and_then(Value::as_u64))
+        }
         // D9: a corroborating HINT only. It never drives `AwaitingInput`.
         Some("post_turn_summary") => {
-            let status = v.get("status_category").and_then(Value::as_str).unwrap_or("?");
-            let needs = v.get("needs_action").and_then(Value::as_bool).unwrap_or(false);
+            let status = v
+                .get("status_category")
+                .and_then(Value::as_str)
+                .unwrap_or("?");
+            let needs = v
+                .get("needs_action")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             log_one(&format!("summary: status={status} needsAction={needs}"))
         }
         Some(other) => log_one(&format!("system/{other}")),
@@ -289,7 +305,9 @@ fn classify_assistant(v: &Value) -> LineOutcome {
                 Some("tool_use") => {
                     let name = item.get("name").and_then(Value::as_str).unwrap_or("tool");
                     let arg = first_string_field(item.get("input")).unwrap_or_default();
-                    items.push(StreamLogItem::notable(&format!("{TOOL_GLYPH}{name}({arg})")));
+                    items.push(StreamLogItem::notable(&format!(
+                        "{TOOL_GLYPH}{name}({arg})"
+                    )));
                 }
                 Some(other) => items.push(StreamLogItem::log(&format!("assistant/{other}"))),
                 None => items.push(StreamLogItem::log("assistant/?")),
@@ -323,7 +341,9 @@ fn user_payload_bytes(v: &Value, raw: &str) -> usize {
         }
     }
     match v.get("message") {
-        Some(m) => serde_json::to_string(m).map(|s| s.len()).unwrap_or_else(|_| raw.len()),
+        Some(m) => serde_json::to_string(m)
+            .map(|s| s.len())
+            .unwrap_or_else(|_| raw.len()),
         None => raw.len(),
     }
 }
@@ -390,7 +410,11 @@ pub(crate) fn strip_control_chars(text: &str) -> String {
 /// The first string-valued field of a `tool_use` input object (serde_json orders
 /// object keys, so this is deterministic).
 fn first_string_field(input: Option<&Value>) -> Option<String> {
-    input?.as_object()?.values().find_map(Value::as_str).map(str::to_string)
+    input?
+        .as_object()?
+        .values()
+        .find_map(Value::as_str)
+        .map(str::to_string)
 }
 
 /// Probe the KNOWN partial-message shapes for a text delta. Unverified protocol

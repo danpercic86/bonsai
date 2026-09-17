@@ -186,12 +186,20 @@ pub fn spawn_watcher(
                     relevant += 1;
                     refs |= c == PathClass::Refs;
                 }
-                WatchTick { paths, relevant, refs }
+                WatchTick {
+                    paths,
+                    relevant,
+                    refs,
+                }
             }
             // watcher error → trigger a refresh, cheap and safe; count it as one
             // relevant path so the debounce fires, and as ref-affecting so the
             // frontend runs the WIDE refresh (we don't know what was dropped).
-            Err(_) => WatchTick { paths: 1, relevant: 1, refs: true },
+            Err(_) => WatchTick {
+                paths: 1,
+                relevant: 1,
+                refs: true,
+            },
         };
         log_watcher(tick.paths, tick.relevant, false, None);
         if tick.relevant > 0 {

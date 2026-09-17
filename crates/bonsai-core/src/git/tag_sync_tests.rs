@@ -35,8 +35,7 @@ fn classify_covers_all_statuses() {
     remote_annotated.insert("annot".to_string());
 
     let entries = classify(&local, &remote, &remote_annotated);
-    let by: HashMap<&str, &TagSyncEntry> =
-        entries.iter().map(|e| (e.name.as_str(), e)).collect();
+    let by: HashMap<&str, &TagSyncEntry> = entries.iter().map(|e| (e.name.as_str(), e)).collect();
 
     assert_eq!(by["in-sync"].status, TagSyncStatus::InSync);
     assert_eq!(by["stale"].status, TagSyncStatus::Stale);
@@ -101,7 +100,10 @@ fn classify_lightweight_vs_annotated_both_directions() {
 
     let e = &classify(&local, &remote, &remote_annotated)[0];
     assert_eq!(e.status, TagSyncStatus::InSync);
-    assert!(e.annotated, "annotated-on-remote must surface annotated=true");
+    assert!(
+        e.annotated,
+        "annotated-on-remote must surface annotated=true"
+    );
 
     // Direction 2: annotated LOCAL, lightweight REMOTE, same committish.
     let mut local2 = HashMap::new();
@@ -112,7 +114,10 @@ fn classify_lightweight_vs_annotated_both_directions() {
 
     let e2 = &classify(&local2, &remote2, &empty)[0];
     assert_eq!(e2.status, TagSyncStatus::InSync);
-    assert!(e2.annotated, "annotated-on-local must surface annotated=true");
+    assert!(
+        e2.annotated,
+        "annotated-on-local must surface annotated=true"
+    );
 }
 
 /// `resolve_default_remote`: caller override wins; else `origin` is preferred
@@ -206,7 +211,8 @@ fn list_tag_sync_against_bare_remote() {
     repo.tag("annot", &obj0, &sig(), "annotated", false)
         .expect("annot");
     repo.tag_lightweight("moved", &obj0, false).expect("moved");
-    repo.tag_lightweight("localonly", &obj1, false).expect("localonly");
+    repo.tag_lightweight("localonly", &obj1, false)
+        .expect("localonly");
     repo.tag_lightweight("remoteonly", &obj1, false)
         .expect("remoteonly");
 
@@ -226,8 +232,11 @@ fn list_tag_sync_against_bare_remote() {
 
     let report = list_tag_sync(work_dir.path(), None).expect("reconcile");
     assert_eq!(report.remote, "origin");
-    let by: HashMap<&str, &TagSyncEntry> =
-        report.entries.iter().map(|e| (e.name.as_str(), e)).collect();
+    let by: HashMap<&str, &TagSyncEntry> = report
+        .entries
+        .iter()
+        .map(|e| (e.name.as_str(), e))
+        .collect();
 
     assert_eq!(by["light"].status, TagSyncStatus::InSync);
     // The crux: annotated tag with matching committish is IN-SYNC, not stale.
@@ -318,7 +327,8 @@ fn lightweight_local_vs_annotated_remote_same_commit_in_sync() {
         .push(&["refs/tags/mix:refs/tags/mix"], None)
         .expect("push");
     repo.tag_delete("mix").expect("del local annot");
-    repo.tag_lightweight("mix", &obj0, false).expect("light local");
+    repo.tag_lightweight("mix", &obj0, false)
+        .expect("light local");
 
     let report = list_tag_sync(work_dir.path(), None).expect("reconcile");
     let e = &report.entries[0];
@@ -388,7 +398,8 @@ fn force_refresh_corrects_stale() {
     remote
         .push(&["refs/tags/v1:refs/tags/v1"], None)
         .expect("push");
-    repo.tag_lightweight("v1", &obj0, true).expect("stale local");
+    repo.tag_lightweight("v1", &obj0, true)
+        .expect("stale local");
 
     // Pre-condition: stale.
     let before = list_tag_sync(work_dir.path(), None).expect("before");

@@ -8,9 +8,9 @@
 
 use std::path::Path;
 
-use bonsai_core::git::diff::{FileDiff, LineKind};
 use crate::common;
 use crate::common::{commit_fixed, git, git_raw, init_repo};
+use bonsai_core::git::diff::{FileDiff, LineKind};
 
 // ---------------------------------------------------------------------------
 // Oracle parser (contract §6.1)

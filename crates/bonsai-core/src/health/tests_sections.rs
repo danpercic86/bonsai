@@ -17,27 +17,39 @@ fn branches_counts_and_stale_rollup() {
 
     branch_at(&repo, "merged-1", c0); // merged into main
     branch_at(&repo, "merged-2", c1); // merged into main
-    repo.remote("origin", "https://example.invalid/x.git").expect("remote");
+    repo.remote("origin", "https://example.invalid/x.git")
+        .expect("remote");
     // gone-upstream branch with a unique commit.
     branch_at(&repo, "gone", c0);
     {
         let sig = git2::Signature::now("Test User", "test@example.com").expect("sig");
         let parent = repo.find_commit(c0).expect("c0");
         let tree = parent.tree().expect("tree");
-        repo.commit(Some("refs/heads/gone"), &sig, &sig, "gone work\n", &tree, &[&parent])
-            .expect("commit on gone");
+        repo.commit(
+            Some("refs/heads/gone"),
+            &sig,
+            &sig,
+            "gone work\n",
+            &tree,
+            &[&parent],
+        )
+        .expect("commit on gone");
         let mut cfg = repo.config().expect("config");
         cfg.set_str("branch.gone.remote", "origin").expect("cfg");
-        cfg.set_str("branch.gone.merge", "refs/heads/gone").expect("cfg");
+        cfg.set_str("branch.gone.merge", "refs/heads/gone")
+            .expect("cfg");
     }
     // Upstream for main: remote-tracking ref at C1 → ahead 1, behind 0.
-    repo.reference("refs/remotes/origin/main", c1, true, "seed").expect("ref");
+    repo.reference("refs/remotes/origin/main", c1, true, "seed")
+        .expect("ref");
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("branch.main.remote", "origin").expect("cfg");
-        cfg.set_str("branch.main.merge", "refs/heads/main").expect("cfg");
+        cfg.set_str("branch.main.merge", "refs/heads/main")
+            .expect("cfg");
     }
-    repo.reference("refs/tags/v1", c2, true, "tag").expect("tag");
+    repo.reference("refs/tags/v1", c2, true, "tag")
+        .expect("tag");
 
     let b = collect_branches(d).expect("branches");
     assert_eq!(b.local_count, 4, "main + merged-1 + merged-2 + gone");
@@ -113,7 +125,10 @@ fn branches_unborn_repo_ok() {
     assert!(b.unborn);
     assert_eq!(b.local_count, 0);
     assert!(b.stale.is_none());
-    assert!(b.stale_error.is_some(), "stale base unresolvable → sub-error");
+    assert!(
+        b.stale_error.is_some(),
+        "stale base unresolvable → sub-error"
+    );
 }
 
 // ------------------------------------------------------- working state
@@ -227,13 +242,21 @@ fn section_isolation() {
     // Sibling sections on the same repo still produce data.
     let health = collect_repo_health(d);
     assert!(health.stats.data.is_some(), "{:?}", health.stats.error);
-    assert!(health.branches.data.is_some(), "{:?}", health.branches.error);
+    assert!(
+        health.branches.data.is_some(),
+        "{:?}",
+        health.branches.error
+    );
     assert!(
         health.working_state.data.is_some(),
         "{:?}",
         health.working_state.error
     );
-    assert!(health.structure.data.is_some(), "{:?}", health.structure.error);
+    assert!(
+        health.structure.data.is_some(),
+        "{:?}",
+        health.structure.error
+    );
     assert!(health.generated_at > 0);
 
     // Whole-fn never errs even on a non-repo dir: every section reports
@@ -268,7 +291,9 @@ fn mixed_state_real_collector_failure() {
     // loose objects are written read-only).
     let hex = c0.to_string();
     let obj = d.join(".git/objects").join(&hex[..2]).join(&hex[2..]);
-    let mut perms = std::fs::metadata(&obj).expect("object exists").permissions();
+    let mut perms = std::fs::metadata(&obj)
+        .expect("object exists")
+        .permissions();
     #[allow(clippy::permissions_set_readonly_false)]
     perms.set_readonly(false);
     std::fs::set_permissions(&obj, perms).expect("clear readonly");
@@ -280,13 +305,21 @@ fn mixed_state_real_collector_failure() {
         "stats must fail on the missing parent object (error: {:?})",
         health.stats.error
     );
-    assert!(health.branches.data.is_some(), "{:?}", health.branches.error);
+    assert!(
+        health.branches.data.is_some(),
+        "{:?}",
+        health.branches.error
+    );
     assert!(
         health.working_state.data.is_some(),
         "{:?}",
         health.working_state.error
     );
-    assert!(health.structure.data.is_some(), "{:?}", health.structure.error);
+    assert!(
+        health.structure.data.is_some(),
+        "{:?}",
+        health.structure.error
+    );
 }
 
 // ------------------------------------------------------- perf ceiling (§5)
@@ -331,9 +364,11 @@ fn perf_ceiling_on_20k_fixture() {
 
     // Warm-up (page cache, odb) + correctness assertions.
     let warm = collect_repo_health(&repo_path);
-    let stats = warm.stats.data.as_ref().unwrap_or_else(|| {
-        panic!("stats section failed: {:?}", warm.stats.error)
-    });
+    let stats = warm
+        .stats
+        .data
+        .as_ref()
+        .unwrap_or_else(|| panic!("stats section failed: {:?}", warm.stats.error));
     assert!(
         stats.commit_count >= 20_000,
         "fixture has 20k+ commits, got {}",

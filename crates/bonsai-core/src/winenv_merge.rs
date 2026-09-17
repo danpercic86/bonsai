@@ -212,7 +212,10 @@ pub fn merge_path(
     process_path: &str,
     env: &dyn WinEnv,
 ) -> Option<(String, Vec<String>)> {
-    let mut seen: Vec<String> = process_path.split(';').filter_map(normalize_segment).collect();
+    let mut seen: Vec<String> = process_path
+        .split(';')
+        .filter_map(normalize_segment)
+        .collect();
 
     let mut added: Vec<String> = Vec::new();
     for source in [system_path, user_path] {

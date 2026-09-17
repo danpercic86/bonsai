@@ -23,13 +23,13 @@ mod lane;
 mod seed;
 mod stash_seed;
 mod stream;
-use filter::SeedPlan;
-use stash_seed::collect_stashes;
-use lane::LaneWalker;
 pub use decorate::redecorate_chunks;
 pub use filter::GraphFilter;
+use filter::SeedPlan;
 pub use fold::{compute_fold_spans, fold_spans_of_chunks, FoldScan, FoldSpan, MIN_FOLD_RUN};
+use lane::LaneWalker;
 pub use seed::{graph_seed, graph_seed_with, GraphSeed};
+use stash_seed::collect_stashes;
 pub use stream::{
     stream_graph_core, stream_graph_from_repo, stream_graph_from_repo_collect, GraphChunk,
     GraphStreamEdge, StreamNode, STREAM_BATCH, STREAM_FIRST_BATCH, STREAM_MAX_COMMITS,
@@ -380,8 +380,11 @@ fn collect_refs(
     // Sort each commit's labels into pill order.
     for v in labels.values_mut() {
         v.sort_by(|a, b| {
-            (pill_rank(a.kind), !a.is_head, a.name.as_str())
-                .cmp(&(pill_rank(b.kind), !b.is_head, b.name.as_str()))
+            (pill_rank(a.kind), !a.is_head, a.name.as_str()).cmp(&(
+                pill_rank(b.kind),
+                !b.is_head,
+                b.name.as_str(),
+            ))
         });
     }
 

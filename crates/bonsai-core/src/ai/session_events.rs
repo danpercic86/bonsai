@@ -33,13 +33,21 @@ impl<'a> ClaudeSession<'a> {
     pub(super) fn trim_stderr_tail(&mut self) {
         let count = self.stderr_tail.chars().count();
         if count > MAX_EVENT_TEXT {
-            self.stderr_tail = self.stderr_tail.chars().skip(count - MAX_EVENT_TEXT).collect();
+            self.stderr_tail = self
+                .stderr_tail
+                .chars()
+                .skip(count - MAX_EVENT_TEXT)
+                .collect();
         }
     }
 
     /// Next event in the run's sequence (seq 0 is `Started`).
     pub(super) fn event(&mut self, kind: AiRunEventKind) -> AiRunEvent {
-        let elapsed = self.clock.now().saturating_duration_since(self.started).as_millis() as u64;
+        let elapsed = self
+            .clock
+            .now()
+            .saturating_duration_since(self.started)
+            .as_millis() as u64;
         let ev = AiRunEvent::new(&self.ctl.run_id, self.seq, kind, elapsed, self.turn);
         self.seq += 1;
         ev

@@ -16,8 +16,8 @@ use std::path::PathBuf;
 
 use bonsai_core::error::AppError;
 
-use crate::obs::metrics_purge::{purge_metrics_dir, ClearMode, MetricsClearCounts};
 use super::{metrics_file, MetricTotals, MetricsFile, MetricsState, METRICS_SCHEMA_VERSION};
+use crate::obs::metrics_purge::{purge_metrics_dir, ClearMode, MetricsClearCounts};
 use crate::obs::writer;
 use crate::perf::PerfCounters;
 

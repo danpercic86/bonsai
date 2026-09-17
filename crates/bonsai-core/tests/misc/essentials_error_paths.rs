@@ -17,13 +17,13 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{git, git_env, init_repo, FIXED_DATE};
 use bonsai_core::error::AppError;
 use bonsai_core::git::cherrypick::{cherrypick_commit, CherrypickOutcome};
 use bonsai_core::git::commit::amend_commit;
 use bonsai_core::git::reset::{reset_branch, ResetMode};
 use bonsai_core::git::revert::revert_commit;
-use crate::common;
-use crate::common::{git, git_env, init_repo, FIXED_DATE};
 
 macro_rules! require_git {
     () => {

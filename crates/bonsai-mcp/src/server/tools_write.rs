@@ -252,7 +252,10 @@ impl BonsaiServer {
     /// `noOperationInProgress`. Does not touch a rebase - use `bonsai_rebase_abort`.
     #[tool]
     async fn bonsai_abort_merge(&self) -> CallToolResult {
-        match self.run_blocking(bonsai_core::git::merge::abort_merge).await {
+        match self
+            .run_blocking(bonsai_core::git::merge::abort_merge)
+            .await
+        {
             Ok(()) => ok_null(),
             Err(e) => err_result(e),
         }

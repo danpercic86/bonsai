@@ -90,9 +90,15 @@ fn force_push_args_exact_vec() {
         ]
     );
     // No leading '+': an unconditional force would defeat --force-with-lease.
-    assert!(!args[6].starts_with('+'), "refspec must not force unconditionally");
+    assert!(
+        !args[6].starts_with('+'),
+        "refspec must not force unconditionally"
+    );
     // --no-verify present so git does not re-run the pre-push hook we ran.
-    assert!(args.contains(&"--no-verify".to_string()), "must suppress git's own pre-push");
+    assert!(
+        args.contains(&"--no-verify".to_string()),
+        "must suppress git's own pre-push"
+    );
     // F-A5-d: `--` immediately precedes the positional remote + refspec.
     assert_eq!(args[4], "--", "end-of-options guards the positionals");
 }
@@ -208,7 +214,10 @@ fn classify_unknown_is_git() {
 #[test]
 fn push_stderr_tail_is_compact() {
     assert_eq!(push_stderr_tail("   \n  \n"), "git push failed");
-    let many = (0..20).map(|i| format!("line{i}")).collect::<Vec<_>>().join("\n");
+    let many = (0..20)
+        .map(|i| format!("line{i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     let tail = push_stderr_tail(&many);
     assert_eq!(tail.lines().count(), 6);
     assert!(tail.contains("line19"));
@@ -241,10 +250,22 @@ fn remote_info_wire_shape() {
 #[test]
 fn remote_info_sort_order() {
     let mut v = [
-        RemoteInfo { name: "Zeta".to_string(), url: None },
-        RemoteInfo { name: "alpha".to_string(), url: None },
-        RemoteInfo { name: "Beta".to_string(), url: None },
-        RemoteInfo { name: "beta".to_string(), url: None },
+        RemoteInfo {
+            name: "Zeta".to_string(),
+            url: None,
+        },
+        RemoteInfo {
+            name: "alpha".to_string(),
+            url: None,
+        },
+        RemoteInfo {
+            name: "Beta".to_string(),
+            url: None,
+        },
+        RemoteInfo {
+            name: "beta".to_string(),
+            url: None,
+        },
     ];
     v.sort_by(|a, b| {
         a.name

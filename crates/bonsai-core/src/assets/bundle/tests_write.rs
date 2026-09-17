@@ -9,12 +9,7 @@ use super::*;
 
 // ---- P26b (write path) -------------------------------------------------
 
-fn input(
-    kind: AgentAssetKind,
-    name: &str,
-    fm: &[(&str, &str)],
-    body: &str,
-) -> AgentAssetInput {
+fn input(kind: AgentAssetKind, name: &str, fm: &[(&str, &str)], body: &str) -> AgentAssetInput {
     AgentAssetInput {
         kind,
         name: name.to_string(),
@@ -134,7 +129,9 @@ fn save_edits_existing_asset_atomically() {
         "new"
     );
     assert_eq!(a.body, "\nnew body\n");
-    assert!(!root.join(".claude/agents/test-runner.md.bonsai-tmp").exists());
+    assert!(!root
+        .join(".claude/agents/test-runner.md.bonsai-tmp")
+        .exists());
 }
 
 // SHOULD-FIX (data-loss fail-open): saving over an existing COMPLEX asset is
@@ -237,7 +234,11 @@ fn save_edit_preserves_unknown_keys() {
 
     let re = read_agent_asset(root, AgentAssetKind::Agent, "test-runner").unwrap();
     assert_eq!(
-        re.frontmatter.iter().find(|f| f.key == "color").unwrap().value,
+        re.frontmatter
+            .iter()
+            .find(|f| f.key == "color")
+            .unwrap()
+            .value,
         "blue",
         "unknown key survives the round-trip"
     );
@@ -258,8 +259,7 @@ fn save_rejects_bad_names_but_writes_missing_required() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
     for bad in ["", "a/b", "a\\b", "..", "a:b", "-x"] {
-        let err = save_agent_asset(root, input(AgentAssetKind::Agent, bad, &[], "b"))
-            .unwrap_err();
+        let err = save_agent_asset(root, input(AgentAssetKind::Agent, bad, &[], "b")).unwrap_err();
         assert!(
             matches!(err, AppError::InvalidName(_)),
             "name {bad:?} should be InvalidName"
@@ -282,9 +282,11 @@ fn save_rejects_bad_names_but_writes_missing_required() {
     assert!(root.join(".claude/agents/incomplete.md").is_file());
     let a = inv.assets.iter().find(|a| a.name == "incomplete").unwrap();
     assert!(!a.validation.valid);
-    assert!(a.validation.issues.iter().any(|i| i.severity
-        == IssueSeverity::Error
-        && i.message.contains("description")));
+    assert!(a
+        .validation
+        .issues
+        .iter()
+        .any(|i| i.severity == IssueSeverity::Error && i.message.contains("description")));
 }
 
 // §11 row 10 — delete removes the whole skill dir; agent/command remove just
@@ -299,7 +301,11 @@ fn delete_removes_skill_dir_and_single_files() {
         b"---\nname: code-review\n---\n\nbody\n",
     );
     // A supporting file beside SKILL.md must go with the dir.
-    write(root, ".claude/skills/code-review/helper.py", b"print('hi')\n");
+    write(
+        root,
+        ".claude/skills/code-review/helper.py",
+        b"print('hi')\n",
+    );
     write(
         root,
         ".claude/agents/test-runner.md",

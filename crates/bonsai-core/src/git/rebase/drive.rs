@@ -73,8 +73,8 @@ pub(super) fn run_rebase_loop(
 ) -> Result<DriveResult, AppError> {
     loop {
         match rebase.next() {
-            None => break,                                 // plan exhausted
-            Some(Err(e)) => return Err(map_conflict(e)),   // caller decides abort-vs-keep
+            None => break,                               // plan exhausted
+            Some(Err(e)) => return Err(map_conflict(e)), // caller decides abort-vs-keep
             Some(Ok(_op)) => {
                 // op.kind() is always Pick for plain rebase.
                 if repo.index()?.has_conflicts() {

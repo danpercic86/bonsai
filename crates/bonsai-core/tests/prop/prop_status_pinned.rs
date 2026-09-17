@@ -34,14 +34,19 @@ fn check(initial: &[(&str, u32)], ops: &[(u8, u64, u32, &str)]) {
         eprintln!("skipping: `git` CLI not found on PATH");
         return;
     }
-    let initial: Vec<(String, u32)> =
-        initial.iter().map(|(p, s)| ((*p).to_string(), *s)).collect();
+    let initial: Vec<(String, u32)> = initial
+        .iter()
+        .map(|(p, s)| ((*p).to_string(), *s))
+        .collect();
     let ops: Vec<RawOp> = ops
         .iter()
         .map(|(kind, sel, seed, name)| (*kind, *sel as usize, *seed, (*name).to_string()))
         .collect();
     let (read, oracle) = run_case(&initial, &ops);
-    assert_eq!(read, oracle, "read_status disagrees with git porcelain oracle");
+    assert_eq!(
+        read, oracle,
+        "read_status disagrees with git porcelain oracle"
+    );
 }
 
 /// Recorded verbatim from the `# shrinks to` comment of seed
@@ -77,10 +82,7 @@ fn pinned_regression_13f95da3_matches_porcelain() {
 #[test]
 fn pinned_regression_acc61065_matches_porcelain() {
     check(
-        &[
-            ("lct/kcecx", 3798304349),
-            ("fuqk/vf", 2423275639),
-        ],
+        &[("lct/kcecx", 3798304349), ("fuqk/vf", 2423275639)],
         &[
             (3, 3171494165003405745, 4107985199, "zkm"),
             (1, 13848031023464332986, 2070612901, "fpy"),

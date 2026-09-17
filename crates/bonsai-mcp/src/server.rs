@@ -12,9 +12,7 @@ use std::sync::Arc;
 
 use bonsai_core::error::AppError;
 use rmcp::handler::server::router::tool::ToolRouter;
-use rmcp::model::{
-    CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerInfo,
-};
+use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerInfo};
 use rmcp::{schemars, tool_handler, ServerHandler};
 
 mod helpers;
@@ -25,7 +23,6 @@ use helpers::*;
 /// and the sibling tool modules' `use super::*` keep resolving unchanged.
 mod repos;
 pub use repos::*;
-
 
 /// The immutable server value. Holds the workdir source (every `bonsai_core` fn
 /// opens its own repo from the resolved path) plus the write-gate flag.
@@ -186,7 +183,6 @@ impl BonsaiServer {
         Self::write_mutation_router().list_all().len()
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // Input param structs (§7.4). Field docs become the JSON-Schema descriptions
@@ -358,7 +354,6 @@ fn parse_resolution(s: &str) -> Result<bonsai_core::git::conflict::ConflictResol
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Read tools (§7.1) live in `tools_read`; mutation tools (§7.3) in
 // `tools_write`. Each is a `#[tool_router]` impl block whose generated router
@@ -415,6 +410,6 @@ impl ServerHandler for BonsaiServer {
 }
 
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod model_contract_tests;
+#[cfg(test)]
+mod tests;

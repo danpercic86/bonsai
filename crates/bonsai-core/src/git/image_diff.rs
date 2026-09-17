@@ -64,7 +64,11 @@ pub struct ImageDiff {
 /// constructs it exactly where it picks a `*_file_diff` command today.
 /// (`tag = "kind"`, all keys + field names camelCase.)
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ImageDiffRequest {
     /// `staged == false`: old = index blob, new = workdir file.
     /// `staged == true`: old = HEAD tree blob, new = index blob.
@@ -96,8 +100,7 @@ pub enum ImageDiffRequest {
 }
 
 /// The standard RFC 4648 base64 alphabet (index -> output char).
-const B64_ALPHABET: &[u8; 64] =
-    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const B64_ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 /// Hand-rolled standard-alphabet base64 encoder with `=` padding (OQ5 — no
 /// `base64` crate dependency). Each 3-byte group becomes 4 output chars; a
@@ -303,7 +306,6 @@ pub fn get_image_diff(workdir: &Path, req: &ImageDiffRequest) -> Result<ImageDif
         new_too_large,
     })
 }
-
 
 #[cfg(test)]
 mod tests;

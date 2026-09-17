@@ -94,8 +94,7 @@ pub async fn apply_identity_profile(
     user_email: String,
     signing_key: Option<String>,
 ) -> Result<ConfigView, AppError> {
-    apply_identity_profile_inner(state.inner(), &repo_id, user_name, user_email, signing_key)
-        .await
+    apply_identity_profile_inner(state.inner(), &repo_id, user_name, user_email, signing_key).await
 }
 
 /// Runtime-free core of `apply_identity_profile` (unit-testable without a
@@ -109,12 +108,7 @@ pub(crate) async fn apply_identity_profile_inner(
 ) -> Result<ConfigView, AppError> {
     let workdir = repo_path(state, repo_id)?; // NoRepo if unknown
     tauri::async_runtime::spawn_blocking(move || {
-        config::apply_identity_profile(
-            &workdir,
-            &user_name,
-            &user_email,
-            signing_key.as_deref(),
-        )
+        config::apply_identity_profile(&workdir, &user_name, &user_email, signing_key.as_deref())
     })
     .await
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?

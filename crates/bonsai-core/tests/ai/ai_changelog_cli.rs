@@ -14,10 +14,10 @@
 
 use std::path::Path;
 
-use bonsai_core::ai::RunOpts;
-use bonsai_core::git::ai_changelog::{generate_changelog, AiChangelog, ChangelogRange};
 use crate::common;
 use crate::common::{git, git_env, init_repo};
+use bonsai_core::ai::RunOpts;
+use bonsai_core::git::ai_changelog::{generate_changelog, AiChangelog, ChangelogRange};
 
 const STUB_BODY: &str = "MERGED_BODY_OK";
 const STUB_MODE_ENV: &str = "BONSAI_STUB_MODE";
@@ -133,13 +133,19 @@ fn between_refs_tag_range_matches_git_log_oracle() {
         .lines()
         .map(|h| h[..7].to_string())
         .collect();
-    assert_eq!(ours, oracle, "changelog commit set must match `git log v1..v2`");
+    assert_eq!(
+        ours, oracle,
+        "changelog commit set must match `git log v1..v2`"
+    );
     assert_eq!(ours.len(), 2, "two commits (B, C) between v1 and v2");
     assert_eq!(result.commit_count, 2);
     assert_eq!(result.from_ref, "v1");
     assert_eq!(result.to_ref, "v2");
     // The net diffstat carries the range's changed file.
-    assert!(payload.contains("f.txt"), "diffstat lacks the changed file:\n{payload}");
+    assert!(
+        payload.contains("f.txt"),
+        "diffstat lacks the changed file:\n{payload}"
+    );
 }
 
 // ============================================================ §7.10 sinceLastTag oracle
@@ -208,7 +214,10 @@ fn changelog_returns_stub_body_with_commits_and_diffstat() {
             to: "v2".to_string(),
         },
     );
-    assert!(payload.contains("COMMITS:\n"), "payload lacks COMMITS:\n{payload}");
+    assert!(
+        payload.contains("COMMITS:\n"),
+        "payload lacks COMMITS:\n{payload}"
+    );
     assert!(
         payload.contains("\nNET CHANGES (diffstat):\n"),
         "payload lacks NET CHANGES diffstat:\n{payload}"

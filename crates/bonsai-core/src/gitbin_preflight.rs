@@ -8,7 +8,6 @@
 
 use super::{git_command, git_not_found_message, refresh_git_bin, GitBinSource};
 
-
 /// Result of the one-shot startup preflight (P70 §4.1). Mirrors
 /// `ai::AiAvailability`'s contract: a missing git is a NORMAL result
 /// (`found: false`), never an error.
@@ -113,7 +112,6 @@ pub fn check_availability() -> GitAvailability {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,11 +163,7 @@ mod tests {
             assert!(a.path.is_some(), "a found git must report its path");
             assert_ne!(a.source, GitBinSource::Fallback);
             assert!(a.detail.starts_with("Git "), "{}", a.detail);
-            assert!(
-                a.detail.contains(source_label(a.source)),
-                "{}",
-                a.detail
-            );
+            assert!(a.detail.contains(source_label(a.source)), "{}", a.detail);
         } else {
             // Not found: the detail IS the honest §3.3 copy, and `path` is
             // populated only when a candidate actually resolved (UI D1).

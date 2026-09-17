@@ -37,7 +37,11 @@ fn no_unmigrated_app_emit_site() {
             if path.extension().and_then(|e| e.to_str()) != Some("rs") {
                 continue;
             }
-            let rel = path.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/");
+            let rel = path
+                .strip_prefix(&root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
             // The sole legitimate importer is the helper itself.
             if rel == "obs/trace.rs" {
                 continue;
@@ -77,12 +81,16 @@ fn bonsai_core_has_no_obs_reference() {
                 continue;
             }
             let text = std::fs::read_to_string(&path).expect("read core file");
-            if text.contains("crate::obs") || text.contains("obs::phase") || text.contains(" obs::") {
+            if text.contains("crate::obs") || text.contains("obs::phase") || text.contains(" obs::")
+            {
                 offenders.push(path.to_string_lossy().to_string());
             }
         }
     }
-    assert!(offenders.is_empty(), "bonsai-core references obs: {offenders:?}");
+    assert!(
+        offenders.is_empty(),
+        "bonsai-core references obs: {offenders:?}"
+    );
 }
 
 #[test]
@@ -131,7 +139,13 @@ fn ipc_recv_json_has_cmd_and_no_args_hash() {
     assert_eq!(v["kind"], "ipc.recv");
     assert_eq!(v["cmd"], "get_graph");
     assert_eq!(v["trace"], "abc123-x9");
-    assert!(v.get("argsHash").is_none(), "ipc.recv must have no argsHash");
-    assert!(v.get("argsShape").is_none(), "ipc.recv must have no argsShape");
+    assert!(
+        v.get("argsHash").is_none(),
+        "ipc.recv must have no argsHash"
+    );
+    assert!(
+        v.get("argsShape").is_none(),
+        "ipc.recv must have no argsShape"
+    );
     assert!(v.get("args").is_none(), "ipc.recv must have no args");
 }

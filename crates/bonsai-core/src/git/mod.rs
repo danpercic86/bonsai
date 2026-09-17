@@ -1,3 +1,7 @@
+/// P87 git-activity observability: the event model + recorder/emitter.
+pub mod activity;
+/// P87b FU-1: the read-only, infallible resolver for a run's `target` ref.
+pub mod activity_target;
 pub mod ai_branch_name;
 pub mod ai_changelog;
 pub mod ai_commit;
@@ -19,10 +23,6 @@ pub mod ai_resolve_stream;
 /// (P68 §6.3). Private: only that module may fabricate run events.
 mod ai_resolve_stream_events;
 pub mod ai_summary;
-/// P87 git-activity observability: the event model + recorder/emitter.
-pub mod activity;
-/// P87b FU-1: the read-only, infallible resolver for a run's `target` ref.
-pub mod activity_target;
 pub mod autostash;
 pub mod bisect;
 pub mod blame;
@@ -54,11 +54,11 @@ pub mod merge;
 /// P87 activity-recording merge-commit core (split from `merge.rs` for size).
 pub mod merge_activity;
 pub mod opstate;
-/// P89 PR local diff: auto-fetch base+head then compute the base…head tree diff.
-pub mod pr_diff;
 /// Cross-module symlink-escape (path-traversal) guard tests for `ensure_within_workdir`.
 #[cfg(test)]
 mod path_traversal_tests;
+/// P89 PR local diff: auto-fetch base+head then compute the base…head tree diff.
+pub mod pr_diff;
 pub mod rebase;
 pub mod rebase_interactive;
 pub mod reflog;
@@ -67,8 +67,8 @@ pub mod remote;
 pub mod remote_activity;
 /// P87 activity-recording push/force-push cores (split from `remote.rs`).
 pub mod remote_push_activity;
-pub mod reset;
 pub mod repo;
+pub mod reset;
 pub mod revert;
 pub mod search;
 pub mod signing;
@@ -87,15 +87,15 @@ mod submodule_reconnect;
 mod submodule_rollback;
 /// P82 deinit/remove force machinery for `submodule` (private to `git`).
 mod submodule_teardown;
-pub mod tags;
 pub mod tag_sync;
+pub mod tags;
 pub mod timefmt;
 pub mod timeout;
 pub mod undo;
 pub mod worktree;
+pub mod worktree_copy;
 /// P88b/B2a handle-reusing twins of the worktree readers (crate-internal).
 pub(crate) mod worktree_reuse;
-pub mod worktree_copy;
 
 /// libgit2 re-hashes every object it inflates to verify its id (strict
 /// hash verification, on by default). Over a 31k-commit walk that is

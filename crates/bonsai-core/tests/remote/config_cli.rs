@@ -19,11 +19,11 @@
 use std::path::Path;
 use std::process::Command;
 
+use crate::common::{git, git_ok, have_git, scratch_dir};
 use bonsai_core::error::AppError;
 use bonsai_core::git::config::{
     read_config, set_config, unset_config, ConfigLevelArg, ConfigLevelName,
 };
-use crate::common::{git, git_ok, have_git, scratch_dir};
 
 /// `git config <args>` with env overrides; returns `Some(stdout)` on success,
 /// `None` on non-zero exit (e.g. an unset key). Used to assert unset keys.
@@ -84,24 +84,36 @@ fn config_oracle_local_and_isolated_global() {
 
     // (2) curated identity effective+target match; effectiveLevel == Local.
     let view = read_config(path, ConfigLevelArg::Local).expect("read local");
-    let name = view.curated.iter().find(|c| c.key == "user.name").expect("user.name");
+    let name = view
+        .curated
+        .iter()
+        .find(|c| c.key == "user.name")
+        .expect("user.name");
     assert_eq!(name.effective_value.as_deref(), Some("Local Person"));
     assert_eq!(name.target_value.as_deref(), Some("Local Person"));
     assert_eq!(name.effective_level, Some(ConfigLevelName::Local));
 
     // (3) set alias.co → matches CLI --get + appears in advanced.
     set_config(path, ConfigLevelArg::Local, "alias.co", "checkout").expect("set alias");
-    assert_eq!(git(path, &["config", "--local", "--get", "alias.co"]), "checkout");
+    assert_eq!(
+        git(path, &["config", "--local", "--get", "alias.co"]),
+        "checkout"
+    );
     let view = read_config(path, ConfigLevelArg::Local).expect("read after alias");
     assert!(
-        view.advanced.iter().any(|e| e.name == "alias.co" && e.value == "checkout"),
+        view.advanced
+            .iter()
+            .any(|e| e.name == "alias.co" && e.value == "checkout"),
         "advanced missing alias.co: {:?}",
         view.advanced
     );
 
     // (4) set core.autocrlf enum → matches CLI --get.
     set_config(path, ConfigLevelArg::Local, "core.autocrlf", "input").expect("set autocrlf");
-    assert_eq!(git(path, &["config", "--local", "--get", "core.autocrlf"]), "input");
+    assert_eq!(
+        git(path, &["config", "--local", "--get", "core.autocrlf"]),
+        "input"
+    );
 
     // (5) unset alias.co → CLI --get now exits non-zero (unset).
     unset_config(path, ConfigLevelArg::Local, "alias.co").expect("unset alias");
@@ -142,7 +154,11 @@ fn config_oracle_local_and_isolated_global() {
     // (8) Per-level isolation: Local override wins for the effective value, but
     // the Global view's target value is the global write.
     let lview = read_config(path, ConfigLevelArg::Local).expect("read local w/ global set");
-    let lname = lview.curated.iter().find(|c| c.key == "user.name").expect("user.name");
+    let lname = lview
+        .curated
+        .iter()
+        .find(|c| c.key == "user.name")
+        .expect("user.name");
     assert_eq!(
         lname.effective_level,
         Some(ConfigLevelName::Local),
@@ -183,9 +199,18 @@ fn config_oracle_local_and_isolated_global() {
     assert_eq!(oname.target_value.as_deref(), Some("Local Person"));
 
     // (c) An Advanced multivar key collapses to the LAST value (contract §2/§4.2).
-    git(path, &["config", "--local", "--add", "custom.multi", "first"]);
-    git(path, &["config", "--local", "--add", "custom.multi", "second"]);
-    git(path, &["config", "--local", "--add", "custom.multi", "third"]);
+    git(
+        path,
+        &["config", "--local", "--add", "custom.multi", "first"],
+    );
+    git(
+        path,
+        &["config", "--local", "--add", "custom.multi", "second"],
+    );
+    git(
+        path,
+        &["config", "--local", "--add", "custom.multi", "third"],
+    );
     let mview = read_config(path, ConfigLevelArg::Local).expect("read multivar");
     let multi = mview
         .advanced

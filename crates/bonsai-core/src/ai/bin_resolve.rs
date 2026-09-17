@@ -78,7 +78,9 @@ pub(super) fn resolve(program: &str) -> PathBuf {
 /// The process's own inherited `PATH`, split into directories. Unset/empty
 /// yields an empty list (never a hard failure).
 fn current_path_dirs() -> Vec<PathBuf> {
-    env::var_os("PATH").map(|p| env::split_paths(&p).collect()).unwrap_or_default()
+    env::var_os("PATH")
+        .map(|p| env::split_paths(&p).collect())
+        .unwrap_or_default()
 }
 
 /// The user's login-shell `PATH`, probed at most once per process (AC4) and
@@ -188,7 +190,9 @@ fn is_executable_file(path: &Path) -> bool {
 /// Search `dirs` in order for an executable file named `program`. `None` if
 /// none of `dirs` contains one.
 fn find_in(dirs: &[PathBuf], program: &str) -> Option<PathBuf> {
-    dirs.iter().map(|dir| dir.join(program)).find(|candidate| is_executable_file(candidate))
+    dirs.iter()
+        .map(|dir| dir.join(program))
+        .find(|candidate| is_executable_file(candidate))
 }
 
 #[cfg(test)]

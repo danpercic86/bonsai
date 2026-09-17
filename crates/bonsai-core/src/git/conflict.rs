@@ -282,9 +282,7 @@ pub fn resolve_conflict(
         };
         let found = index.get_path(rel, stage);
         debug_assert!(found.is_some(), "matrix wrote a non-existent side");
-        found.ok_or_else(|| {
-            AppError::Git(format!("conflict side missing for '{path}'"))
-        })
+        found.ok_or_else(|| AppError::Git(format!("conflict side missing for '{path}'")))
     };
 
     match matrix_action(entry.kind, resolution) {

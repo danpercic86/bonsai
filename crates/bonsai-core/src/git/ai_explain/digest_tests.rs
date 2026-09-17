@@ -42,14 +42,16 @@ fn format_commit_meta_caps_at_200() {
     let lines: Vec<String> = (0..250).map(|i| format!("- {i:07} line")).collect();
     let out = format_commit_meta(&lines);
     assert_eq!(out.lines().count(), MAX_DIGEST_COMMITS + 1);
-    assert!(out.ends_with("... and 50 more commits"), "got tail: {out:?}");
+    assert!(
+        out.ends_with("... and 50 more commits"),
+        "got tail: {out:?}"
+    );
     assert!(out.starts_with("- 0000000 line"));
     // Under the cap: joined verbatim, no overflow note.
     let small = format_commit_meta(&lines[..3]);
     assert_eq!(small.lines().count(), 3);
     assert!(!small.contains("more commits"));
 }
-
 
 /// §10.1(2): BetweenRefs{main, feature} → exactly [D, C] newest-first,
 /// old_tree = B's tree; header carries the count.
@@ -67,8 +69,14 @@ fn between_refs_walk_yields_range_commits_and_merge_base_tree() {
     assert_eq!(ids, vec![d, c], "newest-first D then C");
     let b_tree = repo.find_commit(b).expect("B").tree().expect("tree").id();
     assert_eq!(old_tree.expect("old tree").id(), b_tree);
-    assert_eq!(new_tree.id(), repo.find_commit(d).expect("D").tree().expect("t").id());
-    assert!(header.contains("RANGE main..feature (2 commits)"), "got {header}");
+    assert_eq!(
+        new_tree.id(),
+        repo.find_commit(d).expect("D").tree().expect("t").id()
+    );
+    assert!(
+        header.contains("RANGE main..feature (2 commits)"),
+        "got {header}"
+    );
     assert!(!header.contains("no common ancestor"));
 }
 
@@ -85,7 +93,13 @@ fn between_refs_walk_is_capped_and_marks_truncation() {
     let mut tip = root;
     for i in 0..(MAX_DIGEST_WALK_COMMITS + 5) {
         let prev = repo.find_commit(tip).expect("prev");
-        tip = commit_at(&repo, None, &format!("c{i}"), t + 10 * (i as i64 + 1), &[&prev]);
+        tip = commit_at(
+            &repo,
+            None,
+            &format!("c{i}"),
+            t + 10 * (i as i64 + 1),
+            &[&prev],
+        );
     }
 
     let range = AiDigestRange::BetweenRefs {
@@ -104,7 +118,11 @@ fn between_refs_walk_is_capped_and_marks_truncation() {
     // Trees still anchor the full range (merge-base(root, tip) == root).
     assert_eq!(
         old_tree.expect("old tree").id(),
-        repo.find_commit(root).expect("root").tree().expect("t").id()
+        repo.find_commit(root)
+            .expect("root")
+            .tree()
+            .expect("t")
+            .id()
     );
     assert_eq!(
         new_tree.id(),
@@ -207,7 +225,10 @@ fn last_days_walk_cutoff_and_boundary() {
         old_c.tree().expect("t").id(),
         "boundary = the 10-day-old commit's tree"
     );
-    assert_eq!(new_tree.id(), repo.find_commit(new).expect("n").tree().expect("t").id());
+    assert_eq!(
+        new_tree.id(),
+        repo.find_commit(new).expect("n").tree().expect("t").id()
+    );
     assert!(header.contains("last 7 day(s)"), "got {header}");
     assert!(header.contains("(2 commits)"), "got {header}");
 

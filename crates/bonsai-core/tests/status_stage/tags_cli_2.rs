@@ -9,10 +9,10 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use bonsai_core::error::AppError;
-use bonsai_core::git::tags::{create_tag, delete_tag, push_tag};
 use crate::common;
 use crate::common::{commit_fixed, git, git_ok, init_repo};
+use bonsai_core::error::AppError;
+use bonsai_core::git::tags::{create_tag, delete_tag, push_tag};
 
 macro_rules! require_git {
     () => {
@@ -49,10 +49,24 @@ fn setup_ssh_tag_signing(dir: &Path, tag_gpgsign: bool) {
     let fwd = |p: PathBuf| p.to_string_lossy().replace('\\', "/");
     let key = fwd(dir.join("id_ed25519"));
     let out = Command::new("ssh-keygen")
-        .args(["-t", "ed25519", "-N", "", "-C", "test@example.com", "-f", &key, "-q"])
+        .args([
+            "-t",
+            "ed25519",
+            "-N",
+            "",
+            "-C",
+            "test@example.com",
+            "-f",
+            &key,
+            "-q",
+        ])
         .output()
         .expect("ssh-keygen");
-    assert!(out.status.success(), "keygen: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "keygen: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let pubtext = std::fs::read_to_string(dir.join("id_ed25519.pub")).expect("pub key");
     let mut it = pubtext.split_whitespace();
@@ -63,8 +77,18 @@ fn setup_ssh_tag_signing(dir: &Path, tag_gpgsign: bool) {
 
     git(dir, &["config", "gpg.format", "ssh"]);
     git(dir, &["config", "user.signingkey", &key]);
-    git(dir, &["config", "gpg.ssh.allowedSignersFile", &fwd(signers)]);
-    git(dir, &["config", "tag.gpgSign", if tag_gpgsign { "true" } else { "false" }]);
+    git(
+        dir,
+        &["config", "gpg.ssh.allowedSignersFile", &fwd(signers)],
+    );
+    git(
+        dir,
+        &[
+            "config",
+            "tag.gpgSign",
+            if tag_gpgsign { "true" } else { "false" },
+        ],
+    );
 }
 
 fn path_str(p: &Path) -> String {
@@ -93,20 +117,33 @@ fn unicode_and_slash_tag_names_create_and_push() {
     let path = dir.path();
 
     for name in ["release/v1", "v1-München", "级别/日本語"] {
-        create_tag(path, name, &head, None, false, false).unwrap_or_else(|e| panic!("create {name}: {e:?}"));
-        assert!(git_ok(path, &["rev-parse", "--verify", &format!("refs/tags/{name}")]),
-            "ref refs/tags/{name} exists");
+        create_tag(path, name, &head, None, false, false)
+            .unwrap_or_else(|e| panic!("create {name}: {e:?}"));
+        assert!(
+            git_ok(
+                path,
+                &["rev-parse", "--verify", &format!("refs/tags/{name}")]
+            ),
+            "ref refs/tags/{name} exists"
+        );
     }
 
     // Push the slash-name tag to a local bare remote.
     let bare = path.parent().unwrap().join(format!(
-        "{}-tags.git", path.file_name().unwrap().to_string_lossy()));
-    git(path.parent().unwrap(), &["init", "--bare", "-b", "main", &path_str(&bare)]);
+        "{}-tags.git",
+        path.file_name().unwrap().to_string_lossy()
+    ));
+    git(
+        path.parent().unwrap(),
+        &["init", "--bare", "-b", "main", &path_str(&bare)],
+    );
     git(path, &["remote", "add", "origin", &path_str(&bare)]);
     git(path, &["push", "origin", "main"]);
     push_tag(path, "origin", "release/v1", false).expect("push slash tag");
-    assert!(git_ok(&bare, &["show-ref", "--verify", "refs/tags/release/v1"]),
-        "slash tag present on the remote");
+    assert!(
+        git_ok(&bare, &["show-ref", "--verify", "refs/tags/release/v1"]),
+        "slash tag present on the remote"
+    );
     std::fs::remove_dir_all(&bare).ok();
 }
 
@@ -122,10 +159,26 @@ fn annotated_tag_of_tag_peels_to_commit() {
 
     create_tag(path, "inner", &head, Some("inner".into()), false, false).expect("inner");
     let inner_obj = git(path, &["rev-parse", "refs/tags/inner"]); // the tag OBJECT oid
-    assert_eq!(git(path, &["cat-file", "-t", &inner_obj]), "tag", "inner is a tag object");
+    assert_eq!(
+        git(path, &["cat-file", "-t", &inner_obj]),
+        "tag",
+        "inner is a tag object"
+    );
 
-    create_tag(path, "outer", &inner_obj, Some("outer".into()), false, false).expect("outer");
-    assert_eq!(git(path, &["cat-file", "-t", "refs/tags/outer"]), "tag", "outer is a tag object");
+    create_tag(
+        path,
+        "outer",
+        &inner_obj,
+        Some("outer".into()),
+        false,
+        false,
+    )
+    .expect("outer");
+    assert_eq!(
+        git(path, &["cat-file", "-t", "refs/tags/outer"]),
+        "tag",
+        "outer is a tag object"
+    );
     // Peels through both tags to the commit.
     assert_eq!(git(path, &["rev-parse", "refs/tags/outer^{commit}"]), head);
 }
@@ -161,11 +214,16 @@ fn short_oid_target_rejected() {
     let path = dir.path();
     let short = &head[..7];
     match create_tag(path, "shorty", short, None, false, false) {
-        Err(AppError::Git(m)) => assert!(m.contains("not a valid commit id") || m.contains("cannot"),
-            "short oid rejected: {m}"),
+        Err(AppError::Git(m)) => assert!(
+            m.contains("not a valid commit id") || m.contains("cannot"),
+            "short oid rejected: {m}"
+        ),
         other => panic!("short oid must be a clean Git error, got {other:?}"),
     }
-    assert!(!git_ok(path, &["rev-parse", "--verify", "refs/tags/shorty"]), "no tag created");
+    assert!(
+        !git_ok(path, &["rev-parse", "--verify", "refs/tags/shorty"]),
+        "no tag created"
+    );
 }
 
 // ------------------------------------------------ multi-MB annotated message
@@ -181,11 +239,19 @@ fn multi_mb_annotated_message() {
     let mut msg = "x".repeat(2 * 1024 * 1024);
     msg.push('\n');
     msg.push_str(marker);
-    create_tag(path, "big", &head, Some(msg.clone()), false, false).expect("create big-message tag");
+    create_tag(path, "big", &head, Some(msg.clone()), false, false)
+        .expect("create big-message tag");
 
     assert_eq!(git(path, &["cat-file", "-t", "refs/tags/big"]), "tag");
-    let body = git(path, &["for-each-ref", "--format=%(contents)", "refs/tags/big"]);
-    assert!(body.len() >= 2 * 1024 * 1024, "message preserved at size: {}", body.len());
+    let body = git(
+        path,
+        &["for-each-ref", "--format=%(contents)", "refs/tags/big"],
+    );
+    assert!(
+        body.len() >= 2 * 1024 * 1024,
+        "message preserved at size: {}",
+        body.len()
+    );
     assert!(body.contains(marker), "message tail survives");
 }
 
@@ -201,7 +267,8 @@ fn index_lock_does_not_affect_tags() {
     let lock = path.join(".git").join("index.lock");
     std::fs::write(&lock, b"").expect("create lock");
 
-    create_tag(path, "locktag", &head, Some("m".into()), false, false).expect("create despite index.lock");
+    create_tag(path, "locktag", &head, Some("m".into()), false, false)
+        .expect("create despite index.lock");
     assert!(lock.exists(), "create must not remove the index lock");
     delete_tag(path, "locktag").expect("delete despite index.lock");
     assert!(lock.exists(), "delete must not remove the index lock");
@@ -229,7 +296,10 @@ fn tag_gpgsign_true_signs_annotated() {
         body.contains("-----BEGIN SSH SIGNATURE-----"),
         "annotated tag must carry an SSH signature block: {body:?}"
     );
-    assert!(git_ok(path, &["tag", "-v", "signed"]), "git tag -v must accept the signed tag");
+    assert!(
+        git_ok(path, &["tag", "-v", "signed"]),
+        "git tag -v must accept the signed tag"
+    );
 }
 
 /// The explicit `sign=true` flag signs an annotated tag even when `tag.gpgSign`
@@ -241,15 +311,25 @@ fn tag_sign_flag_signs_without_gpgsign() {
     let path = dir.path();
     setup_ssh_tag_signing(path, /* tag_gpgsign = */ false);
 
-    create_tag(path, "flagsigned", &head, Some("release".into()), false, true)
-        .expect("annotated tag signed via explicit sign flag");
+    create_tag(
+        path,
+        "flagsigned",
+        &head,
+        Some("release".into()),
+        false,
+        true,
+    )
+    .expect("annotated tag signed via explicit sign flag");
 
     let body = git(path, &["cat-file", "-p", "refs/tags/flagsigned"]);
     assert!(
         body.contains("-----BEGIN SSH SIGNATURE-----"),
         "explicit sign flag must sign despite tag.gpgSign=false: {body:?}"
     );
-    assert!(git_ok(path, &["tag", "-v", "flagsigned"]), "git tag -v must accept the signed tag");
+    assert!(
+        git_ok(path, &["tag", "-v", "flagsigned"]),
+        "git tag -v must accept the signed tag"
+    );
 }
 
 /// Signing requested with `gpg.format=ssh` and NO `user.signingkey` fails with a
@@ -291,8 +371,15 @@ fn lightweight_tag_never_signed() {
 
     // The ref points straight at the commit — no intervening tag object.
     let kind = git(path, &["cat-file", "-t", "refs/tags/light"]);
-    assert_eq!(kind, "commit", "lightweight tag resolves to the commit, not a tag object");
-    assert_eq!(git(path, &["rev-parse", "refs/tags/light"]), head, "ref == commit oid");
+    assert_eq!(
+        kind, "commit",
+        "lightweight tag resolves to the commit, not a tag object"
+    );
+    assert_eq!(
+        git(path, &["rev-parse", "refs/tags/light"]),
+        head,
+        "ref == commit oid"
+    );
 }
 
 /// The pre-existing UNSIGNED annotated-tag path is unchanged: with `tag.gpgSign`
@@ -307,8 +394,14 @@ fn unsigned_annotated_tag_unchanged() {
         .expect("unsigned annotated tag");
 
     let body = git(path, &["cat-file", "-p", "refs/tags/plain"]);
-    assert!(!body.contains("-----BEGIN SSH SIGNATURE-----"), "must be unsigned: {body:?}");
-    assert!(!body.contains("-----BEGIN PGP SIGNATURE-----"), "must be unsigned: {body:?}");
+    assert!(
+        !body.contains("-----BEGIN SSH SIGNATURE-----"),
+        "must be unsigned: {body:?}"
+    );
+    assert!(
+        !body.contains("-----BEGIN PGP SIGNATURE-----"),
+        "must be unsigned: {body:?}"
+    );
     let kind = git(path, &["cat-file", "-t", "refs/tags/plain"]);
     assert_eq!(kind, "tag", "annotated ⇒ a real tag object");
 }

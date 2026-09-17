@@ -103,13 +103,18 @@ pub(crate) async fn ai_resolve_conflict_stream_inner(
     // inside the blocking task — or `ai_cancel_run` would keep accepting a dead id
     // and the app-exit hook would try to kill a stale pid. A drop guard is the only
     // shape that survives an early `?`.
-    let (run_id, ctl) = registry.register_within(ai::AI_MAX_CONCURRENT_RUNS).map_err(|live| {
-        AppError::AiFailed(format!(
-            "too many AI runs in progress ({live} of {} allowed) — cancel one and try again",
-            ai::AI_MAX_CONCURRENT_RUNS
-        ))
-    })?;
-    let _guard = FinishGuard { registry: registry.clone(), run_id };
+    let (run_id, ctl) = registry
+        .register_within(ai::AI_MAX_CONCURRENT_RUNS)
+        .map_err(|live| {
+            AppError::AiFailed(format!(
+                "too many AI runs in progress ({live} of {} allowed) — cancel one and try again",
+                ai::AI_MAX_CONCURRENT_RUNS
+            ))
+        })?;
+    let _guard = FinishGuard {
+        registry: registry.clone(),
+        run_id,
+    };
 
     tauri::async_runtime::spawn_blocking(move || {
         // `ctl` is MOVED here and borrowed inside: a bulk run drives several
@@ -135,10 +140,7 @@ pub async fn ai_cancel_run(
 /// Runtime-free core of `ai_cancel_run`. Not `spawn_blocking`: flipping an
 /// `AtomicBool` behind a mutex cannot block meaningfully, and the whole point is
 /// that the flag lands FAST (the session polls it every loop iteration).
-pub(crate) fn ai_cancel_run_inner(
-    registry: &AiRunRegistry,
-    run_id: &str,
-) -> Result<(), AppError> {
+pub(crate) fn ai_cancel_run_inner(registry: &AiRunRegistry, run_id: &str) -> Result<(), AppError> {
     let _known = registry.cancel(run_id);
     Ok(())
 }

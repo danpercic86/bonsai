@@ -99,9 +99,15 @@ fn plan_respects_backoff_and_reset() {
             next_run_ms: 2 * base
         }
     );
-    assert_eq!(plan(true, base, 2 * base, Some(last), false, 3), PlanDecision::Run);
+    assert_eq!(
+        plan(true, base, 2 * base, Some(last), false, 3),
+        PlanDecision::Run
+    );
     // After a success (failures reset to 0) the base interval applies.
-    assert_eq!(plan(true, base, base, Some(last), false, 0), PlanDecision::Run);
+    assert_eq!(
+        plan(true, base, base, Some(last), false, 0),
+        PlanDecision::Run
+    );
 }
 
 /// next_run_estimate: None when disabled or never seen; otherwise
@@ -110,7 +116,10 @@ fn plan_respects_backoff_and_reset() {
 fn next_run_estimate_semantics() {
     assert_eq!(next_run_estimate_ms(false, 5 * MIN, Some(0), 0), None);
     assert_eq!(next_run_estimate_ms(true, 5 * MIN, None, 0), None);
-    assert_eq!(next_run_estimate_ms(true, 5 * MIN, Some(100), 0), Some(100 + 5 * MIN));
+    assert_eq!(
+        next_run_estimate_ms(true, 5 * MIN, Some(100), 0),
+        Some(100 + 5 * MIN)
+    );
     assert_eq!(
         next_run_estimate_ms(true, 5 * MIN, Some(100), 4),
         Some(100 + 20 * MIN)

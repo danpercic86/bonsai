@@ -88,7 +88,10 @@ fn ensure_eligible(wt: &git2::Worktree, key: &str) -> Result<(), AppError> {
 /// Resolve `worktree_key` to the target worktree's ROOT directory, enforcing
 /// D6 eligibility for linked worktrees. `"@main"` on a non-repo dir keeps the
 /// pure-P24 behavior (`workdir` itself).
-pub(super) fn resolve_worktree_root(workdir: &Path, worktree_key: &str) -> Result<PathBuf, AppError> {
+pub(super) fn resolve_worktree_root(
+    workdir: &Path,
+    worktree_key: &str,
+) -> Result<PathBuf, AppError> {
     let repo = match open_repo_at(workdir) {
         Ok(r) => r,
         Err(e) if worktree_key == MAIN_WORKTREE_KEY => {
@@ -106,12 +109,14 @@ pub(super) fn resolve_worktree_root(workdir: &Path, worktree_key: &str) -> Resul
     if worktree_key == MAIN_WORKTREE_KEY {
         return main_workdir(&repo);
     }
-    let wt = repo.find_worktree(worktree_key).map_err(|e| match e.code() {
-        git2::ErrorCode::NotFound => {
-            AppError::Git(format!("worktree '{worktree_key}' not found"))
-        }
-        _ => e.into(),
-    })?;
+    let wt = repo
+        .find_worktree(worktree_key)
+        .map_err(|e| match e.code() {
+            git2::ErrorCode::NotFound => {
+                AppError::Git(format!("worktree '{worktree_key}' not found"))
+            }
+            _ => e.into(),
+        })?;
     ensure_eligible(&wt, worktree_key)?;
     Ok(wt.path().to_path_buf())
 }
@@ -124,7 +129,10 @@ pub(super) fn resolve_worktree_root(workdir: &Path, worktree_key: &str) -> Resul
 /// re-activating the same profile idempotent, acceptance §9.3). Checked for
 /// ALL targets before ANY write. Pathspec-limited (`status_file`) — never a
 /// full-repo scan. Non-repo target dirs (pure-P24) pass trivially.
-pub(super) fn ensure_targets_clean(wt_root: &Path, targets: &[(&str, &[u8])]) -> Result<(), AppError> {
+pub(super) fn ensure_targets_clean(
+    wt_root: &Path,
+    targets: &[(&str, &[u8])],
+) -> Result<(), AppError> {
     let repo = match open_repo_at(wt_root) {
         Ok(r) => r,
         Err(_) => return Ok(()), // pure-P24 dir: no git safety net to protect

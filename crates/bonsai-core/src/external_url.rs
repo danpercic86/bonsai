@@ -132,7 +132,13 @@ fn url_ladder(os: TargetOs, url: &str) -> Vec<LaunchSpec> {
         // pointlessly advance the ladder.
         TargetOs::Windows => vec![
             spec("explorer", &[url], &cwd, true, false),
-            spec("rundll32", &["url.dll,FileProtocolHandler", url], &cwd, true, false),
+            spec(
+                "rundll32",
+                &["url.dll,FileProtocolHandler", url],
+                &cwd,
+                true,
+                false,
+            ),
         ],
         // `open` always spawns fine and reports a failure only through its exit
         // code, so it gets the documented `wait_for_exit` treatment.
@@ -140,7 +146,6 @@ fn url_ladder(os: TargetOs, url: &str) -> Vec<LaunchSpec> {
         TargetOs::Linux => vec![spec("xdg-open", &[url], &cwd, true, false)],
     }
 }
-
 
 /// Validate `url`, then open it in the user's default browser via the first
 /// candidate that launches (P72). Validation runs BEFORE any spawn, so a

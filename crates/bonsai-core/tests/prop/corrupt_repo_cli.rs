@@ -159,8 +159,11 @@ fn healthy_repo() -> (tempfile::TempDir, PathBuf) {
     let dir = common::init_repo();
     let root = dir.path().to_path_buf();
     for i in 0..3 {
-        std::fs::write(root.join(format!("f{i}.txt")), format!("content {i}\nsecond line\n"))
-            .expect("write");
+        std::fs::write(
+            root.join(format!("f{i}.txt")),
+            format!("content {i}\nsecond line\n"),
+        )
+        .expect("write");
         common::git(&root, &["add", "-A"]);
         common::commit_fixed(&root, &format!("commit {i}"));
     }
@@ -197,7 +200,11 @@ fn corrupt_repo_c1_truncated_head_commit_object() {
         assert_ne!(*o, Outcome::Panicked, "PANIC in [C1] surface {name}");
     }
     // `open` does not read the HEAD commit ⇒ it stays responsive.
-    assert_ne!(outcome(&out, "open"), Outcome::Hung, "C1 open must not hang");
+    assert_ne!(
+        outcome(&out, "open"),
+        Outcome::Hung,
+        "C1 open must not hang"
+    );
     // F-T5-4 FIX: the timeout-wrapped read surfaces return a clean error
     // instead of hanging (the wedged worker thread is abandoned).
     for name in ["read_status", "compute_graph", "stream_graph"] {
@@ -267,7 +274,11 @@ fn corrupt_repo_c4_head_missing_oid() {
     require_git!();
 
     let (dir, root) = healthy_repo();
-    std::fs::write(root.join(".git/HEAD"), format!("{}\n", "0".repeat(39) + "a")).unwrap();
+    std::fs::write(
+        root.join(".git/HEAD"),
+        format!("{}\n", "0".repeat(39) + "a"),
+    )
+    .unwrap();
     assert_no_panic("C4 HEAD-missing-oid", &root);
     drop(dir);
 }
@@ -279,7 +290,11 @@ fn corrupt_repo_c5_garbage_ref() {
 
     let (dir, root) = healthy_repo();
     std::fs::create_dir_all(root.join(".git/refs/heads")).unwrap();
-    std::fs::write(root.join(".git/refs/heads/x"), b"\x00\x01garbage not a ref\xFF").unwrap();
+    std::fs::write(
+        root.join(".git/refs/heads/x"),
+        b"\x00\x01garbage not a ref\xFF",
+    )
+    .unwrap();
     assert_no_panic("C5 garbage-ref", &root);
     drop(dir);
 }
@@ -314,7 +329,9 @@ fn corrupt_repo_c8_garbage_index() {
     require_git!();
 
     let (dir, root) = healthy_repo();
-    let junk: Vec<u8> = (0..4096u32).map(|i| (i.wrapping_mul(2654435761) >> 24) as u8).collect();
+    let junk: Vec<u8> = (0..4096u32)
+        .map(|i| (i.wrapping_mul(2654435761) >> 24) as u8)
+        .collect();
     std::fs::write(root.join(".git/index"), &junk).unwrap();
     assert_no_panic("C8 garbage-index", &root);
     drop(dir);
@@ -337,12 +354,24 @@ fn corrupt_repo_c10_binary_commit_editmsg() {
     require_git!();
 
     let (dir, root) = healthy_repo();
-    std::fs::write(root.join(".git/COMMIT_EDITMSG"), [0u8, 159, 146, 150, 255, 0, 1]).unwrap();
+    std::fs::write(
+        root.join(".git/COMMIT_EDITMSG"),
+        [0u8, 159, 146, 150, 255, 0, 1],
+    )
+    .unwrap();
     let out = assert_no_panic("C10 binary-COMMIT_EDITMSG", &root);
     // Pin: a stray COMMIT_EDITMSG is a no-op for the read surfaces.
     assert_eq!(outcome(&out, "open"), Outcome::Ok, "C10 open unaffected");
-    assert_eq!(outcome(&out, "read_status"), Outcome::Ok, "C10 status unaffected");
-    assert_eq!(outcome(&out, "compute_graph"), Outcome::Ok, "C10 graph unaffected");
+    assert_eq!(
+        outcome(&out, "read_status"),
+        Outcome::Ok,
+        "C10 status unaffected"
+    );
+    assert_eq!(
+        outcome(&out, "compute_graph"),
+        Outcome::Ok,
+        "C10 graph unaffected"
+    );
     drop(dir);
 }
 
@@ -367,7 +396,11 @@ fn corrupt_repo_x2_bogus_bisect_log() {
     require_git!();
 
     let (dir, root) = healthy_repo();
-    std::fs::write(root.join(".git/BISECT_LOG"), b"\x00garbage bisect log\xFF\n").unwrap();
+    std::fs::write(
+        root.join(".git/BISECT_LOG"),
+        b"\x00garbage bisect log\xFF\n",
+    )
+    .unwrap();
     assert_no_panic("X2 bogus-BISECT_LOG", &root);
     drop(dir);
 }

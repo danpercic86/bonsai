@@ -14,12 +14,12 @@
 
 use std::path::Path;
 
+use crate::common::scratch_dir;
 use bonsai_core::assets::{
     delete_agent_asset, read_agent_asset, save_agent_asset, scan_agent_assets, AgentAssetInput,
     AgentAssetKind, FrontmatterField, IssueSeverity,
 };
 use bonsai_core::error::AppError;
-use crate::common::scratch_dir;
 
 /// Write raw bytes to `root/rel`, creating parent dirs (for hand-authored
 /// fixtures the app itself would not normally write, e.g. complex YAML).
@@ -112,7 +112,10 @@ fn create_scan_read_round_trip_all_kinds() {
         input(
             AgentAssetKind::Command,
             "changelog",
-            &[("description", "Update changelog"), ("argument-hint", "<version>")],
+            &[
+                ("description", "Update changelog"),
+                ("argument-hint", "<version>"),
+            ],
             "\nUpdate the changelog for $ARGUMENTS.\n",
         ),
     )
@@ -122,7 +125,10 @@ fn create_scan_read_round_trip_all_kinds() {
     assert!(root.join(".claude/skills/code-review/SKILL.md").is_file());
     assert!(root.join(".claude/agents/test-runner.md").is_file());
     assert!(root.join(".claude/commands/changelog.md").is_file());
-    assert!(no_tmp_remnant(root), "no *.bonsai-tmp remnant after creates");
+    assert!(
+        no_tmp_remnant(root),
+        "no *.bonsai-tmp remnant after creates"
+    );
 
     // scan lists all three, sorted (skill < agent < command), all valid.
     let inv = scan_agent_assets(root).unwrap();
@@ -144,7 +150,10 @@ fn create_scan_read_round_trip_all_kinds() {
     // read returns byte-consistent frontmatter/body for each (matches scan).
     for scanned in &inv.assets {
         let read = read_agent_asset(root, scanned.kind, &scanned.name).unwrap();
-        assert_eq!(read.frontmatter, scanned.frontmatter, "frontmatter consistent");
+        assert_eq!(
+            read.frontmatter, scanned.frontmatter,
+            "frontmatter consistent"
+        );
         assert_eq!(read.body, scanned.body, "body consistent");
         assert_eq!(read.path, scanned.path);
         assert!(read.exists && read.validation.valid);
@@ -256,9 +265,11 @@ fn complex_frontmatter_reguard_refuses_lossy_overwrite() {
     assert!(loaded.complex, "block-sequence frontmatter is complex");
     assert!(!loaded.validation.valid, "complex asset is invalid");
     assert!(
-        loaded.validation.issues.iter().any(|i| i.severity
-            == IssueSeverity::Error
-            && i.message.contains("multi-line YAML")),
+        loaded
+            .validation
+            .issues
+            .iter()
+            .any(|i| i.severity == IssueSeverity::Error && i.message.contains("multi-line YAML")),
         "complex asset carries the multi-line-YAML Error"
     );
 
@@ -283,7 +294,10 @@ fn complex_frontmatter_reguard_refuses_lossy_overwrite() {
         complex_bytes.to_vec(),
         "the complex file must be byte-UNCHANGED after a refused save"
     );
-    assert!(no_tmp_remnant(root), "the refused save leaves no temp remnant");
+    assert!(
+        no_tmp_remnant(root),
+        "the refused save leaves no temp remnant"
+    );
 
     // A brand-NEW (non-existent) name is unaffected by the re-guard.
     save_agent_asset(
@@ -347,7 +361,11 @@ fn delete_removes_skill_dir_vs_single_file() {
         ".claude/skills/code-review/reference.md",
         b"# supporting material\n",
     );
-    write(root, ".claude/skills/code-review/scripts/run.py", b"print('hi')\n");
+    write(
+        root,
+        ".claude/skills/code-review/scripts/run.py",
+        b"print('hi')\n",
+    );
     // A second skill that must be left alone.
     write(
         root,
@@ -403,16 +421,26 @@ fn validation_and_name_safety_through_fs() {
     // Agent missing the required `description` -> writes, but scans invalid.
     save_agent_asset(
         root,
-        input(AgentAssetKind::Agent, "incomplete", &[("name", "incomplete")], "\nbody\n"),
+        input(
+            AgentAssetKind::Agent,
+            "incomplete",
+            &[("name", "incomplete")],
+            "\nbody\n",
+        ),
     )
     .unwrap();
     let inv = scan_agent_assets(root).unwrap();
     let incomplete = inv.assets.iter().find(|a| a.name == "incomplete").unwrap();
-    assert!(!incomplete.validation.valid, "missing required field -> invalid");
     assert!(
-        incomplete.validation.issues.iter().any(|i| i.severity
-            == IssueSeverity::Error
-            && i.message.contains("description")),
+        !incomplete.validation.valid,
+        "missing required field -> invalid"
+    );
+    assert!(
+        incomplete
+            .validation
+            .issues
+            .iter()
+            .any(|i| i.severity == IssueSeverity::Error && i.message.contains("description")),
         "the issue names the missing required field"
     );
 
@@ -430,16 +458,19 @@ fn validation_and_name_safety_through_fs() {
     let mism = read_agent_asset(root, AgentAssetKind::Agent, "mismatch").unwrap();
     assert!(mism.validation.valid, "name mismatch is only a Warning");
     assert!(
-        mism.validation.issues.iter().any(|i| i.severity == IssueSeverity::Warning
-            && i.message.contains("differs from the file name")),
+        mism.validation
+            .issues
+            .iter()
+            .any(|i| i.severity == IssueSeverity::Warning
+                && i.message.contains("differs from the file name")),
         "the name-mismatch Warning is present"
     );
 
     // Windows reserved name + separator/`..` names are rejected with InvalidName,
     // writing nothing.
     for bad in ["CON", "nul", "a/b", "a\\b", "..", "a:b", "-x", ""] {
-        let err = save_agent_asset(root, input(AgentAssetKind::Command, bad, &[], "b"))
-            .unwrap_err();
+        let err =
+            save_agent_asset(root, input(AgentAssetKind::Command, bad, &[], "b")).unwrap_err();
         assert!(
             matches!(err, AppError::InvalidName(_)),
             "save({bad:?}) must be InvalidName, got {err:?}"

@@ -21,7 +21,9 @@ fn generated_token_is_43_chars_no_padding() {
     let t = generate_token();
     assert_eq!(t.len(), 43, "32 bytes base64url (no pad) is 43 chars: {t}");
     assert!(!t.contains('='));
-    assert!(t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+    assert!(t
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
 }
 
 #[test]

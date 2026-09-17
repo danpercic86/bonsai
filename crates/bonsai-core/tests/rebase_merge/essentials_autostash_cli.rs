@@ -15,11 +15,11 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{git, git_env, git_ok, init_repo, FIXED_DATE};
 use bonsai_core::git::cherrypick::{cherrypick_commit, cherrypick_continue, CherrypickOutcome};
 use bonsai_core::git::conflict::resolve_conflict_text;
 use bonsai_core::git::revert::{revert_commit, RevertOutcome};
-use crate::common;
-use crate::common::{git, git_env, git_ok, init_repo, FIXED_DATE};
 
 macro_rules! require_git {
     () => {
@@ -149,19 +149,29 @@ fn p47_cherrypick_autostash_clean_matches_cli() {
     let outcome = cherrypick_commit(a, &pick_a, None).expect("bonsai cherry-pick");
     match outcome {
         CherrypickOutcome::Committed { stashed, .. } => {
-            assert!(stashed, "a dirty tracked worktree must autostash → stashed:true");
+            assert!(
+                stashed,
+                "a dirty tracked worktree must autostash → stashed:true"
+            );
         }
         other => panic!("expected Committed{{stashed:true}}, got {other:?}"),
     }
 
     // Twin: the literal git autostash recipe from the contract.
     git(b, &["stash", "push", "-m", "twin autostash"]);
-    assert!(git_ok(b, &["cherry-pick", &pick_b]), "twin pick must be clean");
+    assert!(
+        git_ok(b, &["cherry-pick", &pick_b]),
+        "twin pick must be clean"
+    );
     git(b, &["stash", "pop"]);
 
     // Committed HEAD tree matches (the dirty edit is NOT in the commit — it was
     // stashed away — on either side).
-    assert_eq!(tree_oid(a), tree_oid(b), "committed pick tree must match the CLI");
+    assert_eq!(
+        tree_oid(a),
+        tree_oid(b),
+        "committed pick tree must match the CLI"
+    );
 
     let repo = git2::Repository::open(a).expect("open A");
     let head = repo.head().expect("head").peel_to_commit().expect("peel");
@@ -171,7 +181,11 @@ fn p47_cherrypick_autostash_clean_matches_cli() {
         main_a,
         "HEAD advanced onto the former main tip"
     );
-    assert_eq!(head.message().ok(), Some("add feature\n"), "picked message reused");
+    assert_eq!(
+        head.message().ok(),
+        Some("add feature\n"),
+        "picked message reused"
+    );
     assert_eq!(head.author().name().ok(), Some("Test User"));
     assert_eq!(
         head.author().when().seconds(),
@@ -180,7 +194,11 @@ fn p47_cherrypick_autostash_clean_matches_cli() {
     );
 
     // The previously-dirty change is restored to the worktree, on both.
-    assert_eq!(read(a, "base.txt"), dirty, "the autostashed edit must be restored");
+    assert_eq!(
+        read(a, "base.txt"),
+        dirty,
+        "the autostashed edit must be restored"
+    );
     assert_eq!(read(a, "base.txt"), read(b, "base.txt"));
     assert_eq!(read(a, "feature.txt"), "feature\n");
     // Clean state, empty stash stack (a clean pop dropped the autostash).
@@ -218,7 +236,11 @@ fn p47_cherrypick_custom_message_matches_cli() {
     // Twin: plain cherry-pick — the message differs but the TREE is identical
     // (message never affects the tree).
     git(b, &["cherry-pick", &pick_b]);
-    assert_eq!(tree_oid(a), tree_oid(b), "custom-message pick tree must match a plain pick");
+    assert_eq!(
+        tree_oid(a),
+        tree_oid(b),
+        "custom-message pick tree must match a plain pick"
+    );
 
     let repo = git2::Repository::open(a).expect("open A");
     let head = repo.head().expect("head").peel_to_commit().expect("peel");
@@ -307,14 +329,25 @@ fn p47_cherrypick_autostash_conflict_retains_stash_then_continue_keeps_it() {
     match cherrypick_commit(d, &pick, None).expect("bonsai cherry-pick") {
         CherrypickOutcome::Conflicts { paths, stashed } => {
             assert_eq!(paths, vec!["x.txt".to_string()]);
-            assert!(stashed, "the dirty other.txt edit must be autostashed → stashed:true");
+            assert!(
+                stashed,
+                "the dirty other.txt edit must be autostashed → stashed:true"
+            );
         }
         other => panic!("expected Conflicts{{stashed:true}}, got {other:?}"),
     }
     assert_eq!(repo_state(d), git2::RepositoryState::CherryPick);
-    assert_eq!(stash_count(d), 1, "the autostash is retained during the paused pick");
+    assert_eq!(
+        stash_count(d),
+        1,
+        "the autostash is retained during the paused pick"
+    );
     // Mid-pause, other.txt sits at HEAD (the edit is on the stash, not the tree).
-    assert_eq!(read(d, "other.txt"), "other base\n", "the edit is on the stash");
+    assert_eq!(
+        read(d, "other.txt"),
+        "other base\n",
+        "the edit is on the stash"
+    );
 
     // Resolve + continue: finalizes but does NOT auto-pop the retained stash.
     resolve_conflict_text(d, "x.txt", "line1\nresolved\nline3\n").expect("resolve index");
@@ -325,11 +358,19 @@ fn p47_cherrypick_autostash_conflict_retains_stash_then_continue_keeps_it() {
         other => panic!("expected Committed after resolve, got {other:?}"),
     }
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);
-    assert_eq!(stash_count(d), 1, "continue must NOT auto-pop the retained autostash (F5)");
+    assert_eq!(
+        stash_count(d),
+        1,
+        "continue must NOT auto-pop the retained autostash (F5)"
+    );
 
     // Data-safety proof: the retained stash still restores the edit.
     git(d, &["stash", "pop"]);
-    assert_eq!(read(d, "other.txt"), "other dirty\n", "the edit is recoverable from stash@{{0}}");
+    assert_eq!(
+        read(d, "other.txt"),
+        "other dirty\n",
+        "the edit is recoverable from stash@{{0}}"
+    );
     assert_eq!(stash_count(d), 0);
 }
 
@@ -354,7 +395,11 @@ fn p47_cherrypick_autostash_conflict_abort_keeps_stash() {
     cherrypick_abort(d).expect("abort");
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);
     assert_eq!(head_oid(d), head_before, "abort restores HEAD");
-    assert_eq!(stash_count(d), 1, "abort must NOT drop the retained autostash (F5)");
+    assert_eq!(
+        stash_count(d),
+        1,
+        "abort must NOT drop the retained autostash (F5)"
+    );
 
     // The edit is still recoverable.
     git(d, &["stash", "pop"]);
@@ -398,11 +443,19 @@ fn p47_cherrypick_stash_pop_conflict() {
         CherrypickOutcome::StashPopConflicts { head, paths } => (head, paths),
         other => panic!("expected StashPopConflicts, got {other:?}"),
     };
-    assert_eq!(paths, vec!["f.txt".to_string()], "f.txt conflicted on the pop");
+    assert_eq!(
+        paths,
+        vec!["f.txt".to_string()],
+        "f.txt conflicted on the pop"
+    );
     assert_eq!(head, head_oid(a), "head = the new pick-commit oid");
 
     // A conflicted stash-apply is NOT a cherry-pick op: state stays Clean.
-    assert_eq!(repo_state(a), git2::RepositoryState::Clean, "state must be Clean");
+    assert_eq!(
+        repo_state(a),
+        git2::RepositoryState::Clean,
+        "state must be Clean"
+    );
     assert!(
         !a.join(".git").join("CHERRY_PICK_HEAD").exists(),
         "the pick committed → no CHERRY_PICK_HEAD"
@@ -417,7 +470,11 @@ fn p47_cherrypick_stash_pop_conflict() {
     // The committed pick tree matches a plain twin cherry-pick (the dirty edit
     // never entered the commit).
     git(b, &["cherry-pick", &pick_b]);
-    assert_eq!(tree_oid(a), tree_oid(b), "committed pick tree must match a plain pick");
+    assert_eq!(
+        tree_oid(a),
+        tree_oid(b),
+        "committed pick tree must match a plain pick"
+    );
 }
 
 // ==================================================== §7.2 revert autostash parity
@@ -462,26 +519,48 @@ fn p47_revert_autostash_clean_matches_cli() {
 
     match revert_commit(a, &c2_a).expect("bonsai revert") {
         RevertOutcome::Committed { stashed, .. } => {
-            assert!(stashed, "a dirty tracked worktree must autostash → stashed:true");
+            assert!(
+                stashed,
+                "a dirty tracked worktree must autostash → stashed:true"
+            );
         }
         other => panic!("expected Committed{{stashed:true}}, got {other:?}"),
     }
 
     // Twin: the literal git autostash recipe.
     git(b, &["stash", "push", "-m", "twin autostash"]);
-    assert!(git_ok(b, &["revert", "--no-edit", &c2_b]), "twin revert must be clean");
+    assert!(
+        git_ok(b, &["revert", "--no-edit", &c2_b]),
+        "twin revert must be clean"
+    );
     git(b, &["stash", "pop"]);
 
-    assert_eq!(tree_oid(a), tree_oid(b), "committed revert tree must match the CLI");
-    assert_eq!(read(a, "x.txt"), "base\n", "revert undoes the second commit");
+    assert_eq!(
+        tree_oid(a),
+        tree_oid(b),
+        "committed revert tree must match the CLI"
+    );
+    assert_eq!(
+        read(a, "x.txt"),
+        "base\n",
+        "revert undoes the second commit"
+    );
 
     let repo = git2::Repository::open(a).expect("open A");
     let head = repo.head().expect("head").peel_to_commit().expect("peel");
     let expected = format!("Revert \"second\"\n\nThis reverts commit {c2_a}.\n");
-    assert_eq!(head.message().ok(), Some(expected.as_str()), "byte-exact revert message");
+    assert_eq!(
+        head.message().ok(),
+        Some(expected.as_str()),
+        "byte-exact revert message"
+    );
 
     // The previously-dirty change is restored, on both.
-    assert_eq!(read(a, "unrelated.txt"), dirty, "the autostashed edit must be restored");
+    assert_eq!(
+        read(a, "unrelated.txt"),
+        dirty,
+        "the autostashed edit must be restored"
+    );
     assert_eq!(read(a, "unrelated.txt"), read(b, "unrelated.txt"));
     assert_eq!(repo_state(a), git2::RepositoryState::Clean);
     assert_eq!(stash_count(a), 0, "a clean pop drops the autostash");

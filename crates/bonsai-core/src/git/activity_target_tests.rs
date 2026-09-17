@@ -243,7 +243,13 @@ fn push_target_agrees_with_push_result_remote() {
 /// not exist all yield `None` for every category, with no panic.
 #[test]
 fn resolver_never_panics_on_broken_repo() {
-    let cats = [Cat::Push, Cat::Pull, Cat::ForcePush, Cat::Commit, Cat::Amend];
+    let cats = [
+        Cat::Push,
+        Cat::Pull,
+        Cat::ForcePush,
+        Cat::Commit,
+        Cat::Amend,
+    ];
 
     let plain = crate::testutil::scratch_dir();
     for cat in cats {

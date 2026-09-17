@@ -95,7 +95,11 @@ fn out_of_allowlist_is_unsupported() {
     let not_merge = resolve_intent(&repo, AiOpIntent::UndoLastMerge, None).expect("Ok");
     assert!(expect_unsupported(not_merge).contains("isn't a merge"));
 
-    assert_eq!(snapshot(p), before, "rejecting an intent must mutate nothing");
+    assert_eq!(
+        snapshot(p),
+        before,
+        "rejecting an intent must mutate nothing"
+    );
 }
 
 // ---------------------------------------------------------- §11.9 deserialize
@@ -140,9 +144,7 @@ fn ai_op_intent_deserializes_each_variant() {
         AiOpIntent::SwitchBranch { branch } => assert_eq!(branch, "main"),
         other => panic!("got {other:?}"),
     }
-    match p(r#"{"intent":"createBranch","name":"feat/x","atCommit":null}"#)
-        .expect("createBranch")
-    {
+    match p(r#"{"intent":"createBranch","name":"feat/x","atCommit":null}"#).expect("createBranch") {
         AiOpIntent::CreateBranch { name, at_commit } => {
             assert_eq!(name, "feat/x");
             assert_eq!(at_commit, None);
@@ -165,9 +167,7 @@ fn ai_op_intent_deserializes_each_variant() {
         }
         other => panic!("got {other:?}"),
     }
-    match p(r#"{"intent":"discardChanges","paths":["a.txt","b.txt"]}"#)
-        .expect("discardChanges")
-    {
+    match p(r#"{"intent":"discardChanges","paths":["a.txt","b.txt"]}"#).expect("discardChanges") {
         AiOpIntent::DiscardChanges { paths } => assert_eq!(paths, vec!["a.txt", "b.txt"]),
         other => panic!("got {other:?}"),
     }
@@ -181,5 +181,8 @@ fn ai_op_intent_deserializes_each_variant() {
     }
 
     // Unknown tag ⇒ Err (the fail-closed call site maps it to Unsupported).
-    assert!(p(r#"{"intent":"rmRf"}"#).is_err(), "unknown tag must NOT parse");
+    assert!(
+        p(r#"{"intent":"rmRf"}"#).is_err(),
+        "unknown tag must NOT parse"
+    );
 }

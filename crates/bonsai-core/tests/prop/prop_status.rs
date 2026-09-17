@@ -56,7 +56,9 @@ fn path_strat() -> impl Strategy<Value = String> {
 
 /// Multi-line content keyed by PATH (and a modify seed).
 fn content_for(path: &str, seed: u32) -> String {
-    (0..6).map(|i| format!("{path}:line {seed}-{i}\n")).collect()
+    (0..6)
+        .map(|i| format!("{path}:line {seed}-{i}\n"))
+        .collect()
 }
 
 /// A raw op: (kind, path selector, content seed, new-name). Kinds:
@@ -74,7 +76,10 @@ type RawOp = (u8, usize, u32, String);
 /// strategy was `ops_strat_sized(1, 12)`, so a set of bands whose ranges tile
 /// `1..=12` covers exactly the same input space.
 fn ops_strat_sized(lo: usize, hi: usize) -> impl Strategy<Value = Vec<RawOp>> {
-    prop::collection::vec((0u8..=5, any::<usize>(), any::<u32>(), path_strat()), lo..=hi)
+    prop::collection::vec(
+        (0u8..=5, any::<usize>(), any::<u32>(), path_strat()),
+        lo..=hi,
+    )
 }
 
 /// Apply one op best-effort against the live repo, mutating `known` (paths that
@@ -275,13 +280,15 @@ fn regression_f_t5_3_untracked_worktree_rename() {
     let read = flatten_snapshot(&read_status(root).unwrap());
     let porcelain = porcelain_tuples(root);
     // FIXED: read_status now matches git porcelain exactly (delete + untracked).
-    assert_eq!(read, porcelain, "F-T5-3 fixed: read_status must match git porcelain");
+    assert_eq!(
+        read, porcelain,
+        "F-T5-3 fixed: read_status must match git porcelain"
+    );
     assert!(
-        read.iter()
-            .any(|(list, path, orig, st)| list == "unstaged"
-                && path == "a"
-                && orig.is_none()
-                && st == "deleted"),
+        read.iter().any(|(list, path, orig, st)| list == "unstaged"
+            && path == "a"
+            && orig.is_none()
+            && st == "deleted"),
         "expected unstaged delete of `a`; got {read:?}"
     );
     assert!(

@@ -71,7 +71,11 @@ pub struct GraphStreamEdge {
 /// VARIANT tags (`Meta`↔`meta`, …). Both are required to match the TS mirror
 /// (contract §2.2); this follows the `BisectOutcome`/`SafeOp` recipe.
 #[derive(Debug, Clone, serde::Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum GraphChunk {
     /// First message. `total` = exact reachable-commit count IF cheaply known
     /// (OQ2), else `None` (frontend grows the scroll extent as rows arrive).
@@ -253,8 +257,8 @@ fn stream_graph_inner(
     let mut row: u32 = 0;
     let mut truncated = false;
     let mut limit = first_batch; // small first flush = instant paint
-    // Spec-004: spans are computed only when requested; merge rows only when
-    // a collector was passed (the layout-cache store path).
+                                 // Spec-004: spans are computed only when requested; merge rows only when
+                                 // a collector was passed (the layout-cache store path).
     let mut fold: Option<FoldScan> = filter.fold_linear.then(FoldScan::new);
 
     for oid in revwalk {

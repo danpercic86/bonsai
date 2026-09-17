@@ -15,7 +15,10 @@ pub async fn get_repo_health(
 }
 
 /// Runtime-free core of `get_repo_health` (unit-testable without a Tauri app).
-pub(crate) async fn get_repo_health_inner(state: &AppState, repo_id: &str) -> Result<RepoHealth, AppError> {
+pub(crate) async fn get_repo_health_inner(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<RepoHealth, AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || collect_repo_health(&path))
         .await

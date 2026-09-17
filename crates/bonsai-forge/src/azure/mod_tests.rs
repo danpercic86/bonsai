@@ -36,7 +36,9 @@ fn list_prs_maps_fields_pages_and_signals_next() {
     assert!(page.has_next, "returned == $top ⇒ has_next");
     let reqs = seen.lock().unwrap();
     assert!(
-        reqs[0].url.contains("/org/proj/_apis/git/repositories/repo/pullrequests"),
+        reqs[0]
+            .url
+            .contains("/org/proj/_apis/git/repositories/repo/pullrequests"),
         "url: {}",
         reqs[0].url
     );
@@ -47,7 +49,11 @@ fn list_prs_maps_fields_pages_and_signals_next() {
     );
     assert!(reqs[0].url.contains("$top=1"), "url: {}", reqs[0].url);
     assert!(reqs[0].url.contains("$skip=0"), "url: {}", reqs[0].url);
-    assert!(reqs[0].url.contains("api-version=7.1"), "url: {}", reqs[0].url);
+    assert!(
+        reqs[0].url.contains("api-version=7.1"),
+        "url: {}",
+        reqs[0].url
+    );
 }
 
 #[test]
@@ -63,7 +69,11 @@ fn list_prs_short_page_has_no_next_and_works_unauthenticated() {
     assert_eq!(page.items.len(), 0);
     assert!(!page.has_next, "0 < $top ⇒ no next");
     let reqs = seen.lock().unwrap();
-    assert!(reqs[0].url.contains("searchCriteria.status=all"), "url: {}", reqs[0].url);
+    assert!(
+        reqs[0].url.contains("searchCriteria.status=all"),
+        "url: {}",
+        reqs[0].url
+    );
     assert!(!reqs[0].headers.iter().any(|(k, _)| k == "Authorization"));
 }
 
@@ -113,7 +123,10 @@ fn create_pr_requires_token_and_posts_azure_body_with_refs() {
         p_noauth.create_pr(&input),
         Err(AppError::ForgeAuthRequired(_))
     ));
-    assert!(seen_noauth.lock().unwrap().is_empty(), "no request before auth check");
+    assert!(
+        seen_noauth.lock().unwrap().is_empty(),
+        "no request before auth check"
+    );
 
     // Authenticated ⇒ POST with refs re-added.
     let (p, seen) = provider_spy(Some("az-tok"), vec![("/pullrequests", 201, created)]);
@@ -148,7 +161,11 @@ fn list_review_comments_splits_and_sorts_by_date() {
     let p = provider(Some("az-tok"), vec![("/threads", 200, body)]);
     let comments = p.list_review_comments(9).unwrap();
     assert_eq!(comments.len(), 2);
-    assert_eq!(comments[0].kind, CommentKind::Conversation, "earliest first");
+    assert_eq!(
+        comments[0].kind,
+        CommentKind::Conversation,
+        "earliest first"
+    );
     assert_eq!(comments[0].id, 4001);
     assert_eq!(comments[1].kind, CommentKind::Review);
     assert_eq!(comments[1].id, 5001);
@@ -232,7 +249,10 @@ fn unsupported_host_rejects_data_calls_but_gives_context() {
     // P72 case (k): `viewer()` rejects a non-Azure kind through `coords()` →
     // `require_supported()`, without issuing a request.
     assert!(matches!(p.viewer(), Err(AppError::ForgeUnsupported(_))));
-    assert!(seen.lock().unwrap().is_empty(), "no request for an unsupported host");
+    assert!(
+        seen.lock().unwrap().is_empty(),
+        "no request for an unsupported host"
+    );
 }
 
 fn merge_input(method: crate::types::MergeMethod) -> crate::types::MergePrInput {
@@ -269,7 +289,11 @@ fn merge_pr_patches_completed_with_strategy_and_head_sha() {
     assert_eq!(d.summary.state, PrState::Merged);
     let reqs = seen.lock().unwrap();
     assert_eq!(reqs[0].method, HttpMethod::Patch);
-    assert!(reqs[0].url.contains("/pullrequests/7"), "url: {}", reqs[0].url);
+    assert!(
+        reqs[0].url.contains("/pullrequests/7"),
+        "url: {}",
+        reqs[0].url
+    );
     let sent: serde_json::Value = serde_json::from_str(reqs[0].body.as_ref().unwrap()).unwrap();
     assert_eq!(sent["status"], "completed");
     assert_eq!(sent["lastMergeSourceCommit"]["commitId"], "headsha");
@@ -300,7 +324,10 @@ fn merge_pr_rejects_fast_forward_without_sending() {
         p.merge_pr(7, &merge_input(MergeMethod::FastForward)),
         Err(AppError::ForgeApi(_))
     ));
-    assert!(seen.lock().unwrap().is_empty(), "nothing sent for unsupported method");
+    assert!(
+        seen.lock().unwrap().is_empty(),
+        "nothing sent for unsupported method"
+    );
 }
 
 #[test]
@@ -310,7 +337,10 @@ fn merge_pr_missing_head_sha_errors_without_sending() {
     let mut input = merge_input(MergeMethod::Merge);
     input.head_sha = None;
     assert!(matches!(p.merge_pr(7, &input), Err(AppError::ForgeApi(_))));
-    assert!(seen.lock().unwrap().is_empty(), "no request without a head sha");
+    assert!(
+        seen.lock().unwrap().is_empty(),
+        "no request without a head sha"
+    );
 }
 
 #[test]

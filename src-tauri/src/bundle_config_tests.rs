@@ -17,8 +17,7 @@ fn tauri_conf() -> Value {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tauri.conf.json");
     let raw = std::fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("tauri.conf.json must be readable at {path}: {e}"));
-    serde_json::from_str(&raw)
-        .unwrap_or_else(|e| panic!("tauri.conf.json must be valid JSON: {e}"))
+    serde_json::from_str(&raw).unwrap_or_else(|e| panic!("tauri.conf.json must be valid JSON: {e}"))
 }
 
 fn bundle_targets(conf: &Value) -> Vec<String> {

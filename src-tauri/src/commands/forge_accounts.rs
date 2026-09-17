@@ -296,7 +296,9 @@ pub(crate) async fn forge_set_host_default_inner(
                 "account is not on the given host".to_string(),
             ));
         }
-        let _ = settings::update(&file, |s| settings::set_host_default(s, &host_l, &account_id));
+        let _ = settings::update(&file, |s| {
+            settings::set_host_default(s, &host_l, &account_id)
+        });
         Ok(())
     })
     .await

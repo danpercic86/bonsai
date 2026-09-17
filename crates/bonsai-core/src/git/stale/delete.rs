@@ -27,7 +27,9 @@ pub(crate) fn recheck_tip(
         None => Some(BranchDeleteResult {
             name: name.to_string(),
             status: BranchDeleteStatus::Failed,
-            message: Some("tip changed since scan (no longer a direct ref); not deleted".to_string()),
+            message: Some(
+                "tip changed since scan (no longer a direct ref); not deleted".to_string(),
+            ),
         }),
     }
 }
@@ -55,7 +57,11 @@ pub fn delete_branches(
     let safe: HashMap<&str, git2::Oid> = report
         .branches
         .iter()
-        .filter_map(|b| git2::Oid::from_str(&b.tip).ok().map(|oid| (b.name.as_str(), oid)))
+        .filter_map(|b| {
+            git2::Oid::from_str(&b.tip)
+                .ok()
+                .map(|oid| (b.name.as_str(), oid))
+        })
         .collect();
 
     let repo = open_repo_at(workdir)?;
@@ -128,4 +134,3 @@ pub fn delete_branches(
     }
     Ok(results)
 }
-

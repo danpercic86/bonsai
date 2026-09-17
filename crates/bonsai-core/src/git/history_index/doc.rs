@@ -238,7 +238,8 @@ mod tests {
         {
             let mut cfg = repo.config().expect("config");
             cfg.set_str("user.name", "Test User").expect("name");
-            cfg.set_str("user.email", "test@example.com").expect("email");
+            cfg.set_str("user.email", "test@example.com")
+                .expect("email");
             cfg.set_bool("core.autocrlf", false).expect("autocrlf");
         }
         (dir, repo)
@@ -266,7 +267,9 @@ mod tests {
             let blob = repo.blob(content).expect("blob");
             tb.insert(name, blob, 0o100_644).expect("insert");
         }
-        let tree = repo.find_tree(tb.write().expect("write tree")).expect("tree");
+        let tree = repo
+            .find_tree(tb.write().expect("write tree"))
+            .expect("tree");
         let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
         repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &parents)
             .expect("commit")
@@ -300,7 +303,10 @@ mod tests {
         assert_eq!(tokenize("alpha"), vec!["alpha".to_string()]);
 
         // Lowercasing + non-alphanumeric split.
-        assert_eq!(tokenize("Foo.Bar!"), vec!["foo".to_string(), "bar".to_string()]);
+        assert_eq!(
+            tokenize("Foo.Bar!"),
+            vec!["foo".to_string(), "bar".to_string()]
+        );
 
         // Short tokens (< 2 chars) and stopwords dropped; nothing survives here.
         assert!(tokenize("a I x").is_empty());
@@ -324,7 +330,10 @@ mod tests {
         );
         let doc = extract_doc(&repo, c0).expect("extract");
         // Root commit diffs vs the empty tree => all content is Added.
-        assert!(doc.tf.contains_key("alphaword"), "root diff content indexed");
+        assert!(
+            doc.tf.contains_key("alphaword"),
+            "root diff content indexed"
+        );
         assert!(doc.tf.contains_key("betaword"));
         // Message terms are field-boosted (weight MSG_BOOST).
         assert_eq!(doc.tf.get("seed").copied(), Some(MSG_BOOST));
@@ -359,8 +368,9 @@ mod tests {
                 .expect("dangling beta commit")
         };
         // Merge cm with parents [c1, cf] (first = c1); tree has base+alpha+beta.
-        let sig = git2::Signature::new("Ada Lovelace", "ada@example.com", &git2::Time::new(4000, 0))
-            .expect("sig");
+        let sig =
+            git2::Signature::new("Ada Lovelace", "ada@example.com", &git2::Time::new(4000, 0))
+                .expect("sig");
         let mut tb = repo
             .treebuilder(Some(&repo.find_commit(c1).unwrap().tree().unwrap()))
             .expect("tb");
@@ -376,13 +386,19 @@ mod tests {
                 &sig,
                 "merge feature",
                 &tree,
-                &[&repo.find_commit(c1).unwrap(), &repo.find_commit(cf).unwrap()],
+                &[
+                    &repo.find_commit(c1).unwrap(),
+                    &repo.find_commit(cf).unwrap(),
+                ],
             )
             .expect("merge commit");
 
         let doc = extract_doc(&repo, cm).expect("extract");
         // Diff cm-vs-c1 introduces ONLY beta.txt (alpha was already in c1).
-        assert!(doc.tf.contains_key("betaunique"), "first-parent diff content");
+        assert!(
+            doc.tf.contains_key("betaunique"),
+            "first-parent diff content"
+        );
         assert!(
             !doc.tf.contains_key("alphaunique"),
             "second-parent-only content must be absent (first-parent rule)"

@@ -41,7 +41,8 @@ fn clear_executable(path: &Path) {
 
 /// The `login_shell_probe_stub.sh` fixture, with its executable bit forced on.
 fn login_shell_stub_path() -> PathBuf {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/login_shell_probe_stub.sh");
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/login_shell_probe_stub.sh");
     set_executable(&path);
     path
 }
@@ -93,7 +94,10 @@ fn find_in_matches_only_executable_files() {
     std::fs::write(&non_exe_path, "definitely not executable").expect("write non-exe fixture");
     clear_executable(&non_exe_path);
 
-    assert!(is_executable_file(&exe_path), "executable file must be recognized");
+    assert!(
+        is_executable_file(&exe_path),
+        "executable file must be recognized"
+    );
     assert!(
         !is_executable_file(&non_exe_path),
         "a same-named file that exists but isn't executable must never match"
@@ -101,13 +105,21 @@ fn find_in_matches_only_executable_files() {
     assert!(!is_executable_file(&dir.path().join("does_not_exist")));
 
     let dirs = vec![dir.path().to_path_buf()];
-    assert_eq!(find_in(&dirs, "runnable"), Some(exe_path), "find_in must return the executable");
+    assert_eq!(
+        find_in(&dirs, "runnable"),
+        Some(exe_path),
+        "find_in must return the executable"
+    );
     assert_eq!(
         find_in(&dirs, "not_runnable"),
         None,
         "find_in must not match a non-executable file even though it exists on disk"
     );
-    assert_eq!(find_in(&dirs, "does_not_exist"), None, "find_in must miss a name absent from every dir");
+    assert_eq!(
+        find_in(&dirs, "does_not_exist"),
+        None,
+        "find_in must miss a name absent from every dir"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -150,7 +162,10 @@ fn probe_login_shell_path_times_out_on_hung_shell() {
 
     snapshot.restore();
 
-    assert!(result.is_none(), "a hung shell probe must degrade to None, not surface any PATH");
+    assert!(
+        result.is_none(),
+        "a hung shell probe must degrade to None, not surface any PATH"
+    );
     assert!(
         elapsed < Duration::from_secs(3),
         "probe must bound its wait near SHELL_PROBE_TIMEOUT ({SHELL_PROBE_TIMEOUT:?}), took {elapsed:?} instead"
@@ -183,7 +198,10 @@ fn resolve_finds_binary_via_login_shell_probe_when_not_on_current_path() {
     let snapshot = EnvSnapshot::capture();
     std::env::set_var("SHELL", login_shell_stub_path());
     std::env::remove_var("BONSAI_PROBE_MODE");
-    std::env::set_var("BONSAI_PROBE_FAKE_PATH", dir.path().to_str().expect("temp dir path must be utf8"));
+    std::env::set_var(
+        "BONSAI_PROBE_FAKE_PATH",
+        dir.path().to_str().expect("temp dir path must be utf8"),
+    );
 
     let resolved = resolve(program);
 

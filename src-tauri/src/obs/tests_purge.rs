@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use super::record::{LogLevel, LogPayload, LogRecord, LogSource, RedactionMode};
-use super::writer::{list_log_files, purge_scope, LogWriter, Limits, WriterConfig};
+use super::writer::{list_log_files, purge_scope, Limits, LogWriter, WriterConfig};
 
 fn test_redactor() -> std::sync::Arc<super::redact::Redactor> {
     std::sync::Arc::new(super::redact::Redactor::with_salt([7; 16]))
@@ -75,7 +75,7 @@ fn purge_off_removes_every_in_scope_file_and_nothing_else() {
     std::fs::write(logs.join("bonsai-a.jsonl.tmp"), vec![b'x'; 50]).unwrap();
     std::fs::write(logs.join("legacy.zip"), vec![b'x'; 300]).unwrap(); // (h)
     std::fs::write(exports.join("session.zip"), vec![b'x'; 400]).unwrap(); // (g)
-    // Out of scope: must survive (e).
+                                                                           // Out of scope: must survive (e).
     std::fs::write(metrics.join("usage.json"), b"{}").unwrap();
     std::fs::write(root.path().join("settings.json"), b"{}").unwrap();
     std::fs::write(logs.join("notes.txt"), b"keep me").unwrap();
@@ -100,8 +100,14 @@ fn purge_off_removes_every_in_scope_file_and_nothing_else() {
         metrics.join("usage.json").exists(),
         "purge_scope alone leaves metrics/ — the metrics half is MetricsState::clear"
     );
-    assert!(root.path().join("settings.json").exists(), "settings.json untouched");
-    assert!(logs.join("notes.txt").exists(), "a non-scope file in logs/ survives");
+    assert!(
+        root.path().join("settings.json").exists(),
+        "settings.json untouched"
+    );
+    assert!(
+        logs.join("notes.txt").exists(),
+        "a non-scope file in logs/ survives"
+    );
     // Every in-scope file is gone.
     assert!(!logs.join("bonsai-a.jsonl").exists());
     assert!(!logs.join("bonsai-a-1.jsonl").exists());
@@ -123,7 +129,10 @@ fn purge_never_touches_a_zip_outside_the_two_dirs() {
 
     let c = purge_scope(&logs, &exports, None);
     assert_eq!(c.deleted_files, 0);
-    assert!(outside.exists(), "a zip the user saved elsewhere is not deleted");
+    assert!(
+        outside.exists(),
+        "a zip the user saved elsewhere is not deleted"
+    );
 }
 
 /// (d) a file that cannot be removed increments `failed_files`; the purge still
@@ -140,10 +149,16 @@ fn purge_reports_an_undeletable_entry_as_failed_not_fatal() {
     std::fs::write(logs.join("bonsai-a.jsonl"), vec![b'x'; 42]).unwrap();
 
     let c = purge_scope(&logs, &exports, None);
-    assert_eq!(c.failed_files, 1, "the directory-as-jsonl could not be removed");
+    assert_eq!(
+        c.failed_files, 1,
+        "the directory-as-jsonl could not be removed"
+    );
     assert_eq!(c.deleted_files, 1, "the real part was still removed");
     assert_eq!(c.deleted_bytes, 42);
-    assert!(logs.join("stubborn.jsonl").exists(), "the un-removable entry remains");
+    assert!(
+        logs.join("stubborn.jsonl").exists(),
+        "the un-removable entry remains"
+    );
 }
 
 /// (b) A purge roll opens a NEW file whose header carries `afterPurge: true`,
@@ -156,8 +171,11 @@ fn roll_then_purge_keeps_only_the_fresh_file_with_an_after_purge_header() {
     let logs = root.path().join("logs");
     let exports = root.path().join("exports");
     std::fs::create_dir_all(&exports).unwrap();
-    let mut w = LogWriter::open(cfg(&logs, 1_772_200_991, Limits::default()), test_redactor())
-        .expect("open");
+    let mut w = LogWriter::open(
+        cfg(&logs, 1_772_200_991, Limits::default()),
+        test_redactor(),
+    )
+    .expect("open");
     let old = w.active_file().to_string();
     w.write_record(rec("BeforeClick")).expect("write");
     w.flush().expect("flush");
@@ -197,8 +215,8 @@ fn roll_within_the_same_second_still_gets_a_fresh_name() {
     // A far-future stamp forces `now_secs().max(started+1)` down the `+1` branch,
     // which is the exact case a naive `now_secs()` would collide on.
     let future = super::writer::now_secs() + 10_000;
-    let mut w = LogWriter::open(cfg(&logs, future, Limits::default()), test_redactor())
-        .expect("open");
+    let mut w =
+        LogWriter::open(cfg(&logs, future, Limits::default()), test_redactor()).expect("open");
     let old = w.active_file().to_string();
     w.write_record(rec("Secret")).expect("write");
     w.flush().expect("flush");
@@ -210,7 +228,9 @@ fn roll_within_the_same_second_still_gets_a_fresh_name() {
     // header — its content is untouched and separable from the new file.
     let old_rows = lines(&logs.join(&old));
     assert!(old_rows.iter().any(|r| r["component"] == "Secret"));
-    assert!(lines(&logs.join(&new)).iter().all(|r| r["component"] != "Secret"));
+    assert!(lines(&logs.join(&new))
+        .iter()
+        .all(|r| r["component"] != "Secret"));
 }
 
 /// (j) driving a writer past `max_parts` emits one `truncate` record per evicted
@@ -227,10 +247,10 @@ fn eviction_emits_truncate_records_and_marks_later_headers_truncated() {
         flush_bytes: 1,
         ..Limits::default()
     };
-    let mut w =
-        LogWriter::open(cfg(&logs, 1_772_200_991, limits), test_redactor()).expect("open");
+    let mut w = LogWriter::open(cfg(&logs, 1_772_200_991, limits), test_redactor()).expect("open");
     for i in 0..200 {
-        w.write_record(rec(&format!("Component{i}"))).expect("write");
+        w.write_record(rec(&format!("Component{i}")))
+            .expect("write");
     }
     w.flush().expect("flush");
     drop(w);
@@ -247,14 +267,18 @@ fn eviction_emits_truncate_records_and_marks_later_headers_truncated() {
 
     // (j) truncate records present, reason max-parts, dropped_parts strictly
     // increasing, dropped_part a redacted `part#N` label (never a path).
-    let truncs: Vec<&serde_json::Value> =
-        all.iter().filter(|r| r["kind"] == "truncate").collect();
+    let truncs: Vec<&serde_json::Value> = all.iter().filter(|r| r["kind"] == "truncate").collect();
     assert!(!truncs.is_empty(), "at least one eviction was recorded");
     let mut prev = 0u64;
     for t in &truncs {
         assert_eq!(t["reason"], "max-parts");
-        let dp = t["droppedParts"].as_u64().expect("droppedParts is a number");
-        assert!(dp > prev, "dropped_parts strictly increases: {dp} vs {prev}");
+        let dp = t["droppedParts"]
+            .as_u64()
+            .expect("droppedParts is a number");
+        assert!(
+            dp > prev,
+            "dropped_parts strictly increases: {dp} vs {prev}"
+        );
         prev = dp;
         let label = t["droppedPart"].as_str().expect("droppedPart string");
         assert!(label.starts_with("part#") && !label.contains('/') && !label.contains('\\'));

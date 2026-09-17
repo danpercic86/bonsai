@@ -7,12 +7,12 @@
 //!
 //! Each test skips (passes with a note) if `git` is not on PATH.
 
+use crate::common;
+use crate::common::{git, git_ok, init_repo};
 use bonsai_core::error::AppError;
 use bonsai_core::git::remote::{
     add_remote, list_remotes, remove_remote, rename_remote, set_remote_url,
 };
-use crate::common;
-use crate::common::{git, git_ok, init_repo};
 
 macro_rules! require_git {
     () => {
@@ -90,7 +90,12 @@ fn list_remotes_parity_and_empty() {
     // Cross-check each name+url against the CLI.
     for r in &listed {
         let cli_url = git(path, &["remote", "get-url", &r.name]);
-        assert_eq!(r.url.as_deref(), Some(cli_url.as_str()), "url for {}", r.name);
+        assert_eq!(
+            r.url.as_deref(),
+            Some(cli_url.as_str()),
+            "url for {}",
+            r.name
+        );
     }
     // The set of names matches `git remote`.
     let mut cli_names: Vec<String> = git(path, &["remote"])
@@ -118,20 +123,32 @@ fn rename_remote_parity_and_errors() {
     common::commit_fixed(path, "c1");
     let head = git(path, &["rev-parse", "HEAD"]);
     git(path, &["update-ref", "refs/remotes/origin/main", &head]);
-    assert!(git_ok(path, &["show-ref", "--verify", "refs/remotes/origin/main"]));
+    assert!(git_ok(
+        path,
+        &["show-ref", "--verify", "refs/remotes/origin/main"]
+    ));
 
     rename_remote(path, "origin", "upstream").expect("rename");
 
     // `git remote` shows the new name only.
     let remotes = git(path, &["remote"]);
     assert!(remotes.contains("upstream"), "no upstream: {remotes}");
-    assert!(!remotes.contains("origin"), "origin still present: {remotes}");
+    assert!(
+        !remotes.contains("origin"),
+        "origin still present: {remotes}"
+    );
     // Tracking refs moved.
     assert!(
-        git_ok(path, &["show-ref", "--verify", "refs/remotes/upstream/main"]),
+        git_ok(
+            path,
+            &["show-ref", "--verify", "refs/remotes/upstream/main"]
+        ),
         "tracking ref not moved to upstream"
     );
-    assert!(!git_ok(path, &["show-ref", "--verify", "refs/remotes/origin/main"]));
+    assert!(!git_ok(
+        path,
+        &["show-ref", "--verify", "refs/remotes/origin/main"]
+    ));
     // URL preserved (== CLI `git remote rename` semantics).
     assert_eq!(git(path, &["remote", "get-url", "upstream"]), URL_A);
 
@@ -160,13 +177,19 @@ fn rename_remote_without_tracking_refs() {
 
     // Fresh remote, never fetched → zero refs/remotes/origin/* exist.
     add_remote(path, "origin", URL_A).expect("add origin");
-    assert!(!git_ok(path, &["show-ref", "--verify", "refs/remotes/origin/main"]));
+    assert!(!git_ok(
+        path,
+        &["show-ref", "--verify", "refs/remotes/origin/main"]
+    ));
 
     rename_remote(path, "origin", "upstream").expect("rename with no tracking refs must succeed");
 
     let remotes = git(path, &["remote"]);
     assert!(remotes.contains("upstream"), "no upstream: {remotes}");
-    assert!(!remotes.contains("origin"), "origin still present: {remotes}");
+    assert!(
+        !remotes.contains("origin"),
+        "origin still present: {remotes}"
+    );
     assert_eq!(git(path, &["remote", "get-url", "upstream"]), URL_A);
 }
 
@@ -245,7 +268,10 @@ fn remove_remote_parity_and_error() {
     // Gone from `git remote`.
     assert!(!git(path, &["remote"]).contains("origin"));
     // Tracking refs gone.
-    assert!(!git_ok(path, &["show-ref", "--verify", "refs/remotes/origin/main"]));
+    assert!(!git_ok(
+        path,
+        &["show-ref", "--verify", "refs/remotes/origin/main"]
+    ));
     // list_remotes no longer lists it.
     assert!(list_remotes(path).expect("list").is_empty());
 

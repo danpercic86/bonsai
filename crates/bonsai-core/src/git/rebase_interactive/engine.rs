@@ -41,9 +41,7 @@ pub(super) fn drive(
         // run, so the detached tip is still `onto`) would otherwise reparent onto
         // the base's PARENT and silently rewrite the base. Refuse instead of
         // corrupting — checked BEFORE the cherry-pick so nothing is materialized.
-        if matches!(op.action, RebaseAction::Squash | RebaseAction::Fixup)
-            && state.committed == 0
-        {
+        if matches!(op.action, RebaseAction::Squash | RebaseAction::Fixup) && state.committed == 0 {
             return Err(AppError::Git(
                 "cannot squash/fixup: no preceding commit to combine into \
                  (its predecessor was dropped or skipped)"

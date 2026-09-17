@@ -75,8 +75,8 @@ pub struct SubmoduleInfo {
 // to keep this file under the ~500-line limit. Re-exported here so the wire
 // types keep their contracted path (`bonsai_core::git::submodule::*`) and the
 // argv builders / dirty check stay reachable from the ops + the test module.
-pub use super::submodule_teardown::{SubmoduleDeinitOutcome, SubmoduleRemoveOutcome};
 pub(crate) use super::submodule_teardown::{deinit_args, is_submodule_dirty, rm_args};
+pub use super::submodule_teardown::{SubmoduleDeinitOutcome, SubmoduleRemoveOutcome};
 
 /// Maps git2's `SubmoduleStatus` bitflags to our single enum in PRIORITY order
 /// (first match wins). A submodule that is simultaneously out-of-sync AND dirty

@@ -6,9 +6,9 @@
 
 use std::path::Path;
 
+use crate::common::{commit_fixed, git, git_raw, init_repo};
 use bonsai_core::git::diff::{FileDiff, LineKind};
 use bonsai_core::git::stage_partial::LineSelection;
-use crate::common::{commit_fixed, git, git_raw, init_repo};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -43,7 +43,11 @@ pub(crate) fn all_changed(fd: &FileDiff) -> Vec<LineSelection> {
     for h in &fd.hunks {
         for l in &h.lines {
             if matches!(l.kind, LineKind::Add | LineKind::Del) {
-                sel.push(LineSelection { kind: l.kind, old_no: l.old_no, new_no: l.new_no });
+                sel.push(LineSelection {
+                    kind: l.kind,
+                    old_no: l.old_no,
+                    new_no: l.new_no,
+                });
             }
         }
     }
@@ -55,14 +59,21 @@ pub(crate) fn hunk_changed(fd: &FileDiff, hunk_idx: usize) -> Vec<LineSelection>
     let mut sel = Vec::new();
     for l in &fd.hunks[hunk_idx].lines {
         if matches!(l.kind, LineKind::Add | LineKind::Del) {
-            sel.push(LineSelection { kind: l.kind, old_no: l.old_no, new_no: l.new_no });
+            sel.push(LineSelection {
+                kind: l.kind,
+                old_no: l.old_no,
+                new_no: l.new_no,
+            });
         }
     }
     sel
 }
 
 fn numbered(n: usize) -> Vec<u8> {
-    (1..=n).map(|i| format!("line {i}\n")).collect::<String>().into_bytes()
+    (1..=n)
+        .map(|i| format!("line {i}\n"))
+        .collect::<String>()
+        .into_bytes()
 }
 
 /// Numbered file with the given 1-based lines replaced by new text.
@@ -148,7 +159,12 @@ pub(crate) fn git_apply_stdin(dir: &Path, args: &[&str], patch: &[u8]) {
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn git apply");
-    child.stdin.take().expect("stdin").write_all(patch).expect("write patch");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(patch)
+        .expect("write patch");
     let out = child.wait_with_output().expect("wait git apply");
     assert!(
         out.status.success(),

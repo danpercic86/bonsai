@@ -74,8 +74,7 @@ fn non_single_file_target_rejected() {
     let tmp = TempDir::new().unwrap();
     // A rules-dir id and a config id are both invalid targets.
     for bad_id in ["cursorRules", "mcp", "claudeDir", "does-not-exist"] {
-        let err =
-            save_profile(tmp.path(), profile("p", vec![target(bad_id, "x")])).unwrap_err();
+        let err = save_profile(tmp.path(), profile("p", vec![target(bad_id, "x")])).unwrap_err();
         assert!(
             matches!(err, AppError::InvalidName(_)),
             "target {bad_id:?} should be InvalidName"
@@ -171,8 +170,14 @@ fn activate_creates_writes_and_skips() {
     assert_eq!(by_id("gemini"), TargetWriteAction::Unchanged);
 
     // Files hold byte-exact content afterward.
-    assert_eq!(std::fs::read(root.join("AGENTS.md")).unwrap(), b"# agents body\n");
-    assert_eq!(std::fs::read(root.join("CLAUDE.md")).unwrap(), b"# new claude\n");
+    assert_eq!(
+        std::fs::read(root.join("AGENTS.md")).unwrap(),
+        b"# agents body\n"
+    );
+    assert_eq!(
+        std::fs::read(root.join("CLAUDE.md")).unwrap(),
+        b"# new claude\n"
+    );
 
     // active_profile set + persisted.
     assert_eq!(act.store.active_profile.as_deref(), Some("p"));

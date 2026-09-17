@@ -113,8 +113,7 @@ async fn launch_inner(
             // row. It never re-runs the ladder — an `AppPaths` rung spawns
             // `reg.exe`, and a launch must not.
             Action::Terminal => {
-                let picked = settings_file
-                    .and_then(|f| picked_tool(&f, ToolKind::Terminal));
+                let picked = settings_file.and_then(|f| picked_tool(&f, ToolKind::Terminal));
                 external::open_in_terminal(&runner, os, picked.as_ref(), p)
             }
             Action::Editor => {

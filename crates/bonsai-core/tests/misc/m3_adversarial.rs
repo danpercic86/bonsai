@@ -8,10 +8,12 @@
 
 use std::path::Path;
 
+use crate::common;
+use crate::common::{
+    assert_same_status, commit_fixed, git, git_ok, git_raw, init_repo, porcelain_records,
+};
 use bonsai_core::git::commit::create_commit;
 use bonsai_core::git::stage::{stage_paths, unstage_paths};
-use crate::common;
-use crate::common::{assert_same_status, commit_fixed, git, git_ok, git_raw, init_repo, porcelain_records};
 
 macro_rules! require_git {
     () => {
@@ -101,7 +103,10 @@ fn restage_only_new_side_after_unstaging_rename() {
     stage_paths(a.path(), &strings(&["tracked.txt", "renamed.txt"])).expect("stage rename");
     unstage_paths(a.path(), &strings(&["tracked.txt", "renamed.txt"])).expect("unstage rename");
     git(b.path(), &["add", "-A", "--", "tracked.txt", "renamed.txt"]);
-    git(b.path(), &["restore", "--staged", "--", "tracked.txt", "renamed.txt"]);
+    git(
+        b.path(),
+        &["restore", "--staged", "--", "tracked.txt", "renamed.txt"],
+    );
     assert_same_status(a.path(), b.path());
 
     // Re-stage ONLY the new side.
@@ -145,7 +150,10 @@ fn crlf_message_matches_cli_cleanup() {
     let message_of = |dir: &Path| {
         let raw = git_raw(dir, &["cat-file", "commit", "HEAD"], &[]);
         let text = String::from_utf8(raw).expect("utf-8 commit object");
-        text.split_once("\n\n").expect("header/message separator").1.to_string()
+        text.split_once("\n\n")
+            .expect("header/message separator")
+            .1
+            .to_string()
     };
 
     // Byte parity with the CLI's cleanup=whitespace result — no stray \r.

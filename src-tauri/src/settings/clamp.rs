@@ -99,15 +99,17 @@ pub const AI_DOCK_HEIGHT_MAX: u32 = 600;
 /// TOP-LEVEL fields (A8) rather than one nested preference object.
 pub fn clamp_ai_settings(s: &mut Settings) {
     if s.ai_idle_timeout_secs != 0 {
-        s.ai_idle_timeout_secs =
-            s.ai_idle_timeout_secs.clamp(AI_IDLE_TIMEOUT_MIN, AI_IDLE_TIMEOUT_MAX);
+        s.ai_idle_timeout_secs = s
+            .ai_idle_timeout_secs
+            .clamp(AI_IDLE_TIMEOUT_MIN, AI_IDLE_TIMEOUT_MAX);
     }
     if s.ai_hard_cap_secs != 0 {
         s.ai_hard_cap_secs = s.ai_hard_cap_secs.clamp(AI_HARD_CAP_MIN, AI_HARD_CAP_MAX);
     }
     s.ai_max_turns = s.ai_max_turns.clamp(AI_MAX_TURNS_MIN, AI_MAX_TURNS_MAX);
-    s.ai_bulk_max_bytes =
-        s.ai_bulk_max_bytes.clamp(AI_BULK_MAX_BYTES_MIN, AI_BULK_MAX_BYTES_MAX);
+    s.ai_bulk_max_bytes = s
+        .ai_bulk_max_bytes
+        .clamp(AI_BULK_MAX_BYTES_MIN, AI_BULK_MAX_BYTES_MAX);
     // NaN/inf would poison the `{:.4}` argv formatting, and a negative budget is
     // meaningless — both collapse to "no cap".
     if !s.ai_max_budget_usd.is_finite() || s.ai_max_budget_usd < 0.0 {
@@ -115,5 +117,7 @@ pub fn clamp_ai_settings(s: &mut Settings) {
     } else if s.ai_max_budget_usd > AI_MAX_BUDGET_USD_MAX {
         s.ai_max_budget_usd = AI_MAX_BUDGET_USD_MAX;
     }
-    s.ai_dock_height = s.ai_dock_height.clamp(AI_DOCK_HEIGHT_MIN, AI_DOCK_HEIGHT_MAX);
+    s.ai_dock_height = s
+        .ai_dock_height
+        .clamp(AI_DOCK_HEIGHT_MIN, AI_DOCK_HEIGHT_MAX);
 }

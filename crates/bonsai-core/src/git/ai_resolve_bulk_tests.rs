@@ -27,19 +27,30 @@ fn paths(list: &[&str]) -> Vec<String> {
 
 #[test]
 fn bulk_payload_delimits_every_file_with_its_path_and_sides() {
-    let a = sides("i18n/de.json", "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> topic\n");
+    let a = sides(
+        "i18n/de.json",
+        "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> topic\n",
+    );
     let b = sides("i18n/en.json", "plain\n");
     let payload = build_bulk_payload(&[&a, &b]);
 
     assert!(payload.starts_with("BONSAI BULK CONFLICT RESOLUTION — 2 files, one merge\n"));
-    assert!(payload.contains("===== BONSAI FILE 1/2: i18n/de.json ====="), "{payload}");
-    assert!(payload.contains("===== BONSAI FILE 2/2: i18n/en.json ====="), "{payload}");
+    assert!(
+        payload.contains("===== BONSAI FILE 1/2: i18n/de.json ====="),
+        "{payload}"
+    );
+    assert!(
+        payload.contains("===== BONSAI FILE 2/2: i18n/en.json ====="),
+        "{payload}"
+    );
     // Every labelled section is present for each file.
     assert_eq!(payload.matches("----- ANCESTOR (base) -----").count(), 2);
     assert_eq!(payload.matches("----- OURS -----").count(), 2);
     assert_eq!(payload.matches("----- THEIRS -----").count(), 2);
     assert_eq!(
-        payload.matches("----- CONFLICTED (worktree, with markers) -----").count(),
+        payload
+            .matches("----- CONFLICTED (worktree, with markers) -----")
+            .count(),
         2
     );
     assert!(payload.contains("CONFLICT KIND: BothModified"));
@@ -52,7 +63,10 @@ fn bulk_payload_renders_an_empty_side_as_absent() {
     let mut s = sides("new.txt", "body\n");
     s.base = String::new();
     let payload = build_bulk_payload(&[&s]);
-    assert!(payload.contains(&format!("----- ANCESTOR (base) -----\n{ABSENT}\n")), "{payload}");
+    assert!(
+        payload.contains(&format!("----- ANCESTOR (base) -----\n{ABSENT}\n")),
+        "{payload}"
+    );
 }
 
 /// Both streaming prompts must stay SINGLE-LINE: Rust refuses to pass an argument
@@ -61,12 +75,29 @@ fn bulk_payload_renders_an_empty_side_as_absent() {
 #[test]
 fn streaming_prompts_are_single_line_and_carry_both_clauses() {
     let bulk = bulk_system_prompt();
-    for text in [bulk.as_str(), BULK_PROMPT, READ_ONLY_CLAUSE, SENTINEL_CLAUSE] {
-        assert!(!text.contains('\n') && !text.contains('\r'), "multi-line prompt: {text:?}");
+    for text in [
+        bulk.as_str(),
+        BULK_PROMPT,
+        READ_ONLY_CLAUSE,
+        SENTINEL_CLAUSE,
+    ] {
+        assert!(
+            !text.contains('\n') && !text.contains('\r'),
+            "multi-line prompt: {text:?}"
+        );
     }
-    assert!(bulk.contains("BONSAI_NEEDS_INPUT:"), "sentinel clause missing");
-    assert!(bulk.contains("Read, Grep, Glob"), "read-only clause missing");
-    assert!(bulk.contains("BONSAI RESULT:"), "the response contract must be stated");
+    assert!(
+        bulk.contains("BONSAI_NEEDS_INPUT:"),
+        "sentinel clause missing"
+    );
+    assert!(
+        bulk.contains("Read, Grep, Glob"),
+        "read-only clause missing"
+    );
+    assert!(
+        bulk.contains("BONSAI RESULT:"),
+        "the response contract must be stated"
+    );
 }
 
 // ============================================================ pack_batches
@@ -80,7 +111,11 @@ fn pack_batches_splits_by_cap_instead_of_truncating() {
     ];
     // Budget = cap - HEADER_RESERVE = 2_000 ⇒ two files per batch.
     let (batches, failed) = pack_batches(&parts, 2_000 + HEADER_RESERVE);
-    assert_eq!(batches, vec![vec![0, 1], vec![2]], "greedy fill, order preserved");
+    assert_eq!(
+        batches,
+        vec![vec![0, 1], vec![2]],
+        "greedy fill, order preserved"
+    );
     assert!(failed.is_empty(), "{failed:?}");
 
     // A cap that fits everything ⇒ ONE batch (the locked "one run" default).
@@ -100,16 +135,25 @@ fn pack_batches_marks_a_single_oversize_file_failed_and_keeps_the_others() {
     assert_eq!(batches, vec![vec![0, 2]], "the two small files still run");
     assert_eq!(failed.len(), 1);
     assert_eq!(failed[0].path, "huge.json");
-    assert!(failed[0].reason.contains("too large"), "{:?}", failed[0].reason);
+    assert!(
+        failed[0].reason.contains("too large"),
+        "{:?}",
+        failed[0].reason
+    );
 }
 
 #[test]
 fn pack_batches_never_loses_a_path() {
-    let parts: Vec<(String, usize)> =
-        (0..25).map(|i| (format!("f{i}.txt"), 900 + i * 7)).collect();
+    let parts: Vec<(String, usize)> = (0..25)
+        .map(|i| (format!("f{i}.txt"), 900 + i * 7))
+        .collect();
     let (batches, failed) = pack_batches(&parts, 3_000 + HEADER_RESERVE);
     let packed: usize = batches.iter().map(Vec::len).sum();
-    assert_eq!(packed + failed.len(), parts.len(), "every path is packed or failed");
+    assert_eq!(
+        packed + failed.len(),
+        parts.len(),
+        "every path is packed or failed"
+    );
     assert!(batches.iter().all(|b| !b.is_empty()), "no empty batch");
     // A degenerate cap fails everything rather than truncating anything.
     let (none, all_failed) = pack_batches(&parts, 0);
@@ -149,20 +193,36 @@ fn parse_attributes_every_requested_path() {
 fn parse_marks_a_missing_path_failed_without_failing_the_batch() {
     let requested = paths(&["a.txt", "b.txt"]);
     let parsed = parse_bulk_response(&block("a.txt", "A\n"), &requested).expect("partial reply");
-    assert_eq!(parsed.proposals.len(), 1, "the answered file still resolves");
+    assert_eq!(
+        parsed.proposals.len(),
+        1,
+        "the answered file still resolves"
+    );
     assert_eq!(parsed.failed.len(), 1);
     assert_eq!(parsed.failed[0].path, "b.txt");
-    assert!(parsed.failed[0].reason.contains("no result block"), "{:?}", parsed.failed[0]);
+    assert!(
+        parsed.failed[0].reason.contains("no result block"),
+        "{:?}",
+        parsed.failed[0]
+    );
 }
 
 #[test]
 fn parse_ignores_a_block_for_a_path_nobody_asked_about() {
     let requested = paths(&["a.txt"]);
-    let text = format!("{}{}", block("a.txt", "A\n"), block("../evil.txt", "NOPE\n"));
+    let text = format!(
+        "{}{}",
+        block("a.txt", "A\n"),
+        block("../evil.txt", "NOPE\n")
+    );
     let parsed = parse_bulk_response(&text, &requested).expect("extra block");
     assert_eq!(parsed.proposals.len(), 1);
     assert_eq!(parsed.unknown, vec!["../evil.txt".to_string()]);
-    assert!(parsed.failed.is_empty(), "an extra block is not a failure: {:?}", parsed.failed);
+    assert!(
+        parsed.failed.is_empty(),
+        "an extra block is not a failure: {:?}",
+        parsed.failed
+    );
 }
 
 /// The safety net that matters most: a body that still has markers must NEVER
@@ -173,14 +233,19 @@ fn parse_marks_a_markerful_body_failed() {
     let text = format!(
         "{}{}",
         block("a.txt", "clean\n"),
-        block("b.txt", "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> topic\n"),
+        block(
+            "b.txt",
+            "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> topic\n"
+        ),
     );
     let parsed = parse_bulk_response(&text, &requested).expect("markerful body");
     assert_eq!(parsed.proposals.len(), 1);
     assert_eq!(parsed.proposals[0].0, "a.txt");
     assert_eq!(parsed.failed.len(), 1);
     assert_eq!(parsed.failed[0].path, "b.txt");
-    assert!(parsed.failed[0].reason.contains("unresolved conflict markers"));
+    assert!(parsed.failed[0]
+        .reason
+        .contains("unresolved conflict markers"));
 }
 
 #[test]
@@ -190,7 +255,11 @@ fn parse_marks_an_empty_body_failed() {
     let parsed = parse_bulk_response(&text, &requested).expect("empty body");
     assert_eq!(parsed.proposals.len(), 1);
     assert_eq!(parsed.failed[0].path, "a.txt");
-    assert!(parsed.failed[0].reason.contains("empty"), "{:?}", parsed.failed[0]);
+    assert!(
+        parsed.failed[0].reason.contains("empty"),
+        "{:?}",
+        parsed.failed[0]
+    );
 }
 
 #[test]
@@ -203,7 +272,10 @@ fn parse_strips_a_fence_and_one_framing_blank_line() {
     );
     let parsed = parse_bulk_response(&text, &requested).expect("fenced + framed");
     assert_eq!(parsed.proposals[0].1, "{\"k\": 1}\n", "fence stripped");
-    assert_eq!(parsed.proposals[1].1, "body\n", "one framing blank line dropped");
+    assert_eq!(
+        parsed.proposals[1].1, "body\n",
+        "one framing blank line dropped"
+    );
 }
 
 #[test]
@@ -211,13 +283,20 @@ fn parse_tolerates_prose_before_the_first_block_and_odd_spacing() {
     let requested = paths(&["a.txt"]);
     let text = "Sure, here you go:\n\n  =====  BONSAI RESULT: a.txt  =====  \nBODY\n";
     let parsed = parse_bulk_response(text, &requested).expect("lenient header match");
-    assert_eq!(parsed.proposals, vec![("a.txt".to_string(), "BODY\n".to_string())]);
+    assert_eq!(
+        parsed.proposals,
+        vec![("a.txt".to_string(), "BODY\n".to_string())]
+    );
 }
 
 #[test]
 fn parse_keeps_the_first_of_two_blocks_for_the_same_path() {
     let requested = paths(&["a.txt"]);
-    let text = format!("{}{}", block("a.txt", "FIRST\n"), block("a.txt", "SECOND\n"));
+    let text = format!(
+        "{}{}",
+        block("a.txt", "FIRST\n"),
+        block("a.txt", "SECOND\n")
+    );
     let parsed = parse_bulk_response(&text, &requested).expect("duplicate block");
     assert_eq!(parsed.proposals.len(), 1);
     assert_eq!(parsed.proposals[0].1, "FIRST\n");
@@ -240,5 +319,8 @@ fn parse_fails_the_batch_only_when_no_block_at_all_and_several_requested() {
 fn parse_accepts_a_bare_body_when_exactly_one_path_was_requested() {
     let requested = paths(&["only.txt"]);
     let parsed = parse_bulk_response("MERGED BODY\n", &requested).expect("bare body");
-    assert_eq!(parsed.proposals, vec![("only.txt".to_string(), "MERGED BODY\n".to_string())]);
+    assert_eq!(
+        parsed.proposals,
+        vec![("only.txt".to_string(), "MERGED BODY\n".to_string())]
+    );
 }

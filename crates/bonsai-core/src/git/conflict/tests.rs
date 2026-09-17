@@ -127,8 +127,7 @@ fn clean_repo_has_no_conflicts() {
         other => panic!("expected Git, got {other:?}"),
     }
 
-    let err =
-        resolve_conflict(dir.path(), "a.txt", ConflictResolution::Ours).expect_err("none");
+    let err = resolve_conflict(dir.path(), "a.txt", ConflictResolution::Ours).expect_err("none");
     assert!(matches!(err, AppError::Git(_)));
 
     let err = resolve_conflict(dir.path(), "../escape", ConflictResolution::Ours)
@@ -143,11 +142,7 @@ fn clean_repo_has_no_conflicts() {
 
 /// Commits everything in the worktree (`add_all("*")`) on `HEAD` with the
 /// given parents; returns the new commit oid.
-fn commit_all(
-    repo: &git2::Repository,
-    msg: &str,
-    parents: &[&git2::Commit],
-) -> git2::Oid {
+fn commit_all(repo: &git2::Repository, msg: &str, parents: &[&git2::Commit]) -> git2::Oid {
     let mut index = repo.index().expect("index");
     index
         .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
@@ -180,7 +175,8 @@ fn both_modified_conflict() -> tempfile::TempDir {
         .to_string();
 
     // topic branch (theirs): change the middle line
-    repo.branch("topic", &base_commit, false).expect("branch topic");
+    repo.branch("topic", &base_commit, false)
+        .expect("branch topic");
     repo.set_head("refs/heads/topic").expect("set head topic");
     std::fs::write(dir.path().join("a.txt"), "line1\ntopic\nline3\n").expect("write topic");
     commit_all(&repo, "topic change", &[&base_commit]);
@@ -348,5 +344,7 @@ fn markers_rule_matches_the_frontend_rule() {
     // Not at column 0, or shorter than seven ⇒ not a marker (mirrors MARKER_RE).
     assert!(!has_conflict_markers(" <<<<<<< indented\n"));
     assert!(!has_conflict_markers("====== six\n"));
-    assert!(!has_conflict_markers("a normal file\nwith === separators\n"));
+    assert!(!has_conflict_markers(
+        "a normal file\nwith === separators\n"
+    ));
 }

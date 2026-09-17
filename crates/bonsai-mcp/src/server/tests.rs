@@ -13,10 +13,7 @@ fn open(id: &str) -> OpenRepo {
 /// A session over open tabs `a` and `b`, seeded with `seed`.
 fn session(seed: Option<&str>) -> SessionRepos {
     let repos = vec![open("a"), open("b")];
-    SessionRepos::new(
-        seed.map(str::to_string),
-        Box::new(move || repos.clone()),
-    )
+    SessionRepos::new(seed.map(str::to_string), Box::new(move || repos.clone()))
 }
 
 #[test]
@@ -100,7 +97,10 @@ fn err_result_preserves_kind_and_message_and_flags_error() {
     let r = err_result(AppError::EmptyMessage);
     assert_eq!(r.is_error, Some(true));
     let sc = r.structured_content.expect("structured content present");
-    assert_eq!(sc.get("kind").and_then(|v| v.as_str()), Some("emptyMessage"));
+    assert_eq!(
+        sc.get("kind").and_then(|v| v.as_str()),
+        Some("emptyMessage")
+    );
     assert!(sc.get("message").and_then(|v| v.as_str()).is_some());
     assert_eq!(r.content.len(), 1, "exactly one text block");
 }
@@ -131,7 +131,10 @@ fn ok_json_puts_full_payload_in_structured_and_compact_text() {
     assert_eq!(r.structured_content.as_ref(), Some(&value));
     // The text block is a compact key summary, NOT the full JSON echo.
     let text = &r.content[0].as_text().expect("text block").text;
-    assert!(text.starts_with('{') && text.contains("nodes"), "summary: {text}");
+    assert!(
+        text.starts_with('{') && text.contains("nodes"),
+        "summary: {text}"
+    );
     assert!(
         text.len() < value.to_string().len(),
         "compact summary must be shorter than the full payload"

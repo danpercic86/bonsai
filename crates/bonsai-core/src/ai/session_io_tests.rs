@@ -70,8 +70,15 @@ fn a_stderr_only_failure_surfaces_the_cli_s_own_message() {
         "prompt",
         "payload",
         RunOpts::default(),
-        RunLimits { idle_timeout: Duration::from_secs(10), ..RunLimits::default() },
-        SessionDeps { ctl: &ctl, on_event: &collect, clock: &TestClock::new() },
+        RunLimits {
+            idle_timeout: Duration::from_secs(10),
+            ..RunLimits::default()
+        },
+        SessionDeps {
+            ctl: &ctl,
+            on_event: &collect,
+            clock: &TestClock::new(),
+        },
     )
     .expect_err("a non-zero exit with no result is a failure");
     reg.finish(&run_id);
@@ -85,13 +92,26 @@ fn a_stderr_only_failure_surfaces_the_cli_s_own_message() {
     }
     // Same text on the terminal event, and in the dock log.
     let failed = sink.of_kind(AiRunEventKind::Failed);
-    assert_eq!(failed.len(), 1, "exactly one terminal event: {:?}", sink.kinds());
+    assert_eq!(
+        failed.len(),
+        1,
+        "exactly one terminal event: {:?}",
+        sink.kinds()
+    );
     assert!(
-        failed[0].text.as_deref().unwrap_or_default().contains("STUB_USAGE_ERROR"),
+        failed[0]
+            .text
+            .as_deref()
+            .unwrap_or_default()
+            .contains("STUB_USAGE_ERROR"),
         "terminal event text: {:?}",
         failed[0].text
     );
-    assert!(sink.has_text("stderr: STUB_USAGE_ERROR"), "log: {:?}", sink.texts());
+    assert!(
+        sink.has_text("stderr: STUB_USAGE_ERROR"),
+        "log: {:?}",
+        sink.texts()
+    );
 }
 
 /// S2: the stub never reads stdin and outlives the test, so the 1 MiB write is
@@ -129,8 +149,16 @@ fn cancel_works_while_the_stdin_write_is_blocked() {
                 RunOpts::default(),
                 // No watchdog and no cap: cancel is the ONLY thing that can stop
                 // this run, exactly as in the real (deadline-free) streaming path.
-                RunLimits { idle_timeout: Duration::ZERO, hard_cap: None, ..RunLimits::default() },
-                SessionDeps { ctl: &ctl, on_event: &collect, clock: clock_ref },
+                RunLimits {
+                    idle_timeout: Duration::ZERO,
+                    hard_cap: None,
+                    ..RunLimits::default()
+                },
+                SessionDeps {
+                    ctl: &ctl,
+                    on_event: &collect,
+                    clock: clock_ref,
+                },
             )
         });
         // The stub's `init` line can only become an event if the loop is running
@@ -156,7 +184,11 @@ fn cancel_works_while_the_stdin_write_is_blocked() {
         "cancel took {cancel_latency:?} — the blocked write delayed it"
     );
     assert_eq!(sink.kinds().last(), Some(&AiRunEventKind::Cancelled));
-    assert!(sink.has_text("session sess-hang"), "log kept: {:?}", sink.texts());
+    assert!(
+        sink.has_text("session sess-hang"),
+        "log kept: {:?}",
+        sink.texts()
+    );
     assert!(!reg.is_awaiting(&run_id), "awaiting flag cleared");
 
     // No surviving child (§10.1) — the 1 MiB write it was blocked on must not have

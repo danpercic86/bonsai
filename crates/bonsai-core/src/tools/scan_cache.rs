@@ -285,7 +285,12 @@ pub(super) fn cached_rows() -> (u64, Rows) {
 
 /// Probe the host and replace the cache. The ONLY place production code scans.
 pub(super) fn probe_host() -> (u64, Rows) {
-    SCAN.probe(|| detect::scan_for(&detect::HostToolEnv::new(), crate::external::TargetOs::host()))
+    SCAN.probe(|| {
+        detect::scan_for(
+            &detect::HostToolEnv::new(),
+            crate::external::TargetOs::host(),
+        )
+    })
 }
 
 #[cfg(test)]

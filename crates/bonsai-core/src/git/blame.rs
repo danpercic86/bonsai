@@ -78,7 +78,11 @@ fn commit_meta(repo: &git2::Repository, oid: git2::Oid) -> Result<CommitMeta, Ap
 
 /// Reads `path`'s blob content from `tree`, rejecting a binary blob or a path
 /// that is absent / not a blob (directory, submodule).
-fn read_tree_blob(repo: &git2::Repository, tree: &git2::Tree, path: &str) -> Result<Vec<u8>, AppError> {
+fn read_tree_blob(
+    repo: &git2::Repository,
+    tree: &git2::Tree,
+    path: &str,
+) -> Result<Vec<u8>, AppError> {
     let entry = tree
         .get_path(Path::new(path))
         .map_err(|_| AppError::Git(format!("path not found in commit: {path}")))?;
@@ -113,7 +117,8 @@ pub fn blame_file(
     // Resolve the newest commit for both the blame walk and the blob read.
     let newest = match at_oid {
         Some(o) => {
-            let oid = git2::Oid::from_str(o).map_err(|_| AppError::Git("invalid commit id".to_string()))?;
+            let oid = git2::Oid::from_str(o)
+                .map_err(|_| AppError::Git("invalid commit id".to_string()))?;
             repo.find_commit(oid)?
         }
         None => repo.head()?.peel_to_commit()?,
@@ -198,8 +203,8 @@ pub fn blame_line(
     // (identical to `blame_file`).
     let newest = match at_oid {
         Some(o) => {
-            let oid =
-                git2::Oid::from_str(o).map_err(|_| AppError::Git("invalid commit id".to_string()))?;
+            let oid = git2::Oid::from_str(o)
+                .map_err(|_| AppError::Git("invalid commit id".to_string()))?;
             repo.find_commit(oid)?
         }
         None => repo.head()?.peel_to_commit()?,
@@ -269,7 +274,11 @@ fn touches(diff: &git2::Diff, path: &str) -> bool {
 /// this is the documented degrade-to-no-follow behaviour.
 ///
 /// An unknown path at HEAD yields an empty history (`[]`), not an error.
-pub fn file_history(workdir: &Path, path: &str, limit: u32) -> Result<Vec<FileHistoryEntry>, AppError> {
+pub fn file_history(
+    workdir: &Path,
+    path: &str,
+    limit: u32,
+) -> Result<Vec<FileHistoryEntry>, AppError> {
     validate_rel_path(path)?;
     let repo = open_workdir_repo(workdir)?;
 
@@ -339,10 +348,17 @@ pub fn file_history(workdir: &Path, path: &str, limit: u32) -> Result<Vec<FileHi
         // A full rename-detecting diff of this commit then tells us the old name.
         let appeared = parent
             .as_ref()
-            .map(|p| p.tree().ok().and_then(|t| t.get_path(Path::new(&current_path)).ok()).is_none())
+            .map(|p| {
+                p.tree()
+                    .ok()
+                    .and_then(|t| t.get_path(Path::new(&current_path)).ok())
+                    .is_none()
+            })
             .unwrap_or(false);
         if appeared {
-            if let Some(old_name) = detect_rename_origin(&repo, old_tree.as_ref(), &new_tree, &current_path)? {
+            if let Some(old_name) =
+                detect_rename_origin(&repo, old_tree.as_ref(), &new_tree, &current_path)?
+            {
                 current_path = old_name;
             }
         }

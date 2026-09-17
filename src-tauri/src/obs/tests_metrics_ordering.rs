@@ -86,10 +86,16 @@ fn a_dropped_stale_write_does_not_block_later_saves() {
     store.flush(&PerfCounters::default(), T0).expect("flush");
 
     store.bump_counter("commit.amend", 2, &day());
-    store.flush(&PerfCounters::default(), T0 + 20).expect("flush 2");
+    store
+        .flush(&PerfCounters::default(), T0 + 20)
+        .expect("flush 2");
 
     let on_disk = metrics_file::load(&path);
-    let bucket = on_disk.days.iter().find(|d| d.date == day()).expect("day bucket");
+    let bucket = on_disk
+        .days
+        .iter()
+        .find(|d| d.date == day())
+        .expect("day bucket");
     assert_eq!(bucket.totals.counters.get("commit.amend"), Some(&2));
     assert!(
         !bucket.totals.counters.contains_key("commit.create"),
@@ -126,7 +132,11 @@ fn an_observation_during_a_save_survives_to_the_next_flush() {
     // never cleared for a revision the commit did not contain.
     store.flush(&PerfCounters::default(), T0).expect("flush 2");
     let on_disk = metrics_file::load(&path);
-    let bucket = on_disk.days.iter().find(|d| d.date == day()).expect("day bucket");
+    let bucket = on_disk
+        .days
+        .iter()
+        .find(|d| d.date == day())
+        .expect("day bucket");
     assert_eq!(bucket.totals.counters.get("commit.amend"), Some(&5));
     let _ = std::fs::remove_file(&path);
 }

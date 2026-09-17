@@ -79,7 +79,11 @@ fn apply_rolls_back_on_mid_sequence_failure_detached_head() {
             "HEAD is STILL detached after rollback (not re-attached to a branch)"
         );
     }
-    assert_eq!(commit_count(p), 1, "zero commits landed (only base remains)");
+    assert_eq!(
+        commit_count(p),
+        1,
+        "zero commits landed (only base remains)"
+    );
     assert_eq!(index_tree(p), head_tree(p), "index reset to HEAD");
 
     // WORKING TREE UNTOUCHED: all original on-disk content preserved.
@@ -99,7 +103,10 @@ fn apply_first_commits_on_unborn_head() {
     write(p, "f1.txt", "1\n");
     write(p, "f2.txt", "2\n");
     let plan = ComposePlan {
-        groups: vec![group(&["f1.txt"], "root: f1"), group(&["f2.txt"], "second: f2")],
+        groups: vec![
+            group(&["f1.txt"], "root: f1"),
+            group(&["f2.txt"], "second: f2"),
+        ],
     };
     let res = apply_composed_commits(p, &plan).expect("apply");
     assert_eq!(res.commits.len(), 2);
@@ -133,8 +140,14 @@ fn apply_first_commits_on_unborn_head() {
     assert_eq!(commit_count(p2), 0, "no commit reachable");
     let repo3 = open_workdir_repo(p2).expect("open");
     assert!(repo3.index().expect("index").is_empty(), "index emptied");
-    assert_eq!(std::fs::read_to_string(p2.join("g1.txt")).expect("g1"), "1\n");
-    assert_eq!(std::fs::read_to_string(p2.join("g2.txt")).expect("g2"), "2\n");
+    assert_eq!(
+        std::fs::read_to_string(p2.join("g1.txt")).expect("g1"),
+        "1\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(p2.join("g2.txt")).expect("g2"),
+        "2\n"
+    );
 }
 
 /// §8.14: a SUCCESSFUL apply never touches the working tree — every changed
@@ -154,7 +167,12 @@ fn apply_does_not_touch_workdir() {
     write(p, "new2.txt", "new two\n");
     let before: Vec<(String, String)> = ["tracked.txt", "new1.txt", "new2.txt"]
         .iter()
-        .map(|f| (f.to_string(), std::fs::read_to_string(p.join(f)).expect("read")))
+        .map(|f| {
+            (
+                f.to_string(),
+                std::fs::read_to_string(p.join(f)).expect("read"),
+            )
+        })
         .collect();
 
     let plan = ComposePlan {

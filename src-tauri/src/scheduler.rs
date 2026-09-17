@@ -214,8 +214,12 @@ pub fn next_run_estimate_ms(
     if !enabled {
         return None;
     }
-    last_run_ms
-        .map(|l| l.saturating_add(effective_interval_ms(base_interval_ms, consecutive_failures)))
+    last_run_ms.map(|l| {
+        l.saturating_add(effective_interval_ms(
+            base_interval_ms,
+            consecutive_failures,
+        ))
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -285,10 +289,10 @@ pub fn unix_now_ms() -> i64 {
 }
 
 #[cfg(test)]
-mod test_support;
-#[cfg(test)]
 mod plan_tests;
 #[cfg(test)]
-mod tick_tests;
-#[cfg(test)]
 mod run_now_tests;
+#[cfg(test)]
+mod test_support;
+#[cfg(test)]
+mod tick_tests;

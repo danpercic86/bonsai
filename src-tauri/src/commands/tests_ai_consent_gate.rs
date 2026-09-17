@@ -15,7 +15,11 @@ use super::*;
 /// exercised here on purpose — a valid URL would open a real browser window.
 #[test]
 fn open_url_command_rejects_a_non_web_scheme_without_echoing_it() {
-    for url in ["javascript:alert(1)", "file:///C:/Windows/System32/calc.exe", "-https://x.com"] {
+    for url in [
+        "javascript:alert(1)",
+        "file:///C:/Windows/System32/calc.exe",
+        "-https://x.com",
+    ] {
         let err = tauri::async_runtime::block_on(open_url(url.to_string()))
             .expect_err("a non-web URL must be refused");
         assert!(
@@ -65,7 +69,8 @@ fn external_launch_rejects_missing_path_before_spawning() {
     // category string is just as specific a discriminator and leaks nothing,
     // so it takes over that job.
     assert!(
-        err.to_string().contains("target folder is missing or not accessible"),
+        err.to_string()
+            .contains("target folder is missing or not accessible"),
         "the precheck must return the category-only message: {err}"
     );
     assert!(
@@ -85,10 +90,9 @@ fn external_launch_rejects_a_file_target_not_just_a_missing_one() {
     std::fs::write(&file, b"x").expect("write probe file");
     assert!(file.is_file(), "precondition: the target must be a file");
 
-    let err = tauri::async_runtime::block_on(reveal_in_file_manager(
-        file.to_string_lossy().into_owned(),
-    ))
-    .expect_err("a file target must be rejected by the precheck");
+    let err =
+        tauri::async_runtime::block_on(reveal_in_file_manager(file.to_string_lossy().into_owned()))
+            .expect_err("a file target must be rejected by the precheck");
     assert!(
         matches!(err, AppError::Io(_)),
         "a file target must surface as AppError::Io, got {err:?}"
@@ -161,10 +165,9 @@ fn generate_commit_message_enforces_consent_gate_then_no_repo() {
     let file = dir.path().join("settings.json");
 
     // No settings file → defaults → not consented → the gate refuses.
-    let err = tauri::async_runtime::block_on(generate_commit_message_inner(
-        &state, &file, MISSING_ID,
-    ))
-    .expect_err("disabled gate must refuse");
+    let err =
+        tauri::async_runtime::block_on(generate_commit_message_inner(&state, &file, MISSING_ID))
+            .expect_err("disabled gate must refuse");
     assert!(matches!(err, AppError::AiUnavailable(_)), "got {err:?}");
 
     // Enable + consent; now the gate passes and the missing repo → NoRepo.
@@ -174,10 +177,9 @@ fn generate_commit_message_enforces_consent_gate_then_no_repo() {
         ..settings::Settings::default()
     };
     settings::save_to(&file, &s).expect("save settings");
-    let err = tauri::async_runtime::block_on(generate_commit_message_inner(
-        &state, &file, MISSING_ID,
-    ))
-    .expect_err("no repo open must be NoRepo");
+    let err =
+        tauri::async_runtime::block_on(generate_commit_message_inner(&state, &file, MISSING_ID))
+            .expect_err("no repo open must be NoRepo");
     assert!(matches!(err, AppError::NoRepo), "got {err:?}");
 }
 
@@ -192,10 +194,9 @@ fn ai_compose_commits_enforces_consent_gate_then_no_repo() {
     let file = dir.path().join("settings.json");
 
     // No settings file → defaults → not consented → the gate refuses.
-    let err = tauri::async_runtime::block_on(ai_compose_commits_inner(
-        &state, &file, MISSING_ID, None,
-    ))
-    .expect_err("disabled gate must refuse");
+    let err =
+        tauri::async_runtime::block_on(ai_compose_commits_inner(&state, &file, MISSING_ID, None))
+            .expect_err("disabled gate must refuse");
     assert!(matches!(err, AppError::AiUnavailable(_)), "got {err:?}");
 
     // Enable + consent; now the gate passes and the missing repo → NoRepo.
@@ -344,9 +345,8 @@ fn ai_digest_enforces_consent_gate_then_no_repo() {
     let range = || AiDigestRange::LastDays { days: 7 };
 
     // No settings file → defaults → not consented → the gate refuses.
-    let err =
-        tauri::async_runtime::block_on(ai_digest_inner(&state, &file, MISSING_ID, range()))
-            .expect_err("disabled gate must refuse");
+    let err = tauri::async_runtime::block_on(ai_digest_inner(&state, &file, MISSING_ID, range()))
+        .expect_err("disabled gate must refuse");
     assert!(matches!(err, AppError::AiUnavailable(_)), "got {err:?}");
 
     // Enable + consent; now the gate passes and the missing repo → NoRepo.
@@ -356,9 +356,8 @@ fn ai_digest_enforces_consent_gate_then_no_repo() {
         ..settings::Settings::default()
     };
     settings::save_to(&file, &s).expect("save settings");
-    let err =
-        tauri::async_runtime::block_on(ai_digest_inner(&state, &file, MISSING_ID, range()))
-            .expect_err("no repo open must be NoRepo");
+    let err = tauri::async_runtime::block_on(ai_digest_inner(&state, &file, MISSING_ID, range()))
+        .expect_err("no repo open must be NoRepo");
     assert!(matches!(err, AppError::NoRepo), "got {err:?}");
 }
 
@@ -480,4 +479,3 @@ fn ai_summarize_range_enforces_consent_gate_then_no_repo() {
     .expect_err("no repo open must be NoRepo");
     assert!(matches!(err, AppError::NoRepo), "got {err:?}");
 }
-

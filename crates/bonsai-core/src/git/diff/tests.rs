@@ -77,7 +77,10 @@ fn wire_serialization_shape() {
     assert_eq!(json.matches("noNewline").count(), 1, "{json}");
     // P61a: empty `spans` is wire-invisible (byte-identical to pre-P61a).
     // `intraline=false` never populates spans, so the key must not appear.
-    assert!(!json.contains("spans"), "empty spans must be skipped: {json}");
+    assert!(
+        !json.contains("spans"),
+        "empty spans must be skipped: {json}"
+    );
 }
 
 /// P61a: when a diff is intraline-annotated, changed paired lines serialize
@@ -125,7 +128,8 @@ fn clean_path_returns_empty_filediff() {
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
         cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     }
     std::fs::write(dir.path().join("a.txt"), "one\n").expect("write");
@@ -154,7 +158,8 @@ fn glob_metachar_filename_matches_literally() {
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
         cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     }
     for name in ["a[ab].txt", "aa.txt", "ab.txt"] {

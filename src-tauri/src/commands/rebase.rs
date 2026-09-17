@@ -39,7 +39,10 @@ pub async fn rebase_continue(
 }
 
 /// Runtime-free core of `rebase_continue` (unit-testable without a Tauri app).
-pub(crate) async fn rebase_continue_inner(state: &AppState, repo_id: &str) -> Result<RebaseOutcome, AppError> {
+pub(crate) async fn rebase_continue_inner(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<RebaseOutcome, AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || rebase::rebase_continue(&path))
         .await
@@ -57,7 +60,10 @@ pub async fn rebase_skip(
 }
 
 /// Runtime-free core of `rebase_skip` (unit-testable without a Tauri app).
-pub(crate) async fn rebase_skip_inner(state: &AppState, repo_id: &str) -> Result<RebaseOutcome, AppError> {
+pub(crate) async fn rebase_skip_inner(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<RebaseOutcome, AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || rebase::rebase_skip(&path))
         .await

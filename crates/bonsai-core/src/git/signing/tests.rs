@@ -3,7 +3,10 @@ use crate::git::exec::GitOutput;
 
 #[test]
 fn git_raw_date_formats_offset() {
-    assert_eq!(git_raw_date(&git2::Time::new(1_000_000_000, 120)), "1000000000 +0200");
+    assert_eq!(
+        git_raw_date(&git2::Time::new(1_000_000_000, 120)),
+        "1000000000 +0200"
+    );
     assert_eq!(git_raw_date(&git2::Time::new(0, -300)), "0 -0500");
     assert_eq!(git_raw_date(&git2::Time::new(42, 0)), "42 +0000");
 }
@@ -28,13 +31,20 @@ fn build_verify_args_prefix_and_drops_non_hex() {
     assert_eq!(args[1], "--no-walk=unsorted");
     assert_eq!(args[2], "--ignore-missing");
     assert_eq!(args[3], "--format=%H%x1f%G?%x1f%GS%x1f%GK");
-    assert_eq!(&args[VERIFY_ARG_PREFIX..], &[good, upper, mixed][..], "only 40-hex, in order");
+    assert_eq!(
+        &args[VERIFY_ARG_PREFIX..],
+        &[good, upper, mixed][..],
+        "only 40-hex, in order"
+    );
 }
 
 #[test]
 fn build_verify_args_caps_at_max_batch() {
     let oids = vec!["a".repeat(40); MAX_VERIFY_BATCH + 50];
-    assert_eq!(build_verify_args(&oids).len(), VERIFY_ARG_PREFIX + MAX_VERIFY_BATCH);
+    assert_eq!(
+        build_verify_args(&oids).len(),
+        VERIFY_ARG_PREFIX + MAX_VERIFY_BATCH
+    );
 }
 
 #[test]
@@ -95,7 +105,13 @@ impl GitExec for PanicExec {
 
 #[test]
 fn verify_commits_empty_or_all_invalid_does_not_spawn() {
-    assert!(verify_commits(&PanicExec, Path::new("."), &[]).unwrap().verifications.is_empty());
+    assert!(verify_commits(&PanicExec, Path::new("."), &[])
+        .unwrap()
+        .verifications
+        .is_empty());
     let junk = vec!["not-hex".to_string(), "#".to_string(), "b".repeat(39)];
-    assert!(verify_commits(&PanicExec, Path::new("."), &junk).unwrap().verifications.is_empty());
+    assert!(verify_commits(&PanicExec, Path::new("."), &junk)
+        .unwrap()
+        .verifications
+        .is_empty());
 }

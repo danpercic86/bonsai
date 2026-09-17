@@ -187,7 +187,11 @@ pub enum FrameDim {
 // `rename_all` covers the VARIANT names, `rename_all_fields` the fields inside
 // them — both are needed: the wire is camelCase throughout, and every dotted
 // kind (`ipc.call`, `render.tally`) additionally overrides its variant name.
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum LogPayload {
     /// First line of every file (§6).
     #[serde(rename = "session")]

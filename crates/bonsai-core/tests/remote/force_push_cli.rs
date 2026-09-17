@@ -19,11 +19,11 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use crate::common::{commit_fixed, git, git_env};
 use bonsai_core::error::AppError;
 use bonsai_core::git::exec::{GitExec, GitOutput, SpawnGitExec};
 use bonsai_core::git::remote::{force_push_with_lease, PushResult};
-use crate::common;
-use crate::common::{commit_fixed, git, git_env};
 
 macro_rules! require_git {
     () => {
@@ -169,7 +169,11 @@ fn lease_refuses_when_remote_moved() {
     }
 
     // Oracle: origin's main is untouched (still Y).
-    assert_eq!(origin_main(&f), y, "origin main must be unchanged after refusal");
+    assert_eq!(
+        origin_main(&f),
+        y,
+        "origin main must be unchanged after refusal"
+    );
 }
 
 // --------------------------------------------- §8.B lease succeeds (moves)
@@ -201,7 +205,11 @@ fn lease_succeeds_and_moves_the_ref() {
     }
 
     // Oracle: origin's main now equals the rewritten tip Z.
-    assert_eq!(origin_main(&f), z, "origin main must move to the rewritten tip");
+    assert_eq!(
+        origin_main(&f),
+        z,
+        "origin main must move to the rewritten tip"
+    );
 }
 
 // ------------------------------------------------------- §8.C up-to-date
@@ -215,7 +223,8 @@ fn up_to_date_when_baseline_equals_local_tip() {
     let x = origin_main(&f);
 
     // PanicExec: up-to-date must short-circuit in git2 with NO git spawned.
-    let res = force_push_with_lease(&f.work, &PanicExec, false).expect("up-to-date is not an error");
+    let res =
+        force_push_with_lease(&f.work, &PanicExec, false).expect("up-to-date is not an error");
     match res {
         PushResult::UpToDate { remote, branch } => {
             assert_eq!(remote, "origin");
@@ -236,7 +245,8 @@ fn no_upstream_is_rejected() {
 
     git(&f.work, &["checkout", "-b", "nolease"]);
     // PanicExec: the NoUpstream pre-check fires before any git push.
-    let err = force_push_with_lease(&f.work, &PanicExec, false).expect_err("no upstream must error");
+    let err =
+        force_push_with_lease(&f.work, &PanicExec, false).expect_err("no upstream must error");
     assert!(
         matches!(err, AppError::NoUpstream(_)),
         "expected NoUpstream, got {err:?}"
@@ -258,7 +268,8 @@ fn no_baseline_refuses_with_fetch_hint() {
 
     let _z = rewrite_head(&f.work, "z");
     // PanicExec: the no-baseline pre-check fires before any git push.
-    let err = force_push_with_lease(&f.work, &PanicExec, false).expect_err("no baseline must refuse");
+    let err =
+        force_push_with_lease(&f.work, &PanicExec, false).expect_err("no baseline must refuse");
     match err {
         AppError::PushRejected(m) => {
             assert!(
@@ -296,8 +307,8 @@ fn lease_succeeds_on_nested_branch_name() {
     let z = rewrite_head(&f.work, "z-nested");
     assert_ne!(z, x, "the rewrite must differ from the original tip");
 
-    let res =
-        force_push_with_lease(&f.work, &SpawnGitExec, false).expect("lease should hold on nested branch");
+    let res = force_push_with_lease(&f.work, &SpawnGitExec, false)
+        .expect("lease should hold on nested branch");
     match res {
         PushResult::Pushed {
             remote,
@@ -350,11 +361,18 @@ fn force_push_drops_a_remote_commit() {
     assert!(matches!(res, PushResult::Pushed { .. }), "got {res:?}");
 
     // Oracle: origin/main == Z, its parent == X, and Y is no longer reachable.
-    assert_eq!(origin_main(&f), z, "origin main must be the replacement tip Z");
+    assert_eq!(
+        origin_main(&f),
+        z,
+        "origin main must be the replacement tip Z"
+    );
     let z_parent = git(&f.bare, &["rev-parse", "refs/heads/main^"]);
     assert_eq!(z_parent, x, "Z's parent must be X (Y was dropped)");
     let reachable = git_ancestor(&f.bare, &y, "refs/heads/main");
-    assert!(!reachable, "dropped commit Y must not be an ancestor of origin/main");
+    assert!(
+        !reachable,
+        "dropped commit Y must not be an ancestor of origin/main"
+    );
 }
 
 // ------------------------------------------ §8.H detached HEAD error (extra)
@@ -368,7 +386,8 @@ fn detached_head_is_rejected() {
     git(&f.work, &["checkout", &tip]); // detach
 
     // PanicExec: the detached-HEAD guard fires before any git push.
-    let err = force_push_with_lease(&f.work, &PanicExec, false).expect_err("detached HEAD must error");
+    let err =
+        force_push_with_lease(&f.work, &PanicExec, false).expect_err("detached HEAD must error");
     match err {
         AppError::Git(m) => assert!(
             m.to_lowercase().contains("detached"),
@@ -420,7 +439,10 @@ fn pre_push_hook_blocks_force_push() {
     let f = init_origin_and_clone();
     let x = origin_main(&f);
 
-    common::write_pre_push_hook(&f.work, "read line\necho \"pre-push saw: $line\" >&2\nexit 1\n");
+    common::write_pre_push_hook(
+        &f.work,
+        "read line\necho \"pre-push saw: $line\" >&2\nexit 1\n",
+    );
     let z = rewrite_head(&f.work, "z");
     assert_ne!(z, x);
 
@@ -431,12 +453,19 @@ fn pre_push_hook_blocks_force_push() {
             assert!(m.contains("pre-push hook failed:"), "prefix: {m}");
             assert!(m.contains("refs/heads/main"), "stdin ref surfaced: {m}");
             // The remote-oid field is the lease baseline X (not 40 zeros).
-            assert!(m.contains(&x), "stdin remote-oid must be the lease baseline: {m}");
+            assert!(
+                m.contains(&x),
+                "stdin remote-oid must be the lease baseline: {m}"
+            );
         }
         other => panic!("expected HookRejected, got {other:?}"),
     }
     // Oracle: the force-push never happened — origin unchanged.
-    assert_eq!(origin_main(&f), x, "origin main must be unchanged after a blocked pre-push");
+    assert_eq!(
+        origin_main(&f),
+        x,
+        "origin main must be unchanged after a blocked pre-push"
+    );
 }
 
 /// P59a-2: `skip_hooks = true` (≡ --no-verify) bypasses a failing pre-push — the
@@ -455,7 +484,11 @@ fn pre_push_hook_skipped_allows_force_push() {
     let res = force_push_with_lease(&f.work, &SpawnGitExec, true)
         .expect("skip_hooks bypasses the failing pre-push");
     assert!(matches!(res, PushResult::Pushed { .. }), "got {res:?}");
-    assert_eq!(origin_main(&f), z, "origin main must move when the hook is skipped");
+    assert_eq!(
+        origin_main(&f),
+        z,
+        "origin main must move when the hook is skipped"
+    );
 }
 
 /// A PASSING pre-push (exit 0) allows the force-push through git's atomic lease.

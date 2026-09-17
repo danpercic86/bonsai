@@ -31,7 +31,9 @@ pub fn checkout_branch_with(
     let branch = match repo.find_branch(name, git2::BranchType::Local) {
         Ok(b) => b,
         Err(e) if e.code() == git2::ErrorCode::NotFound => {
-            return Err(AppError::BranchNotFound(format!("branch '{name}' not found")));
+            return Err(AppError::BranchNotFound(format!(
+                "branch '{name}' not found"
+            )));
         }
         Err(e) => return Err(e.into()),
     };
@@ -120,10 +122,7 @@ pub struct CheckoutResult {
 /// `operationInProgress` (via `create_stash`) | `configMissing` (via
 /// `create_stash`) | `checkoutConflict` (defensive, via `checkout_branch`) |
 /// `git` | `noRepo`.
-pub fn checkout_branch_autostash(
-    workdir: &Path,
-    name: &str,
-) -> Result<CheckoutResult, AppError> {
+pub fn checkout_branch_autostash(workdir: &Path, name: &str) -> Result<CheckoutResult, AppError> {
     // 0. Resolve up-front — zero side effects on failure. Open the repo ONCE
     //    (P88b/B2a) and thread the handle through every sub-primitive.
     let mut repo = open_repo_at(workdir)?;
@@ -131,7 +130,9 @@ pub fn checkout_branch_autostash(
         let branch = match repo.find_branch(name, git2::BranchType::Local) {
             Ok(b) => b,
             Err(e) if e.code() == git2::ErrorCode::NotFound => {
-                return Err(AppError::BranchNotFound(format!("branch '{name}' not found")));
+                return Err(AppError::BranchNotFound(format!(
+                    "branch '{name}' not found"
+                )));
             }
             Err(e) => return Err(e.into()),
         };

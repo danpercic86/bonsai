@@ -100,7 +100,8 @@ pub fn set_active_sink(sink: Option<Arc<Sink>>) {
 #[cfg(test)]
 pub(crate) fn test_sink_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    LOCK.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// The live sink, if Dev mode is on. `None` ⇒ zero-cost no-op for producers.

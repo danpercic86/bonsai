@@ -6,11 +6,11 @@
 //! subtree/submodule path → None, missing-both → None, and bare-repo error.
 //! Scratch on D:. Skips (passes with a note) w/o `git`.
 
+use crate::common;
+use crate::common::init_repo;
 use bonsai_core::git::commit::create_commit;
 use bonsai_core::git::image_diff::{get_image_diff, ImageDiffRequest, MAX_IMAGE_BYTES};
 use bonsai_core::git::stage::stage_paths;
-use crate::common;
-use crate::common::init_repo;
 
 macro_rules! require_git {
     () => {
@@ -35,7 +35,11 @@ fn commit_blob(p: &std::path::Path, path: &str, bytes: &[u8], msg: &str) -> Stri
 }
 
 fn workdir_unstaged(path: &str) -> ImageDiffRequest {
-    ImageDiffRequest::Workdir { path: path.into(), orig_path: None, staged: false }
+    ImageDiffRequest::Workdir {
+        path: path.into(),
+        orig_path: None,
+        staged: false,
+    }
 }
 
 // ------------------------------------------------------ 0-byte side → None
@@ -50,7 +54,10 @@ fn zero_byte_workdir_side_is_none() {
     std::fs::write(p.join("img.png"), b"").expect("truncate to 0 bytes");
 
     let diff = get_image_diff(p, &workdir_unstaged("img.png")).expect("diff");
-    assert!(diff.new.is_none(), "0-byte new side is None (not empty base64)");
+    assert!(
+        diff.new.is_none(),
+        "0-byte new side is None (not empty base64)"
+    );
     assert!(!diff.new_too_large, "0-byte is absent, not over-cap");
     assert!(diff.old.is_some(), "old (index RED) still present");
 }
@@ -67,11 +74,20 @@ fn non_image_bytes_in_png_moved_verbatim() {
     let junk = b"this is definitely not a PNG \x00\x01\x02 plain text";
     commit_blob(p, "fake.png", junk, "add fake");
 
-    let diff = get_image_diff(p, &ImageDiffRequest::Workdir {
-        path: "fake.png".into(), orig_path: None, staged: true,
-    }).expect("diff");
+    let diff = get_image_diff(
+        p,
+        &ImageDiffRequest::Workdir {
+            path: "fake.png".into(),
+            orig_path: None,
+            staged: true,
+        },
+    )
+    .expect("diff");
     let side = diff.new.expect("staged==index side present");
-    assert_eq!(side.mime, "image/png", "MIME from extension, not content sniffing");
+    assert_eq!(
+        side.mime, "image/png",
+        "MIME from extension, not content sniffing"
+    );
     assert_eq!(side.byte_len as usize, junk.len(), "raw length preserved");
 }
 
@@ -87,13 +103,19 @@ fn cap_boundary_at_vs_over() {
     commit_blob(p, "at.png", RED, "seed");
     std::fs::write(p.join("at.png"), vec![7u8; MAX_IMAGE_BYTES]).expect("write at-cap");
     let at = get_image_diff(p, &workdir_unstaged("at.png")).expect("diff at");
-    assert!(at.new.is_some() && !at.new_too_large, "exactly cap → encoded side");
+    assert!(
+        at.new.is_some() && !at.new_too_large,
+        "exactly cap → encoded side"
+    );
     assert_eq!(at.new.unwrap().byte_len as usize, MAX_IMAGE_BYTES);
 
     // Over cap: None + too_large.
     std::fs::write(p.join("at.png"), vec![7u8; MAX_IMAGE_BYTES + 1]).expect("write over-cap");
     let over = get_image_diff(p, &workdir_unstaged("at.png")).expect("diff over");
-    assert!(over.new.is_none() && over.new_too_large, "cap+1 → None + too_large");
+    assert!(
+        over.new.is_none() && over.new_too_large,
+        "cap+1 → None + too_large"
+    );
 }
 
 // ------------------------------------------------------- both sides over cap
@@ -108,9 +130,15 @@ fn both_sides_over_cap() {
     commit_blob(p, "big.png", &vec![1u8; MAX_IMAGE_BYTES + 1], "big old");
     std::fs::write(p.join("big.png"), vec![2u8; MAX_IMAGE_BYTES + 2]).expect("big new");
 
-    let diff = get_image_diff(p, &ImageDiffRequest::Workdir {
-        path: "big.png".into(), orig_path: None, staged: false,
-    }).expect("diff");
+    let diff = get_image_diff(
+        p,
+        &ImageDiffRequest::Workdir {
+            path: "big.png".into(),
+            orig_path: None,
+            staged: false,
+        },
+    )
+    .expect("diff");
     assert!(diff.old.is_none() && diff.old_too_large, "old over-cap");
     assert!(diff.new.is_none() && diff.new_too_large, "new over-cap");
 }
@@ -126,9 +154,15 @@ fn unicode_filename_resolves() {
     let name = "café-日本.png";
     commit_blob(p, name, RED, "add unicode img");
 
-    let diff = get_image_diff(p, &ImageDiffRequest::Workdir {
-        path: name.into(), orig_path: None, staged: true,
-    }).expect("diff");
+    let diff = get_image_diff(
+        p,
+        &ImageDiffRequest::Workdir {
+            path: name.into(),
+            orig_path: None,
+            staged: true,
+        },
+    )
+    .expect("diff");
     assert_eq!(diff.path, name, "path echoed");
     assert!(diff.new.is_some(), "unicode-named blob resolved");
 }
@@ -145,13 +179,22 @@ fn svg_gets_octet_stream_mime() {
     let p = dir.path();
     commit_blob(p, "icon.svg", b"<svg></svg>", "add svg");
 
-    let diff = get_image_diff(p, &ImageDiffRequest::Workdir {
-        path: "icon.svg".into(), orig_path: None, staged: true,
-    }).expect("diff");
+    let diff = get_image_diff(
+        p,
+        &ImageDiffRequest::Workdir {
+            path: "icon.svg".into(),
+            orig_path: None,
+            staged: true,
+        },
+    )
+    .expect("diff");
     // The bytes still move (image_diff is byte-agnostic), but the MIME marks it
     // as non-raster — the command layer routes svg to the text differ.
-    assert_eq!(diff.new.expect("side").mime, "application/octet-stream",
-        "svg is not classified as a raster image here");
+    assert_eq!(
+        diff.new.expect("side").mime,
+        "application/octet-stream",
+        "svg is not classified as a raster image here"
+    );
 }
 
 // ------------------------------------------------ subtree / missing → None
@@ -164,10 +207,19 @@ fn subtree_path_is_none() {
     let p = dir.path();
     let oid = commit_blob(p, "assets/logo.png", RED, "add nested");
 
-    let diff = get_image_diff(p, &ImageDiffRequest::Commit {
-        oid, path: "assets".into(), orig_path: None,
-    }).expect("diff");
-    assert!(diff.old.is_none() && diff.new.is_none(), "a subtree path is not a blob → None/None");
+    let diff = get_image_diff(
+        p,
+        &ImageDiffRequest::Commit {
+            oid,
+            path: "assets".into(),
+            orig_path: None,
+        },
+    )
+    .expect("diff");
+    assert!(
+        diff.old.is_none() && diff.new.is_none(),
+        "a subtree path is not a blob → None/None"
+    );
 }
 
 /// A path absent from both index and workdir → both sides None.
@@ -179,7 +231,10 @@ fn missing_in_index_and_workdir_is_none() {
     commit_blob(p, "present.png", RED, "seed");
 
     let diff = get_image_diff(p, &workdir_unstaged("ghost.png")).expect("diff");
-    assert!(diff.old.is_none() && diff.new.is_none(), "unknown path → None/None");
+    assert!(
+        diff.old.is_none() && diff.new.is_none(),
+        "unknown path → None/None"
+    );
 }
 
 // ----------------------------------------------------------- bare repo err

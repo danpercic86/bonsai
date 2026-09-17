@@ -77,8 +77,7 @@ pub fn apply_composed_commits(
     require_no_bisect(&repo)?;
     if repo.state() != git2::RepositoryState::Clean {
         return Err(AppError::OperationInProgress(
-            "an operation is in progress — finish or abort it before composing commits"
-                .to_string(),
+            "an operation is in progress — finish or abort it before composing commits".to_string(),
         ));
     }
     if repo.index()?.has_conflicts() {
@@ -154,8 +153,8 @@ pub fn apply_composed_commits(
         // policy hooks do NOT vet composer-generated messages. Documented in the P59 user
         // checklist ("Known v1 hook divergences") and flagged FOR USER REVIEW in
         // docs/testing-campaign-2026-08/FINDINGS.md; revisit commit-msg-only execution later.
-        let step =
-            stage_paths(workdir, &paths).and_then(|()| create_commit(workdir, &g.message, None, true));
+        let step = stage_paths(workdir, &paths)
+            .and_then(|()| create_commit(workdir, &g.message, None, true));
         match step {
             Ok(cr) => commits.push(ComposeCommit {
                 oid: cr.oid,
@@ -270,8 +269,8 @@ fn annotate(e: AppError, group_index: usize) -> AppError {
 }
 
 #[cfg(test)]
+mod apply_tests2;
+#[cfg(test)]
 mod test_support;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod apply_tests2;

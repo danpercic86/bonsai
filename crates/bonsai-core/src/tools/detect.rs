@@ -158,7 +158,11 @@ impl ToolEnv for HostToolEnv {
     /// NOT delegated to [`crate::winenv::HostWinEnv`] on purpose — see
     /// [`SCAN_REG_BUDGET`].
     fn registry_string(&self, key: &str, value: &str) -> Option<String> {
-        if self.deadline.saturating_duration_since(Instant::now()).is_zero() {
+        if self
+            .deadline
+            .saturating_duration_since(Instant::now())
+            .is_zero()
+        {
             return None;
         }
         HostGitEnv.registry_string(key, value)
@@ -298,7 +302,12 @@ pub(crate) fn probe_entry(env: &dyn ToolEnv, entry: &ToolEntry) -> Option<Resolu
             if base.is_empty() {
                 return None;
             }
-            executable_hit(env, win_join(&base, suffix), ToolSource::WellKnown, entry.os)
+            executable_hit(
+                env,
+                win_join(&base, suffix),
+                ToolSource::WellKnown,
+                entry.os,
+            )
         }
         Rung::Bundle { path, home } => {
             let cand = if *home {

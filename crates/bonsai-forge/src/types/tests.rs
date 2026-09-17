@@ -65,8 +65,14 @@ fn merge_pr_input_wire_shape_is_camel_case() {
 #[test]
 fn supported_methods_match_contract_table() {
     use MergeMethod::*;
-    assert_eq!(MergeMethod::supported_for(ForgeKind::GitHub), &[Merge, Squash, Rebase]);
-    assert_eq!(MergeMethod::supported_for(ForgeKind::GitLab), &[Merge, Squash]);
+    assert_eq!(
+        MergeMethod::supported_for(ForgeKind::GitHub),
+        &[Merge, Squash, Rebase]
+    );
+    assert_eq!(
+        MergeMethod::supported_for(ForgeKind::GitLab),
+        &[Merge, Squash]
+    );
     assert_eq!(
         MergeMethod::supported_for(ForgeKind::Bitbucket),
         &[Merge, Squash, FastForward]
@@ -352,9 +358,10 @@ fn commit_status_wire_shape_is_camel_case() {
     });
     assert_keys(
         &v,
-        &["sha", "state", "total", "passed", "failed", "pending", "contexts"],
+        &[
+            "sha", "state", "total", "passed", "failed", "pending", "contexts",
+        ],
     );
     let ctx = &v["contexts"][0];
     assert_keys(ctx, &["name", "state", "description", "targetUrl"]);
 }
-

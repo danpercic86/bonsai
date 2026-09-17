@@ -194,7 +194,14 @@ mod tests {
             .collect();
         assert_eq!(
             ids,
-            ["claude", "agents", "copilot", "gemini", "windsurf", "cursorLegacy"]
+            [
+                "claude",
+                "agents",
+                "copilot",
+                "gemini",
+                "windsurf",
+                "cursorLegacy"
+            ]
         );
     }
 

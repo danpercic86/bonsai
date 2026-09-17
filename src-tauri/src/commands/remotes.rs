@@ -88,16 +88,21 @@ pub async fn fetch(
 /// transfer `Progress`; a no-op when nobody is subscribed.
 pub(crate) async fn fetch_inner(state: &AppState, repo_id: &str) -> Result<FetchResult, AppError> {
     let target = activity_target(state, repo_id, GitActivityCategory::Fetch).await;
-    with_activity(state.git_activity_hub(), GitActivityCategory::Fetch, target, move |emitter| async move {
-        let path = repo_path(state, repo_id)?;
-        tauri::async_runtime::spawn_blocking(move || {
-            let rec: Option<&dyn GitActivityRecorder> =
-                emitter.as_deref().map(|e| e as &dyn GitActivityRecorder);
-            fetch_all_with_activity(&path, rec)
-        })
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
-    })
+    with_activity(
+        state.git_activity_hub(),
+        GitActivityCategory::Fetch,
+        target,
+        move |emitter| async move {
+            let path = repo_path(state, repo_id)?;
+            tauri::async_runtime::spawn_blocking(move || {
+                let rec: Option<&dyn GitActivityRecorder> =
+                    emitter.as_deref().map(|e| e as &dyn GitActivityRecorder);
+                fetch_all_with_activity(&path, rec)
+            })
+            .await
+            .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+        },
+    )
     .await
 }
 
@@ -127,16 +132,21 @@ pub async fn pull(
 /// `Progress`; a no-op when nobody is subscribed.
 pub(crate) async fn pull_inner(state: &AppState, repo_id: &str) -> Result<PullResult, AppError> {
     let target = activity_target(state, repo_id, GitActivityCategory::Pull).await;
-    with_activity(state.git_activity_hub(), GitActivityCategory::Pull, target, move |emitter| async move {
-        let path = repo_path(state, repo_id)?;
-        tauri::async_runtime::spawn_blocking(move || {
-            let rec: Option<&dyn GitActivityRecorder> =
-                emitter.as_deref().map(|e| e as &dyn GitActivityRecorder);
-            pull_ff_with_activity(&path, rec)
-        })
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
-    })
+    with_activity(
+        state.git_activity_hub(),
+        GitActivityCategory::Pull,
+        target,
+        move |emitter| async move {
+            let path = repo_path(state, repo_id)?;
+            tauri::async_runtime::spawn_blocking(move || {
+                let rec: Option<&dyn GitActivityRecorder> =
+                    emitter.as_deref().map(|e| e as &dyn GitActivityRecorder);
+                pull_ff_with_activity(&path, rec)
+            })
+            .await
+            .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+        },
+    )
     .await
 }
 
@@ -164,17 +174,22 @@ pub(crate) async fn push_inner(
     skip_hooks: Option<bool>,
 ) -> Result<PushResult, AppError> {
     let target = activity_target(state, repo_id, GitActivityCategory::Push).await;
-    with_activity(state.git_activity_hub(), GitActivityCategory::Push, target, move |emitter| async move {
-        let path = repo_path(state, repo_id)?;
-        let skip = skip_hooks.unwrap_or(false);
-        tauri::async_runtime::spawn_blocking(move || {
-            let rec: Option<&dyn GitActivityRecorder> =
-                emitter.as_deref().map(|e| e as &dyn GitActivityRecorder);
-            push_current_with_activity(&path, &SpawnGitExec, skip, rec)
-        })
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
-    })
+    with_activity(
+        state.git_activity_hub(),
+        GitActivityCategory::Push,
+        target,
+        move |emitter| async move {
+            let path = repo_path(state, repo_id)?;
+            let skip = skip_hooks.unwrap_or(false);
+            tauri::async_runtime::spawn_blocking(move || {
+                let rec: Option<&dyn GitActivityRecorder> =
+                    emitter.as_deref().map(|e| e as &dyn GitActivityRecorder);
+                push_current_with_activity(&path, &SpawnGitExec, skip, rec)
+            })
+            .await
+            .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+        },
+    )
     .await
 }
 
@@ -204,20 +219,25 @@ pub(crate) async fn force_push_inner(
     skip_hooks: Option<bool>,
 ) -> Result<PushResult, AppError> {
     let target = activity_target(state, repo_id, GitActivityCategory::ForcePush).await;
-    with_activity(state.git_activity_hub(), GitActivityCategory::ForcePush, target, move |emitter| async move {
-        let path = repo_path(state, repo_id)?;
-        let skip = skip_hooks.unwrap_or(false);
-        // P59b: the push runs through the git binary for git's atomic
-        // `--force-with-lease` (closes P37's client-side TOCTOU). P59a-2: the
-        // pre-push hook (also via the git binary) runs first unless skipped.
-        tauri::async_runtime::spawn_blocking(move || {
-            let rec: Option<&dyn GitActivityRecorder> =
-                emitter.as_deref().map(|e| e as &dyn GitActivityRecorder);
-            force_push_with_lease_with_activity(&path, &SpawnGitExec, skip, rec)
-        })
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
-    })
+    with_activity(
+        state.git_activity_hub(),
+        GitActivityCategory::ForcePush,
+        target,
+        move |emitter| async move {
+            let path = repo_path(state, repo_id)?;
+            let skip = skip_hooks.unwrap_or(false);
+            // P59b: the push runs through the git binary for git's atomic
+            // `--force-with-lease` (closes P37's client-side TOCTOU). P59a-2: the
+            // pre-push hook (also via the git binary) runs first unless skipped.
+            tauri::async_runtime::spawn_blocking(move || {
+                let rec: Option<&dyn GitActivityRecorder> =
+                    emitter.as_deref().map(|e| e as &dyn GitActivityRecorder);
+                force_push_with_lease_with_activity(&path, &SpawnGitExec, skip, rec)
+            })
+            .await
+            .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+        },
+    )
     .await
 }
 
@@ -232,7 +252,10 @@ pub async fn list_remotes(
 }
 
 /// Runtime-free core of `list_remotes` (unit-testable without a Tauri app).
-pub(crate) async fn list_remotes_inner(state: &AppState, repo_id: &str) -> Result<Vec<RemoteInfo>, AppError> {
+pub(crate) async fn list_remotes_inner(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<Vec<RemoteInfo>, AppError> {
     let path = repo_path(state, repo_id)?;
     tauri::async_runtime::spawn_blocking(move || list_remotes_core(&path))
         .await

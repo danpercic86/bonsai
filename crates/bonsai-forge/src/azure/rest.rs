@@ -49,8 +49,7 @@ pub fn base_headers(token: Option<&str>) -> Vec<(String, String)> {
 /// dependency (mirrors GitLab's hand-rolled percent-encoder). Used ONLY to
 /// encode `":" + PAT` for the Basic auth header.
 fn base64_encode(input: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
     for chunk in input.chunks(3) {
         let b0 = chunk[0] as u32;
@@ -339,7 +338,9 @@ mod tests {
     fn base_headers_use_basic_colon_prefixed_pat() {
         let none = base_headers(None);
         assert!(!none.iter().any(|(k, _)| k == "Authorization"));
-        assert!(none.iter().any(|(k, v)| k == "Accept" && v == "application/json"));
+        assert!(none
+            .iter()
+            .any(|(k, v)| k == "Accept" && v == "application/json"));
 
         // Basic base64(":" + PAT) — empty username, colon prefix.
         let auth = base_headers(Some("pat"));
@@ -351,13 +352,15 @@ mod tests {
         // `base64_encode` under test, so a bug in the encoder would pass. These
         // are the literal header bytes Azure must receive for the PAT "pat"
         // (`":pat"` ⇒ `OnBhdA==`).
-        assert!(auth.iter().any(|(k, v)| k == "Authorization" && v == "Basic OnBhdA=="));
+        assert!(auth
+            .iter()
+            .any(|(k, v)| k == "Authorization" && v == "Basic OnBhdA=="));
 
         // NOT Bearer (Bitbucket) and NOT PRIVATE-TOKEN (GitLab).
+        assert!(!auth.iter().any(|(_, v)| v.starts_with("Bearer")));
         assert!(!auth
             .iter()
-            .any(|(_, v)| v.starts_with("Bearer")));
-        assert!(!auth.iter().any(|(k, _)| k.eq_ignore_ascii_case("PRIVATE-TOKEN")));
+            .any(|(k, _)| k.eq_ignore_ascii_case("PRIVATE-TOKEN")));
     }
 
     #[test]
@@ -401,7 +404,10 @@ mod tests {
         assert!(profile_url().starts_with("https://app.vssps.visualstudio.com/"));
         assert!(profile_url().contains("api-version=7.1"));
         // EVERY repo builder pins the api version (list asserted exactly above).
-        assert!(list.contains("api-version=7.1"), "missing api-version: {list}");
+        assert!(
+            list.contains("api-version=7.1"),
+            "missing api-version: {list}"
+        );
     }
 
     #[test]
@@ -466,7 +472,10 @@ mod tests {
             !dbg.contains(&base64_encode(format!(":{pat}").as_bytes())),
             "base64 PAT leaked: {dbg}"
         );
-        assert!(dbg.contains("<redacted>"), "expected redaction placeholder: {dbg}");
+        assert!(
+            dbg.contains("<redacted>"),
+            "expected redaction placeholder: {dbg}"
+        );
 
         // And the PAT is never placed in any URL the provider builds.
         let url = pull_requests_url("org", "proj", "repo", PrStateFilter::All, 30, 0);

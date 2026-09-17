@@ -36,10 +36,7 @@ pub enum SubmoduleRemoveOutcome {
 /// same status path as `list_submodules` (`submodule_status(name, Ignore::None)`).
 /// NOT dirty: uninitialized, absent workdir, or merely out-of-sync (a different
 /// but committed pinned commit — no uncommitted work is lost).
-pub(crate) fn is_submodule_dirty(
-    repo: &git2::Repository,
-    name: &str,
-) -> Result<bool, AppError> {
+pub(crate) fn is_submodule_dirty(repo: &git2::Repository, name: &str) -> Result<bool, AppError> {
     use git2::SubmoduleStatus as S;
     let flags = repo.submodule_status(name, git2::SubmoduleIgnore::None)?;
     Ok(flags.intersects(S::WD_INDEX_MODIFIED | S::WD_WD_MODIFIED | S::WD_UNTRACKED))

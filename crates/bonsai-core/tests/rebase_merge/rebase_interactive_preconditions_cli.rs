@@ -5,16 +5,16 @@
 //! Split out of `rebase_interactive_cli.rs`; shared fixtures and helpers live in
 //! `rebase_interactive_support.rs`.
 
-use bonsai_core::error::AppError;
-use bonsai_core::git::rebase::{rebase_abort, rebase_continue, rebase_skip, RebaseOutcome};
-use bonsai_core::git::rebase_interactive::{
-    get_interactive_plan, start_interactive_rebase, RebaseAction, RebaseTodoOp,
-};
 use crate::common;
 use crate::common::{commit_fixed, git, init_repo};
 use crate::rebase_interactive_support::{
     has_bonsai_dir, read_str, repo_state, require_git, rev, script_conflict, script_two_disjoint,
     symbolic_head, write,
+};
+use bonsai_core::error::AppError;
+use bonsai_core::git::rebase::{rebase_abort, rebase_continue, rebase_skip, RebaseOutcome};
+use bonsai_core::git::rebase_interactive::{
+    get_interactive_plan, start_interactive_rebase, RebaseAction, RebaseTodoOp,
 };
 
 // ============================================================ precondition matrix
@@ -69,7 +69,10 @@ fn precondition_git_native_rebase_in_progress_is_refused() {
         git2::RepositoryState::Clean,
         "a git-native rebase must be in progress"
     );
-    assert!(!has_bonsai_dir(d), "no Bonsai sequencer yet — the git-native one is separate");
+    assert!(
+        !has_bonsai_dir(d),
+        "no Bonsai sequencer yet — the git-native one is separate"
+    );
 
     // Bonsai interactive start must refuse via the repo.state() guard (§2.4 step 3).
     let todos = vec![RebaseTodoOp {
@@ -82,7 +85,10 @@ fn precondition_git_native_rebase_in_progress_is_refused() {
         AppError::OperationInProgress(_)
     ));
     // A rejected start must not have written a Bonsai sequencer over the git one.
-    assert!(!has_bonsai_dir(d), "rejected start leaves no .git/bonsai-rebase");
+    assert!(
+        !has_bonsai_dir(d),
+        "rejected start leaves no .git/bonsai-rebase"
+    );
 
     // Clean up the git-native rebase (tempdir is dropped anyway).
     let _ = common::git_ok(d, &["rebase", "--abort"]);
@@ -99,7 +105,10 @@ fn precondition_dirty_worktree_is_rejected() {
     write(d, "a.txt", "dirty\n");
     let todos = get_interactive_plan(d, &base).expect("plan");
     match start_interactive_rebase(d, &base, todos).expect_err("dirty") {
-        AppError::Git(m) => assert!(m.contains("unstaged") || m.contains("uncommitted"), "got: {m}"),
+        AppError::Git(m) => assert!(
+            m.contains("unstaged") || m.contains("uncommitted"),
+            "got: {m}"
+        ),
         other => panic!("expected Git, got {other:?}"),
     }
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);
@@ -159,7 +168,10 @@ fn precondition_bad_plan_is_rejected() {
         start_interactive_rebase(d, &base, squash_first).expect_err("squash first"),
         AppError::Git(_)
     ));
-    assert!(!has_bonsai_dir(d), "no sequencer left behind by a rejected plan");
+    assert!(
+        !has_bonsai_dir(d),
+        "no sequencer left behind by a rejected plan"
+    );
 }
 
 #[test]
@@ -177,7 +189,11 @@ fn precondition_missing_identity_is_config_missing_before_mutation() {
         AppError::ConfigMissing(_) => {}
         other => panic!("expected ConfigMissing, got {other:?}"),
     }
-    assert_eq!(repo_state(d), git2::RepositoryState::Clean, "state stays Clean");
+    assert_eq!(
+        repo_state(d),
+        git2::RepositoryState::Clean,
+        "state stays Clean"
+    );
     assert!(!has_bonsai_dir(d), "no sequencer left behind");
 }
 
@@ -246,10 +262,21 @@ fn start_refuses_when_untracked_file_would_be_clobbered_by_onto_checkout() {
     }
 
     // The untracked file is untouched, no rebase started, branch/HEAD unmoved.
-    assert_eq!(read_str(d, "foo.txt"), "UNTRACKED-LOCAL\n", "untracked file was clobbered");
-    assert!(!has_bonsai_dir(d), "a refused start must leave no rebase state");
+    assert_eq!(
+        read_str(d, "foo.txt"),
+        "UNTRACKED-LOCAL\n",
+        "untracked file was clobbered"
+    );
+    assert!(
+        !has_bonsai_dir(d),
+        "a refused start must leave no rebase state"
+    );
     assert_eq!(rev(d, "HEAD"), c1, "HEAD still at the original tip");
-    assert_eq!(symbolic_head(d), "refs/heads/main", "still on the original branch");
+    assert_eq!(
+        symbolic_head(d),
+        "refs/heads/main",
+        "still on the original branch"
+    );
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);
 }
 
@@ -295,9 +322,20 @@ fn start_refuses_when_untracked_file_nested_under_a_target_blob() {
     }
 
     // The nested untracked file is untouched, no rebase started, branch/HEAD unmoved.
-    assert_eq!(read_str(d, "foo/bar.txt"), "UNTRACKED-NESTED\n", "nested untracked file was clobbered");
-    assert!(!has_bonsai_dir(d), "a refused start must leave no rebase state");
+    assert_eq!(
+        read_str(d, "foo/bar.txt"),
+        "UNTRACKED-NESTED\n",
+        "nested untracked file was clobbered"
+    );
+    assert!(
+        !has_bonsai_dir(d),
+        "a refused start must leave no rebase state"
+    );
     assert_eq!(rev(d, "HEAD"), c1, "HEAD still at the original tip");
-    assert_eq!(symbolic_head(d), "refs/heads/main", "still on the original branch");
+    assert_eq!(
+        symbolic_head(d),
+        "refs/heads/main",
+        "still on the original branch"
+    );
     assert_eq!(repo_state(d), git2::RepositoryState::Clean);
 }

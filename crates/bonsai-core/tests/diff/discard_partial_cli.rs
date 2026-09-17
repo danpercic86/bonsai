@@ -16,14 +16,14 @@
 //! (`scratch_dir()`). Twin repos use `commit_fixed` so base oids match. Each
 //! test skips (passes with a note) if `git` is not on PATH.
 
-use bonsai_core::git::diff::workdir_file_diff;
-use bonsai_core::git::discard_partial::discard_partial;
 use crate::common;
 use crate::common::{commit_fixed, git, git_raw, init_repo};
 use crate::discard_partial_helpers::{
     all_changed, cached_diff, git_apply_stdin, hunk_changed, numbered_edited, read, repo_with,
     single_hunk_patch, single_hunk_patch_bytes, write, xy,
 };
+use bonsai_core::git::diff::workdir_file_diff;
+use bonsai_core::git::discard_partial::discard_partial;
 
 macro_rules! require_git {
     () => {
@@ -53,7 +53,10 @@ fn index_invariant_with_staged_and_unstaged_edits() {
     write(
         p,
         "f.txt",
-        &numbered_edited(40, &[(5, "line 5 STAGED"), (20, "line 20 W"), (35, "line 35 W")]),
+        &numbered_edited(
+            40,
+            &[(5, "line 5 STAGED"), (20, "line 20 W"), (35, "line 35 W")],
+        ),
     );
 
     let cached_before = cached_diff(p);
@@ -76,7 +79,11 @@ fn index_invariant_with_staged_and_unstaged_edits() {
         read(p, "f.txt"),
         numbered_edited(40, &[(5, "line 5 STAGED"), (35, "line 35 W")])
     );
-    assert_eq!(xy(p, "f.txt").as_deref(), Some("MM"), "surviving hunk still unstaged");
+    assert_eq!(
+        xy(p, "f.txt").as_deref(),
+        Some("MM"),
+        "surviving hunk still unstaged"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -103,8 +110,12 @@ fn remainder_matches_git_apply_reverse() {
     let twin = repo_with(40);
     let tp = twin.path();
     write(tp, "f.txt", &edited);
-    let full = String::from_utf8(git_raw(tp, &["diff", "--no-color", "-U3", "--", "f.txt"], &[]))
-        .expect("utf8 patch");
+    let full = String::from_utf8(git_raw(
+        tp,
+        &["diff", "--no-color", "-U3", "--", "f.txt"],
+        &[],
+    ))
+    .expect("utf8 patch");
     let minimal = single_hunk_patch(&full, 1);
     git_apply_stdin(tp, &["--reverse"], minimal.as_bytes());
 
@@ -114,9 +125,16 @@ fn remainder_matches_git_apply_reverse() {
         "discard_partial(middle hunk) must equal `git apply --reverse` of that hunk"
     );
     // Explicit expectation too: hunks 1 & 3 survive, hunk 2 reverted.
-    assert_eq!(read(p, "f.txt"), numbered_edited(40, &[(3, "line 3 X"), (37, "line 37 X")]));
+    assert_eq!(
+        read(p, "f.txt"),
+        numbered_edited(40, &[(3, "line 3 X"), (37, "line 37 X")])
+    );
     assert_eq!(cached_diff(p), cached_before, "index invariant");
-    assert_eq!(xy(p, "f.txt").as_deref(), Some(" M"), "remainder still unstaged");
+    assert_eq!(
+        xy(p, "f.txt").as_deref(),
+        Some(" M"),
+        "remainder still unstaged"
+    );
 }
 
 // Same equivalence for a pure-deletion hunk (Del lines restored from the index).
@@ -142,8 +160,12 @@ fn remainder_matches_git_apply_reverse_deletion_hunk() {
     let twin = repo_with(30);
     let tp = twin.path();
     write(tp, "f.txt", &edited);
-    let full = String::from_utf8(git_raw(tp, &["diff", "--no-color", "-U3", "--", "f.txt"], &[]))
-        .expect("utf8 patch");
+    let full = String::from_utf8(git_raw(
+        tp,
+        &["diff", "--no-color", "-U3", "--", "f.txt"],
+        &[],
+    ))
+    .expect("utf8 patch");
     git_apply_stdin(tp, &["--reverse"], single_hunk_patch(&full, 0).as_bytes());
 
     assert_eq!(read(p, "f.txt"), read(tp, "f.txt"));
@@ -162,7 +184,10 @@ fn crlf_autocrlf_false_byte_exact() {
     require_git!();
     let dir = init_repo();
     let p = dir.path();
-    let base: Vec<u8> = (1..=20).map(|i| format!("line {i}\r\n")).collect::<String>().into_bytes();
+    let base: Vec<u8> = (1..=20)
+        .map(|i| format!("line {i}\r\n"))
+        .collect::<String>()
+        .into_bytes();
     write(p, "f.txt", &base);
     git(p, &["add", "-A"]);
     commit_fixed(p, "base");
@@ -184,7 +209,10 @@ fn crlf_autocrlf_false_byte_exact() {
     let expect = (expect.join("\r\n") + "\r\n").into_bytes();
     let got = read(p, "f.txt");
     assert_eq!(got, expect, "CRLF must survive byte-for-byte");
-    assert!(!got.windows(2).any(|w| w[1] == b'\n' && w[0] != b'\r'), "no bare LF introduced");
+    assert!(
+        !got.windows(2).any(|w| w[1] == b'\n' && w[0] != b'\r'),
+        "no bare LF introduced"
+    );
     assert_eq!(cached_diff(p), cached_before, "index invariant");
 
     // CLI cross-check on a twin: apply --reverse of the same hunk. NOTE: the
@@ -198,7 +226,11 @@ fn crlf_autocrlf_false_byte_exact() {
     write(tp, "f.txt", &edited);
     let full = git_raw(tp, &["diff", "--no-color", "-U3", "--", "f.txt"], &[]);
     git_apply_stdin(tp, &["--reverse"], &single_hunk_patch_bytes(&full, 0));
-    assert_eq!(got, read(tp, "f.txt"), "matches git apply --reverse byte-for-byte");
+    assert_eq!(
+        got,
+        read(tp, "f.txt"),
+        "matches git apply --reverse byte-for-byte"
+    );
 }
 
 // autocrlf=true: index blob is LF, worktree is CRLF. Restored Del lines must
@@ -209,7 +241,10 @@ fn crlf_autocrlf_true_restored_lines_normalized() {
     let dir = init_repo();
     let p = dir.path();
     git(p, &["config", "core.autocrlf", "true"]);
-    let base: Vec<u8> = (1..=20).map(|i| format!("line {i}\r\n")).collect::<String>().into_bytes();
+    let base: Vec<u8> = (1..=20)
+        .map(|i| format!("line {i}\r\n"))
+        .collect::<String>()
+        .into_bytes();
     write(p, "f.txt", &base);
     git(p, &["add", "-A"]); // index blob stored LF-normalized
     commit_fixed(p, "base");
@@ -240,13 +275,23 @@ fn crlf_autocrlf_true_restored_lines_normalized() {
     // git sees only the surviving edit as modified.
     assert_eq!(xy(p, "f.txt").as_deref(), Some(" M"));
     let remaining = git(p, &["diff", "--no-color", "--", "f.txt"]);
-    assert!(remaining.contains("line 12 X"), "surviving hunk present:\n{remaining}");
-    assert!(!remaining.contains("line 3 X"), "discarded hunk gone:\n{remaining}");
+    assert!(
+        remaining.contains("line 12 X"),
+        "surviving hunk present:\n{remaining}"
+    );
+    assert!(
+        !remaining.contains("line 3 X"),
+        "discarded hunk gone:\n{remaining}"
+    );
 
     // Discard the rest -> file clean (no perpetual-modified CRLF artifact).
     let fd2 = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff 2");
     discard_partial(p, "f.txt", None, &all_changed(&fd2)).expect("discard remainder");
-    assert_eq!(xy(p, "f.txt"), None, "file clean after discarding everything");
+    assert_eq!(
+        xy(p, "f.txt"),
+        None,
+        "file clean after discarding everything"
+    );
 }
 
 // No trailing newline: discarding the last-line edit must round-trip the
@@ -264,7 +309,11 @@ fn no_final_newline_roundtrip() {
     let cached_before = cached_diff(p);
     let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     discard_partial(p, "f.txt", None, &all_changed(&fd)).expect("discard last-line edit");
-    assert_eq!(read(p, "f.txt"), b"a\nb\nc", "restored byte-exactly, still no trailing newline");
+    assert_eq!(
+        read(p, "f.txt"),
+        b"a\nb\nc",
+        "restored byte-exactly, still no trailing newline"
+    );
     assert_eq!(cached_diff(p), cached_before, "index invariant");
     assert_eq!(xy(p, "f.txt"), None, "file clean");
 }
@@ -285,7 +334,11 @@ fn no_final_newline_added_terminator_discarded() {
     let fd = workdir_file_diff(p, "f.txt", None, false, false, false).expect("diff");
     assert!(!all_changed(&fd).is_empty(), "terminator change must diff");
     discard_partial(p, "f.txt", None, &all_changed(&fd)).expect("discard terminator add");
-    assert_eq!(read(p, "f.txt"), b"a\nb\nc", "trailing newline removed again");
+    assert_eq!(
+        read(p, "f.txt"),
+        b"a\nb\nc",
+        "trailing newline removed again"
+    );
     assert_eq!(cached_diff(p), cached_before, "index invariant");
     assert_eq!(xy(p, "f.txt"), None, "file clean");
 }
@@ -349,8 +402,24 @@ fn all_hunks_equals_git_checkout_with_staged_edit() {
     write(tp, "f.txt", &edited);
     git(tp, &["checkout", "--", "f.txt"]);
 
-    assert_eq!(read(p, "f.txt"), read(tp, "f.txt"), "worktree == index restore");
-    assert_eq!(read(p, "f.txt"), staged, "staged edit survives in the worktree");
-    assert_eq!(cached_diff(p), cached_before, "index invariant — staged diff untouched");
-    assert_eq!(xy(p, "f.txt").as_deref(), Some("M "), "only the staged half remains");
+    assert_eq!(
+        read(p, "f.txt"),
+        read(tp, "f.txt"),
+        "worktree == index restore"
+    );
+    assert_eq!(
+        read(p, "f.txt"),
+        staged,
+        "staged edit survives in the worktree"
+    );
+    assert_eq!(
+        cached_diff(p),
+        cached_before,
+        "index invariant — staged diff untouched"
+    );
+    assert_eq!(
+        xy(p, "f.txt").as_deref(),
+        Some("M "),
+        "only the staged half remains"
+    );
 }

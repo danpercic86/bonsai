@@ -23,7 +23,9 @@ impl GitActivityHub {
     fn lock(&self) -> std::sync::MutexGuard<'_, Vec<tauri::ipc::Channel<GitActivityEvent>>> {
         // Plain Vec push/retain — a poisoned lock is recoverable (no invariant
         // spans a panic), so recover rather than fail every later emit.
-        self.subs.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.subs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Register a long-lived channel (called once per app/repo mount; re-invoked

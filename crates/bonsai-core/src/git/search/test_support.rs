@@ -78,15 +78,14 @@ pub(super) fn record(oid: &str, summary: &str, author: &str, ts: &str) -> String
 /// (shared by the oracle fixtures so `git log` and the git2 revwalk agree on
 /// order and identity).
 pub(super) fn init_repo(dir: &Path) -> git2::Repository {
-    let repo = git2::Repository::init_opts(
-        dir,
-        git2::RepositoryInitOptions::new().initial_head("main"),
-    )
-    .expect("init repo");
+    let repo =
+        git2::Repository::init_opts(dir, git2::RepositoryInitOptions::new().initial_head("main"))
+            .expect("init repo");
     {
         let mut cfg = repo.config().expect("config");
         cfg.set_str("user.name", "Test User").expect("name");
-        cfg.set_str("user.email", "test@example.com").expect("email");
+        cfg.set_str("user.email", "test@example.com")
+            .expect("email");
         cfg.set_bool("core.autocrlf", false).expect("autocrlf");
     }
     repo
@@ -116,7 +115,9 @@ pub(super) fn mk_commit(
         let blob = repo.blob(content.as_bytes()).expect("blob");
         tb.insert(name, blob, 0o100_644).expect("insert");
     }
-    let tree = repo.find_tree(tb.write().expect("write tree")).expect("tree");
+    let tree = repo
+        .find_tree(tb.write().expect("write tree"))
+        .expect("tree");
     let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
     repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &parents)
         .expect("commit")
@@ -128,10 +129,38 @@ pub(super) fn mk_commit(
 pub(super) fn build_fixture() -> (tempfile::TempDir, [git2::Oid; 4]) {
     let dir = crate::testutil::scratch_dir();
     let repo = init_repo(dir.path());
-    let c0 = mk_commit(&repo, None, &[("a.txt", "alpha\n")], "grace period work", "Ada Lovelace", 1000);
-    let c1 = mk_commit(&repo, Some(c0), &[("b.txt", "beta\n")], "add beta module", "Grace Hopper", 2000);
-    let c2 = mk_commit(&repo, Some(c1), &[("a.txt", "alpha and more\n")], "fix alpha work", "Ada Lovelace", 3000);
-    let c3 = mk_commit(&repo, Some(c2), &[("c.txt", "gamma\n")], "Feature gamma", "Linus Torvalds", 4000);
+    let c0 = mk_commit(
+        &repo,
+        None,
+        &[("a.txt", "alpha\n")],
+        "grace period work",
+        "Ada Lovelace",
+        1000,
+    );
+    let c1 = mk_commit(
+        &repo,
+        Some(c0),
+        &[("b.txt", "beta\n")],
+        "add beta module",
+        "Grace Hopper",
+        2000,
+    );
+    let c2 = mk_commit(
+        &repo,
+        Some(c1),
+        &[("a.txt", "alpha and more\n")],
+        "fix alpha work",
+        "Ada Lovelace",
+        3000,
+    );
+    let c3 = mk_commit(
+        &repo,
+        Some(c2),
+        &[("c.txt", "gamma\n")],
+        "Feature gamma",
+        "Linus Torvalds",
+        4000,
+    );
     repo.branch("early", &repo.find_commit(c1).expect("c1"), false)
         .expect("branch early");
     (dir, [c0, c1, c2, c3])
@@ -158,7 +187,9 @@ pub(super) fn mk_dangling(
         let blob = repo.blob(content.as_bytes()).expect("blob");
         tb.insert(name, blob, 0o100_644).expect("insert");
     }
-    let tree = repo.find_tree(tb.write().expect("write tree")).expect("tree");
+    let tree = repo
+        .find_tree(tb.write().expect("write tree"))
+        .expect("tree");
     repo.commit(None, &sig, &sig, msg, &tree, &[&parent_commit])
         .expect("commit")
 }
@@ -192,8 +223,13 @@ pub(super) fn build_refs_fixture() -> (tempfile::TempDir, [git2::Oid; 3]) {
         "Ada Lovelace",
         2000,
     );
-    repo.reference("refs/remotes/origin/feature", c_remote, false, "seed remote")
-        .expect("remote ref");
+    repo.reference(
+        "refs/remotes/origin/feature",
+        c_remote,
+        false,
+        "seed remote",
+    )
+    .expect("remote ref");
     // A `*/HEAD` remote ref that seed_all_refs must SKIP (never peeled).
     repo.reference_symbolic(
         "refs/remotes/origin/HEAD",

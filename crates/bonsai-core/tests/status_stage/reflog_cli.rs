@@ -15,9 +15,9 @@
 
 use std::path::Path;
 
-use bonsai_core::git::reflog::{read_reflog, MAX_REFLOG_ENTRIES};
 use crate::common;
 use crate::common::{git, init_repo};
+use bonsai_core::git::reflog::{read_reflog, MAX_REFLOG_ENTRIES};
 
 macro_rules! require_git {
     () => {
@@ -76,7 +76,11 @@ fn oracle_reflog_ref(dir: &Path, refname: &str) -> Vec<OracleEntry> {
             .and_then(|(_, rest)| rest.strip_suffix('}'))
             .and_then(|n| n.parse::<u32>().ok())
             .unwrap_or_else(|| panic!("unparseable reflog selector: {selector:?}"));
-        out.push(OracleEntry { index, new_oid, message });
+        out.push(OracleEntry {
+            index,
+            new_oid,
+            message,
+        });
     }
     out
 }
@@ -110,13 +114,21 @@ fn reflog_matches_git_log_g_head() {
     let oracle = oracle_reflog(dir);
 
     assert_eq!(got.len(), oracle.len(), "reflog length matches git log -g");
-    assert!(got.len() >= 5, "several reflog entries recorded, got {}", got.len());
+    assert!(
+        got.len() >= 5,
+        "several reflog entries recorded, got {}",
+        got.len()
+    );
 
     for (i, (g, o)) in got.iter().zip(oracle.iter()).enumerate() {
         assert_eq!(g.index as usize, i, "index is the 0-based position");
         assert_eq!(g.index, o.index, "index matches @{{N}} at row {i}");
         assert_eq!(g.new_oid, o.new_oid, "new_oid matches %H at row {i}");
-        assert_eq!(g.message.trim(), o.message.trim(), "message matches %gs at row {i}");
+        assert_eq!(
+            g.message.trim(),
+            o.message.trim(),
+            "message matches %gs at row {i}"
+        );
     }
 
     // Newest-first: index 0 is the current HEAD tip.
@@ -141,7 +153,10 @@ fn reflog_branch_prefixing_matches_rev_parse() {
     let entries = read_reflog(dir, "main").expect("read_reflog main");
     assert!(!entries.is_empty(), "main has a reflog");
     let main_tip = git(dir, &["rev-parse", "main"]);
-    assert_eq!(entries[0].new_oid, main_tip, "branch tip matches rev-parse main");
+    assert_eq!(
+        entries[0].new_oid, main_tip,
+        "branch tip matches rev-parse main"
+    );
 }
 
 /// (3) A valid-but-never-updated ref yields `[]` (not an error).
@@ -184,13 +199,28 @@ fn reflog_branch_full_matches_git_reflog_show() {
     let got = read_reflog(dir, "main").expect("read_reflog main");
     let oracle = oracle_reflog_ref(dir, "main");
 
-    assert_eq!(got.len(), oracle.len(), "branch reflog length matches git log -g main");
-    assert!(got.len() >= 4, "several branch reflog entries, got {}", got.len());
+    assert_eq!(
+        got.len(),
+        oracle.len(),
+        "branch reflog length matches git log -g main"
+    );
+    assert!(
+        got.len() >= 4,
+        "several branch reflog entries, got {}",
+        got.len()
+    );
     for (i, (g, o)) in got.iter().zip(oracle.iter()).enumerate() {
-        assert_eq!(g.index as usize, i, "index is the 0-based position at row {i}");
+        assert_eq!(
+            g.index as usize, i,
+            "index is the 0-based position at row {i}"
+        );
         assert_eq!(g.index, o.index, "index matches @{{N}} at row {i}");
         assert_eq!(g.new_oid, o.new_oid, "new_oid matches %H at row {i}");
-        assert_eq!(g.message.trim(), o.message.trim(), "message matches %gs at row {i}");
+        assert_eq!(
+            g.message.trim(),
+            o.message.trim(),
+            "message matches %gs at row {i}"
+        );
     }
     // The prefixed read resolves the same tip the CLI reports for the bare branch.
     assert_eq!(got[0].new_oid, git(dir, &["rev-parse", "main"]));
@@ -214,14 +244,28 @@ fn reflog_reset_entry_old_new_direction() {
 
     // Destructive move back to c1 — writes "reset: moving to HEAD~1".
     git(dir, &["reset", "--hard", "HEAD~1"]);
-    assert_eq!(git(dir, &["rev-parse", "HEAD"]), c1, "HEAD is at c1 post-reset");
+    assert_eq!(
+        git(dir, &["rev-parse", "HEAD"]),
+        c1,
+        "HEAD is at c1 post-reset"
+    );
 
     let got = read_reflog(dir, "HEAD").expect("read_reflog HEAD");
     let top = &got[0];
     assert_eq!(top.index, 0, "reset entry is newest");
-    assert!(top.message.contains("reset"), "message is a reset entry, got {:?}", top.message);
-    assert_eq!(top.new_oid, c1, "new_oid is the POST-reset oid (current HEAD)");
-    assert_eq!(top.old_oid, c2, "old_oid is the PRE-reset oid we moved away from");
+    assert!(
+        top.message.contains("reset"),
+        "message is a reset entry, got {:?}",
+        top.message
+    );
+    assert_eq!(
+        top.new_oid, c1,
+        "new_oid is the POST-reset oid (current HEAD)"
+    );
+    assert_eq!(
+        top.old_oid, c2,
+        "old_oid is the PRE-reset oid we moved away from"
+    );
 }
 
 /// (6) The `MAX_REFLOG_ENTRIES` cap: a reflog deeper than the cap is truncated
@@ -247,7 +291,11 @@ fn reflog_capped_to_newest_max_entries() {
     let mut buf = String::with_capacity(n * 120);
     for i in 0..n {
         let old = format!("{:040x}", i);
-        let new = if i == n - 1 { head.clone() } else { format!("{:040x}", i + 1) };
+        let new = if i == n - 1 {
+            head.clone()
+        } else {
+            format!("{:040x}", i + 1)
+        };
         let ts = 1_700_000_000i64 + i as i64;
         // <old> <new> <name> <<email>> <unixtime> <tz>\t<message>\n
         buf.push_str(&format!(
@@ -258,12 +306,23 @@ fn reflog_capped_to_newest_max_entries() {
 
     let got = read_reflog(dir, "HEAD").expect("read_reflog HEAD");
 
-    assert_eq!(got.len(), MAX_REFLOG_ENTRIES, "reflog capped to MAX_REFLOG_ENTRIES");
+    assert_eq!(
+        got.len(),
+        MAX_REFLOG_ENTRIES,
+        "reflog capped to MAX_REFLOG_ENTRIES"
+    );
     assert_eq!(got[0].index, 0, "index 0 is newest");
-    assert_eq!(got[0].new_oid, head, "newest kept entry is the current HEAD tip");
+    assert_eq!(
+        got[0].new_oid, head,
+        "newest kept entry is the current HEAD tip"
+    );
     // Newest 2000 kept, oldest 50 dropped: newest line is "entry {n-1}"; the
     // last kept entry (got[cap-1]) is line (n-1) - (cap-1) = n - cap = 50.
-    assert_eq!(got[0].message, format!("entry {}", n - 1), "top == newest file line");
+    assert_eq!(
+        got[0].message,
+        format!("entry {}", n - 1),
+        "top == newest file line"
+    );
     assert_eq!(
         got[MAX_REFLOG_ENTRIES - 1].message,
         format!("entry {}", n - MAX_REFLOG_ENTRIES),

@@ -58,12 +58,20 @@ pub struct FetchResult {
 /// Outcome of a fast-forward-only pull. `WouldNotFastForward` is a RESULT,
 /// not an error — nothing failed; the fetch DID land (contract §2.1).
 #[derive(Debug, Clone, serde::Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum PullResult {
     /// behind == 0 (local is equal to or ahead of upstream): nothing to pull.
     UpToDate,
     /// Branch ref + worktree moved from `from` to `to` (full 40-char oids).
-    FastForwarded { branch: String, from: String, to: String },
+    FastForwarded {
+        branch: String,
+        from: String,
+        to: String,
+    },
     /// ahead > 0 && behind > 0. NOTHING was changed (fetch already happened —
     /// remote-tracking refs updated — but branch/worktree untouched).
     WouldNotFastForward {
@@ -79,7 +87,11 @@ pub enum PullResult {
 
 /// Outcome of pushing the current branch.
 #[derive(Debug, Clone, serde::Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum PushResult {
     /// Remote-tracking ref already equalled the local tip before the push.
     UpToDate { remote: String, branch: String },
@@ -360,7 +372,9 @@ pub fn list_remotes(workdir: &Path) -> Result<Vec<RemoteInfo>, AppError> {
 /// duplicate (Exists) → `Git("remote '<name>' already exists")`.
 pub fn add_remote(workdir: &Path, name: &str, url: &str) -> Result<(), AppError> {
     if !git2::Remote::is_valid_name(name) {
-        return Err(AppError::InvalidName(format!("invalid remote name: '{name}'")));
+        return Err(AppError::InvalidName(format!(
+            "invalid remote name: '{name}'"
+        )));
     }
     let repo = open_repo_at(workdir)?;
     let result = repo.remote(name, url).map(|_remote| ());
@@ -442,7 +456,6 @@ pub fn set_remote_url(workdir: &Path, name: &str, url: &str) -> Result<(), AppEr
         Err(e) => Err(e.into()),
     }
 }
-
 
 #[cfg(test)]
 mod tests;
