@@ -18,12 +18,14 @@ import {
   FORGE_PR_LIST,
   FORGE_PR_MERGEABLE,
   FORGE_REPO_CONTEXT,
-  FORGE_REVIEW_COMMENTS,
   FORGE_VIEWER,
 } from '../../fixtures/forge';
+import { clearHostRejection } from './forgeClearHostFailure';
+import { offGuard } from './forgeOffline';
+import { forgePrDiffHandlers } from './forgePrDiffHandlers';
+import type { ForgeClearHostFailSeam } from './forgeClearHostFailure';
 import { removeAccountRejection } from './forgeRemoveFailure';
 import type { ForgeRemoveFailSeam } from './forgeRemoveFailure';
-import { PR_DIFF_STATS, PR_DIFF_STATS_EMPTY, mockPrFileDiff } from '../../fixtures/prDiff';
 import { SUPPORTED_MERGE_METHODS } from '../../types';
 import {
   accountStore,
@@ -37,7 +39,6 @@ import type {
   AppError,
   CommitStatus,
   CreatePrInput,
-  FileDiff,
   ForgeAccount,
   ForgeKind,
   ForgeRepoContext,
@@ -46,15 +47,12 @@ import type {
   MergePrInput,
   PrDescription,
   PrDetail,
-  PrDiffStats,
   PrListQuery,
   PrPage,
   PrState,
   PrSummary,
-  ReviewComment,
 } from '../../types';
 
-const FORGE_OFF = urlParam('forge') === 'off';
 // Provider/host selection + the P80 multi-account index live in the account
 // store module (extracted to keep this file focused). `accountStore` is the
 // mutable index; the sentinel consts drive the provider/host/project.
@@ -90,19 +88,13 @@ function overlaidSummary(number: number): PrSummary | undefined {
   return { ...summary, state: effectiveState(number, summary.state) };
 }
 
-/** `?forge=off` ⇒ simulate an offline/unreachable forge on every command. */
-function offGuard(): void {
-  if (FORGE_OFF) {
-    const err: AppError = { kind: 'networkError', message: 'mock: forge is offline (?forge=off)' };
-    throw err;
-  }
-}
-
 /** Per-account `forgeRemoveAccount` call counter backing the `keychain-then-ok`
  *  seam (a mock-only retry ledger; the backend needs none). */
 const removeAttempts = new Map<string, number>();
 
 export const forgeHandlers = {
+  ...forgePrDiffHandlers,
+
   async forgeRepoContext(repoId: string): Promise<ForgeRepoContext> {
     await delay(120);
     requireRepo(repoId);
@@ -258,42 +250,6 @@ export const forgeHandlers = {
     }
     prStateOverlay.set(number, 'closed');
     return forgeHandlers.forgeGetPr(repoId, number);
-  },
-
-  // P89: locally-computed PR base…head diff. Auto-fetch is a no-op in the mock;
-  // returns canned stats + headers. `?forge=empty` ⇒ base===head (empty state);
-  // `?forge=off` ⇒ networkError (fetch-failed/offline path, via offGuard).
-  async forgePrDiff(repoId: string, _number: number): Promise<PrDiffStats> {
-    await delay(250);
-    requireRepo(repoId);
-    offGuard();
-    if (urlParam('forge') === 'empty') return PR_DIFF_STATS_EMPTY;
-    return PR_DIFF_STATS;
-  },
-
-  // P89: hunks for ONE file of the PR diff — pure local (no offGuard/refetch),
-  // routed by path exactly like the backend's `pr_file_diff`.
-  async forgePrFileDiff(
-    repoId: string,
-    _mergeBaseOid: string,
-    _headOid: string,
-    path: string,
-    origPath: string | null,
-    fullContext: boolean,
-    intraline: boolean,
-  ): Promise<FileDiff> {
-    await delay(120);
-    requireRepo(repoId);
-    // P93: the fixture honours both flags (File view / Highlight changes) and
-    // rejects for the `fail` path sentinel.
-    return mockPrFileDiff(path, origPath, fullContext, intraline);
-  },
-
-  async forgeListReviewComments(repoId: string, _number: number): Promise<ReviewComment[]> {
-    await delay(150);
-    requireRepo(repoId);
-    offGuard();
-    return FORGE_REVIEW_COMMENTS;
   },
 
   async forgeSetToken(repoId: string, token: string): Promise<ForgeViewer> {
@@ -478,6 +434,14 @@ export const forgeHandlers = {
   async forgeClearTokenForHost(host: string): Promise<void> {
     await delay(120);
     offGuard();
+    // `?forgeClearHostFail=` — the outcomes of the audit-MEDIUM-1 ruling. Copy
+    // and fidelity reasoning live in ./forgeClearHostFailure — see that file
+    // before touching the copy.
+    const rejection = clearHostRejection(
+      urlParam('forgeClearHostFail') as ForgeClearHostFailSeam,
+      host,
+    );
+    if (rejection !== null) throw rejection;
     accountStore.removeAccountsForHost(host);
   },
 

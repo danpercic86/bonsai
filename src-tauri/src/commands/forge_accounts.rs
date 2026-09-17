@@ -1,7 +1,8 @@
 //! P80 multi-account forge command layer: account RESOLUTION (per-repo override
 //! → owner match → host default → single → first) and the global
 //! account-management commands (add / set-host-default / set-repo-account /
-//! list / sign-out-host). REMOVAL lives in `forge_remove_account.rs`.
+//! list). REMOVAL lives in `forge_remove_account.rs`, sign-out-of-a-HOST in
+//! `forge_clear_host.rs`.
 //!
 //! Split from `forge.rs` (which keeps the PR-data commands) to hold the
 //! resolution algorithm + its unit tests in a focused module (CLAUDE.md
@@ -329,52 +330,6 @@ pub(crate) async fn forge_set_repo_account_inner(
         let _ = settings::update(&file, |s| match &account_id {
             Some(a) => settings::set_repo_override(s, &workdir_str, a),
             None => settings::clear_repo_override(s, &workdir_str),
-        });
-        Ok(())
-    })
-    .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
-}
-
-/// P79 (retained): sign out ALL accounts on `host` — delete each account's
-/// keychain entry + the legacy bare-host entry, drop the records, defaults, and
-/// any overrides pointing at them. Idempotent. Errors: `other`.
-#[tauri::command]
-pub async fn forge_clear_token_for_host(
-    app: tauri::AppHandle,
-    host: String,
-) -> Result<(), AppError> {
-    let file = settings::settings_file(&app)?;
-    forge_clear_token_for_host_inner(&file, host).await
-}
-
-/// Runtime-free core of `forge_clear_token_for_host`.
-pub(crate) async fn forge_clear_token_for_host_inner(
-    settings_file: &Path,
-    host: String,
-) -> Result<(), AppError> {
-    let file = settings_file.to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || {
-        let host_l = host.to_ascii_lowercase();
-        let s = settings::load_from(&file);
-        let on_host: Vec<settings::ForgeAccountRecord> = s
-            .forge_accounts
-            .iter()
-            .filter(|a| a.host == host_l)
-            .cloned()
-            .collect();
-        for a in &on_host {
-            let _ = bonsai_forge::delete_token(&a.keychain_key);
-        }
-        // Legacy bare-host token + cached viewer.
-        let _ = bonsai_forge::clear_token_for_host(&host_l);
-        let ids: Vec<String> = on_host.iter().map(|a| a.account_id.clone()).collect();
-        let _ = settings::update(&file, |s| {
-            s.forge_accounts.retain(|a| a.host != host_l);
-            s.forge_host_defaults.retain(|d| d.host != host_l);
-            s.repo_forge_overrides
-                .retain(|o| !ids.contains(&o.account_id));
-            settings::remove_forge_host(s, &host_l);
         });
         Ok(())
     })

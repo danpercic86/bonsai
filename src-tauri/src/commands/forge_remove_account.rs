@@ -1,8 +1,9 @@
 //! P80 account REMOVAL — `forge_remove_account` and its runtime-free core.
 //!
 //! Split out of `forge_accounts.rs` (CLAUDE.md file-size discipline) because
-//! removal carries the only injected side effects in that layer: the OS-keychain
-//! delete and the settings write, both of which must be failable in tests.
+//! removal carries injected side effects: the OS-keychain delete and the
+//! settings write, both of which must be failable in tests. `forge_clear_host.rs`
+//! is the other such command in that layer (sign out of a whole host).
 //!
 //! User ruling (2026-09-17): deleting the token IS the operation. See
 //! [`forge_remove_account_inner_with`] for the three outcomes.
