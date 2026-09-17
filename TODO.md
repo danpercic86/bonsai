@@ -1551,7 +1551,148 @@ leaves the account listed. Removing one without the other is a partial state, an
 able to say which half happened. Needs a contract decision before implementation, and a
 `security-auditor` pass on the result.
 
-## 🔻 2026-09-17 PHASE 2 — "do all the remaining work". IN PROGRESS
+### ✅ FULL GATE GREEN AT `ea6d323` — 2026-09-17, 9 steps, 411.6s, zero FAIL lines
+
+nextest **159.2s** (**2605 run, 2605 passed, 11 skipped**) · doctests 3.1s · `cargo fmt --check` 1.6s ·
+clippy 11.5s · eslint 10.7s · size ratchet 721ms · vitest 53.9s (**3019 / 275 files**) · tsc+build
+9.9s · e2e 160.9s (**185 passed**). Log: `D:/Data/Temp/claude/bonsai-gate/gate-final.log`.
+
+**Deltas accounted for:** Rust **2580 → 2605** (+25, the credential work); vitest **3011 → 3019**
+(+8); **skipped 10 → 11** — the new `#[ignore]`d real-keychain test, not a silently disabled test;
+e2e unchanged at 185 but **that run is the verification of the toast deletion**, since the flipped
+assertion had never been executed.
+
+### 🔻 MEDIUM-2 CLOSED — `ea6d323`. Auditor re-rating: MEDIUM → **LOW (residual, disclosed)**
+
+Three write paths swallowed their record write after storing a token. **The third was found only
+because the auditor re-checked after the "fix":** `forge_set_token` (`forge.rs:297-318`) held the
+**verbatim** pre-fix body and is reachable from `PrPanel.tsx:236` and `ChecksPanel.tsx:74`. My
+briefing named one file and I never grepped for siblings. **Lesson: when fixing a defect defined by
+a code shape, grep for the shape, not the filename.**
+
+**🚨 THE RULING THAT WOULD HAVE DESTROYED CREDENTIALS.** My first instruction was "on settings
+failure, delete the token you just stored." `store_token` **overwrites** and `aid` is deterministic
+from `(kind, host, login)`, so on a **re-add** that deletes the user's **working** credential while
+the old record still points at the key → a record with no token, `connected: false`. **A new orphan
+direction created by the fix.** Corrected to read settings **before** the store and discriminate on
+pre-state: delete only when nothing already referenced the key; **never** when the store updated a
+live credential. Caught by review before implementation, not after.
+
+**The safety clause is pinned, not asserted.** The `.filter` excluding keys any other record names is
+what keeps the delete set a subset of "unreferenced"; replacing it with `.filter(|_| true)` turns its
+test red. Both reviewers separately proved the superset claim holds by reading `upsert_forge_account`
+(retain-then-insert, so the matched record's old key provably loses its only reference).
+
+**USER RULING — best-effort legacy sweep.** Fail-closed could **permanently strand** a user: the
+account's own token is already gone, so a retry hits `NoEntry → Ok` while the legacy key refuses
+again → a listed, disconnected, **unremovable** account. That forced a **return-type change**:
+`Result<ForgeRemoveOutcome, AppError>` with `leftover: Option<String>`. **My assumption that it could
+ride the existing `Err` channel was wrong** — `ui-designer` blocked it: R2's `Err` is a real failure,
+this one means **success**, and riding `Err` keeps the dialog open over a deleted account (no
+`refetch()` on that path) and mis-counts obs/`ipc.result`/the DEV toast guard.
+
+### 🚨 AN AGENT WROTE TO THE USER'S REAL WINDOWS CREDENTIAL MANAGER — disclosed, cleaned, verified
+
+Proving the `forge_set_token` fix red required running the **verbatim pre-fix body**, which calls the
+real `store_token`. It stored a test token under `com.bonsai.app` / `gitHub:github.com:octocat`, then
+deleted it with `cmdkey /delete`. **It disclosed this unprompted; I verified independently that the
+entry is gone.** The design fault is mine: I sanctioned exactly one real-keychain run and did not
+foresee that a counterfactual against credential-writing code touches the store by definition.
+**Rule earned: a counterfactual against credential-writing code requires the DI seam FIRST.**
+Auditor's assessment: the hazard is now **one greppable choke point but NOT structurally closed** —
+all four write paths have a seam and the seamless body is gone, but `auth::global()`
+(`crates/bonsai-forge/src/auth.rs:145`) builds the real keychain unconditionally. **Recommended and
+awaiting the user: a guard that panics unless `BONSAI_ALLOW_REAL_KEYCHAIN=1`.**
+
+### 🔎 A LIVE ORPHAN IN THE USER'S OWN KEYCHAIN — found while verifying, NOT touched
+
+`cmdkey /list` shows `github.com.com.bonsai.app` and `azuredevops:dev.azure.com.com.bonsai.app`.
+The user's `settings.json` holds **one** account (`azureDevOps:dev.azure.com`) and **no record naming
+`github.com`** — so the GitHub entry is a **genuine unreferenced orphan**, the live specimen of the
+bug. **Deliberately not deleted: removing a credential from the user's keychain is not the
+orchestrator's call**, and it may be a PAT they use elsewhere. Workaround if wanted: add an account on
+`github.com` then remove it, which triggers the sweep. (The `azuredevops:` / `azureDevOps:` casing
+difference is expected — `TokenStore` lowercases internally.)
+
+### ⚠ THE ORPHAN CLASS NOW SPLITS IN TWO — and one half has no mechanism at all
+
+With `clear_token_for_host` deleted and `forge_clear_host` dormant, `forge_remove_account.rs:225` is
+**the only bare-host sweep in the product**, and it is gated on removing the last account on a host
+**that still has a record**. So: **permanent-but-disclosed** for the record-bearing shape, and
+**permanent-and-undisclosed** for the record-less shape — which is exactly the user's real
+`github.com` entry. Structural fix would be reviving `forge_clear_host`'s outcome 1'.
+
+**LOW — the leftover disclosure is TERMINAL.** R1/R2/R3 all survive to a retry (record survives →
+sweep re-runs). **R4 does not**: the record is deleted, so `last_on_host` can never be re-derived and
+the sweep can never re-run. The sole disclosure is a section note that `begin(SECTION_SLOT)` clears on
+the next operation and that dies with the Settings view. **A live orphaned PAT is disclosed exactly
+once, transiently.** Fix would be persisting a `leftoverCredentials` note in settings.
+**AWAITING USER.**
+
+### 📐 THE COVERAGE STANDARD THIS WORK ESTABLISHED — keep it
+
+- **Two counterfactuals, not one.** vs the **pre-fix swallow** *and* vs the **wrong fix** (the
+  unconditional rollback). Exactly **one** test goes red against the wrong fix, and knowing *which*
+  test pins the discriminator matters more than any total.
+- **Compile-gated pins are declared, not counted.** Two tests could not be run red because
+  `out.leftover` did not exist pre-change; the implementer excised and restored them for the red run
+  and said so.
+- **Mutation proof for every "this is covered" claim.** `begin(SECTION_SLOT)` was proven uncovered by
+  the blunt fact that **deleting the line left all 739 tests passing**; the ChecksPanel toast pin was
+  proven by re-inserting the deleted line and capturing the double-framed string.
+- **Restored files verified with `cmp`**, byte-identical, not by eye.
+
+### 🚨 THREE LAYERS OF OVERCLAIM, AND THE EMPIRICAL CHECK WON
+
+**A reviewer's MUST-FIX-adjacent finding was itself wrong, and the implementer disproved it by
+running the counterfactual FIRST.** The claim: `a_failed_connect_leaves_no_repo_override` was "true by
+construction" because `Calls::failing_update` never invokes `mutate`. **It was already red** against a
+production mutation that wrote the pin outside the injected closure:
+`left: Some("gitHub:github.com:octocat")`, `right: None`. Why: `override_for` reads the settings
+**file**, which the failing fake never writes, so a bypass was already caught on disk. The prescribed
+change was applied anyway and produced **byte-identical** red output — so it adds execution coverage
+of the wrapper's failure-path closure but **no new discriminator**, and that was reported plainly
+rather than dressed up as a fix. **If this SHOULD-FIX is ever archived, record that the property was
+already held on disk** — otherwise someone re-derives a fix for a non-problem.
+
+**Baseline honesty, twice corrected.** The implementer's "red vs pre-change" meant an **uncommitted
+intermediate**, so two of three tests were red vs pass 2 but **green at HEAD**. Then the pass-2
+reviewer sharpened it further: "red vs HEAD" is not merely weaker here but **impossible** — HEAD has
+no `forge_set_token_with`, so those tests do not compile against it. Correct phrasing now in the test
+docs: **"red vs HEAD's body transplanted behind the new seam."** And the "seam artifact" label is
+right about the *evidence*, wrong about the *bug*: HEAD's `forge_set_token` body contains **no
+`delete_token` call at all**, so source B was real, just unobservable without the seam.
+
+### 🆕 MY OWN PROCESS FAILURES THIS PHASE — both caught by agents, not by me
+
+1. **Pass 2 was never code-reviewed.** Passes 1 and 3 each got one; pass 2 — the one fixing the
+   **still-live** defect — got only a security audit, because my pass-3 briefing said "focus on what
+   is new". A security audit is not a code review. Closed retroactively (verdict: approve).
+2. **I flipped the `cargo fmt` guidance too hard.** After the tree became clean I told agents they
+   "MUST run `cargo fmt --all`" — while another agent was editing Rust. The refactorer's `--all`
+   rewrapped `forge_clear_host.rs` and `forge_remove_account.rs` mid-flight and it **declined to
+   revert**, correctly, because reverting would have destroyed in-flight work. Standing rule now:
+   **`cargo fmt -p <crate>` while concurrent Rust edits are live, never `--all`.**
+3. **I repeated a claim I had made false myself** — that the `?forgeClearHostFail=` seams were
+   "console-reachable". `871d16a` dropped the IPC binding; only a doc comment mentions the symbol.
+   Told to the user and to two agent briefings before an architect caught it.
+
+### 🆕 FIVE MORE FILED, NONE BLOCKING
+
+- **The add-path superseded sweep swallows its failure** with zero disclosure
+  (`forge_add_account.rs:287`). The same `leftover`-on-success channel would close it.
+- **`auth::global()` has no test-mode guard** — see the incident above. **AWAITING USER.**
+- **Persisting the leftover disclosure** — **AWAITING USER.**
+- **Genuine dead code, filed not deleted:** `forge_set_token.rs:69`'s empty-host early return is
+  **unreachable** — `detect_provider` returns `None` on an empty host, `resolve_target` pairs that
+  with `ForgeKind::Unknown`, and `require_supported()` is the **first statement** of `viewer()`
+  (`github/mod.rs:104`, definition `:46-56`). True at HEAD too, so preserving it verbatim was right.
+- **P114 §A.5 carries one stale option-2 line** ("then *reject* under the new kind") written for the
+  shape that was not chosen; `ui-designer`-owned. Also: duplicated `scratch_dir` helpers in three
+  test modules; `ChecksPanel.connect.test.tsx` rides a 300 ms real-timer debounce (precedent-
+  following, but the one place a slow CI runner could bite).
+
+## 🔻 2026-09-17 PHASE 2 — "do all the remaining work". (earlier in the same push)
 
 ### ✅ P114 forge failure copy — CONTRACT SIGNED, implementation in flight
 
