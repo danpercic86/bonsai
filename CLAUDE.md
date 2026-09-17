@@ -264,6 +264,20 @@ graph-layout algorithm.
   lines of exactly that on a `docs(mcp):` subject, literally accurate and materially understating,
   and the audit it escaped later found a false guarantee in one write tool. A description-snapshot
   test guards text drift; this rule guards the review.
+  **Second mandatory path trigger (added 2026-09-17, user ruling):** any diff touching the
+  **external-tool launch surface** — `crates/bonsai-core/src/tools/*.rs`,
+  `src-tauri/src/commands/external.rs`, `src-tauri/src/commands/tools.rs` — requires a
+  `security-auditor` pass **regardless of the commit subject**. This is where a user-picked
+  filesystem path becomes the argv of a spawned process, i.e. the same *shape* as the `tools_*.rs`
+  rule: a small text/path surface that gates a privileged action, where a diff can widen what gets
+  executed while reading like a cleanup. **Scoped to the module, not to
+  `BrowsedProgram::from_settings_field` alone** — deliberately, because a *caller* change can widen
+  the surface without that function appearing in the diff at all, and a per-function trigger would
+  not fire. Note the argument this rule overrides: the surface already had **three CLEAN audits at
+  HIGH and above** (SEC-2026-09-14/15), so it buys nothing today. It is kept for the same reason as
+  the rule above — that one was adopted *because* a 222-line diff slipped past review on a
+  `docs(mcp):` subject, so the trigger exists for the diff nobody flags, and a clean history is not
+  evidence the next diff is clean.
 - **`refactorer`** — strictly behavior-preserving restructuring, chiefly splitting oversized files
   back under the ~500-line limit. Proves equivalence by identical before/after test counts. Never
   fixes bugs or changes behavior in the same pass — it reports what it finds instead.
