@@ -35,32 +35,53 @@ type UpdateSettingsFn = Box<
     dyn Fn(&Path, &mut dyn FnMut(&mut settings::Settings)) -> Result<(), AppError> + Send + 'static,
 >;
 
-/// Fixed halves of the user-facing failure messages (and the separator joining
-/// multiple causes), in the shape
-/// `forge_remove_account.rs` established. Consts so ONE Rust definition is the
-/// source of truth and the cross-language guard
-/// (`forge_clear_host_tests::mock_copy_mirrors_the_rust_copy`) can assert the
-/// harness mirror in `src/ipc/mock/handlers/forgeClearHostFailure.ts` contains
-/// them — editing the copy here without editing the mock turns that test red.
-const KEYCHAIN_FAIL_PREFIX: &str = "could not remove the credentials from the OS keychain: ";
-const KEYCHAIN_FAIL_SUFFIX: &str =
-    ". Nothing was changed — the accounts are still listed, so you can try again.";
-/// The empty-`on_host` variant of the keychain-refusal suffix: with no account
-/// on the host only the legacy bare-host delete can be refused, and then there
-/// are NO accounts listed — so the standard suffix would assert a false UI fact
-/// (the same overstatement `e583f11` existed to remove).
-const KEYCHAIN_FAIL_NO_ACCOUNT_SUFFIX: &str = ". Nothing was changed — this host has no accounts listed; a leftover credential for it could not be removed, so you can try again.";
+/// The user-facing failure messages, as a fixed HEAD (the human sentences,
+/// ending `. `) plus the shared [`CAUSE_LEAD`], in the shape
+/// `forge_remove_account.rs` establishes: every message is
+/// `format!("{HEAD}{CAUSE_LEAD}{cause}")`, so the P114 §3 cause-last ordering
+/// rule lives in exactly one place per command.
+///
+/// Three heads name the host, so they carry a literal `{host}` placeholder
+/// filled by [`with_host`] (`format!` cannot take a const as its template).
+///
+/// Consts so ONE Rust definition is the source of truth and the cross-language
+/// guard (`forge_clear_host_tests::mock_copy_mirrors_the_rust_copy`) can assert
+/// the harness mirror in `src/ipc/mock/handlers/forgeClearHostFailure.ts`
+/// contains each whole HEAD (with `{host}` rendered as the TS `${host}`) —
+/// editing the copy here without editing the mock turns that test red.
+const CAUSE_LEAD: &str = "Details: ";
+const KEYCHAIN_FAIL_HEAD: &str = "Couldn't remove this host's credentials from the OS keychain. Nothing was changed — the accounts are still listed, so you can try again. ";
+/// The empty-`on_host` variant of the keychain refusal: with no account on the
+/// host only the legacy bare-host delete can be refused, and then there are NO
+/// accounts listed — so the standard head would assert a false UI fact (the
+/// same overstatement `e583f11` existed to remove). P114 C5 makes this its own
+/// head rather than a suffix swap so the sentence can start with the thing that
+/// actually failed and can name the host (it also said its failure twice).
+const KEYCHAIN_FAIL_NO_ACCOUNT_HEAD: &str = "A leftover credential for {host} couldn't be removed from the OS keychain. Nothing was changed, so you can try again. ";
 /// Separator between the causes of multiple refused deletes. A named const so
 /// the cross-language guard covers it too (a bare literal could drift out of
 /// sync with the mock's joined message unnoticed).
 const KEYCHAIN_FAIL_JOIN: &str = "; ";
-const SETTINGS_FAIL_PREFIX: &str =
-    "the credentials were removed from the OS keychain, but the account list could not be saved: ";
-const SETTINGS_FAIL_SUFFIX: &str = ". The accounts may still appear until settings can be written.";
+/// P114 rule 2 (state, not act) and its plural-truth check: this branch is
+/// reachable only when every delete — including the legacy bare-host key —
+/// succeeded, so "the credentials" (all of them) is true here.
+const SETTINGS_FAIL_HEAD: &str = "The credentials are no longer in the OS keychain, but the account list couldn't be saved. Try again to finish signing out of {host}. ";
 /// The empty-`on_host` variant of the settings-save failure: no account named a
 /// credential, so the message must NOT claim credentials were removed (the
 /// `e583f11` lesson — that exact false claim was the bug fixed in the sibling).
-const SETTINGS_FAIL_NO_CREDENTIAL_PREFIX: &str = "the account list could not be saved: ";
+/// Deliberately NOT byte-identical to the sibling's R3 any more: the action
+/// differs ("signing out of {host}" vs "removing it"), so do not de-duplicate
+/// these consts across the two files.
+const SETTINGS_FAIL_NO_CREDENTIAL_HEAD: &str =
+    "The account list couldn't be saved. Try again to finish signing out of {host}. ";
+
+/// Fills a head's `{host}` placeholder. The placeholder (rather than a
+/// prefix/suffix pair) keeps each head ONE contiguous literal, which is what
+/// lets the cross-language guard match a whole message instead of two halves
+/// that could come from different strings.
+fn with_host(head: &str, host: &str) -> String {
+    head.replace("{host}", host)
+}
 
 /// Injectable side effects of [`forge_clear_token_for_host_inner`]. The real
 /// implementations live in [`Default`]; tests substitute failing ones because
@@ -170,16 +191,16 @@ pub(crate) async fn forge_clear_token_for_host_inner_with(
             // Nothing is mutated: no record dropped, no default or override
             // cleared, no legacy mirror removed, no viewer evicted. The host
             // stays listed, so the sign-out is retryable in place.
-            // Which suffix is TRUE depends on whether anything IS listed: with
+            // Which head is TRUE depends on whether anything IS listed: with
             // an empty `on_host` the host has no rows at all, so claiming "the
             // accounts are still listed" would be the false-UI-fact bug again.
-            let suffix = if on_host.is_empty() {
-                KEYCHAIN_FAIL_NO_ACCOUNT_SUFFIX
+            let head = if on_host.is_empty() {
+                with_host(KEYCHAIN_FAIL_NO_ACCOUNT_HEAD, &host_l)
             } else {
-                KEYCHAIN_FAIL_SUFFIX
+                KEYCHAIN_FAIL_HEAD.to_string()
             };
             return Err(AppError::Other(format!(
-                "{KEYCHAIN_FAIL_PREFIX}{}{suffix}",
+                "{head}{CAUSE_LEAD}{}",
                 failures.join(KEYCHAIN_FAIL_JOIN)
             )));
         }
@@ -206,11 +227,15 @@ pub(crate) async fn forge_clear_token_for_host_inner_with(
             settings::remove_forge_host(s, &host_l);
         })
         .map_err(|e| {
-            AppError::Other(if had_credentials {
-                format!("{SETTINGS_FAIL_PREFIX}{e}{SETTINGS_FAIL_SUFFIX}")
-            } else {
-                format!("{SETTINGS_FAIL_NO_CREDENTIAL_PREFIX}{e}.")
-            })
+            let head = with_host(
+                if had_credentials {
+                    SETTINGS_FAIL_HEAD
+                } else {
+                    SETTINGS_FAIL_NO_CREDENTIAL_HEAD
+                },
+                &host_l,
+            );
+            AppError::Other(format!("{head}{CAUSE_LEAD}{e}"))
         })?;
         Ok(())
     })

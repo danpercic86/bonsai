@@ -17,9 +17,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ipc } from '../../ipc';
 import type { ForgeAccount } from '../../ipc';
 import {
+  REMOVE_CONFIG_DIR_FAIL_MESSAGE,
   REMOVE_KEYCHAIN_FAIL_MESSAGE,
   REMOVE_SETTINGS_FAIL_MESSAGE,
   REMOVE_SETTINGS_FAIL_NO_CREDENTIAL_MESSAGE,
+  REMOVE_TASK_JOIN_FAIL_MESSAGE,
   removeAccountRejection,
 } from '../../ipc/mock/handlers/forgeRemoveFailure';
 import { SettingsAccountsSection } from './SettingsAccountsSection';
@@ -64,10 +66,8 @@ describe('Accounts — remove-account failure copy', () => {
       .spyOn(ipc, 'forgeRemoveAccount')
       .mockRejectedValue({ kind: 'other', message: REMOVE_KEYCHAIN_FAIL_MESSAGE });
     const dialog = await attemptRemove();
-    await expectDialogError(
-      dialog,
-      `Could not remove github.com: ${REMOVE_KEYCHAIN_FAIL_MESSAGE}`,
-    );
+    // P114 rule 1: verbatim — no `Could not remove <host>: ` prefix.
+    await expectDialogError(dialog, REMOVE_KEYCHAIN_FAIL_MESSAGE);
     expect(remove).toHaveBeenCalledWith(GH_ACCOUNT.accountId);
     // The copy must say the account is still there — that is the retry cue.
     expect(dialog.querySelector('.dialog-error')?.textContent).toContain('still listed');
@@ -81,13 +81,13 @@ describe('Accounts — remove-account failure copy', () => {
       message: REMOVE_SETTINGS_FAIL_MESSAGE,
     });
     const dialog = await attemptRemove();
-    await expectDialogError(
-      dialog,
-      `Could not remove github.com: ${REMOVE_SETTINGS_FAIL_MESSAGE}`,
-    );
+    await expectDialogError(dialog, REMOVE_SETTINGS_FAIL_MESSAGE);
     const text = dialog.querySelector('.dialog-error')?.textContent ?? '';
-    expect(text).toContain('was removed from the OS keychain');
-    expect(text).toContain('may still appear');
+    // P114 rule 2 (state, not act): "is no longer in" survives a retry, where
+    // the `NoEntry` fold means nothing is deleted and "was removed" is false.
+    expect(text).toContain('is no longer in the OS keychain');
+    expect(text).not.toContain('was removed');
+    expect(text).toContain('Try again to finish removing it');
     expect(text).not.toContain('Nothing was changed');
   });
 
@@ -102,10 +102,8 @@ describe('Accounts — remove-account failure copy', () => {
       return rejection === null ? Promise.resolve() : Promise.reject(rejection);
     });
     const dialog = await attemptRemove();
-    await expectDialogError(
-      dialog,
-      `Could not remove github.com: ${REMOVE_KEYCHAIN_FAIL_MESSAGE}`,
-    );
+    // P114 rule 1: verbatim — no `Could not remove <host>: ` prefix.
+    await expectDialogError(dialog, REMOVE_KEYCHAIN_FAIL_MESSAGE);
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(attempt).toBe(2);
@@ -115,10 +113,16 @@ describe('Accounts — remove-account failure copy', () => {
 describe('removeAccountRejection — mock seams', () => {
   it('covers every documented `?forgeRemoveFail` value and defaults to success', () => {
     expect(removeAccountRejection(null, 1)).toBeNull();
-    expect(removeAccountRejection('1', 1)?.message).toBe(
-      'cannot resolve app config dir: unknown path',
+    expect(removeAccountRejection('1', 1)?.message).toBe(REMOVE_CONFIG_DIR_FAIL_MESSAGE);
+    // P114 N1/N2: the wrappers turn `settings::settings_file`'s bare lowercase
+    // cause into a sentence, with the cause last behind `Details: `.
+    expect(removeAccountRejection('1', 1)?.message).toMatch(
+      /^Couldn't remove the account — Bonsai can't reach its settings folder\. Details: cannot resolve app config dir: /,
     );
-    expect(removeAccountRejection('long', 1)?.message).toMatch(/^cannot resolve app config dir: /);
+    expect(removeAccountRejection('long', 1)?.message).toMatch(
+      /^Couldn't remove the account — Bonsai can't reach its settings folder\. Details: cannot resolve app config dir: /,
+    );
+    expect(removeAccountRejection('task-join', 1)?.message).toBe(REMOVE_TASK_JOIN_FAIL_MESSAGE);
     expect((removeAccountRejection('long', 1)?.message ?? '').length).toBeGreaterThan(300);
     expect(removeAccountRejection('keychain', 9)?.message).toBe(REMOVE_KEYCHAIN_FAIL_MESSAGE);
     expect(removeAccountRejection('settings', 9)?.message).toBe(REMOVE_SETTINGS_FAIL_MESSAGE);

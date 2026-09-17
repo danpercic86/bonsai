@@ -390,7 +390,7 @@ export const forgeHandlers = {
     await delay(120);
     offGuard();
     // P113 §14 + the 2026-09-17 ruling: `?forgeRemoveFail=1|long|keychain|
-    // settings|settings-no-credential|keychain-then-ok`. Every message and the
+    // settings|settings-no-credential|task-join|keychain-then-ok`. Every message and the
     // fidelity reasoning live in ./forgeRemoveFailure — see that file before
     // touching the copy.
     const attempt = (removeAttempts.get(accountId) ?? 0) + 1;

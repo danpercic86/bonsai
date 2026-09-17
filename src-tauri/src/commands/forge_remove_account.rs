@@ -20,21 +20,39 @@ type UpdateSettingsFn = Box<
     dyn Fn(&Path, &mut dyn FnMut(&mut settings::Settings)) -> Result<(), AppError> + Send + 'static,
 >;
 
-/// Fixed halves of the three user-facing failure messages. Extracted as consts
-/// so ONE Rust definition is the source of truth and the cross-language guard
-/// (`forge_remove_account_tests::mock_copy_mirrors_the_rust_copy`) can assert
-/// the harness mirror in `src/ipc/mock/handlers/forgeRemoveFailure.ts` contains
-/// them — editing the copy here without editing the mock turns that test red.
-const KEYCHAIN_FAIL_PREFIX: &str = "could not remove the credential from the OS keychain: ";
-const KEYCHAIN_FAIL_SUFFIX: &str =
-    ". Nothing was changed — the account is still listed, so you can try again.";
-const SETTINGS_FAIL_PREFIX: &str =
-    "the credential was removed from the OS keychain, but the account list could not be saved: ";
-const SETTINGS_FAIL_SUFFIX: &str = ". The account may still appear until settings can be written.";
+/// The user-facing failure messages, as a fixed HEAD (the human sentences,
+/// ending `. `) plus the shared [`CAUSE_LEAD`], so every message is
+/// `format!("{HEAD}{CAUSE_LEAD}{e}")` and the cause-last ordering rule
+/// (P114 §3) lives in exactly one place.
+///
+/// Consts so ONE Rust definition is the source of truth and the cross-language
+/// guard (`forge_remove_account_tests::mock_copy_mirrors_the_rust_copy`) can
+/// assert the harness mirror in `src/ipc/mock/handlers/forgeRemoveFailure.ts`
+/// contains each whole HEAD as a quoted TS literal — editing the copy here
+/// without editing the mock turns that test red.
+///
+/// P114 rule 1: these are OUTCOMES (which half of a two-step operation
+/// happened), so they own the whole sentence and the caller renders them
+/// verbatim — `SettingsAccountsSection.confirmRemove` adds no prefix.
+const CAUSE_LEAD: &str = "Details: ";
+const KEYCHAIN_FAIL_HEAD: &str = "Couldn't remove the account's credential from the OS keychain. Nothing was changed — the account is still listed, so you can try again. ";
+/// P114 rule 2 (state, not act): `crates/bonsai-forge/src/auth.rs:53` folds
+/// `NoEntry` into `Ok(())`, so on a RETRY nothing is deleted and "was removed"
+/// would be false. "is no longer in" stays true either way.
+const SETTINGS_FAIL_HEAD: &str = "The credential is no longer in the OS keychain, but the account list couldn't be saved. Try again to finish removing it. ";
 /// The `rec == None` variant of the settings-save failure: no `delete_token`
 /// call happened (an unknown or already-removed `account_id` has no
 /// `keychain_key`), so the message must NOT claim a credential was deleted.
-const SETTINGS_FAIL_NO_CREDENTIAL_PREFIX: &str = "the account list could not be saved: ";
+const SETTINGS_FAIL_NO_CREDENTIAL_HEAD: &str =
+    "The account list couldn't be saved. Try again to finish removing it. ";
+/// P114 N1: `settings::settings_file`'s own error is a bare lowercase CAUSE
+/// shared by many commands, so it is wrapped into sentence form HERE (not
+/// edited there) to keep "the caller renders verbatim" total for this command.
+const CONFIG_DIR_FAIL_HEAD: &str =
+    "Couldn't remove the account — Bonsai can't reach its settings folder. ";
+/// P114 N2: after a panicked blocking task the real state is genuinely
+/// unknown, so this is the one message that must not promise either way.
+const TASK_JOIN_FAIL_HEAD: &str = "Couldn't remove the account. It may or may not have been removed — check the list and try again. ";
 
 /// P80: delete an account's token (by its `keychain_key`), remove the record, and
 /// clean references (promote/clear host default, drop repo overrides).
@@ -50,7 +68,8 @@ pub async fn forge_remove_account(
     app: tauri::AppHandle,
     account_id: String,
 ) -> Result<(), AppError> {
-    let file = settings::settings_file(&app)?;
+    let file = settings::settings_file(&app)
+        .map_err(|e| AppError::Other(format!("{CONFIG_DIR_FAIL_HEAD}{CAUSE_LEAD}{e}")))?;
     forge_remove_account_inner(&file, account_id).await
 }
 
@@ -114,9 +133,8 @@ pub(crate) async fn forge_remove_account_inner_with(
             .find(|a| a.account_id == account_id)
             .cloned();
         if let Some(r) = &rec {
-            (deps.delete_token)(&r.keychain_key).map_err(|e| {
-                AppError::Other(format!("{KEYCHAIN_FAIL_PREFIX}{e}{KEYCHAIN_FAIL_SUFFIX}"))
-            })?;
+            (deps.delete_token)(&r.keychain_key)
+                .map_err(|e| AppError::Other(format!("{KEYCHAIN_FAIL_HEAD}{CAUSE_LEAD}{e}")))?;
             bonsai_forge::invalidate_viewer(&r.host);
         }
         // Whether a credential was actually deleted decides which settings-save
@@ -135,15 +153,15 @@ pub(crate) async fn forge_remove_account_inner_with(
         })
         .map_err(|e| {
             AppError::Other(if had_credential {
-                format!("{SETTINGS_FAIL_PREFIX}{e}{SETTINGS_FAIL_SUFFIX}")
+                format!("{SETTINGS_FAIL_HEAD}{CAUSE_LEAD}{e}")
             } else {
-                format!("{SETTINGS_FAIL_NO_CREDENTIAL_PREFIX}{e}.")
+                format!("{SETTINGS_FAIL_NO_CREDENTIAL_HEAD}{CAUSE_LEAD}{e}")
             })
         })?;
         Ok(())
     })
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    .map_err(|e| AppError::Other(format!("{TASK_JOIN_FAIL_HEAD}{CAUSE_LEAD}{e}")))?
 }
 
 #[cfg(test)]

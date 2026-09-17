@@ -102,7 +102,7 @@ fn partial_delete_failure_errors_and_changes_nothing() {
         .to_string();
     assert_eq!(
         msg,
-        "could not remove the credentials from the OS keychain: access denied for b. Nothing was changed — the accounts are still listed, so you can try again."
+        "Couldn't remove this host's credentials from the OS keychain. Nothing was changed — the accounts are still listed, so you can try again. Details: access denied for b"
     );
     assert!(
         !wrote.load(Ordering::SeqCst),
@@ -137,7 +137,7 @@ fn bare_host_delete_failure_alone_blocks() {
     let msg = r.expect_err("must fail").to_string();
     assert_eq!(
         msg,
-        "could not remove the credentials from the OS keychain: access denied for github.com. Nothing was changed — the accounts are still listed, so you can try again."
+        "Couldn't remove this host's credentials from the OS keychain. Nothing was changed — the accounts are still listed, so you can try again. Details: access denied for github.com"
     );
     assert_eq!(settings::load_from(&file).forge_accounts.len(), 3);
 }
@@ -158,7 +158,7 @@ fn all_delete_failures_are_reported() {
     ));
     assert_eq!(
         r.expect_err("must fail").to_string(),
-        "could not remove the credentials from the OS keychain: access denied for a; access denied for github.com. Nothing was changed — the accounts are still listed, so you can try again."
+        "Couldn't remove this host's credentials from the OS keychain. Nothing was changed — the accounts are still listed, so you can try again. Details: access denied for a; access denied for github.com"
     );
 }
 
@@ -240,7 +240,7 @@ fn failing_settings_save_reports_the_asymmetry() {
     ));
     assert_eq!(
         r.expect_err("must fail").to_string(),
-        "the credentials were removed from the OS keychain, but the account list could not be saved: io error: disk full. The accounts may still appear until settings can be written."
+        "The credentials are no longer in the OS keychain, but the account list couldn't be saved. Try again to finish signing out of github.com. Details: io error: disk full"
     );
     assert_eq!(
         seen.lock().expect("seen").len(),
@@ -268,7 +268,7 @@ fn empty_host_settings_fail_does_not_claim_credentials_were_removed() {
     let msg = r.expect_err("must fail").to_string();
     assert_eq!(
         msg,
-        "the account list could not be saved: io error: disk full."
+        "The account list couldn't be saved. Try again to finish signing out of bitbucket.org. Details: io error: disk full"
     );
     assert!(
         !msg.contains("keychain"),
@@ -299,43 +299,60 @@ fn empty_host_is_ok() {
     assert!(wrote.load(Ordering::SeqCst), "the settings pass still runs");
 }
 
+/// The mock's source with COMMENT lines stripped. The previous guard searched
+/// the whole file, so prose quoting a message could mask a real drift; a
+/// literal must now appear in code.
+fn mock_code(src: &str) -> String {
+    src.lines()
+        .filter(|l| {
+            let t = l.trim_start();
+            !(t.starts_with("//") || t.starts_with("/*") || t.starts_with('*'))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// The cross-language copy guard, mirroring
 /// `forge_remove_account_tests::mock_copy_mirrors_the_rust_copy`:
 /// `src/ipc/mock/handlers/forgeClearHostFailure.ts` claims its strings are the
 /// backend's output VERBATIM, but Rust and TS share no constant, so nothing
 /// else makes editing one side red.
+///
+/// P114 hardening: each message's ENTIRE fixed text (`HEAD` + [`CAUSE_LEAD`])
+/// must appear in the mock's code as ONE backtick literal, exactly once — not
+/// a prefix and a suffix, which two DIFFERENT strings could satisfy between
+/// them, and not anywhere in a comment. Heads that name the host are matched
+/// with `{host}` rendered as the TS `${host}`, which also pins the
+/// interpolation point.
 #[test]
 fn mock_copy_mirrors_the_rust_copy() {
     const MOCK: &str = include_str!("../../../src/ipc/mock/handlers/forgeClearHostFailure.ts");
-    for fragment in [
-        KEYCHAIN_FAIL_PREFIX,
-        KEYCHAIN_FAIL_SUFFIX,
-        KEYCHAIN_FAIL_NO_ACCOUNT_SUFFIX,
-        SETTINGS_FAIL_PREFIX,
-        SETTINGS_FAIL_SUFFIX,
+    let code = mock_code(MOCK);
+    for (name, head) in [
+        ("KEYCHAIN_FAIL_HEAD", KEYCHAIN_FAIL_HEAD),
+        (
+            "KEYCHAIN_FAIL_NO_ACCOUNT_HEAD",
+            KEYCHAIN_FAIL_NO_ACCOUNT_HEAD,
+        ),
+        ("SETTINGS_FAIL_HEAD", SETTINGS_FAIL_HEAD),
+        (
+            "SETTINGS_FAIL_NO_CREDENTIAL_HEAD",
+            SETTINGS_FAIL_NO_CREDENTIAL_HEAD,
+        ),
     ] {
-        assert!(
-            MOCK.contains(fragment),
-            "forgeClearHostFailure.ts is missing the Rust copy fragment {fragment:?} — update the mock (its header promises verbatim backend text)"
+        let literal = format!("`{}{CAUSE_LEAD}`", with_host(head, "${host}"));
+        assert_eq!(
+            code.matches(literal.as_str()).count(),
+            1,
+            "forgeClearHostFailure.ts must contain the whole {name} message text exactly once, as the code literal {literal:?} — update the mock (its header promises verbatim backend text)"
         );
     }
-    // `KEYCHAIN_FAIL_JOIN` is a two-character literal that occurs in prose all
-    // over this file, so a bare `contains` would be trivially satisfied. Pinning
-    // the mock's joined-cause shape (`${CAUSE}; ${CAUSE}`) makes the separator
-    // itself guarded.
+    // `KEYCHAIN_FAIL_JOIN` is a two-character literal, so only its interpolation
+    // shape in the mock's joined-cause message (`${CAUSE}; ${CAUSE}`) can guard it.
     let joined = format!("}}{KEYCHAIN_FAIL_JOIN}${{");
     assert!(
-        MOCK.contains(&joined),
+        code.contains(&joined),
         "forgeClearHostFailure.ts joins its causes with something other than {KEYCHAIN_FAIL_JOIN:?} — the all-refused message no longer mirrors the backend"
-    );
-    // `SETTINGS_FAIL_NO_CREDENTIAL_PREFIX` is a substring of
-    // `SETTINGS_FAIL_PREFIX`, so a bare `contains` would pass on the wrong
-    // message. Requiring the opening backtick of the TS template literal pins it
-    // to the mock's own `CLEAR_HOST_SETTINGS_FAIL_NO_CREDENTIAL_MESSAGE`.
-    let quoted = format!("`{SETTINGS_FAIL_NO_CREDENTIAL_PREFIX}");
-    assert!(
-        MOCK.contains(&quoted),
-        "forgeClearHostFailure.ts has no string literal starting {quoted:?} — the no-credential settings-save message is not mirrored"
     );
 }
 
@@ -367,7 +384,7 @@ fn empty_host_keychain_failure_does_not_claim_accounts_are_listed() {
         .to_string();
     assert_eq!(
         msg,
-        "could not remove the credentials from the OS keychain: access denied for bitbucket.org. Nothing was changed — this host has no accounts listed; a leftover credential for it could not be removed, so you can try again."
+        "A leftover credential for bitbucket.org couldn't be removed from the OS keychain. Nothing was changed, so you can try again. Details: access denied for bitbucket.org"
     );
     assert!(
         !msg.contains("still listed"),
@@ -444,7 +461,7 @@ fn a_migrated_legacy_key_is_attempted_once_and_reported_once() {
     ));
     assert_eq!(
         r.expect_err("must fail").to_string(),
-        "could not remove the credentials from the OS keychain: access denied for github.com. Nothing was changed — the accounts are still listed, so you can try again.",
+        "Couldn't remove this host's credentials from the OS keychain. Nothing was changed — the accounts are still listed, so you can try again. Details: access denied for github.com",
         "the cause must appear exactly once"
     );
     assert_eq!(

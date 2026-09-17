@@ -13,6 +13,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 import { ipc } from '../../ipc';
 import type { ForgeAccount } from '../../ipc';
+import { REMOVE_CONFIG_DIR_FAIL_MESSAGE } from '../../ipc/mock/handlers/forgeRemoveFailure';
 import { SettingsAccountsSection } from './SettingsAccountsSection';
 
 const VIEWER = { login: 'octocat', avatarUrl: null };
@@ -294,7 +295,7 @@ describe('SettingsAccountsSection — inline outcomes (P113)', () => {
     vi.spyOn(ipc, 'forgeListAccounts').mockResolvedValue([GH_ACCOUNT]);
     vi.spyOn(ipc, 'forgeRemoveAccount').mockRejectedValue({
       kind: 'other',
-      message: 'cannot resolve app config dir: unknown path',
+      message: REMOVE_CONFIG_DIR_FAIL_MESSAGE,
     });
     const { container } = renderSection();
 
@@ -310,8 +311,10 @@ describe('SettingsAccountsSection — inline outcomes (P113)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
 
     await waitFor(() =>
+      // P114 rule 1: rendered verbatim — the N1 wrapper owns the sentence, so
+      // there is no caller-side `Could not remove <host>: ` prefix left.
       expect(dialog.querySelector('.dialog-error')).toHaveTextContent(
-        'Could not remove github.com: cannot resolve app config dir: unknown path',
+        REMOVE_CONFIG_DIR_FAIL_MESSAGE,
       ),
     );
     // The dialog is still open and Remove is retryable in place.

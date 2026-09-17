@@ -98,7 +98,7 @@ fn failing_delete_errors_and_changes_nothing() {
     let msg = e.to_string();
     assert_eq!(
         msg,
-        "could not remove the credential from the OS keychain: access denied. Nothing was changed — the account is still listed, so you can try again."
+        "Couldn't remove the account's credential from the OS keychain. Nothing was changed — the account is still listed, so you can try again. Details: access denied"
     );
     let s = settings::load_from(&file);
     assert_eq!(s.forge_accounts.len(), 1, "record must survive");
@@ -132,7 +132,7 @@ fn failing_settings_save_reports_the_asymmetry() {
     );
     assert_eq!(
         e.to_string(),
-        "the credential was removed from the OS keychain, but the account list could not be saved: io error: disk full. The account may still appear until settings can be written."
+        "The credential is no longer in the OS keychain, but the account list couldn't be saved. Try again to finish removing it. Details: io error: disk full"
     );
 }
 
@@ -174,7 +174,7 @@ fn unknown_account_settings_fail_does_not_claim_a_credential_was_removed() {
     let msg = r.expect_err("must fail").to_string();
     assert_eq!(
         msg,
-        "the account list could not be saved: io error: disk full."
+        "The account list couldn't be saved. Try again to finish removing it. Details: io error: disk full"
     );
     assert!(
         !msg.contains("keychain"),
@@ -182,35 +182,49 @@ fn unknown_account_settings_fail_does_not_claim_a_credential_was_removed() {
     );
 }
 
+/// The mock's source with COMMENT lines stripped. The previous guard searched
+/// the whole file, so prose quoting a message could mask a real drift; a
+/// literal must now appear in code.
+fn mock_code(src: &str) -> String {
+    src.lines()
+        .filter(|l| {
+            let t = l.trim_start();
+            !(t.starts_with("//") || t.starts_with("/*") || t.starts_with('*'))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// The cross-language copy guard. `src/ipc/mock/handlers/forgeRemoveFailure.ts`
 /// claims its strings are the backend's output VERBATIM, but Rust and TS share
 /// no constant, so nothing else makes editing one side red (the `2a0b8f1`
 /// class of defect: a comment asserting a guarantee it does not provide).
-/// Asserting the fixed halves of all three messages appear in that file makes
-/// the claim real: change the copy here, and this test fails naming the
-/// fragment the mock is missing.
+///
+/// P114 hardening: each message's ENTIRE fixed text (`HEAD` + [`CAUSE_LEAD`],
+/// since the cause is last) must appear in the mock's code as ONE backtick
+/// literal, exactly once. The old shape checked a prefix and a suffix
+/// separately, which could in principle be satisfied by halves of two
+/// DIFFERENT strings, and searched comments too. Change the copy here and this
+/// test fails naming the const the mock is missing.
 #[test]
 fn mock_copy_mirrors_the_rust_copy() {
     const MOCK: &str = include_str!("../../../src/ipc/mock/handlers/forgeRemoveFailure.ts");
-    for fragment in [
-        KEYCHAIN_FAIL_PREFIX,
-        KEYCHAIN_FAIL_SUFFIX,
-        SETTINGS_FAIL_PREFIX,
-        SETTINGS_FAIL_SUFFIX,
+    let code = mock_code(MOCK);
+    for (name, head) in [
+        ("KEYCHAIN_FAIL_HEAD", KEYCHAIN_FAIL_HEAD),
+        ("SETTINGS_FAIL_HEAD", SETTINGS_FAIL_HEAD),
+        (
+            "SETTINGS_FAIL_NO_CREDENTIAL_HEAD",
+            SETTINGS_FAIL_NO_CREDENTIAL_HEAD,
+        ),
+        ("CONFIG_DIR_FAIL_HEAD", CONFIG_DIR_FAIL_HEAD),
+        ("TASK_JOIN_FAIL_HEAD", TASK_JOIN_FAIL_HEAD),
     ] {
-        assert!(
-            MOCK.contains(fragment),
-            "forgeRemoveFailure.ts is missing the Rust copy fragment {fragment:?} — update the mock (its header promises verbatim backend text)"
+        let literal = format!("`{head}{CAUSE_LEAD}`");
+        assert_eq!(
+            code.matches(literal.as_str()).count(),
+            1,
+            "forgeRemoveFailure.ts must contain the whole {name} message text exactly once, as the code literal {literal:?} — update the mock (its header promises verbatim backend text)"
         );
     }
-    // `SETTINGS_FAIL_NO_CREDENTIAL_PREFIX` is a substring of
-    // `SETTINGS_FAIL_PREFIX`, so a bare `contains` would pass on the wrong
-    // message. Requiring the opening quote of a TS string literal pins it to
-    // the mock's own `REMOVE_SETTINGS_FAIL_NO_CREDENTIAL_MESSAGE`, which starts
-    // with this prefix.
-    let quoted = format!("'{SETTINGS_FAIL_NO_CREDENTIAL_PREFIX}");
-    assert!(
-        MOCK.contains(&quoted),
-        "forgeRemoveFailure.ts has no string literal starting {quoted:?} — the no-credential settings-save message is not mirrored"
-    );
 }

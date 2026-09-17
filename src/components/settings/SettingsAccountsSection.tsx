@@ -129,7 +129,7 @@ export function SettingsAccountsSection() {
 
   const confirmRemove = () => {
     if (removeTarget === null) return;
-    const { accountId, host } = removeTarget;
+    const { accountId } = removeTarget;
     setRemoving(true);
     // The `begin` equivalent for this slot: clearing FIRST is what makes a
     // retried failure a real `null → text` change, so the alert fires again.
@@ -145,7 +145,12 @@ export function SettingsAccountsSection() {
         // open so Remove can be retried in place, which is why this outcome
         // cannot be a host-group note (§1.3).
         setRemoving(false);
-        setRemoveError(`Could not remove ${host}: ${errorMessage(e)}`);
+        // P114 rule 1: these failures are OUTCOMES — they say which half of the
+        // two-step removal happened — so the backend owns the whole sentence and
+        // it renders VERBATIM. A caller-side `Could not remove …: ` lead clause
+        // cannot be truthful here (it would deny an operation that half
+        // succeeded), and the dialog title is now the only subject.
+        setRemoveError(errorMessage(e));
       },
     );
   };
