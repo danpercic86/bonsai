@@ -73,6 +73,13 @@ being wrong is kept deliberately.
 awaiting USER CHECKPOINT (native window)*. That entry owns the line; keep it updated there, not here.
 Its five checkpoint items are the only thing left in P112.
 
+**2026-09-17 — the board's two owed code items are DONE and the gate is green at `3948478`**
+(three commits: `105131a` lock consolidation, `e583f11` account-removal honesty, `3948478`
+sign-out-host). **94 commits ahead of `origin/dev`**, still unpushed per ruling #25. Two USER
+DECISIONS are open (drop the dormant credential command; delete-or-deprecate the two callerless
+`bonsai-forge` helpers) and two follow-ups are queued (`ui-designer` copy pass; `P113` contract debt
+for the new mock seams). **None of them gate P112 — the native checkpoint still does.**
+
 **Branch `feat/post-p91-rulings`, no upstream — 92 commits ahead of `origin/dev` (`8b88efd`),
 unpushed, and it stays unpushed (ruling #25, do not raise it again).** HEAD is the board commit
 below `5654eaa`. Measured 2026-09-16 with `git rev-list --count origin/dev..HEAD`: **91 at
@@ -109,7 +116,10 @@ bookkeeping complaint — and it is the direct consequence of my batching.
 routed; review the fix against a small diff. The nine files above should get a targeted second pass
 before this branch is considered done.
 
-**Status of that second pass: `in-progress`.** A `reviewer` agent is executing it as of 2026-09-16.
+**Status of that second pass: ✅ DONE — see `### ✅ CLOSED 2026-09-16` at line ~1145.** Both MUST-FIX
+were fixed in `2b3dfd6` and the four SHOULD-FIX resolved, gate green. This line read `in-progress`
+until 2026-09-17 because nobody came back to it after the outcome was recorded elsewhere on the
+board — the same stale-entry failure as item 6 below.
 No outcome is recorded here because none exists yet — do not read this entry as closed.
 
 # ✅ P112 — AI GATE GREEN, ALL FOUR SUB-INCREMENTS IN. **USER CHECKPOINT IS THE ONLY THING LEFT.**
@@ -154,10 +164,27 @@ branch unpushed, so CI cannot run it either.** The first real CI run is the veri
 
 1. **`CLAUDE.md` trigger** — whether `BrowsedProgram::from_settings_field` joins the mandatory
    `security-auditor` path trigger. Not added unilaterally: the sibling rule is a user ruling.
-2. **BLOCKING one fix** — what a **partial** account removal tells the user.
-   `forge_remove_account_inner` discards both the `delete_token` and `settings::update` results and
-   returns `Ok`, so **"account removed" can be reported while the token is still in the keychain.**
-   The two swallowed calls fail differently, so the copy must be able to say which half happened.
+   **Orchestrator recommendation, 2026-09-17: ADD IT, but scope the trigger to the whole
+   external-tool launch module, not to the one function.** Reasoning laid out for the user: the
+   function is the boundary where a user-picked filesystem path becomes an argv for a spawned
+   process, which is the same *shape* as the `tools_*.rs` rule — a small, innocuous-looking text
+   surface that gates a privileged action, where a diff can silently widen what gets executed while
+   reading like a cleanup. The argument against is that this surface already has **three CLEAN
+   audits at HIGH and above** (see `### The external-tool launch surface`), so the trigger buys
+   little today; the argument for is that the `tools_*.rs` rule was adopted precisely *because*
+   `2a0b8f1` slipped 222 lines past review on a `docs(mcp):` subject — the rule is there for the
+   diff nobody flags, and a clean history is not evidence the next diff is clean. A per-function
+   trigger is also weak in practice: a caller change can widen the surface without the function
+   appearing in the diff at all, so the path should be the module.
+2. **✅ RULED 2026-09-17 by the user: "remove the token."** Token deletion IS the operation — if
+   the token is not gone, the removal failed. The three implemented outcomes: (a) `delete_token`
+   fails → `Err`, and **nothing else changes** (record stays, so the row is visible and the user can
+   retry); (b) key not present → success, the command stays idempotent and therefore re-runnable
+   after (a); (c) delete succeeded but `settings::update` failed → `Err` with a *distinguishable*
+   message, because the credential genuinely is gone while the list entry may persist. Routed to
+   `senior-dev` 2026-09-17 with a `security-auditor` pass to follow (credential storage is a
+   standing mandate trigger). Original defect write-up: `### 🚨 NEW 2026-09-14 — "Remove account"
+   reports success even when the token was NOT deleted`.
 
 ## Follow-ups, ranked, none blocking
 
@@ -213,14 +240,49 @@ branch unpushed, so CI cannot run it either.** The first real CI run is the veri
 ### Still open from that queue (numbering as filed)
 
 
-6. **`h_ai` stub isolation** — the only code item left besides P112. Serialised for now by a nextest
-   test-group (`d46c98e`, both `profile.default` and `profile.ci`; 57/57 in 45 s). **Root cause found,
-   not fixed:** twelve test modules each define their own `env_lock()` with its own `static LOCK`
-   (`tests/ai/ai_changelog_cli.rs:37`, `ai_commit_cli.rs:42`, `ai_explain_cli.rs:40`, …) — twelve
-   mutexes guarding one process-global `BONSAI_STUB_MODE`/`BONSAI_CLAUDE_BIN`. One-line fix per file:
-   delegate to a single `crate::common::env_lock`. Also note `scripts/gate.mjs:148`'s
-   `cargo test --workspace` fallback gets **no** test-group serialisation, so the nextest fix does not
-   cover it.
+6. **`h_ai` stub isolation** — **THE INTEGRATION HALF IS ALREADY FIXED; THIS ENTRY WAS STALE.**
+   Verified 2026-09-17: `grep -rn "fn env_lock" crates/bonsai-core/tests/` returns **exactly one**
+   definition, `tests/common/mod.rs:92`, and every `tests/ai/*_cli.rs` calls `common::env_lock()`.
+   The doc comment there (`:80-91`) documents this fix in its own words. Landed in **`80a852e`**
+   (found with `git log -S "There must be exactly ONE"`) — i.e. it rode along in the P112 tools
+   commit, which is why no entry ever claimed it. The board carried "root cause found, not fixed"
+   for three days after it was fixed; measure before delegating.
+   - **The `scripts/gate.mjs:148` fallback gap is also closed, by the lock rather than by config.**
+     Counted 2026-09-17 across all twelve `tests/ai/*_cli.rs`: **57 tests, 56 `common::env_lock()`
+     calls.** The single lock-free test is
+     `ai_resolve_cli.rs:445 default_run_opts_model_is_none_and_default_model_is_sonnet`, which
+     asserts two consts (`RunOpts::default().model.is_none()`, `DEFAULT_MODEL == "sonnet"`) and
+     touches no env and spawns nothing — so it needs no lock. Every env-mutating test in the binary
+     holds the shared mutex, under plain `cargo test` as much as under nextest. **Do NOT add
+     `--test-threads=1` to the fallback.**
+   - **The `.config/nextest.toml` `h-ai-stub` group stays.** It exists for a *different* reason —
+     57 concurrent `cmd.exe` + `ping` process trees stall Windows — which is process concurrency,
+     not an env race. The lock does not replace it.
+   - **🆕 FOLLOW-UP found during the lib fix (filed, deliberately NOT taken):**
+     `src/assets/generate.rs` still duplicates `stub_path()` and `set_mode()` (~35 lines) against
+     `ai::testutil`'s versions. **Not swapped because it would change behaviour, not just the shared
+     lock:** `testutil::set_mode` additionally does `remove_var(STUB_MARKER_ENV)`. Same
+     "two modules drift apart" failure mode as the const duplication that WAS fixed — just not yet
+     diverged in a way that bites. Needs its own non-behaviour-preserving increment.
+     **The reviewer characterised the residual risk more precisely than I did: it is SEQUENTIAL, not
+     concurrent.** One lock removes any concurrent disagreement; what survives is that
+     `generate.rs::set_mode` never clears `STUB_MARKER_ENV`, so a marker path left by an earlier
+     `set_mode_with_marker` test persists into the generate tests. Harmless **today** for a reason
+     worth writing down: `generate.rs`'s only two call sites are `:120` (`"success"`) and `:139`
+     (`"error"`), and per `testutil.rs:13-17` only `stream_slow`/`stream_hang_stdin` tick the marker.
+     **It becomes a real bug the moment a `generate.rs` test uses a stream mode** — that is the
+     trigger to watch for, not a date.
+   - **The visibility prerequisite nobody predicted:** `ai/mod.rs:52` was a *private*
+     `#[cfg(test)] mod testutil;`. `bin_resolve_tests.rs` reached it only as a sibling module, so
+     "visibility already works" was true inside `ai` and false from `git/*` and `assets/*`. The
+     redirect required widening to `pub(crate)` (items inside were already `pub`). The `#[cfg(test)]`
+     gate survived — verified, so no test-only stub harness leaks into release builds.
+   - **The surviving half is the LIB test binary**, same defect class: six independent `static LOCK`s
+     over the same process-globals in one process — `src/ai/testutil.rs:24` (canonical),
+     `src/assets/generate.rs:88`, `src/git/ai_branch_name.rs:258`, `src/git/ai_changelog.rs:233`,
+     `src/git/ai_compose/tests.rs:9`, `src/git/ai_pr_description.rs:212`. `generate.rs:83-84` also
+     re-declares `CLAUDE_BIN_ENV`/`STUB_MODE_ENV` locally. **Routed to `senior-dev` 2026-09-17.**
+     `src/fixture.rs:230` is NOT in scope — that lock guards the fixture cache dir, not env.
 
 ### Four USER ACTIONS — only the user can clear these
 
@@ -1261,7 +1323,10 @@ included — proved only that a string was in the DOM. Going forward: **a claim 
 *visible* or *clickable* needs `elementFromPoint`, computed style, or bounding boxes. Text
 extraction cannot support it.**
 
-### 🆕 P113 — Settings inline notes (ruling #24). CONTRACT SIGNED 2026-09-14, implementation in flight
+### 🆕 P113 — Settings inline notes (ruling #24). CONTRACT SIGNED 2026-09-14. **PHASES 1+2 LANDED**
+<!-- Header corrected 2026-09-17: "implementation in flight" was stale. Phase 1 = `0c86376`,
+     phase 2 = `dcff54b` + `2b3dfd6`. What genuinely remains is the "P113 residuals" list at the
+     end of this section (F1 accounts-error-copy etc.), not the implementation. -->
 
 `docs/contracts/P113-settings-inline-notes.md` (new) + `ui-reference.md` **§12.14** "Outcome notes —
 the Settings surface has no toasts (SIGNED 2026-09-14)". §12.13's two old bullets at `:2377-2390`
@@ -1484,6 +1549,450 @@ the caller). Consequences:
 leaves the account listed. Removing one without the other is a partial state, and the copy has to be
 able to say which half happened. Needs a contract decision before implementation, and a
 `security-auditor` pass on the result.
+
+### ✅ FULL 8-STEP GATE GREEN AT `3948478` — 2026-09-17, 446.1s, exit 0, ZERO FAIL lines
+
+Read from the log's own `gate summary` block, **not** the wrapper's exit status — the board records
+those two disagreeing before, so the wrapper's 0 is not the evidence.
+Log: `D:/Data/Temp/claude/bonsai-gate/gate-3948478.log`.
+
+nextest **180.9s** (Summary line: **2581 tests run, 2581 passed, 10 skipped**) · doctests 3.4s ·
+clippy 15.0s · eslint 11.6s · size ratchet 753ms · vitest 56.3s (**3011 passed / 272 files**) ·
+tsc+build 10.7s · e2e 167.2s (**185 passed**).
+
+**Delta against the `5654eaa` green (450.1s, 2563 Rust / 3007 vitest / 185 e2e):**
+- **Rust +18.** Accounted for exactly: `105131a` added **0** (behaviour-preserving lock
+  consolidation — 1102 lib tests before and after, which is the point), `e583f11` **+6**
+  (4 original + 2 from its fix pass), `3948478` **+12** (9 + 3 from its fix pass). 0+6+12 = 18. ✅
+- **vitest +4** — the `SettingsAccountsSection.remove.test.tsx` suite.
+- **e2e unchanged at 185**, as expected: neither new failure path is reachable from a control
+  (per-account removal needed no UI change, and sign-out-host has no UI caller at all).
+- **ZERO leaky this run.** The known intermittent
+  `external_spawn::detached_spawn_ignores_nonzero_exit` did not reproduce — 1 then 0 then 0 across
+  the last three greens, which is the record of it being timing rather than a defect.
+
+**Still Windows-only, and this green does NOT change that.** `.github/workflows/ci.yml` runs
+`[ubuntu-22.04, windows-latest, macos-latest]`; ruling #25 keeps the branch unpushed, so CI cannot
+run it. Two things in today's work are therefore **reasoned, not executed** on non-Windows: ruling 2's
+`NoEntry` fold was verified against the **keyring Windows backend only**
+(`keyring-3.6.3/src/windows.rs:506` maps `ERROR_NOT_FOUND => ErrorCode::NoEntry`) — macOS and
+secret-service are unverified against the same documented contract; and the `scratch_dir` helper in
+both new test files takes its `cfg(not(windows))` branch only off this machine.
+
+### 🆕 2026-09-17 — the two code items the board still owed, both IMPLEMENTED
+
+**A — lib-side `env_lock` consolidation: COMMITTED `105131a`, reviewer APPROVED, no MUST-FIX.**
+Six mutexes over one process-global become one (`ai::testutil::env_lock`). Equivalence
+`cargo test -p bonsai-core --lib` **1102 passed / 4 ignored** before, after, and on a re-run;
+reviewer re-ran it independently rather than trusting the report. Reviewer swept every
+`set_var`/`remove_var` in `crates/bonsai-core/src/` and confirmed **no unguarded mutator survives** —
+the race is genuinely closed, not merely papered over. Two reviewer NITs, neither actioned: stray
+double blank lines at the five deletion sites (rustfmt would collapse them; `cargo fmt --check` is
+not a gate step), and the implementer's line-ending claim was wrong in a harmless direction —
+`.gitattributes` forces `text eol=lf`, the index is LF for all seven files, and only
+`git/ai_branch_name.rs` had CRLF in the *worktree* (pre-existing drift, not introduced).
+
+**B — `forge_remove_account` honest failure reporting: implemented, review + security audit in
+flight 2026-09-17.** 4 modified + 4 new files, +105/-87. The removal logic moved to its own
+`src-tauri/src/commands/forge_remove_account.rs` (126 lines) because inline would have pushed
+`forge_accounts.rs` to **511** lines.
+- **Ruling 2 needed no code at all:** `crates/bonsai-forge/src/auth.rs:53` already maps
+  `Err(keyring::Error::NoEntry) => Ok(())`, so a plain `?` satisfies rulings 1 and 2 simultaneously.
+  Not-found is **not** indistinguishable from a real failure at that API — the question the board
+  flagged as needing investigation had already been answered by the code.
+- **`invalidate_viewer` now runs only after a confirmed delete.** Implementer's reasoning: if the
+  delete failed the token is still live, so the cached viewer is still *accurate* — evicting it would
+  render a still-connected account as disconnected and force a pointless refetch for an operation
+  that changed nothing. Under audit.
+- **The UI already handled the rejection correctly — no change needed.**
+  `src/components/settings/SettingsAccountsSection.tsx:137-149` (`confirmRemove`) writes the error
+  into the dialog's `role="alert"` `.dialog-error` and deliberately does **not** clear
+  `removeTarget`, so the dialog stays open and Remove is retryable in place. Verified, not assumed —
+  the whole increment would have been invisible had this swallowed.
+- **New mock seams:** `?forgeRemoveFail=keychain` (outcome 1), `=settings` (outcome 3),
+  `=keychain-then-ok` (outcome 1 then the idempotent retry succeeding — i.e. the behaviour ruling 1
+  depends on is now reachable in the harness). `=1`/`=long` preserved. The two copy strings are
+  **exported constants imported by both mock and vitest**, so backend/mock copy cannot drift.
+- **🆕 SHOULD-FIX for `ui-designer` (filed, not blocking):** the caller's prefix stutters against
+  the new copy — outcome 1 renders "Could not remove github.com: could not remove the credential…",
+  outcome 3 renders the self-contradictory "Could not remove github.com: the credential was
+  removed…". The facts are right and distinguishable; the framing needs a copy pass.
+- **🆕 SIBLING DEFECT, deliberately out of scope:** `forge_accounts.rs`'s
+  `forge_clear_token_for_host_inner` (~:355-380) has the **identical** swallowing pattern —
+  `let _ = delete_token(...)` **in a loop**, `let _ = clear_token_for_host(...)`,
+  `let _ = settings::update(...)`, unconditional `Ok(())`. Same class as the defect just fixed, and
+  the loop means one failed delete among several is invisible. Severity assessment requested from
+  the auditor.
+- **🆕 CONTRACT DEBT:** `docs/contracts/P113-settings-inline-notes.md` documents the
+  `?forgeRemoveFail` knob values and needs the three new ones. Contract file — `architect`/
+  `ui-designer` territory, not the implementer's.
+
+### 🔎 B's CODE REVIEW — APPROVED, no MUST-FIX. Three SHOULD-FIX, and I am PULLING ALL THREE FORWARD
+
+Velocity mode says route only MUST-FIX. I am overriding it here for a stated reason: **two of the
+three are the repo's own recurring failure mode — text that asserts something untrue** — and this
+increment exists precisely to stop the app making a false claim about a credential. Shipping it with
+a new false claim inside it would defeat its purpose. All three are cheap.
+
+1. **The drift guarantee the tests claim DOES NOT EXIST.**
+   `SettingsAccountsSection.remove.test.tsx:4-6` says backend and harness copy "cannot drift apart
+   without this suite going red." Mock↔vitest do share the TS constant, but **Rust↔TS share
+   nothing**: `forge_remove_account.rs:98`/`:115` are independent `format!` literals and
+   `forgeRemoveFailure.ts:36,42` are hand-copies. Editing the Rust copy turns nothing red.
+   **This is the `2a0b8f1` species exactly** — a comment asserting a guarantee it does not provide —
+   and the board already carries a rule about it. Fix: either a Rust test that `include_str!`s the
+   TS file and asserts the fragments appear, or downgrade the comment to what it really guards.
+   **I relayed this constant-sharing as meaning copy "cannot drift silently" — that was the
+   implementer's claim and I repeated it without checking the direction that actually matters.**
+2. **Outcome 3's message can be FACTUALLY FALSE.** `forge_remove_account.rs:103-117`: when `rec` is
+   `None` (unknown or already-removed `account_id`) `delete_token` is never called, yet a failing
+   settings write still emits *"the credential was removed from the OS keychain…"*. Reachable by
+   double-click, or by retry-after-partial plus a disk error — **the very retry path ruling 1 relies
+   on.** Gate the asymmetric wording on `rec.is_some()`. The reviewer named this the one to pull
+   forward and it is right: it re-introduces the lie the increment removes.
+3. **`REMOVE_SETTINGS_FAIL_MESSAGE` is not verbatim** (`forgeRemoveFailure.ts:42-43`): the Windows
+   path in that single-quoted literal renders with **doubled** backslashes, while Rust's `io::Error`
+   Display gives single ones — so the harness shows text no user could ever see, in a file whose own
+   header says nothing is invented. (`LONG_CAUSE:46` is correct by contrast — its escaping yields the
+   genuine extended-path `\?\UNC` prefix.)
+
+**NITs recorded, actioning only the first:** the seam file numbers the outcomes 2/3 from its own
+4-item rejection list while the ruling, `forge_remove_account.rs:75-81` and both test files use 1/3 —
+pick one numbering. Not actioning: `forge_remove_account.rs:77`'s "changes NOTHING else" overstates
+slightly — `auth.rs:119-122` (`TokenStore::delete`) drops the in-process token-cache entry *before*
+the keychain call, so outcome 1 does evict the cache (pre-existing, self-heals on the next lazy warm,
+not user-visible); the Rust tests `remove_dir_all` after their asserts, so a failing assert leaks a
+temp dir; `forge.ts:103`'s `removeAttempts` never resets (mock-only).
+
+**🚨 THE COVERAGE FINDING — this is the part to remember.** Applying the board's own rule (*a test
+that passes in the correct AND the broken state is not coverage*), of **8 new tests only 2 are fix
+coverage**:
+- `failing_delete_errors_and_changes_nothing` — **fails against the old code. Real coverage.**
+- `failing_settings_save_reports_the_asymmetry` — **fails against the old code. Real coverage.**
+- `missing_key_is_success_and_removes_the_record` — passes against the old swallowing code. Spec test.
+- `unknown_account_is_ok` — passes against the old code. Spec test.
+- **all 4 vitest cases** — pass against the old code. They mock `ipc.forgeRemoveAccount` rejections
+  directly, and `confirmRemove` is **unchanged in this diff**, so what they prove is that the
+  component *already* surfaced rejections and stayed open. Their real value is guarding the mock
+  dispatch table and the retry UX. **The file header oversells them**, which is finding 1 again in
+  a second location.
+
+**Reviewer-verified CLEAN — do not re-audit:** outcome 1 has zero settings side effects (`?` at
+`:100` returns before both the write and the legacy-mirror drop); ruling 2 confirmed at
+`auth.rs:51-56` + `lib.rs:204-209` (which also short-circuits an empty key); `invalidate_viewer`
+placement has **no** stale-in-the-other-direction case; `forge_remove_account_inner` has **no
+callers** besides the command and its tests, so the new `Err` cannot abort a loop caller mid-way; the
+split is clean (`forge_accounts.rs` now **399** lines, `forge.ts` 491) and `_with`/`RemoveAccountDeps`
+are `pub(crate)`, which the `pub use ...::*` glob cannot raise, so the production surface is
+unchanged; the `=1`/`=long` payloads are byte-identical to the removed block.
+
+### ✅ SIBLING FIX PASS — all five items landed. COMMITTED `3948478`
+
+`cargo test -p bonsai --lib forge_` **33 → 36**, verified independently by the orchestrator.
+Reviewer and auditor both returned **approve / remediated**, no MUST-FIX, no CRITICAL/HIGH.
+
+**The strongest signal of the whole session: reviewer and auditor found the keychain false-claim
+INDEPENDENTLY.** Two read-only passes from different angles both landed on `KEYCHAIN_FAIL_SUFFIX`
+promising *"the accounts are still listed"* for a host with **zero** listed accounts. Convergence
+like that is worth more than either report alone.
+
+**All three new tests are REAL COVERAGE with verbatim red proofs** (the implementer again classified
+honestly rather than counting tests):
+- `empty_host_keychain_failure_does_not_claim_accounts_are_listed` — red pre-fix on the old suffix.
+- `a_record_added_after_the_read_survives_the_retain` — **the race test is the clever one:** it
+  interleaves an `upsert_forge_account("c","github.com")` *inside* the injected `update_settings`,
+  i.e. precisely between the outer read and the mutation. Red pre-fix: `left: ["g"]`,
+  `right: ["c","g"]` — the un-deleted record was being dropped.
+- `a_migrated_legacy_key_is_attempted_once_and_reported_once` — red pre-fix with the cause duplicated:
+  `"...access denied for github.com; access denied for github.com..."`.
+- **Declared PINS, not coverage** (no red evidence possible — const and mirror were added in the same
+  pass, which is what a pin is for): the two `include_str!` guard extensions.
+
+**The separator pin is smarter than asked for.** I asked for `KEYCHAIN_FAIL_JOIN = "; "` to be
+guarded. The implementer pinned the mock's *joined shape* via `format!("}}{KEYCHAIN_FAIL_JOIN}${{")`
+→ `"}; ${"` rather than a bare `contains("; ")` — **because prose in the file would satisfy a bare
+`contains` trivially.** That is the vacuous-guard failure mode being designed out rather than
+re-introduced.
+
+**Residual gaps, stated not hidden (BOTH modules):** the `include_str!` guard checks that prefix and
+suffix *appear*, not that they belong to the **same literal**; and because the command is
+UI-unreachable the `?forgeClearHostFail=` seams **cannot be browser-verified**, so the Rust tests are
+the only live coverage of this path until the UI wires it.
+
+**Size baseline REGENERATED as part of the commit** — `pnpm lint:size -- --update-baseline`, now 18
+files over 500 lines / 3405 excess. This locks in 8 lines reclaimed in files nobody touched this pass
+(`ai_branch_name.rs` 509→503, `RepoWorkspace.tsx` 2264→2262). Per the standing rule: **shrinking only
+REPORTS a reclaim** — without the regen the record is not rewritten and the file creeps back
+unnoticed.
+
+**NITs left unfixed, deliberately:** `forgeOffline.ts:11`'s `FORGE_OFF` export has no external
+consumer (`offGuard` is its only user); the retry ledger lives inside `forgeClearHostFailure.ts:74`
+and mutates on every call including `seam === null`, where the sibling keeps it in `forge.ts` and
+passes `attempt` in — the new shape is arguably better encapsulated, so this is inconsistency, not a
+defect. `KEYCHAIN_FAIL_NO_ACCOUNT_SUFFIX` is one long unwrapped line where its sibling is wrapped —
+no rustfmt run, per the standing rule.
+
+### ⏳ TWO USER DECISIONS STILL OPEN — both are the auditor's INFO items, neither taken unilaterally
+
+1. **INFO-2 — drop the dormant `forge_clear_token_for_host` from the invoke surface?** A
+   **credential-deleting** command with zero UI callers, still registered (`src-tauri/src/lib.rs:345`),
+   typed (`ipc-api-forge.ts:106`), bound (`src/ipc/tauri/forge.ts:100`), mocked (`forge.ts:435`), and
+   obs-allow-listed (`metrics_cmds.rs:96`). **Orchestrator recommendation: DROP it** from
+   `generate_handler!` plus those four plumbing sites — re-adding is cheap, and dormant privileged
+   surface is the whole point of the finding.
+2. **INFO-3 — delete or deprecate `bonsai-forge`'s two now-callerless helpers?**
+   `lib.rs:341-348` (`clear_token_for_host`) and `:261-268` (`clear_token`); only caller is the
+   `:463` test. **`clear_token_for_host` is a FOOTGUN:** it bundles `evict_viewer` into the delete,
+   which is exactly why the command layer stopped calling it, so a future caller reaching for the
+   obvious-looking helper reintroduces the failure-path viewer eviction. **Recommendation: delete
+   both**, or at minimum doc-comment them as deprecated in favour of `delete_token` + an explicit
+   `invalidate_viewer`.
+
+### 🔐 SIBLING (MEDIUM-1) SECURITY AUDIT — **REMEDIATED**, and my own severity rating was WRONG
+
+Auditor verdict: the orphaned-credential state — record dropped while its PAT survives — is
+**unreachable on every ordering traced**, high confidence, read at source. But two corrections to
+the record matter more than the verdict.
+
+**🚨 CORRECTION 1 — MEDIUM-1 was OVERSTATED for a live build. Honest pre-fix rating: LOW-latent.**
+`forgeClearTokenForHost` has **no caller in `src/components` or `src/hooks`** (I verified
+independently; the auditor re-confirmed in both casings). The UI caller went away in `323f8c5`, which
+replaced Disconnect with "Reset to host default". So the pre-fix bug required a renderer-side
+`invoke` — i.e. script execution in the webview, at which point the attacker already holds every
+registered command and has **no motive** to orphan tokens. `bonsai-mcp` has no reference to it.
+Remaining triggers: an e2e/dev harness call, or a future UI rewire. **The fix was still right** — a
+dormant credential path is exactly the kind that gets rewired without re-review — but the board
+should not carry MEDIUM against it. **The loop-makes-it-worse reasoning was sound; the reachability
+premise underneath it was never checked until now.**
+
+**✅ CORRECTION 2 — the bare-host substitution is EXACTLY equivalent. I flagged it as the riskiest
+edit; it is clean.** `delete_token` (`bonsai-forge/src/lib.rs:204-209`) and `clear_token_for_host`
+(`:341-349`) both guard on non-empty and both call `auth::global().delete(...)`; `TokenStore::delete`
+(`auth.rs:119-122`) lowercases internally, so the old function's own `to_ascii_lowercase` was
+redundant given the command already passes `host_l`; `store`/`set` lowercase identically, so the key
+space is symmetric. **Nothing the old function swept is missed.** The only dropped behaviour is
+`evict_viewer`, deliberately moved to the success path. No narrowing. Read at source.
+
+**Item 3 — MEDIUM-2's mitigation still exists and is STRENGTHENED.** The bare-host sweep is still
+performed (`forge_clear_host.rs:132`), is still the only path that ever removes bare-host entries,
+and is now **load-bearing**: its refusal blocks the whole operation instead of being swallowed. So a
+legacy PAT that cannot be deleted now **surfaces as an error rather than vanishing from the UI**.
+MEDIUM-2 severity: unchanged-to-slightly-reduced. Still worth its own increment.
+
+**🆕 LOW-1 — a read-then-write RACE of exactly the MEDIUM-1 shape (pre-existing, NOT a regression).**
+`forge_clear_host.rs:108` reads settings *outside* the `SETTINGS_IO` lock; the mutation at `:155`
+runs on a fresh `load_from` *inside* `settings::update` (`settings.rs:352-362`). The retain is
+**host-keyed** (`a.host != host_l`) while the overrides at `:157-158` are correctly keyed by the
+captured `ids`. Scenario: sign out of `github.com` while `forge_add_account` finishes validating a
+second `github.com` account — it stores the PAT **before** its settings write, so if that write lands
+between `:108` and `:154`, the new record is dropped by the host-keyed retain and **its key was never
+in the delete set** → live PAT, no record naming its `keychain_key`. Reached by a race rather than a
+keychain refusal. **Fix: retain by `!ids.contains(&a.account_id)`** — drop precisely the records whose
+keys were deleted; leave the host-keyed `forge_host_defaults` / `remove_forge_host` retains alone.
+**ROUTING IT** — one line, and it is the same defect this increment exists to close.
+
+**🆕 LOW-2 — the truthfulness asymmetry was applied to ONE message and not the other. FOURTH
+instance of this family.** `forge_clear_host.rs:35-36` via `:142-145`: with `on_host` empty and only
+the legacy bare-host delete refused, the user reads *"Nothing was changed — the accounts are still
+listed, so you can try again"* for a host with **zero listed accounts**. The implementer correctly
+applied the `e583f11` asymmetry to the *settings* message (`SETTINGS_FAIL_NO_CREDENTIAL_PREFIX`) and
+missed the *keychain* one. **ROUTING IT** — needs a second suffix const plus a mirror line in
+`forgeClearHostFailure.ts` so the cross-language copy test stays honest.
+
+**🆕 INFO-1 — duplicate delete and DUPLICATED ERROR CAUSE for a migrated legacy account.** A migrated
+account carries `keychain_key == <bare host>`, so `:129-133` attempts the same key twice. Functionally
+harmless (`delete` is idempotent) but on refusal the joined string at `:144` shows the identical
+cause **twice**. Dedup the key set before the loop. **ROUTING IT.**
+
+**🆕 INFO-2 — a registered-but-unwired CREDENTIAL-DELETING command is dormant attack surface.**
+Registered at `src-tauri/src/lib.rs:345`, typed at `ipc-api-forge.ts:106`, bound at
+`src/ipc/tauri/forge.ts:100`, mocked at `forge.ts:435`, obs-allow-listed at `metrics_cmds.rs:96` —
+and zero UI callers. **Either wire it or drop it from `generate_handler!` plus those four plumbing
+sites. USER DECISION — not taken unilaterally.**
+
+**🆕 INFO-3 — two dead credential-deletion helpers, one of them a FOOTGUN.**
+`bonsai-forge/src/lib.rs:341-348` (`clear_token_for_host`) and `:261-268` (`clear_token`) now have no
+production caller (only the `:463` test). Housekeeping — but `clear_token_for_host` **bundles
+`evict_viewer` into the delete**, which is precisely why the command layer stopped calling it. A
+future caller reaching for the "obvious" helper reintroduces the failure-path viewer eviction.
+Either delete both or doc-comment them as deprecated in favour of `delete_token` + explicit
+`invalidate_viewer`. **USER DECISION.**
+
+**Audited CLEAN — do not re-audit:** fail-closed totality is **total** (`:138-146` returns before
+`invalidate_viewer` at `:147` and before `update_settings` at `:154`; no record, default, override or
+legacy mirror is touched, and the closure has no other side effect) — the `TokenStore::delete`
+cache-evict-before-keychain evicts N+1 entries even on refusal, benign for the sibling's reason
+(`get` is cache-first then re-warms, `auth.rs:93-107`, so the only observable effect is one extra
+keychain read); **error-string disclosure is clean and was read at source** — keyring 3.6.3's
+`Display` (`error.rs:61-86`) never interpolates a secret (`TooLong`/`Invalid` carry the attribute
+*name*, `NoEntry`/`BadEncoding` are fixed text), `ipcProxy.ts:92-96` logs only `err.kind`
+(`"other"`) and never `message`, and **N joined causes cannot enumerate key names** because the cause
+text is key-independent; the DI seam is clean (`ClearHostDeps`/`_inner`/`_inner_with` all
+`pub(crate)`, `commands/mod.rs:161`'s glob cannot widen it, the `#[tauri::command]` constructs
+`ClearHostDeps::default()` unconditionally, test seam reachable only from `#[cfg(test)]`).
+**One acknowledged gap:** `Ambiguous` Debug-prints matched credential structs, which on Windows can
+surface target names embedding service+key — non-secret identifiers, but the auditor did **not** read
+the platform credential `Debug` impl to confirm it excludes the password. **Unverified, low risk.**
+**Also not executed:** the 9 tests and the `include_str!` mirror were read, not run.
+
+### ✅ B's FIX PASS — RE-REVIEWED AND APPROVED. Committed `e583f11`
+
+All six routed items landed. `cargo clippy --all-targets -D warnings` clean; `--lib forge_` **24
+passed** (`forge_remove_account::tests` **6**, was 4); `tsc` clean; vitest **19** across the two
+accounts files. Reviewer confirmed each item at source rather than from the report.
+
+**The false-claim fix is sounder than the brief asked for.** I asked only that `had_credential` be
+computed before the mutate closure. The reviewer established something stronger: at
+`forge_remove_account.rs:123`, where the settings `map_err` reads it, `rec.is_some()` means exactly
+"`delete_token` was called **and** returned `Ok`" — because a delete failure `?`-returns at `:118`
+before `had_credential` is ever read. **No path can reach the asymmetric text without a successful
+delete.** The new test is genuine fix coverage: the old code emitted the keychain-claiming string
+unconditionally, so both the `assert_eq!` and the `!msg.contains("keychain")` assertion fail against
+it.
+
+**The `include_str!` guard does NOT pass vacuously — I asked specifically because a guard that
+silently stops guarding is the defect class it was added to fix.** All five consts are checked
+(`forge_remove_account_tests.rs:200-222`). A quote-style switch to `"` makes the `'`-pinned check
+fail loudly; wrapping or concatenation makes the fixed-half `contains` fail; any Rust const edit
+fails while naming the missing fragment. The `'` pin cannot match the wrong message because
+`SETTINGS_FAIL_PREFIX` starts with "the credential".
+
+**The scope creep I accepted is what makes the guarantee honest.** Reviewer traced the full rejection
+set — `settings_file` → config-dir, `load_from` infallible, `delete_token` → outcome 1,
+`update_settings` → outcome 3/3', join error (listed, not modelled) = **five rejections, five header
+entries.** Without the 3' seam the header's "all three Rust messages" claim would itself have been
+false. The creep was load-bearing, not gratuitous.
+
+**🆕 THREE NITs FILED (reviewer said do not route back):**
+1. **A THIRD instance of the overstating-verb family, this one left to ride.**
+   `forge_remove_account.rs:118` — `delete_token` returning `Ok` **includes the NoEntry-folded case**,
+   so on a retry after outcome 3 the message says "the credential **was removed** from the OS
+   keychain" when nothing was there to remove. The end state is truthful; the verb overstates. Pure
+   copy → goes to `ui-designer` with the caller-prefix stutter. Worth noting that the *same* fold
+   that makes ruling 1's retry promise real is what makes this verb wrong — the two are the same
+   mechanism seen from opposite ends.
+2. `forge_remove_account_tests.rs:200` — `include_str!` + `contains` searches **comments** too, so a
+   comment quoting old Rust text could mask a TS const edit. No comment does today. Quote-agnostic
+   hardening if wanted: `MOCK.matches(SETTINGS_FAIL_NO_CREDENTIAL_PREFIX).count() >= 2`.
+3. `src/ipc/mock/handlers/forgeAccountStore.ts:59-75` — `FORGE_REMOVE_FAIL_CASE` subsumes
+   `FORGE_LONG_HOST_CASE` in both `||` chains (redundant, not dead — the latter is still used
+   independently for `FORGE_ACCOUNT_LONG`). **Behaviour widening worth naming:**
+   `?forgeRemoveFail=1` now seeds accounts where it previously also needed `?forge=auth`; intended
+   for the new seams, but `'1'` changed too.
+
+### ✅ USER RULING 2026-09-17 — "do the sibling one too": MEDIUM-1 IS AUTHORIZED WORK
+
+`forge_clear_token_for_host_inner` (`src-tauri/src/commands/forge_accounts.rs:364-380`) gets the same
+treatment as `forge_remove_account`: collect the per-key `delete_token` results, and if **any**
+failed, return `Err` and mutate **nothing** — no `retain`, no `clear_token_for_host`, no
+`settings::update`. The host stays listed so the sign-out is retryable, which is the same property
+ruling 1 bought for the single-account case.
+
+**Scope boundary the user did NOT authorize:** MEDIUM-2 (the two upstream orphan sources —
+`forge_accounts.rs:229`/`:240` token-written-record-not, and `settings/forge_accounts.rs:170`'s
+legacy re-key) stays filed. "The sibling one" is MEDIUM-1. Do not widen.
+
+**SEQUENCED, not parallel — deliberately.** The B fix pass was still in flight when this ruling
+landed, and it owns `forge_remove_account.rs`, `forge_remove_account_tests.rs`,
+`forgeRemoveFailure.ts`, and `SettingsAccountsSection.remove.test.tsx`. The sibling fix needs
+`forge_accounts.rs`, the mock seams in `forge.ts`, and the accounts UI section — **`forge.ts` and the
+settings section overlap**. Two agents editing one crate concurrently is what produced today's
+107-file `cargo fmt` near-miss; this one waits for that pass to report.
+
+**Copy is modelled on the two approved messages, and the polish is routed, not skipped.** The
+sign-out failure needs its own string; senior-dev writes it in the shape of the approved pair and it
+joins the existing `ui-designer` copy item (the prefix stutter) rather than being invented twice.
+
+### 🔐 B's SECURITY AUDIT — no CRITICAL, no HIGH in the diff. Two pre-existing MEDIUMs surfaced
+
+The change does what the ruling required: it eliminates the "reported removed, credential still live"
+lie, and it does **not** introduce the dangerous asymmetry (record gone / token alive).
+
+**🚨 MEDIUM-1 — the sibling defect is STRICTLY WORSE than the one we just fixed, and it is still
+open.** `src-tauri/src/commands/forge_accounts.rs:364-380`, `forge_clear_token_for_host_inner`:
+`for a in &on_host { let _ = delete_token(&a.keychain_key); }` then
+`s.forge_accounts.retain(|a| a.host != host_l)` — **every record on the host is dropped regardless of
+which deletes failed.** Failure sequence: the keychain refuses k of N deletes (locked keychain,
+DPAPI / Credential-Manager policy, `ERROR_ACCESS_DENIED`) → the UI says "signed out of github.com" →
+**k PATs stay live with no record left that names their `keychain_key`.** A retried sign-out finds
+`on_host` empty and only re-deletes the bare-host key, so **the orphans are permanently unreachable
+from the UI** unless the user re-adds the identical provider+host+login. The old single-account bug
+leaked at most one token and left the row listed; this one leaks N and erases the evidence.
+MEDIUM not HIGH because the precondition is a local keychain failure, the store is user-scoped, and
+the threat-model attacker does not own the machine — the harm is a false sign-out assurance plus a
+lingering PAT. **Fix is the same shape as the new module:** collect the per-key results, `Err` and
+mutate nothing if any failed. **RECOMMENDED AS THE NEXT INCREMENT — awaiting the user, since it is
+new scope and carries its own user-facing copy.**
+
+**MEDIUM-2 — two UPSTREAM sources of orphaned credentials that removal cannot reach** (both
+pre-existing, both producing the "live credential with no UI affordance" state):
+1. `forge_accounts.rs:229`/`:240` — `store_token(&aid, &token)?` succeeds, then
+   `let _ = settings::update(...)` swallows. **Token written, record not.** `forge_clear_token_for_host`
+   iterates *records*, so it cannot sweep it.
+2. `settings/forge_accounts.rs:170` — a migrated legacy account carries `keychain_key = <bare host>`.
+   Re-adding the same host+login runs `upsert_forge_account` (`forge_accounts.rs:86`,
+   replace-by-`account_id`), so the record's key silently becomes the three-part `aid` **while the
+   bare-host entry is never deleted.** Per-account Remove then deletes only the three-part key —
+   the bare-host PAT survives, unreachable. Sign-out-host's `clear_token_for_host` is the only
+   mitigation. Fix at the right layer: when no account remains on a host, have the removal
+   transaction delete the bare-host key alongside the `remove_forge_host` mirror drop it already
+   does. **Auditor's own confidence: MEDIUM on (2)'s reachability** — reasoned from `upsert`'s
+   replace semantics, the legacy→re-add sequence was NOT executed against a real keychain.
+
+**INFO-1 — outcome 3's message carries an absolute home path into dialog copy, and it does NOT reach
+a masking sink.** `settings.rs:407` (`write {tmp.display()}`) → `forge_remove_account.rs:115` →
+`setRemoveError` (`SettingsAccountsSection.tsx:147`). Checked properly rather than assumed:
+`src/obs/ipcProxy.ts:92-97` logs `errCode` only (`err.kind`/`Error.name`), **never `message`**; the
+rejection uses a `.then(ok, err)` pair so there is no `unhandledrejection` → obs `Error` payload; and
+no command-layer Rust wrapper logs `AppError` Display on this path (the only `eprintln!`s are in
+`repo.rs`, `ui_settings.rs`, `lib.rs`). So it is local-user-visible text, **not a disclosure** — which
+matters because this repo's home-masking scrubber was fail-open once before. **No token, no
+`keychain_key`, no username in either message.**
+
+**INFO-2 — `keychain_key` derives from a remote-controlled `login`.** `forge_accounts.rs:228` →
+`account_id(kind, host, Some(&login))` → `keyring::Entry::new`, so a hostile forge API response
+controls half the keyring target name. Pre-existing, untouched here; `map_keyring_err`
+(`auth.rs:60-62`) does not echo the key, and keyring Display errors carry attribute *names*, not
+values.
+
+**Audited CLEAN — do not re-audit:** record removal is strictly gated on `Ok` from `delete_token`
+and the OD-5 `remove_forge_host` mirror drop is **inside the same `update_settings` closure**, so no
+interleaving can remove the record while the token lives; the only `Ok`-with-surviving-token path is
+an **empty** `keychain_key` (`bonsai-forge/src/lib.rs:205` no-ops on empty), reachable only from a
+hand-edited `settings.json`; the frontend does not optimistically drop the row, so ruling 1's retry
+promise holds end to end; `remove_forge_account` + `remove_forge_host` commit atomically through one
+`settings::update`, so `migrate_forge_hosts_to_accounts` (`settings.rs:339`) **cannot resurrect** the
+account on the next read; cache coherence is correct on both outcomes and **no branch caches an
+authenticated viewer against a deleted credential**; `TokenStore::set`/`delete`/`get` all lowercase
+the key and `account_id()` is lowercased, so store and delete keys agree for both legacy bare-host
+and three-part forms; the DI seam cannot be subverted — `RemoveAccountDeps`/`_inner`/`_inner_with`
+are all `pub(crate)`, `pub use forge_remove_account::*` (`mod.rs:160`) re-exports at crate visibility
+only, and the single `#[tauri::command]` constructs `RemoveAccountDeps::default()` unconditionally
+with **no env var, feature flag, or setting able to swap it**, so a no-op deleter cannot be injected
+in a real build and the invoke surface gains no command and no capability; `keychain_key` handling is
+byte-identical to the pre-split code (pure relocation plus `let _ =` → `?`), never interpolated into
+either message and never logged.
+
+**Ruling 2 verified at TWO layers, not one:** `bonsai-forge/src/auth.rs:53` folds
+`keyring::Error::NoEntry` into `Ok(())`, **and the Windows backend really produces it** —
+`keyring-3.6.3/src/windows.rs:506` maps `ERROR_NOT_FOUND => ErrorCode::NoEntry`. Idempotent retry is
+real, not assumed. **Windows only** — macOS/secret-service unverified, same documented contract.
+
+**INFO-3, ACTIONED:** `forge_remove_account_tests.rs:37` used `std::env::temp_dir()` → **C: on this
+machine**, against the standing user mandate. Routed into the fix pass.
+
+### 🚨 PROCESS NEAR-MISS worth keeping: an implementer ran a bare `cargo fmt` mid-increment
+
+It reformatted ~105 Rust files — exactly the churn `### cargo fmt has never been run on this repo`
+says to take as its own commit, never inside a milestone. **The implementer caught and reverted it
+itself**, 96 files by proving rustfmt-equivalence against the `HEAD` blob and 9 by hand-inspecting
+every hunk. Orchestrator verification: all nine hand-reverted files are **byte-identical to HEAD**
+(they are absent from `git status`, which is the strong form of the check — any slip would surface as
+a modification). Final tree: 4 modified + 4 new, +105/-87.
+**The lesson is not "don't run fmt" but that the orchestrator saw the 107-file tree mid-run and had
+to decide whether it was churn or work.** Brief implementers explicitly: never run a bare
+`cargo fmt`; this crate is not rustfmt-clean at `HEAD`, which the implementer independently
+rediscovered. Corollary confirmed a third time: **`cargo fmt --check` is not a usable gate today.**
 
 ### 🆕 SECURITY AUDIT of the `.cmd` launch change — CLEAN (full reasoning: archive Part 74.2)
 
