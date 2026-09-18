@@ -107,8 +107,19 @@ A verification block must say which **tier** it means, and the audit tier has to
 
 ### ✅ AI GATE — `pnpm gate --full` (≈CI tier), **ALL 11 STEPS GREEN**
 
-**510.6s, exit 0, zero FAIL lines**, run against the finished prep tree (bump + both dep fixes +
-the changelog cut). Log: `D:/Data/Temp/claude/bonsai-gate/gate-v160-final.log`.
+**510.6s, exit 0, zero FAIL lines.** Log: `D:/Data/Temp/claude/bonsai-gate/gate-v160-final.log`.
+
+**What that green does and does not cover — corrected 2026-09-18, because the first wording of this
+block overstated it.** It said "run against the finished prep tree (bump + both dep fixes + the
+changelog cut)", and the changelog cut had **not** landed when the gate launched. Measured instead
+of reasoned: `git diff --name-only 230113a HEAD` returns **nine `.md` files plus `package.json`,
+`src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`** — and those three carried 1.6.0 **before
+both gate runs**, which the log proves on its own by printing `Compiling bonsai v1.6.0`. `Cargo.lock`
+with both dependency fixes was likewise in place, proven by cargo-deny passing clean in the same
+run. **No gate step reads a file that differs between that run and HEAD.** The prose commits
+(`51d8b48`, `80a91d0`) are markdown only. This correction exists because the board already carries a
+`⚠ The previous entry claimed …` block about exactly this failure — asserting coverage instead of
+diffing for it.
 
 nextest **2605 run / 2605 passed / 11 skipped** (206.1s, **0 LEAK lines** — the known intermittent
 `external_spawn::detached_spawn_ignores_nonzero_exit` did not reproduce) · doctests 3.1s ·
@@ -121,8 +132,11 @@ Against the `5654eaa` green: Rust **2605 vs 2563 (+42)**, vitest **3019 vs 3007 
 
 **Plus the one check no gate tier runs: `cargo build --release -p bonsai` → `Finished release
 profile [optimized] in 4m 19s`**, producing `target/release/bonsai.exe` (32,152,064 bytes). The
-gate compiles the **dev** profile only, so this is the first proof that the *shipped* binary
-compiles — including that the `pub(crate)`-widened `#[cfg(test)] testutil` does not leak into it.
+gate compiles the **dev** profile only, so this is the first proof that the *shipped* binary compiles
+under the release profile at all. **It is NOT evidence that the `pub(crate)`-widened
+`#[cfg(test)] testutil` stays out of the binary** — an earlier draft of this block claimed that, and
+it is unearned: `#[cfg(test)]` is off in dev and release alike, so a release build cannot distinguish
+the two.
 
 ### ⚠ THE CROSS-PLATFORM GAP IS REAL AND CANNOT BE CLOSED ON THIS MACHINE
 
@@ -130,7 +144,7 @@ I tried to close it and **failed** — recorded so nobody repeats the attempt th
 `rustup target add aarch64-apple-darwin x86_64-unknown-linux-gnu` succeeded, and both
 `cargo clippy --target` steps then failed for a **missing C cross-compiler**: `cc` for darwin,
 `x86_64-linux-gnu-gcc` for linux, because `alloca` and `libz-sys` (→ libgit2) are **C** crates.
-**`gate.mjs:103`'s claim that "only the pure crates cross-compile cleanly from any host" is false
+**`gate.mjs:105`'s claim that "only the pure crates cross-compile cleanly from any host" is false
 for this workspace** — `bonsai-core` depends on `git2`, so it needs a per-target C toolchain too.
 Both targets were **removed again**, restoring `--full` to its designed behaviour (warn + defer to
 CI). **Three-platform verification therefore requires CI, which requires a push.**
@@ -205,6 +219,12 @@ commits back, i.e. **a PR to `main` fast-forwards**.
   **6** `react-hooks/exhaustive-deps`, **1** `no-unused-vars`, **1** `no-explicit-any` — the last
   two in test/mock scaffolding, e.g. `src/test/setup.ts:21`, not shipped code); `cargo doc`'s 127
   pre-existing findings; and a `docs-curator` pass on this file, now ~3200 lines against a ~300 target.
+- **🆕 FILED, not fixed — `scripts/gate.mjs:105` misdescribes this workspace.** The comment says
+  only the pure crates cross-compile cleanly from any host, which is why `--full`/`--ci-parity`
+  advertise a cross-target check they cannot actually deliver here: `bonsai-core` → `git2` →
+  `libgit2-sys`/`libz-sys` are **C**, so each target needs its own C toolchain, not just a rustup
+  target. A comment + tier-doc fix, not a code change, and not release-blocking — but it is what made
+  the attempt above look reasonable before it was tried.
 - **Zero `todo!()`, `unimplemented!()` or `FIXME` in production Rust** (`src-tauri/src`,
   `crates/*/src`). The two production TS `TODO(...)` notes are a P60 sidebar-parity polish item and
   a mock-fixture note.
