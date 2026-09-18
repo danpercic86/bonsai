@@ -99,11 +99,16 @@ Two facts pin it down without the Dependabot page (still unreadable — no `gh` 
 - `git show origin/main:Cargo.lock` carries **rustls 0.23.43** — precisely the version
   RUSTSEC-2026-0285 names. This branch carries **0.23.45**.
 
-So the moderate is almost certainly **RUSTSEC-2026-0285**, and `230113a` already closes it. Note
-also that the count is now **1**, not the one-high-plus-one-moderate the board recorded: the
-`nanoid` high appears to have been resolved by the dependency refresh that landed on `main`.
-**Merging this branch into `main` should clear the alert — that observation is the confirmation,
-not this reasoning.**
+And the npm candidate the board always named is **ruled out**: `nanoid` is at the fixed **3.3.18**
+on `origin/main` as well as here, so it cannot be the alert on either. That also explains the count
+being **1** rather than the one-high-plus-one-moderate the board recorded.
+
+**The one alternative NOT closed, stated rather than glossed:** `git diff --stat origin/main HEAD --
+pnpm-lock.yaml` is **94 insertions / 13 deletions**, so the npm trees do differ, and an npm advisory
+unique to `main`'s lockfile cannot be excluded from here without checking it out. What can be said
+is that **our** npm tree is clean at `low` with zero suppressions, and that `main` carries a
+**confirmed** Rust advisory this branch fixes. **Merging into `main` should clear the alert — that
+observation is the confirmation, not this reasoning.**
 
 ### ✅ THE macOS / LINUX GAP IS NOW CLOSABLE WITHOUT A PR — `ci.yml` has `workflow_dispatch`
 
@@ -250,10 +255,14 @@ CI). **Three-platform verification therefore requires CI, which requires a push.
   the tree. **`v1.6.0` does not exist as a tag**; `release.yml` derives it from `package.json`.
 - **Unsigned on Windows** (`certificateThumbprint: null`), **ad-hoc on macOS**
   (`signingIdentity: "-"`) — the locked v1 decision (`docs/code-signing.md:3`), not a gap.
-- **npm side: `pnpm audit --audit-level low` → no known vulnerabilities.** So the **Dependabot
-  MODERATE of ruling #15 is not an npm dependency.** Now that the Rust side has actually been run,
-  the strong candidate is **`RUSTSEC-2026-0285`**, fixed above. The *high* remains the ignored
-  `nanoid` GHSA-2v37-7h3g-55p8 (dev tooling only, `pnpm-workspace.yaml`).
+- **npm side: `pnpm audit --audit-level low` → no known vulnerabilities — and since 2026-09-18 that
+  is with ZERO suppressions.** ~~The *high* remains the ignored `nanoid` GHSA-2v37-7h3g-55p8~~ —
+  **that was stale.** Both `origin/main` and this branch already carry **`nanoid@3.3.18`, which is
+  the FIXED version** (the advisory is `<3.3.18`). The `pnpm-workspace.yaml` allowlist was therefore
+  suppressing **nothing**, while standing ready to hide the *next* nanoid advisory — and its own
+  comment named the exact drop condition, *"once vite/vitest ship a postcss with nanoid >=3.3.18"*,
+  which was already met. **Entry removed, and `pnpm audit` re-run with no allowlist at
+  `--audit-level low`: still clean.**
 
 ### 📐 Three board claims measured and found STALE
 
@@ -277,18 +286,18 @@ them** — HEAD is a strict superset of `main`, `dev`, `origin/*` and all 17 fea
 releasing from `feat/post-p91-rulings` drops nothing, and `origin/main` is an ancestor **313**
 commits back, i.e. **a PR to `main` fast-forwards**.
 
-### 🚨 BLOCKS RELEASE — four items, all the user's
+### 🚨 BLOCKS RELEASE — **three** items, all the user's (was four; #2 cleared 2026-09-18)
 
 1. **The P112 native USER CHECKPOINT** — the five items under `## 🚨 THE USER CHECKPOINT` above;
    `pnpm tauri dev` → Settings → General. Unchanged, and the orchestrator must never self-declare it.
-2. **The code has to reach GitHub.** `release.yml` is `workflow_dispatch` and creates the tag
-   through the releases API from `context.sha`, so an unpushed branch cannot be released.
-   **Recommended path: PR `feat/post-p91-rulings` → `main`, let CI's three-platform matrix run,
-   then dispatch Release.** `release.yml` only **builds**; it never **tests**. With the cross-target
-   gap above unclosable locally and the AMEND-8 host-bound fix still **reasoned, not executed**,
-   that CI run is the first real verification on ubuntu and macOS. *(Statement of what publishing
-   requires — not a re-litigation of ruling #25. Whether to push, or to hold the release, is the
-   user's call.)*
+2. ~~**The code has to reach GitHub.**~~ **CLEARED 2026-09-18 — the branch is pushed (branch only,
+   user's choice).** What is left is a **recommendation, not a blocker**: `release.yml` is
+   `workflow_dispatch` and tags `context.sha`, so **Release is now technically dispatchable from
+   this branch today**. **Route it through `main` anyway**, for two reasons that survive the push:
+   `main` would otherwise lag its own release, and the Dependabot alert sits on the **default
+   branch**, so only a merge clears it. And `release.yml` **only builds — it never tests**, which is
+   why the manual `workflow_dispatch` CI run described in the push block, not the Release run, is
+   what actually verifies ubuntu and macOS.
 3. **`.tauri/updater-prod.key` still exists in exactly ONE place: this working copy.** Untracked
    and gitignored. Losing it permanently breaks auto-update for every installed client. Ruling #14
    deferred the backup; cutting a release is where that stops being deferrable.
@@ -327,8 +336,8 @@ Its five checkpoint items are the only thing left in P112.
 
 **2026-09-17 — the board's two owed code items are DONE and the gate is green at `3948478`**
 (three commits: `105131a` lock consolidation, `e583f11` account-removal honesty, `3948478`
-sign-out-host). ~~**94 commits ahead of `origin/dev`**~~ → **106, measured 2026-09-18**; still
-unpushed per ruling #25. ~~Two USER DECISIONS are open (drop the dormant credential command;
+sign-out-host). ~~**94 commits ahead of `origin/dev`**~~ → **106, measured 2026-09-18**;
+~~still unpushed per ruling #25~~ — **PUSHED 2026-09-18, branch only.** ~~Two USER DECISIONS are open (drop the dormant credential command;
 delete-or-deprecate the two callerless `bonsai-forge` helpers)~~ — **CORRECTED 2026-09-18: both were
 already IMPLEMENTED in `871d16a`**, exactly as this board's own `### ✅ ALL FOUR USER DECISIONS OF
 2026-09-17 ARE IMPLEMENTED` entry records. This paragraph contradicted that one for a day; the
@@ -337,8 +346,11 @@ follow-ups do remain queued (`ui-designer` copy pass; `P113` contract debt for t
 **None of them gate P112 — the native checkpoint still does, and it now gates the release too (see
 the release block above).**
 
-**Branch `feat/post-p91-rulings`, no upstream — 92 commits ahead of `origin/dev` (`8b88efd`),
-unpushed, and it stays unpushed (ruling #25, do not raise it again).** HEAD is the board commit
+~~**Branch `feat/post-p91-rulings`, no upstream — 92 commits ahead of `origin/dev` (`8b88efd`),
+unpushed, and it stays unpushed (ruling #25, do not raise it again).**~~ **EVERY CLAUSE OF THAT IS
+NOW FALSE (2026-09-18): the branch tracks `origin/feat/post-p91-rulings`, is 106 ahead of
+`origin/dev`, and is pushed. Ruling #25 is superseded for this branch — see the push block at the
+top.** The measurement history below is kept as history. HEAD is the board commit
 below `5654eaa`. Measured 2026-09-16 with `git rev-list --count origin/dev..HEAD`: **91 at
 `5654eaa`**, +1 for this board commit. (It read 85 at `934a280` earlier the same day; the real-log
 investigation added five commits.) The curator's "80" was true when measured, before the six
@@ -414,8 +426,10 @@ Five things, and **not one of them is reachable from any tier here**:
 
 **`pnpm gate` runs Windows only; `.github/workflows/ci.yml` runs
 `[ubuntu-22.04, windows-latest, macos-latest]`.** The AMEND-8 host-bound test fix is therefore
-**reasoned, not executed** — the unix accept chain was traced line by line, but **ruling #25 keeps the
-branch unpushed, so CI cannot run it either.** The first real CI run is the verification.
+**reasoned, not executed** — the unix accept chain was traced line by line. ~~Ruling #25 keeps the
+branch unpushed, so CI cannot run it either.~~ **CORRECTED 2026-09-18: the branch is pushed, and
+`ci.yml` carries `workflow_dispatch`, so a manual CI run on this branch CAN now execute it.** That
+run is the verification, and it has not happened yet.
 
 ## Decisions still owed by the user (neither blocks the checkpoint)
 
@@ -588,9 +602,10 @@ branch unpushed, so CI cannot run it either.** The first real CI run is the veri
   verification block starts lying — the same failure the 2026-09-16 curation pass fixed here.
 - **It is Windows-only evidence, and must not be read as three platforms.** `pnpm gate` runs Windows;
   `.github/workflows/ci.yml` runs `[ubuntu-22.04, windows-latest, macos-latest]`. The AMEND-8
-  host-bound test fix is **reasoned, not executed** — the unix accept chain was traced line by line —
-  and **ruling #25 keeps the branch unpushed, so CI cannot run it either.** The first real CI run on
-  this branch is the verification.
+  host-bound test fix is **reasoned, not executed** — the unix accept chain was traced line by line.
+  ~~Ruling #25 keeps the branch unpushed, so CI cannot run it either.~~ **CORRECTED 2026-09-18: the
+  branch is pushed and `ci.yml` has `workflow_dispatch`, so a manual run CAN execute it.** It has
+  not been run yet; that run is the verification.
 - **Exit code 0 is not sufficient evidence, and neither is a piped log** — see `### The gate-running
   rules` below, which those two facts earned.
 - Port **1420 is free**. Keep it so: `strictPort: true` means a held port breaks `pnpm tauri dev`.
