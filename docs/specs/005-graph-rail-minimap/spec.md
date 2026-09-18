@@ -1,6 +1,6 @@
 # Graph Overview Rail — Search Match Ticks & On-Demand Minimap
 
-**Status:** implemented (AI gate green 2026-08-27; USER CHECKPOINT pending)
+**Status:** done (AI gate green 2026-08-27; USER CHECKPOINT verified 2026-08-27 by the user in `3a71951`)
 **Created:** 2026-08-26
 
 ## Problem

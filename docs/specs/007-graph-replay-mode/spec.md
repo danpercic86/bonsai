@@ -1,6 +1,6 @@
 # Replay Mode — Animated History Playback
 
-**Status:** implemented (AI gate green 2026-08-27; USER CHECKPOINT pending; AC5 reduced form)
+**Status:** done (AI gate green 2026-08-27; USER CHECKPOINT verified 2026-08-27 by the user in `3a71951`; AC5 shipped in reduced form)
 **Created:** 2026-08-26
 
 ## Problem

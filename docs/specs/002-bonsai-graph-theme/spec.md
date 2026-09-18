@@ -1,6 +1,6 @@
 # Bonsai Graph Theme (organic commit-graph reskin)
 
-**Status:** draft
+**Status:** done (implemented; USER CHECKPOINT verified 2026-08-27 by the user in `3a71951`)
 **Created:** 2026-08-26
 
 ## Problem

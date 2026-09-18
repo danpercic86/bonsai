@@ -1,6 +1,6 @@
 # Graph Declutter Modes — First-Parent Toggle & Branch Solo/Hide
 
-**Status:** implemented (AI gate green 2026-08-26; USER CHECKPOINT pending)
+**Status:** done (AI gate green 2026-08-26; USER CHECKPOINT verified 2026-08-27 by the user in `3a71951`)
 **Created:** 2026-08-26
 
 ## Problem
