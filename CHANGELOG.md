@@ -6,8 +6,64 @@ All notable changes to Bonsai are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-09-18
+
+Five new ways to read the commit graph — a first-parent view, branch solo/hide, folded linear runs,
+an overview rail with a minimap, and colouring by author — plus an animated Replay mode, a Bonsai
+tree style for the graph itself, and a local-only diagnostics page in Settings. External tools are
+now picked from what the machine actually has instead of typed in, and a long accessibility,
+contrast and security round closes screen-reader, legibility and credential-handling gaps.
+
 ### Added
 
+- **The commit graph can be decluttered.** **First-parent only** follows each commit's first parent,
+  so side histories that were merged in collapse out of the view and linear history renders as a
+  single lane. Right-clicking a branch, a remote-tracking branch or a tag — in the sidebar or on a
+  ref pill in the graph — solos or hides it, restricting the graph to the ancestry you chose. A
+  filtered graph carries a chip saying so, so missing commits are never mistaken for missing data,
+  and the branch filters clear in one action. Both choices persist across restarts.
+- **Long uneventful stretches of history fold away.** With **Fold linear runs** on, consecutive
+  commits that neither branch nor merge and carry no ref collapse into a single `⋯ N commits` row
+  you can expand in place and re-collapse. Merge commits, fork points, ref-carrying commits, HEAD
+  and stash entries are never folded, so the structure you navigate by stays visible. Folding
+  composes with the declutter filters above.
+- **An overview rail orients you in a large history.** A thin rail along the graph's right edge
+  carries one tick per search match at its proportional position in the whole history — click a
+  tick to jump to and select that match — and an on-demand minimap of the entire graph with a
+  viewport thumb you can click or drag. It is hidden by default and appears while search is open or
+  on hover near the graph's right edge; **Always show overview rail** pins it open. Nothing is
+  computed or drawn while it is hidden.
+- **The graph can be coloured by author, and shows a commit's parents on hover.** Settings →
+  Appearance → **Graph colors** switches edges and lanes between **Branch lanes** and **Author**,
+  using the same hues as the commit avatars. Hovering or selecting a commit emphasises its direct
+  parent edges and nodes and releases cleanly when the pointer moves away; the graph repaints only
+  when the hovered or selected row changes.
+- **Replay mode plays a repository's history back.** A **Replay history** control over the graph
+  animates commits, edges and refs appearing from oldest to newest, with play/pause, a scrub bar you
+  can drag to any point, and a speed selector; leaving replay restores the graph's scroll position
+  and selection exactly as they were. Under `prefers-reduced-motion` nothing autoplays — the
+  scrubber is manual — and no animation work is scheduled when paused, finished or exited. The
+  advancing frontier pulses as new growth appears; the Bonsai style's bespoke leaf-sprouting
+  animation is not in this release.
+- **The commit graph has a Bonsai style.** Settings → Appearance → **Graph style** switches between
+  **Standard** and **Bonsai**: edges that taper so the trunk reads thicker than the tips, a
+  bark-and-foliage palette over a paper-and-soil backdrop, and a five-petal blossom behind the HEAD
+  commit (a single bud behind the selected one), with its own light and dark palettes and a
+  **Season** choice of **Living**, **Spring** or **Autumn**. It is a reskin, not a re-layout —
+  topology, ordering, ref pills, selection and virtualized scrolling over 20k+ commits are
+  unchanged — and the gentle sway is disabled under `prefers-reduced-motion`.
+- **Settings → Developer records what the app does, on this computer only.** With **Dev mode** on,
+  Bonsai writes a rolling local log at a detail level you choose, covering the commands sent to the
+  Git engine with their timing and result, which parts of the window re-render and why, and
+  commit-graph frame timing. Nothing is sent anywhere: the page carries a **What Bonsai records**
+  disclosure, repository and branch names are redacted unless you opt in to **Include raw repository
+  names**, commit messages and credentials are never written to disk in any mode, and home-directory
+  paths are masked in an exported session — each export stamps whether masking was actually in
+  effect, rather than assuming it. **Show in folder**, **Export session…** (written to a fixed
+  location, which the page names) and **Delete all…** are alongside, the page reports when logging
+  cannot write to disk instead of failing silently, and the confirmation for **Delete all…** names
+  its full blast radius — the log files *and* the usage counts — including when the number of log
+  files could not be read. The usage counts kept for local statistics cover a rolling 90 days.
 - **A commit that carries several refs is now actionable.** Its context menu offers a branch picker,
   so Merge, Rebase and the other branch actions can be aimed at the branch you mean instead of
   whichever ref happened to come first, and the "+N" chip that hid the extra refs is clickable
@@ -17,126 +73,29 @@ All notable changes to Bonsai are documented here. The format is based on
   "Push" — so a log of several fetches, pushes and commits stays readable after the fact instead of
   reading as a list of verbs. Refs that arrive with control characters in them are stripped before
   display, and a name too long for the row is truncated rather than allowed to push the row wider.
-
-### Security
-
-- **A cloned repository could no longer aim Bonsai's external tools at a path of its choosing.**
-  A submodule's location comes from `.gitmodules`, which is authored by whoever wrote the repository
-  you cloned — and Bonsai was joining that value onto the superproject's directory without checking
-  the result stayed inside it. A rooted path (`C:/…`, `/…`) or a UNC share (`\\host\share`) replaces
-  the base entirely rather than extending it, so "Open in terminal", "Open in editor" and "Show in
-  folder" on such a row would have run against an attacker-chosen location — and merely testing
-  whether a UNC path exists makes Windows dial that host and offer your credentials. Submodule paths
-  are now validated to stay within the superproject before any absolute path is produced.
-- **A submodule Bonsai refuses to resolve is still shown, just without actions.** Hiding a submodule
-  that Git itself reports would be its own kind of wrong, so the row still lists with its name and
-  status; it simply carries no absolute path, which means **"Open in new tab" is disabled and every
-  external-tool item is absent from its menu**. No raw path is ever used as a fallback.
-- **The content-security policy now also pins `form-action`, `base-uri` and `object-src`.** Script
-  sources were already restricted to the application itself, with no inline script and no `eval`.
-  These three directives close the remaining ways a compromised renderer could aim a form submission
-  somewhere else, rewrite how relative URLs resolve, or embed a plugin object.
-- **Staging a file could follow a symlinked directory out of the repository.** Full-file staging
-  validated paths only lexically — it never checked that the resolved location stayed inside the
-  working tree, unlike partial staging, discard and conflict resolution, which all did. A repository
-  containing a symlinked ancestor could therefore have an out-of-repository file read into its
-  object database by a single stage. Every path is now resolved against the working directory before
-  the index is touched, and a batch containing one escape stages nothing at all; a symlink you stage
-  directly is still stored as a link. This affected staging from the app as well as through the MCP
-  server, and it was not reachable on a stock Windows setup, where Git materialises symlinks as
-  ordinary files.
-- **The MCP server's write tools no longer inherit the user interface's assumptions.** Staging
-  through a model is now limited to paths the repository status actually reports, so an ignored file
-  such as `.env` can no longer be staged and committed by an agent that simply named it — the tool
-  description had promised this, and nothing enforced it. Commit-producing tools in a repository
-  with runnable git hooks are refused rather than running those hooks behind a disclosure a headless
-  server cannot show. A test now snapshots every tool description, because those descriptions are
-  the contract a model reads before it invokes a destructive operation.
-- **A custom terminal or editor command is checked before it is launched.** The value must be an
-  absolute path to an existing file or a bare program name, with no shell metacharacters and no
-  smuggled arguments, and a configured command no longer runs with the repository as its working
-  directory. **This narrows the surface rather than closing it**, in two ways worth naming: an audit
-  showed that validating the *shape* of a program string a compromised renderer can write cannot
-  make it safe — so **free-text entry for these two settings has since been removed** in favour of a
-  picker over detected tools (see *Changed*, below) — and the built-in "open in terminal" rungs that
-  must start *in* the repository still do, because the alternative (building a `Set-Location`
-  command line out of a repository-authored path) would be a worse hazard.
-
-### Fixed
-
-- **"Open in editor" now works on a standard VS Code install on Windows.** Bonsai resolved the bare
-  name `code` against your `PATH` and took the first match, which on Windows is the extension-less
-  shell script VS Code ships beside `code.cmd` — a file Windows cannot execute, so the action failed
-  with "%1 is not a valid Win32 application" and, because the next rung looks for VS Code Insiders,
-  the whole attempt gave up. Program lookup now prefers a real executable extension and only falls
-  back to the bare name, and it ignores empty and relative `PATH` entries so a stray file named
-  `code` or `git` inside the repository you have open can never be run as the program.
-
-- **The commit graph no longer jumps back to the working directory while you are reading a commit.**
-  A background refresh re-streamed the graph and re-picked the selection by row position, so a
-  fetch, a watcher event or a branch switch could silently move you off the commit you had selected.
-  The selection is now anchored to the commit id and survives the re-stream.
-- **A branch switch no longer redraws the whole graph.** A checkout touches hundreds of files at
-  once, and every one of them was waking the file watcher into a full re-stream. Watcher activity is
-  now classified by which part of the repository changed, so a burst of working-directory writes
-  refreshes the status list without rebuilding the history behind it.
-- **A file marked for copying said "unchecked" when its box was ticked.** In the worktree copy
-  dialog, a row whose preview could not be computed showed a red "unchecked" chip — inches from a
-  checkbox that was, in fact, checked. It now reads "unknown" in a neutral colour, and both the
-  chip and the row explain themselves to a screen reader. Red is reserved for "this will destroy
-  something".
-- **The observability export no longer offers to let you choose a folder.** Two buttons and a
-  permission-error message still promised a folder picker that had been removed; the export writes
-  to a fixed location and now says where.
-- **Brand-new files could be destroyed by a branch switch.** A dirty-tree switch auto-stashes with
-  untracked files included and pops the stash on the far side. libgit2's untracked-restore phase can
-  silently fail to write those files back — the target branch tracks that path (a binary is replaced
-  by the branch's version, a text file gets conflict markers) or a directory now occupies it — while
-  recording no index conflict. Bonsai read that as a clean apply and **dropped the stash**, deleting
-  the only remaining copy. Every apply/pop now verifies each carried untracked blob against the
-  worktree and keeps the stash unless all of them landed byte-identically, reporting the paths it
-  could not restore. Regression tests cover the binary, file-vs-directory, and text-collision cases.
-- **A failed re-apply after a branch switch no longer looks like data loss.** If popping the
-  auto-stash fails once the switch has already happened, the operation now succeeds with a
-  structured "not applied" outcome that names `stash@{0}`, instead of surfacing a bare error next to
-  a working directory that suddenly looks empty.
-- **Two borders in the merge editor now actually render.** The split-label underline and the
-  OURS/THEIRS divider referred to a colour token that does not exist, so they had been invisible
-  since they were written.
-- **Settings no longer ignores your first keystroke after you close the identity menu.** Dismissing
-  the menu with `Esc` left a stale keyboard handler in place for exactly one more keypress, so the
-  next `Ctrl`/`Cmd`-`,` did nothing and you had to press it again. Only reproducible in a release
-  build, which is why it looked like a flaky test for so long.
-- **macOS: the folder-access prompt should stop coming back.** The release `.app` was only
-  linker-ad-hoc-signed — no sealed resources and an unstable identifier — so macOS had nothing to
-  anchor a permission grant to and re-prompted after you clicked Allow. The bundle is now properly
-  ad-hoc signed, taking effect from the next tagged release. Gatekeeper's "unidentified developer"
-  warning is unchanged; that needs a Developer ID and notarization.
-- **Two different file statuses no longer show the same letter.** The badge beside a changed file was
-  produced by six independently drifted tables, three of which gave "added" and "untracked" the same
-  `A` — and the badge carried no accessible name at all, so the distinction was unavailable to a
-  screen reader as well as ambiguous on screen. All eight places that render one now come from a
-  single component, and each badge announces itself: Added, Modified, Deleted, Renamed, Type changed,
-  Conflicted, Untracked, or Status unknown.
-- **A branch name too long for its ref pill no longer gets cut off silently.** An over-wide ref was
-  hard-clipped, which makes a truncated name look like a complete one, and the full text was only
-  available by hovering. Long refs now stay on one line and ellipsize: the remote prefix gives way
-  first, and the branch name itself is shortened only as a last resort.
+  Each row now also tells a screen reader that it is actionable and whether it is expanded, and its
+  chevron is no longer a separate tab stop — so tabbing past a long log costs one stop, not *N*.
 
 ### Changed
 
 - **Terminal and editor are chosen from a list of what is actually installed, not typed in.** The two
-  free-text command boxes in Settings → General are gone. Bonsai scans your machine for the terminals
-  and editors it knows about and offers what it found, with the resolved program path under each
-  entry so two installs of the same tool can be told apart; a **Browse…** button opens a native file
-  picker for anything not on the list. The first scan on a cold machine takes a couple of seconds and
-  shows a placeholder while it runs, and a **Rescan** action picks up a tool installed since Bonsai
-  started. Typing a program name is no longer possible at all, which is the point: the old boxes let
-  a value that was never a real program become the thing Bonsai launched.
+  free-text command boxes in Settings → General are gone, and the page's subtitle no longer
+  advertises a group it does not have. Bonsai scans your machine for the terminals and editors it
+  knows about and offers what it found, with the resolved program path under each entry so two
+  installs of the same tool can be told apart; a **Browse…** button opens a native file picker for
+  anything not on the list. The first scan on a cold machine takes a couple of seconds and shows a
+  placeholder while it runs, and a **Rescan** action picks up a tool installed since Bonsai started.
+  Typing a program name is no longer possible at all, which is the point: the old boxes let a value
+  that was never a real program become the thing Bonsai launched.
 
 - **Two stash actions instead of three.** The commit-panel `⋯` menu now offers **Stash** — the whole
   working directory, staged, unstaged and brand-new files alike — and **Stash staged**. The old
   "Stash all" (which quietly left untracked files behind) and "Stash all + untracked" are gone.
+
+- **Tag synchronisation rides the background auto-fetch.** The sidebar's local-only / remote-only /
+  diverged tag marks are refreshed as part of the existing five-minute auto-fetch cycle as well as on
+  an explicit fetch. No new network trigger was added, and opening a repository still makes no
+  network call of its own.
 
 - **A pull request's file diffs open in the center overlay** instead of the narrow right panel, so a
   changed file gets the full width of the window to be read in.
@@ -197,6 +156,177 @@ All notable changes to Bonsai are documented here. The format is based on
 - TypeScript **7 is deliberately not adopted**: `typescript-eslint` 8.68 hard-errors against the
   TypeScript 7 API, so the toolchain stays on TypeScript 6 until that is resolved upstream.
 
+### Fixed
+
+- **"Open in editor" now works on a standard VS Code install on Windows.** Bonsai resolved the bare
+  name `code` against your `PATH` and took the first match, which on Windows is the extension-less
+  shell script VS Code ships beside `code.cmd` — a file Windows cannot execute, so the action failed
+  with "%1 is not a valid Win32 application" and, because the next rung looks for VS Code Insiders,
+  the whole attempt gave up. Program lookup now prefers a real executable extension and only falls
+  back to the bare name, and it ignores empty and relative `PATH` entries so a stray file named
+  `code` or `git` inside the repository you have open can never be run as the program.
+
+- **The commit graph no longer jumps back to the working directory while you are reading a commit.**
+  A background refresh re-streamed the graph and re-picked the selection by row position, so a
+  fetch, a watcher event or a branch switch could silently move you off the commit you had selected.
+  The selection is now anchored to the commit id and survives the re-stream.
+- **A branch switch no longer redraws the whole graph.** A checkout touches hundreds of files at
+  once, and every one of them was waking the file watcher into a full re-stream. Watcher activity is
+  now classified by which part of the repository changed, so a burst of working-directory writes
+  refreshes the status list without rebuilding the history behind it.
+- **A file marked for copying said "unchecked" when its box was ticked.** In the worktree copy
+  dialog, a row whose preview could not be computed showed a red "unchecked" chip — inches from a
+  checkbox that was, in fact, checked. It now reads "unknown" in a neutral colour, and both the
+  chip and the row explain themselves to a screen reader. Red is reserved for "this will destroy
+  something".
+- **Settings tells you how an action turned out, in the page rather than behind it.** Every message
+  Settings raised was drawn *behind* Settings' own overlay — measured, not inferred: a hit test at a
+  message's centre returned the overlay, so its dismiss button could not be clicked at all. All
+  fifteen places that report an outcome now do it where it can be read: as a note in the row that
+  owns the action, present from the moment the page mounts so a screen reader announces every
+  outcome — exporting twice used to be silent, because a live region does not re-fire on an
+  identical string. A failed settings save keeps a toast for when Settings is
+  closed and shows a banner when it is open, and the banner persists as long as the failure does
+  instead of appearing once and vanishing. The remove-account failure stays in its dialog, the one
+  place where a row note would have sat behind a second overlay.
+- **When the open repository goes away, everything on top of it closes.** If the repository Bonsai
+  had open was deleted or moved out from under it, the workspace emptied but its overlays and
+  dialogs stayed on screen: the reflog, diff, composer and command-palette overlays, and 39 armed
+  repo-scoped dialog flags — several of them gating a destructive operation (reset, force discard,
+  force push, delete branch) and one that would have dispatched a Git operation on the next click,
+  including an AI run holding a stale snapshot of conflict paths. All of them are cleared on the same
+  teardown now, and anything that was waiting on a dialog's answer is settled rather than dropped —
+  a pending commit-and-push is cancelled instead of silently taking its success path and clearing
+  the message you had typed.
+- **An image changed by a pull request shows the image comparison, not a "Binary file" placeholder.**
+  PR-mode diffs now ask for the old and new blobs by commit id, so the side-by-side / onion-skin /
+  swipe card works there exactly as it does for commit and working-directory diffs.
+- **Brand-new files could be destroyed by a branch switch.** A dirty-tree switch auto-stashes with
+  untracked files included and pops the stash on the far side. libgit2's untracked-restore phase can
+  silently fail to write those files back — the target branch tracks that path (a binary is replaced
+  by the branch's version, a text file gets conflict markers) or a directory now occupies it — while
+  recording no index conflict. Bonsai read that as a clean apply and **dropped the stash**, deleting
+  the only remaining copy. Every apply/pop now verifies each carried untracked blob against the
+  worktree and keeps the stash unless all of them landed byte-identically, reporting the paths it
+  could not restore. Regression tests cover the binary, file-vs-directory, and text-collision cases.
+- **A failed re-apply after a branch switch no longer looks like data loss.** If popping the
+  auto-stash fails once the switch has already happened, the operation now succeeds with a
+  structured "not applied" outcome that names `stash@{0}`, instead of surfacing a bare error next to
+  a working directory that suddenly looks empty.
+- **Two borders in the merge editor now actually render.** The split-label underline and the
+  OURS/THEIRS divider referred to a colour token that does not exist, so they had been invisible
+  since they were written.
+- **Settings no longer ignores your first keystroke after you close the identity menu.** Dismissing
+  the menu with `Esc` left a stale keyboard handler in place for exactly one more keypress, so the
+  next `Ctrl`/`Cmd`-`,` did nothing and you had to press it again. Only reproducible in a release
+  build, which is why it looked like a flaky test for so long.
+- **macOS: the folder-access prompt should stop coming back.** The release `.app` was only
+  linker-ad-hoc-signed — no sealed resources and an unstable identifier — so macOS had nothing to
+  anchor a permission grant to and re-prompted after you clicked Allow. The bundle is now properly
+  ad-hoc signed, starting with this release. Gatekeeper's "unidentified developer"
+  warning is unchanged; that needs a Developer ID and notarization.
+- **Two different file statuses no longer show the same letter.** The badge beside a changed file was
+  produced by six independently drifted tables, three of which gave "added" and "untracked" the same
+  `A` — and the badge carried no accessible name at all, so the distinction was unavailable to a
+  screen reader as well as ambiguous on screen. All eight places that render one now come from a
+  single component, and each badge announces itself: Added, Modified, Deleted, Renamed, Type changed,
+  Conflicted, Untracked, or Status unknown.
+- **A branch name too long for its ref pill no longer gets cut off silently.** An over-wide ref was
+  hard-clipped, which makes a truncated name look like a complete one, and the full text was only
+  available by hovering. Long refs now stay on one line and ellipsize: the remote prefix gives way
+  first, and the branch name itself is shortened only as a last resort.
+
+### Security
+
+- **Removing a forge account is no longer reported as done while the credential remains.** Removing
+  an account discarded the result of deleting its token from the OS keychain and returned success
+  regardless, so a refused delete left a live credential in the keychain with no record naming it —
+  unreachable from the app, because every sweep in Bonsai iterates its own records. Deleting the
+  token is now the operation. If it fails, nothing else runs — no settings write, no record drop —
+  and the account stays listed so the removal can be retried; a key that was already absent counts
+  as success, so that retry is real rather than inferred. Two further paths wrote a token and then
+  swallowed the record write, which orphans a credential the same way — one of them reachable from
+  the PR and Checks panels. Their rollback now reads the stored state *before* the write and deletes
+  only a key that no other record already named, so re-adding an account cannot destroy the working
+  credential it just refreshed. A leftover legacy key that refuses to delete is reported rather than
+  blocking the removal, which would otherwise strand an account that is listed, disconnected and
+  unremovable. The copy that reports all this describes **state, not the act**: it says the
+  credential "is no longer in the OS keychain", never that it "was removed", because the
+  already-absent case makes the act-verb false on exactly the retry the message recommends.
+- **A credential-deleting command nothing could reach is gone from the IPC surface.** A per-host
+  sign-out command stayed fully plumbed — registered, typed, bound, mocked — long after the
+  interface stopped calling it, and it carried the orphaning defect above in a worse form: it
+  dropped every record on a host even when some of the keychain deletes had failed, erasing the way
+  back to the tokens that were left behind. Dormant privileged surface is itself the finding, so the
+  command was removed rather than kept fixed and unused, and two callerless credential helpers went
+  with it.
+- **A cloned repository could no longer aim Bonsai's external tools at a path of its choosing.**
+  A submodule's location comes from `.gitmodules`, which is authored by whoever wrote the repository
+  you cloned — and Bonsai was joining that value onto the superproject's directory without checking
+  the result stayed inside it. A rooted path (`C:/…`, `/…`) or a UNC share (`\\host\share`) replaces
+  the base entirely rather than extending it, so "Open in terminal", "Open in editor" and "Show in
+  folder" on such a row would have run against an attacker-chosen location — and merely testing
+  whether a UNC path exists makes Windows dial that host and offer your credentials. Submodule paths
+  are now validated to stay within the superproject before any absolute path is produced.
+- **A submodule Bonsai refuses to resolve is still shown, just without actions.** Hiding a submodule
+  that Git itself reports would be its own kind of wrong, so the row still lists with its name and
+  status; it simply carries no absolute path, which means **"Open in new tab" is disabled and every
+  external-tool item is absent from its menu**. No raw path is ever used as a fallback.
+- **The content-security policy now also pins `form-action`, `base-uri` and `object-src`.** Script
+  sources were already restricted to the application itself, with no inline script and no `eval`.
+  These three directives close the remaining ways a compromised renderer could aim a form submission
+  somewhere else, rewrite how relative URLs resolve, or embed a plugin object.
+- **Staging a file could follow a symlinked directory out of the repository.** Full-file staging
+  validated paths only lexically — it never checked that the resolved location stayed inside the
+  working tree, unlike partial staging, discard and conflict resolution, which all did. A repository
+  containing a symlinked ancestor could therefore have an out-of-repository file read into its
+  object database by a single stage. Every path is now resolved against the working directory before
+  the index is touched, and a batch containing one escape stages nothing at all; a symlink you stage
+  directly is still stored as a link. This affected staging from the app as well as through the MCP
+  server, and it was not reachable on a stock Windows setup, where Git materialises symlinks as
+  ordinary files.
+- **The MCP server's write tools no longer inherit the user interface's assumptions.** Staging
+  through a model is now limited to paths the repository status actually reports, so an ignored file
+  such as `.env` can no longer be staged and committed by an agent that simply named it — the tool
+  description had promised this, and nothing enforced it. Commit-producing tools in a repository
+  with runnable git hooks are refused rather than running those hooks behind a disclosure a headless
+  server cannot show. A test now snapshots every tool description, because those descriptions are
+  the contract a model reads before it invokes a destructive operation.
+- **The program Bonsai launches can only come from detection or a native file dialog.** There is no
+  free-text terminal or editor command: the stored setting is either empty or one of a fixed catalog
+  of tool ids, and a command typed into an older version migrates to a catalog entry or to nothing —
+  the migration can manufacture neither a path nor a custom id. The one setting that does hold a
+  filesystem path is written only by a native file dialog the backend opened itself; in Rust it is a
+  distinct type with a single, deliberately grep-able constructor, so a string arriving from the
+  renderer no longer even type-checks into a tool scan or a launch. Validating the *shape* of a
+  program string cannot make it safe — an audit measured what such checks buy and it was neither
+  "not arbitrary execution" nor "at most one argument" — so there is no free-text entry to validate.
+  Control characters and bidi overrides are refused in a picked path, since in a filename they exist
+  only to make a picker row read as something other than what launches. Two residuals are named
+  rather than papered over: a configured tool still runs with Bonsai's privileges, and the built-in
+  "open in terminal" rungs still start in the repository directory, because the alternative —
+  building a command line out of a repository-authored path — would be the worse hazard.
+
+- **Two dependencies with known defects were replaced before this release shipped.** The TLS library
+  Bonsai uses to reach forges and to download its own updates accepted TLS 1.3 handshake messages
+  that arrived at the wrong encryption level. The handshake transcript stays authenticated, so this
+  was not a way for a network attacker to alter or complete a connection; the effect is that a peer
+  could send in plaintext what the protocol requires to be encrypted without the connection being
+  refused (RUSTSEC-2026-0285). Separately, the native bindings behind the SSH transport were pinned
+  to a release their authors had since withdrawn. Both now sit on fixed versions.
+
+### Performance
+
+- **A background refresh that finds nothing now changes nothing.** A six-minute session was measured
+  at 26,334 sidebar branch-row renders across 43 refresh rounds; the file watcher was not at fault
+  (10,280 filesystem events correctly debounced to 43 fires) — the amplification was all downstream.
+  Refresh rounds now keep the previous value whenever what they read is structurally equal, so a
+  watcher round that finds nothing new commits no state at all, and the sidebar's filtered lists,
+  rows and menu handlers are memoized behind comparators instead of being rebuilt every round. One
+  ref change went from 1,012 renders to 8, and a branch row from 1,000 renders across 500 instances
+  to 2 across 1. A background refresh also no longer greys out the refresh button: progress belongs
+  to something you did, not to filesystem-event timing.
+
 ## [1.5.0] — 2026-08-26
 
 Accurate pull-request diffs computed locally, a per-branch CI checks view, and a dedicated forge
@@ -249,7 +379,7 @@ keyboard-navigable sidebar — plus a batch of performance, accessibility, and s
   fetch.
 - **Keyboard-navigable sidebar** (`role=tree` with roving tabindex) and improved graph a11y
   (grid semantics, light-mode lane palette, higher-contrast ref pills).
-  > **The graph's "grid semantics" have since been removed — see [Unreleased].** They shipped in
+  > **The graph's "grid semantics" have since been removed — see [1.6.0].** They shipped in
   > 1.3.0 exactly as described here (`role="grid"` + `aria-rowcount` on the graph scroller,
   > `src/graph/GraphCanvas.tsx` at tag `v1.5.0`), but a `grid` with no `role="row"` children is
   > malformed, and the graph's rows are canvas pixels that never exist as DOM. The graph is now a
@@ -701,7 +831,8 @@ The MVP and first productization phase. Highlights:
 - Tauri v2 auto-update scaffolding (behind Bonsai IPC) and a first-run onboarding overlay.
 - An embedded MCP server exposing structured Git data (graph, diffs, conflicts) to AI tools.
 
-[Unreleased]: https://github.com/danpercic86/bonsai/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/danpercic86/bonsai/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/danpercic86/bonsai/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/danpercic86/bonsai/compare/v1.3.0...v1.5.0
 [1.3.0]: https://github.com/danpercic86/bonsai/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/danpercic86/bonsai/compare/v1.1.0...v1.2.0

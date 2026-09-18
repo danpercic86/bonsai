@@ -67,6 +67,150 @@ being wrong is kept deliberately.
 
 ---
 
+## 🚀 RELEASE v1.6.0 — PREPARED 2026-09-18, **NOT PUBLISHED**
+
+**Current step:** prep is DONE and verified locally at the ≈CI tier. Publishing is blocked on four
+items that are **all the user's**; no agent task remains. P112's native checkpoint is one of them.
+
+### What the prep changed
+
+- **1.5.0 → 1.6.0** in the four places that carry it, found with `git grep` rather than from memory:
+  `package.json:4`, `src-tauri/tauri.conf.json:4`, `src-tauri/Cargo.toml:3`, `README.md:19-20`
+  (the "Status: shipping" line). `Cargo.lock` refreshed with `cargo check -p bonsai`.
+  **The `1.5.0` strings in `src-tauri/src/obs/tests_*.rs` and `watcher/tests.rs` were deliberately
+  NOT touched** — `obs/mod.rs:216` takes `app_version` from `app.package_info().version` at
+  runtime, so those are arbitrary fixture values, not the shipped version.
+- **`CHANGELOG.md`: `[Unreleased]` cut to `[1.6.0] — 2026-09-18`**, an empty `[Unreleased]` kept
+  above it. Curated by `docs-curator` over the real range **`v1.5.0..HEAD`** — 315 non-merge
+  commits, 74 with `feat|fix|perf|security` subjects — *not* over `origin/dev..HEAD`, which is a
+  different range and would have mis-scoped the notes.
+
+### 🔐 TWO SUPPLY-CHAIN FAILURES THIS BRANCH HAD NEVER SEEN — both fixed
+
+`cargo-deny` lives in the **`audit` group, which runs only under `--full`/`--ci`**. The bare 9-step
+`pnpm gate` the board has been running for weeks **does not include it**, so neither of these had
+ever run against this branch, and **both would have failed CI's `audit` job on the first push:**
+
+1. **`RUSTSEC-2026-0285` — `rustls 0.23.43`.** TLS 1.3 handshake messages accepted across
+   encryption-level boundaries (functionally Go's CVE-2025-61730). Reached via **`bonsai-forge`**,
+   the HTTPS client that carries forge tokens, **and via `tauri-plugin-updater`**, the auto-update
+   download path. Fixed by `cargo update -p rustls` → **0.23.45**, the advisory's stated minimum.
+2. **`libssh2-sys 0.3.2` was YANKED.** Fixed by `cargo update -p libssh2-sys` → **0.3.3**. This is
+   git2's SSH transport, so it ships in the app — not tooling.
+
+`cargo deny --all-features check` now reports **`advisories ok, bans ok, licenses ok, sources ok`**.
+The two surviving `license-not-encountered` warnings are an over-broad allowlist in `deny.toml`
+(`BSD-2-Clause`, `CDLA-Permissive-2.0`) — not findings.
+
+**The lesson is the board's own rule earning itself again: a green bare gate is not a green CI.**
+A verification block must say which **tier** it means, and the audit tier has to run before a release.
+
+### ✅ AI GATE — `pnpm gate --full` (≈CI tier), **ALL 11 STEPS GREEN**
+
+**510.6s, exit 0, zero FAIL lines**, run against the finished prep tree (bump + both dep fixes +
+the changelog cut). Log: `D:/Data/Temp/claude/bonsai-gate/gate-v160-final.log`.
+
+nextest **2605 run / 2605 passed / 11 skipped** (206.1s, **0 LEAK lines** — the known intermittent
+`external_spawn::detached_spawn_ignores_nonzero_exit` did not reproduce) · doctests 3.1s ·
+`cargo fmt --check` 1.5s · clippy 44.9s · eslint 9.5s (**36 warnings**, ceiling 50) · size ratchet
+581ms · vitest **3019 passed / 275 files** (65.7s, coverage mode) · tsc+build 9.2s · e2e
+**185 passed** (166.4s) · **cargo-deny 2.8s** · **pnpm audit 723ms**.
+
+Against the `5654eaa` green: Rust **2605 vs 2563 (+42)**, vitest **3019 vs 3007 (+12)**, e2e
+**185, unchanged**.
+
+**Plus the one check no gate tier runs: `cargo build --release -p bonsai` → `Finished release
+profile [optimized] in 4m 19s`**, producing `target/release/bonsai.exe` (32,152,064 bytes). The
+gate compiles the **dev** profile only, so this is the first proof that the *shipped* binary
+compiles — including that the `pub(crate)`-widened `#[cfg(test)] testutil` does not leak into it.
+
+### ⚠ THE CROSS-PLATFORM GAP IS REAL AND CANNOT BE CLOSED ON THIS MACHINE
+
+I tried to close it and **failed** — recorded so nobody repeats the attempt the same way.
+`rustup target add aarch64-apple-darwin x86_64-unknown-linux-gnu` succeeded, and both
+`cargo clippy --target` steps then failed for a **missing C cross-compiler**: `cc` for darwin,
+`x86_64-linux-gnu-gcc` for linux, because `alloca` and `libz-sys` (→ libgit2) are **C** crates.
+**`gate.mjs:103`'s claim that "only the pure crates cross-compile cleanly from any host" is false
+for this workspace** — `bonsai-core` depends on `git2`, so it needs a per-target C toolchain too.
+Both targets were **removed again**, restoring `--full` to its designed behaviour (warn + defer to
+CI). **Three-platform verification therefore requires CI, which requires a push.**
+
+### Release machinery — verified by inspection, since no test covers it
+
+- **The updater pubkey matches the signing key.** `tauri.conf.json`'s `plugins.updater.pubkey` is
+  byte-identical to `.tauri/updater-prod.key.pub` (minisign key id **`B4E84ADA465319A8`**) and is
+  **not** the dev key. A mismatch here makes every installed client reject the update as a bad
+  signature. *(Method note: my first comparison decoded one side and not the other and reported a
+  false mismatch — the `.pub` file already stores the base64 form. Compare like with like.)*
+- **`bundle.targets`** (`nsis, app, dmg, deb, rpm, appimage`) plus `createUpdaterArtifacts: true`
+  produce **exactly the 10 assets** `release.yml`'s `publish-release` guard demands. No gap.
+- **Hygiene:** `.tauri/` and `dist*/` are gitignored **and untracked** — no key or build output in
+  the tree. **`v1.6.0` does not exist as a tag**; `release.yml` derives it from `package.json`.
+- **Unsigned on Windows** (`certificateThumbprint: null`), **ad-hoc on macOS**
+  (`signingIdentity: "-"`) — the locked v1 decision (`docs/code-signing.md:3`), not a gap.
+- **npm side: `pnpm audit --audit-level low` → no known vulnerabilities.** So the **Dependabot
+  MODERATE of ruling #15 is not an npm dependency.** Now that the Rust side has actually been run,
+  the strong candidate is **`RUSTSEC-2026-0285`**, fixed above. The *high* remains the ignored
+  `nanoid` GHSA-2v37-7h3g-55p8 (dev tooling only, `pnpm-workspace.yaml`).
+
+### 📐 Three board claims measured and found STALE
+
+1. **Ruling #24's toast sweep is COMPLETE — not "10 of 15".** `grep "pushToast(" src/` now returns
+   **zero** call sites in `src/components/settings/`, `useMcpControls.ts` and `useUiSettings.ts`.
+   The single survivor, **`useSettingsSaveFailure.ts:72`**, is **deliberate and documented** (§17.3):
+   `if (!settingsOpen.current && streak === 0)` — banner when Settings is open, toast only when it
+   is closed, the one place a toast is the correct channel. The board carried unfinished work that
+   had been finished.
+2. **The owed `useExternalTools` re-check is CLOSED.** Ruling #24's scope note asked whether P112
+   sub-inc 4's picker made `useExternalTools.ts:22/28/34` Settings-reachable. **It did not** — the
+   only importers are `App.tsx:189` and `RepoWorkspace.tsx:1693` (repo UI); the one
+   `src/components/settings/` reference is a **test** file.
+3. **Commit counts, measured now:** `origin/dev..HEAD` = **106** (the board carried 92, then 94);
+   `origin/main..HEAD` = **313**; `v1.5.0..HEAD` = **318**.
+
+### ✅ Nothing is stranded on another branch
+
+`git rev-list --count HEAD..<ref>` over **every** local and remote branch returns **0 for all of
+them** — HEAD is a strict superset of `main`, `dev`, `origin/*` and all 17 feature branches. So
+releasing from `feat/post-p91-rulings` drops nothing, and `origin/main` is an ancestor **313**
+commits back, i.e. **a PR to `main` fast-forwards**.
+
+### 🚨 BLOCKS RELEASE — four items, all the user's
+
+1. **The P112 native USER CHECKPOINT** — the five items under `## 🚨 THE USER CHECKPOINT` above;
+   `pnpm tauri dev` → Settings → General. Unchanged, and the orchestrator must never self-declare it.
+2. **The code has to reach GitHub.** `release.yml` is `workflow_dispatch` and creates the tag
+   through the releases API from `context.sha`, so an unpushed branch cannot be released.
+   **Recommended path: PR `feat/post-p91-rulings` → `main`, let CI's three-platform matrix run,
+   then dispatch Release.** `release.yml` only **builds**; it never **tests**. With the cross-target
+   gap above unclosable locally and the AMEND-8 host-bound fix still **reasoned, not executed**,
+   that CI run is the first real verification on ubuntu and macOS. *(Statement of what publishing
+   requires — not a re-litigation of ruling #25. Whether to push, or to hold the release, is the
+   user's call.)*
+3. **`.tauri/updater-prod.key` still exists in exactly ONE place: this working copy.** Untracked
+   and gitignored. Losing it permanently breaks auto-update for every installed client. Ruling #14
+   deferred the backup; cutting a release is where that stops being deferrable.
+4. **GitHub secrets `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` must be
+   present**, or the updater artifacts are unsigned and every client rejects them. Unverifiable
+   from here — no `gh` authorised.
+
+### Verify-on-tag, and what does NOT block
+
+- **Ruling #17: macOS ad-hoc signing is "PARK as blocked-on-release. Re-raise when a tag is next
+  cut."** Cutting `v1.6.0` **is** that trigger — verify the sealed ad-hoc signature on the produced
+  `.app`/`.dmg`. Gatekeeper will still say "unidentified developer"; that needs Developer ID +
+  notarization, scaffolded in `release.yml` but not wired.
+- **Not blocking:** everything under `## Follow-ups, ranked, none blocking` and
+  `## OPEN follow-ups`; the 36 eslint warnings (**13** `react-refresh/only-export-components`,
+  **6** `react-hooks/exhaustive-deps`, **1** `no-unused-vars`, **1** `no-explicit-any` — the last
+  two in test/mock scaffolding, e.g. `src/test/setup.ts:21`, not shipped code); `cargo doc`'s 127
+  pre-existing findings; and a `docs-curator` pass on this file, now ~3200 lines against a ~300 target.
+- **Zero `todo!()`, `unimplemented!()` or `FIXME` in production Rust** (`src-tauri/src`,
+  `crates/*/src`). The two production TS `TODO(...)` notes are a P60 sidebar-parity polish item and
+  a mock-fixture note.
+
+---
+
 ## ⏸ RESUME HERE — updated 2026-09-16
 
 **Current step:** see the **P112** entry below — *all four sub-increments in, AI gate green,
@@ -75,10 +219,15 @@ Its five checkpoint items are the only thing left in P112.
 
 **2026-09-17 — the board's two owed code items are DONE and the gate is green at `3948478`**
 (three commits: `105131a` lock consolidation, `e583f11` account-removal honesty, `3948478`
-sign-out-host). **94 commits ahead of `origin/dev`**, still unpushed per ruling #25. Two USER
-DECISIONS are open (drop the dormant credential command; delete-or-deprecate the two callerless
-`bonsai-forge` helpers) and two follow-ups are queued (`ui-designer` copy pass; `P113` contract debt
-for the new mock seams). **None of them gate P112 — the native checkpoint still does.**
+sign-out-host). ~~**94 commits ahead of `origin/dev`**~~ → **106, measured 2026-09-18**; still
+unpushed per ruling #25. ~~Two USER DECISIONS are open (drop the dormant credential command;
+delete-or-deprecate the two callerless `bonsai-forge` helpers)~~ — **CORRECTED 2026-09-18: both were
+already IMPLEMENTED in `871d16a`**, exactly as this board's own `### ✅ ALL FOUR USER DECISIONS OF
+2026-09-17 ARE IMPLEMENTED` entry records. This paragraph contradicted that one for a day; the
+contradiction was found by `docs-curator` during the v1.6.0 changelog sweep, not by me. Two
+follow-ups do remain queued (`ui-designer` copy pass; `P113` contract debt for the new mock seams).
+**None of them gate P112 — the native checkpoint still does, and it now gates the release too (see
+the release block above).**
 
 **Branch `feat/post-p91-rulings`, no upstream — 92 commits ahead of `origin/dev` (`8b88efd`),
 unpushed, and it stays unpushed (ruling #25, do not raise it again).** HEAD is the board commit

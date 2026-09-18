@@ -16,8 +16,8 @@ Bonsai is a local Git client built around a smooth, multi-lane commit graph. Rus
 the Git logic and the graph-layout math via [libgit2](https://libgit2.org/); the UI only
 renders — so the graph stays fast even over histories of 20,000+ commits.
 
-> **Status: shipping `1.5.0`.** `1.0.0` was the first public release (2026-08-18); `1.1.0`
-> through `1.5.0` have shipped since. The app is feature-complete for everyday Git work on
+> **Status: shipping `1.6.0`.** `1.0.0` was the first public release (2026-08-18); `1.1.0`
+> through `1.6.0` have shipped since. The app is feature-complete for everyday Git work on
 > Windows, macOS, and Linux — see the [CHANGELOG](CHANGELOG.md).
 >
 > **Forge / pull-request support is verified on two of the four providers.** Listing, reading,
