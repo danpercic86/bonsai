@@ -69,8 +69,53 @@ being wrong is kept deliberately.
 
 ## 🚀 RELEASE v1.6.0 — PREPARED 2026-09-18, **NOT PUBLISHED**
 
-**Current step:** prep is DONE and verified locally at the ≈CI tier. Publishing is blocked on four
-items that are **all the user's**; no agent task remains. P112's native checkpoint is one of them.
+**Current step:** prep is DONE and verified locally at the ≈CI tier, the installer bundles, and the
+branch is **pushed** (branch only, no PR — user choice 2026-09-18). **Three blockers remain, all the
+user's**: the P112 native checkpoint, the `updater-prod.key` backup, and the signing secrets. No
+agent task remains. **The highest-value next action is a manual `workflow_dispatch` CI run on this
+branch** — see the section directly below.
+
+### 🔓 PUSHED 2026-09-18 — branch only, by explicit user choice. Ruling #25 SUPERSEDED for this branch
+
+Asked with the three options laid out (PR to `main` / branch only / hold); the user chose **"Push
+branch only"**. `feat/post-p91-rulings` is now on `origin` at **`b80dd36`**, tracking set.
+**No PR, no tag, nothing published** — `git ls-remote --tags origin` still ends at `v1.5.0`.
+
+**Ruling #25 ("DO NOT PUSH … do not raise this again") is superseded for this branch by that
+choice.** Recorded explicitly so no later session re-applies it as a live prohibition: the ruling's
+*history* stands, its *instruction* does not. The branch also now exists off this machine, which it
+did not before.
+
+### 🔎 RULING #15's DEPENDABOT MODERATE IS ALL BUT IDENTIFIED — and this branch already fixes it
+
+The push itself answered a question the board had carried for weeks as an unclearable USER ACTION.
+`git push` returned:
+
+> GitHub found 1 vulnerability on danpercic86/bonsai's **default branch** (1 moderate).
+
+Two facts pin it down without the Dependabot page (still unreadable — no `gh` authorised):
+
+- It is on the **default branch**, not on this one.
+- `git show origin/main:Cargo.lock` carries **rustls 0.23.43** — precisely the version
+  RUSTSEC-2026-0285 names. This branch carries **0.23.45**.
+
+So the moderate is almost certainly **RUSTSEC-2026-0285**, and `230113a` already closes it. Note
+also that the count is now **1**, not the one-high-plus-one-moderate the board recorded: the
+`nanoid` high appears to have been resolved by the dependency refresh that landed on `main`.
+**Merging this branch into `main` should clear the alert — that observation is the confirmation,
+not this reasoning.**
+
+### ✅ THE macOS / LINUX GAP IS NOW CLOSABLE WITHOUT A PR — `ci.yml` has `workflow_dispatch`
+
+`.github/workflows/ci.yml` triggers on `push`/`pull_request` to `main` **and on
+`workflow_dispatch: {}`**. Now that the branch exists on `origin`, CI can be run against it by hand:
+**Actions → CI → Run workflow → branch `feat/post-p91-rulings`**. That runs `rust` on
+**ubuntu-22.04 + windows-latest + macos-latest**, `frontend` on two OSes, plus `e2e` and `audit` —
+so it closes the entire cross-platform gap described below, and it would finally *execute* the
+AMEND-8 host-bound test fix that is still **reasoned, not executed**. No PR, no tag, nothing
+published.
+
+**This is the single highest-value action still available before a release**, and it costs one click.
 
 ### What the prep changed
 
