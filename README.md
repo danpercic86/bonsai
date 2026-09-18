@@ -98,7 +98,7 @@ Prebuilt installers are attached to each [GitHub Release](https://github.com/dan
 > - **macOS** — Gatekeeper may block the first launch. **Right-click the app → Open**, then
 >   confirm; or allow it under **System Settings → Privacy & Security → Open Anyway**.
 > - **Linux** — for the `.AppImage`, make it executable (`chmod +x Bonsai_*.AppImage`) and
->   run it; or install the `.deb`.
+>   run it; or install the `.deb` (Debian/Ubuntu) or the `.rpm` (Fedora/RHEL-family).
 
 OS code signing (Authenticode / Apple notarization) is planned for a later release — see
 [docs/code-signing.md](docs/code-signing.md).

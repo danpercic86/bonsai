@@ -151,10 +151,6 @@ contrast and security round closes screen-reader, legibility and credential-hand
 - `keyring` stays on 3.x. Version 4 restructures onto `keyring-core` with renamed per-backend
   features and explicit credential-store registration, which changes how Bonsai selects each
   platform's native store — that is its own increment, not a dependency bump.
-- The `pnpm lint:ci` warning budget moved from `--max-warnings 40` to `--max-warnings 50`
-  (the tree reports 42 warnings, 0 errors).
-- TypeScript **7 is deliberately not adopted**: `typescript-eslint` 8.68 hard-errors against the
-  TypeScript 7 API, so the toolchain stays on TypeScript 6 until that is resolved upstream.
 
 ### Fixed
 

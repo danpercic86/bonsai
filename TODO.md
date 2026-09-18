@@ -138,6 +138,49 @@ under the release profile at all. **It is NOT evidence that the `pub(crate)`-wid
 it is unearned: `#[cfg(test)]` is off in dev and release alike, so a release build cannot distinguish
 the two.
 
+### ✅ THE INSTALLER BUNDLES — the last unproven link in the release chain
+
+`pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'` → **exit 0**,
+`Finished 1 bundle`: **`target/release/bundle/nsis/Bonsai_1.6.0_x64-setup.exe`, 7,874,889 bytes**,
+release compile 2m35s. Log: `D:/Data/Temp/claude/bonsai-gate/tauri-build.log`.
+
+**Why the `--config` override, and what it therefore does NOT prove.**
+`createUpdaterArtifacts: true` makes the bundler sign the updater payload, which needs
+`TAURI_SIGNING_PRIVATE_KEY` **and its password** — a secret the orchestrator must not handle.
+Disabling it for this one run proves everything up to and including NSIS packaging: frontend build,
+release compile, exe bundle-type patching, `makensis`. **It does not prove the `.sig` /
+`latest.json` step**, which can only run where the key lives — the release workflow. That step is
+exactly what the `publish-release` guard checks for, so a failure there cannot produce a published
+half-release. Nothing about macOS or Linux bundling is proven here, for the same reason as the
+cross-target section above.
+
+**Release notes for the draft body are extracted to
+`D:/Data/Temp/claude/bonsai-gate/release-notes-v1.6.0.md`** — 314 lines, 26.6 KB, well inside
+GitHub's 125 KB body limit. `release.yml` creates the draft with a **placeholder** body ("See the
+assets below to download and install this version."), so unless that is replaced the published
+release carries **no notes at all**. It is editable in the GitHub UI for as long as the release is a
+draft, which is why `release.yml` was **left alone** rather than taught to read `CHANGELOG.md`
+immediately before its first ever use.
+
+### Changelog and README polish applied after the curator's pass
+
+- **Two internal-tooling sub-bullets removed** from the dependency-refresh entry: the
+  `pnpm lint:ci --max-warnings 40 → 50` note — which was also **factually stale**, claiming 42
+  warnings where the gate measured **36** — and the "TypeScript 7 deliberately not adopted" note.
+  Contributor toolchain policy belongs in `CONTRIBUTING.md`, and a number that drifts every session
+  does not belong in a released changelog. The `reqwest`/OS-certificate-store and `keyring` 3.x
+  notes were **kept**: both have real user-visible consequences.
+- **`README.md` now names the `.rpm`.** The Install note covered `.AppImage` and `.deb` only, while
+  `bundle.targets` ships an `.rpm` that `publish-release` **requires** — so the release would have
+  produced a Linux package the README never mentioned.
+- **Judgment calls the curator handed back, decided and deliberately left as they are:** the P110
+  entry stays under **Fixed** (it reads as a regression fix and its copy was already approved); and
+  **no "verification in progress" note was added** to the P112 picker entry, because the changelog
+  describes what the code does, while the native checkpoint is our verification process rather than
+  a user-facing caveat. **That dependency is recorded in BLOCKS RELEASE #1 instead** — if the
+  checkpoint fails, the picker entry and the external-tool Security entry must be edited before
+  stage 3 publishes.
+
 ### ⚠ THE CROSS-PLATFORM GAP IS REAL AND CANNOT BE CLOSED ON THIS MACHINE
 
 I tried to close it and **failed** — recorded so nobody repeats the attempt the same way.
