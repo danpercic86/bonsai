@@ -17,6 +17,7 @@ mod forge_accounts;
 mod forge_hosts;
 mod identity;
 mod prefs;
+pub mod prune;
 
 pub use clamp::*;
 pub use external_tools::*;
@@ -24,6 +25,8 @@ pub use forge_accounts::*;
 pub use forge_hosts::*;
 pub use identity::*;
 pub use prefs::*;
+pub use prune::{classify_all, collect_paths, note_prune, prune_stale_paths};
+pub use prune::{resolve_candidate_hosts, HostResolver, PathFacts, PathState, PruneReport};
 
 /// Serializes every load→mutate→save cycle in this process (audit §2.3).
 ///
@@ -441,10 +444,11 @@ pub fn settings_file(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
 ///
 /// `same_repo_path` falls back to the old ASCII-case-insensitive compare
 /// whenever either side cannot be canonicalized (a recents entry whose folder
-/// was deleted or is on a detached drive), so no entry is ever silently dropped
-/// and the previous behaviour is preserved for unresolvable paths. This is the
-/// one non-pure step in this module; everything it needs is still injectable in
-/// tests because unresolvable temp paths take the string-compare branch.
+/// was deleted or is on a detached drive), so **`record_recent` itself** never
+/// drops an entry. Culling stale ones is [`prune::prune_stale_paths`]'s job
+/// (P115): once at setup, only paths it can prove are gone. This is the one
+/// non-pure step here; tests stay injectable because unresolvable temp paths
+/// take the string-compare branch.
 pub fn record_recent(s: &mut Settings, path: &str, now: i64) {
     s.recent_repos
         .retain(|r| !crate::commands::same_repo_path(&r.path, path));
@@ -461,7 +465,9 @@ pub fn record_recent(s: &mut Settings, path: &str, now: i64) {
 /// Whether the user has acknowledged `repo_path`'s one-time git-hook disclosure.
 /// Dedupe goes through [`crate::commands::same_repo_path`] (the canonicalizing
 /// compare the open-repo scan + `record_recent` use), so this and the repo
-/// registry agree on what "the same repo" is.
+/// registry agree on what "the same repo" is. P115's pass removes confirmed-gone
+/// paths here and **never migrates an ack** (consent a user did not give must
+/// never appear); a moved repo simply re-prompts once.
 pub fn hooks_ack_contains(s: &Settings, repo_path: &str) -> bool {
     s.hooks_ack_repos
         .iter()
@@ -470,7 +476,7 @@ pub fn hooks_ack_contains(s: &Settings, repo_path: &str) -> bool {
 
 /// Record that the user acknowledged `repo_path`'s git-hook disclosure.
 /// Idempotent: a no-op when an equivalent path (per `same_repo_path`) is already
-/// present, so re-acking never grows the list.
+/// present, so re-acking never grows the list — and P115's pass only removes.
 pub fn set_hooks_ack(s: &mut Settings, repo_path: &str) {
     if !hooks_ack_contains(s, repo_path) {
         s.hooks_ack_repos.push(repo_path.to_string());

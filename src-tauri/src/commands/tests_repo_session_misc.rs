@@ -216,9 +216,9 @@ fn register_mcp_guard_not_running_and_bad_cwd() {
 
 // ============================================================ recents (settings layer)
 
-/// get/remove recents round-trip through the persisted settings file. The
-/// commands are AppHandle-bound; their bodies are `settings::record_recent` /
-/// `settings::update` + a `retain` — exercised directly against a temp file.
+/// get/remove recents round-trip: the AppHandle-bound bodies (`settings::record_recent` /
+/// `update` + a `retain`) run directly against a temp settings file. The paths never exist on
+/// purpose — that proves only THOSE keep such an entry; culling is P115's `prune_stale_paths`.
 #[test]
 fn recents_record_and_remove_round_trip() {
     let dir = tempfile::TempDir::new().expect("dir");

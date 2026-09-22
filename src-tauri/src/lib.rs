@@ -118,6 +118,60 @@ pub fn run() {
                     eprintln!("bonsai: cannot resolve settings file (non-fatal): {e}");
                 }
             }
+            // P115: one-shot prune of settings paths whose repo is confirmed
+            // gone (five dead recents, a dead forge pin and doubled hook acks
+            // accumulate after a repo folder moves). Two phases so the blocking
+            // fs probes never run under SETTINGS_IO (contract §5): a dead UNC
+            // path can block `fs::metadata` for tens of seconds, which inside
+            // the mutator would queue every settings writer at launch.
+            //
+            // In `setup`, not `get_recent_repos`, for that same latency reason —
+            // there it would freeze the no-repo empty state, the exact screen
+            // the recents list lives on. Non-fatal throughout: an unresolvable
+            // settings path or a failed save leaves the file exactly as it is,
+            // and nothing here delays window creation.
+            if let Ok(file) = settings::settings_file(&handle) {
+                tauri::async_runtime::spawn_blocking(move || {
+                    use crate::settings::prune;
+                    let snapshot = settings::load_from(&file); // lock-free pure read
+                    let paths = prune::collect_paths(&snapshot);
+                    let mut facts =
+                        prune::classify_all(&paths, &mut |p| std::fs::metadata(p).map(drop));
+                    if !facts
+                        .states
+                        .values()
+                        .any(|st| *st == prune::PathState::ConfirmedGone)
+                    {
+                        return; // the common launch: SETTINGS_IO is never taken
+                    }
+                    // Phase 1b (rule 6): a migration may only land a pin on a repo
+                    // whose `origin` is on the pinned account's host — otherwise it
+                    // would resolve to nothing AND be unclearable from the UI. Local
+                    // git2 remote read only: no network, no keychain, and it opens no
+                    // repository at all unless an OVERRIDE is confirmed gone.
+                    prune::resolve_candidate_hosts(&snapshot, &mut facts, &mut |p| {
+                        bonsai_forge::resolve_forge_identity(p)
+                            .ok()
+                            .map(|(host, _owner, _kind)| host)
+                    });
+                    let mut report = prune::PruneReport::default();
+                    // `update_if`, not `update`: a launch that changes nothing
+                    // must not rewrite settings.json. The lock is held only for
+                    // a map lookup and two `retain`s — the mutator is pure.
+                    let saved = settings::update_if(&file, |s| {
+                        report = prune::prune_stale_paths(s, &facts);
+                        report.changed()
+                    });
+                    if saved.is_ok() {
+                        prune::note_prune(&report);
+                    } else {
+                        // Never announce a prune that failed to save — and log
+                        // the FACT, not the error: `AppError::Io` embeds the
+                        // settings path, which carries the OS account name.
+                        eprintln!("bonsai: settings housekeeping could not save (non-fatal)");
+                    }
+                });
+            }
             // P91 §8: load durable metrics from disk and register the process-wide
             // feed handle. Blocking IO → run on the blocking pool; a failure to
             // resolve the config dir is non-fatal (metrics stay in-memory and the

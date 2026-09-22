@@ -135,6 +135,12 @@ pub fn clear_host_default(s: &mut Settings, host: &str) {
 
 /// P80: pin `account_id` as `repo_path`'s override (deduped via
 /// [`crate::commands::same_repo_path`], so the same repo never gets two pins).
+///
+/// P115: the setup pass ([`super::prune::prune_stale_paths`]) may rewrite an
+/// override's `repo_path` in place when its repo is confirmed gone and exactly
+/// one live repo of the same name is known; it **never removes an override**
+/// and never overwrites a pin a live repo already has. Removal stays the user's
+/// own act, through [`clear_repo_override`].
 pub fn set_repo_override(s: &mut Settings, repo_path: &str, account_id: &str) {
     s.repo_forge_overrides
         .retain(|o| !crate::commands::same_repo_path(&o.repo_path, repo_path));
