@@ -364,14 +364,15 @@ fn commit_statuses_batch_resolves_each_sha() {
     let shas = vec!["aa11".to_string(), "bb22".to_string()];
     let out = p.commit_statuses(&shas).unwrap();
     // Both shas resolve, each with its own rollup.
-    assert_eq!(out.len(), 2);
-    let find = |sha: &str| out.iter().find(|s| s.sha == sha);
+    assert_eq!(out.statuses.len(), 2);
+    assert!(out.stopped_by.is_none());
+    let find = |sha: &str| out.statuses.iter().find(|s| s.sha == sha);
     assert_eq!(find("aa11").unwrap().state, CheckRollup::Success);
     assert_eq!(find("bb22").unwrap().state, CheckRollup::Failure);
 }
 
 #[test]
-fn commit_statuses_omits_not_found_and_propagates_fatal() {
+fn commit_statuses_omits_not_found_and_reports_a_cut_short_batch() {
     let ok = r#"{ "state": "success", "statuses": [
         { "state": "success", "context": "ci", "description": null, "target_url": null } ] }"#;
     let bad = r#"{ "state": "failure", "statuses": [
@@ -394,11 +395,15 @@ fn commit_statuses_omits_not_found_and_propagates_fatal() {
     let shas = vec!["aa11".to_string(), "bb22".to_string(), "cc33".to_string()];
     let out = p.commit_statuses(&shas).unwrap();
     assert_eq!(
-        out.len(),
+        out.statuses.len(),
         2,
         "the 404 sha is omitted, the two resolved remain"
     );
-    let find = |sha: &str| out.iter().find(|s| s.sha == sha);
+    assert!(
+        out.stopped_by.is_none(),
+        "a 404 does not cut the batch short"
+    );
+    let find = |sha: &str| out.statuses.iter().find(|s| s.sha == sha);
     assert_eq!(find("aa11").unwrap().state, CheckRollup::Success);
     assert_eq!(find("bb22").unwrap().state, CheckRollup::Failure);
     assert!(
@@ -406,8 +411,9 @@ fn commit_statuses_omits_not_found_and_propagates_fatal() {
         "not-found sha omitted from the batch"
     );
 
-    // (b) a FATAL error (401 on a sha's status URL ⇒ AuthFailed) fails the
-    // WHOLE batch — account/transport-level errors are not silently dropped.
+    // (b) P113a: a FATAL error (401 on a sha's status URL ⇒ AuthFailed) CUTS
+    // THE BATCH SHORT but keeps what already resolved — account/transport-level
+    // errors are neither silently dropped nor allowed to discard paid-for work.
     let p_fatal = provider(
         Some("bad"),
         vec![
@@ -417,7 +423,21 @@ fn commit_statuses_omits_not_found_and_propagates_fatal() {
         ],
     );
     let shas2 = vec!["aa11".to_string(), "bb22".to_string()];
-    let err = p_fatal.commit_statuses(&shas2).unwrap_err();
+    let cut = p_fatal.commit_statuses(&shas2).unwrap();
+    assert_eq!(cut.statuses.len(), 1, "aa11 survives the 401 on bb22");
+    assert_eq!(cut.statuses[0].sha, "aa11");
+    assert!(
+        matches!(cut.stopped_by, Some(AppError::AuthFailed(_))),
+        "got {:?}",
+        cut.stopped_by
+    );
+
+    // (c) the same failure with NOTHING resolved has no partial result to
+    // report, so it stays an `Err` (the single-sha Checks panel relies on it).
+    let p_all_fatal = provider(Some("bad"), vec![("aa11/status", 401, "{}")]);
+    let err = p_all_fatal
+        .commit_statuses(&["aa11".to_string()])
+        .unwrap_err();
     assert!(matches!(err, AppError::AuthFailed(_)), "got {err:?}");
 }
 

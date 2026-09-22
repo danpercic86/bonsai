@@ -335,6 +335,172 @@ that were owed.
   "owed" in one section and "implemented" in another for five days; `CLAUDE.md` itself settles it.
 - **Its ranked follow-ups stay live immediately below** — all but the first are open.
 
+## P113 — dev-mode log review fixes — `in-progress`
+
+**Current step:** P113 — P113d contract **rev 2 approved and ready to implement** (waiting on the
+senior-dev running P113a–c, to avoid two concurrent cargo builds); P113a–c in progress.
+
+Source: review of a real 124-min Dev-mode session (2026-09-22, 5 repos open, Azure DevOps forge).
+Evidence is `%APPDATA%\com.bonsai.app\logs\bonsai-2026-09-22T04-52-03-scca8269e.jsonl` (13,667
+records), `metrics/usage.json` and `settings.json`; full write-up with counts and `file:line` in
+`D:\Data\Temp\claude\bonsai-devlog\dev-log-review.md`. **P91's own anomaly rules found all of
+this** — the rules were validated in passing (every `dup-ipc` pair carries an identical `argsHash`,
+so none were false positives).
+
+**P113a — forge rate-limit feedback loop.** `forgeCommitStatuses` burned 286,888 ms over 51 calls
+(avg 5,625 ms, max 13,225 ms; two `lvl:error` hard-cap breaches). 20 of the 51 ran to completion
+`superseded`, summing 110,942 ms, spending the rate-limit budget that then produced 8
+`forgeRateLimited` errors. A 429 mid-batch discards every sha already resolved
+(`crates/bonsai-forge/src/rollup.rs:136`); `useForgeSignals` swallows the error and re-requests the
+same set next tick; the `Retry-After` Azure sends is formatted into a message string and never
+consumed (`crates/bonsai-forge/src/azure/rest.rs:163`).
+AC: a 429 returns the statuses already resolved; a rate-limit suppresses forge refreshes for the
+advertised interval; no `forgeRateLimited` in a comparable session.
+
+**P113b — `listTagSync` double-fire.** 138 calls / 52,880 ms, 86 `superseded` / 36,555 ms, 12
+`dup-ipc` pairs with identical `argsHash`. Volume comes from `RepoWorkspace.tsx:876-883` putting
+`refetchTagSync` into every `refreshAll` whose scope carries the `tagSync` slice. The 10 s cache
+window sits in `useTagSync.ts`'s `!force` branch, so `force` bypasses it.
+Fixed with a 2 s in-flight floor that applies to `force` too; a failed check still resets the clock.
+AC: zero `dup-ipc` anomalies for `listTagSync`; call count drops with no loss of freshness.
+
+> **Diagnosis correction, 2026-09-22.** The review brief claimed `useTagRemoteActions.ts:31`'s
+> `refetchTagSync({force:true})` was redundant because `refreshAll('refsOnly')` already pushes it.
+> **Wrong** — `refreshScope.ts:93` is `refsOnly: { ...NONE, graph, branches, compare }`, with no
+> `tagSync` slice, so that call is necessary and removing it would leave a tag write with no drift
+> re-check. senior-dev caught it and left the call in. **The actual source of the 12 `dup-ipc` pairs
+> is still unconfirmed** (hypothesis: autoFetch success → a `repo-changed` full round's non-forced
+> tagSync racing `afterAutoFetch`'s forced one). The floor covers it either way, which is why this
+> did not block — but the cause is open, not closed.
+
+**P113c — `authenticated: bool` logged as `<redacted:token>`.** `is_sensitive_key` matches
+`k.contains("auth")` (`src-tauri/src/obs/scrub.rs:73`) and hits `ForgeRepoContext.authenticated`,
+a `bool`. `resultShape` holds type names only, so the redaction protects nothing and removes the
+one field that matters when debugging forge auth. Needs a `tests_redact.rs` case.
+
+**SEC-2026-09-22 — `security-auditor` on the redaction narrowing: CLEAN.** No CRITICAL/HIGH/MEDIUM.
+Not a mandatory CLAUDE.md trigger (`tools_*.rs` and the launch surface untouched); requested because
+it is the one change that can fail only by writing *more* to disk. Confirmed the shape-map value
+vocabulary is closed (`shapeOf` in `src/obs/redact.ts`), `ArgShape = BTreeMap<String, String>` keeps
+it typed across the `log_append` boundary, and there is a single scrub choke point
+(`writer.rs:269-288`) with no mode branch — raw mode is not more permissive than strict.
+`mcpToken` is a `str`, not exempt, still scrubs.
+
+Three items owed from that audit (route with the reviewer's MUST-FIX in one pass):
+- **LOW** — `tests_redact.rs:237-264` pins only `str`; add `fn`, `arr:3`, `obj:2` and an unknown
+  token under sensitive keys so the *deliberate* exclusions have a tripwire. Without it, a
+  contributor "completing the list" breaks nothing.
+- **Hardening** — `scrub.rs:401`'s `continue` skips `scrub_string` and home masking for exempt
+  values. Behaviourally identical for the four tokens, but `scrub_value(val, home); continue;`
+  exempts only the *key rule* and keeps P91 §7.2.1's "runs last, on every string field" literally
+  true.
+- **Contract drift (architect-owned)** — `docs/contracts/P91-observability.md:1122` lists
+  `is_sensitive_key` as SHIPPED with no exception; the code now has one. Needs an amendment naming
+  the carve-out and its two bounding conditions.
+
+Disclosure delta to state in the commit message (do not claim "no change"): an absent
+credential-named field now reads `"null"` where it previously read `<redacted:token>`, so a reader
+learns such a field was unset. Presence only, never value.
+
+**P113d — watcher log volume (architect first).** **12,001** `watcher` records = **61.4%** of the
+log; **11,809 (98.4%) are non-firing** — 8,384 with `relevant>0` and 3,425 with `relevant==0`
+against just **192** actual fires. Emitted per raw notify batch before the debounce and the
+relevance filter (`src-tauri/src/watcher/mod.rs:204`). **No data loss** — zero `drop` records.
+
+The 8,384 `relevant>0` non-fired records are **already re-reported, summed, in the `fired` record**
+that closes their burst (`BurstAcc`, mod.rs:232 — verified numerically), so they can simply stop
+being emitted; only the 3,425 `relevant==0` batches need a counter. The ~44:1 coalescing ratio shows
+the 300 ms debounce is working — **do not change `DEBOUNCE`**, this is a logging fix only.
+
+Record shape is P91 §2.4 → `docs/contracts/P113d-watcher-log-volume.md` (**rev 2, ready**).
+Design: delete the per-batch `log_watcher` at `:204` outright — the notify thread stops emitting
+entirely and every watcher record comes from the debounce thread. `relevant>0` batches lose only
+their count and burst extent, recovered by two scalars on the fired record (`batches`, `burstMs`);
+`relevant==0` batches go to a shared `NoiseCounters` drained onto the next fired record or a
+standalone summary. Additive schema, `OBS_SCHEMA_VERSION` stays 2. Targets: 12,001 → ≤1,200 watcher
+records, 61.4% → ~6% of the log, firings unchanged at ~192.
+
+Two correctness traps the contract calls out for the implementer: notify `Err(_)` events lose their
+immediate record and must be carried as `errors` on the fired record that closes their burst (§4.1 —
+the one place a lost signal is a correctness bug, not a diagnostic one); and the inner-loop
+`Disconnected` arm must stay a bare `return` with **no** fired record — logging a fire there would
+stamp `fired:true` on a burst that never dispatched `on_change`, and because
+`obs/anomaly/window.rs:234` keys `watcher-storm` on a single global key rather than per repo, a
+`stop_all_watchers()` across 5 open repos would raise a spurious `watcher-storm` on every app exit.
+
+> **Evidence correction, 2026-09-22.** The first pass reported "7,778 of 7,942 carry `relevant:0`".
+> Wrong: records were grouped by JSON key signature and the group generalised from three samples.
+> The architect caught the arithmetic inconsistency in review. Cross-tabulating the fields gives the
+> figures above and **inverts the fix** — `relevant==0` is 29% of the waste, not 98%. Lesson for
+> future log passes: cross-tabulate the fields you are claiming, never infer a field's distribution
+> from a key-set count.
+
+**Review round 1 (2026-09-22): `reviewer` → request changes on ONE mechanical MUST-FIX.**
+`cargo fmt --all --check` failed on 8 files, every hunk in lines this increment added (the
+`CommitStatusBatch` import pushed five `use` lines past `max_width`; two new multi-line `assert!`s;
+the new `ratelimit.rs`). **The "reported green" list had omitted `cargo fmt`, so the increment was
+never checked against the full gate** — `scripts/gate.mjs:159` runs it as a first-class rust step
+(user ruling, 2026-09-17). Fixed in place by the orchestrator (mechanical, no senior-dev round-trip
+— reviewer's own call). Everything else was SHOULD-FIX/NIT and is filed below per velocity mode.
+
+Reviewer explicitly cleared: the `AppError` wire form (no arm missed, no catch-all, additive-only
+serialization), `CommitStatusBatch` "Ok iff ≥1 resolved" semantics with 404-omit unchanged across
+all four providers, `rebuildCiCache` retaining un-attempted tips, the backoff clamps, and the
+redaction narrowing. No `security-auditor` path trigger fires.
+
+**Carried forward from the P113a–c implementation** (reported by senior-dev, none blocking):
+
+- **The 100-sha serial batch is untouched.** Worst case is still 100 serial GETs inside one
+  `spawn_blocking` — that is the 13.2 s max, and the reason a 429 lands mid-batch at all. Partial
+  success reduces the damage, not the latency. Options: cut `MAX_STATUS_BATCH` to ~25 for Azure, or
+  parallelise 4–8 at a time.
+- **Back-off coverage is partial.** Only `useForgeSignals` *consults* the suppression window.
+  `useBranchChecks` feeds it but still fires on user action (deliberate — the error surfaces).
+  `PrPanel`'s `forgeListPrs` / `forgeGetPr` / `forgePrDiff` neither feed nor consult it. **6 of the
+  8 observed rate limits were `forgeListPrs`** — if any came from the panel rather than the badge
+  refresh, those paths are still unprotected.
+- **New user-visible state, no design pass yet:** opening or switching a repo during an open
+  suppression window shows blank CI badges until it closes. Pre-P113 it 429'd and also showed
+  blank, so this is not a regression — but "suppressed" and "no CI configured" now look identical.
+  Worth a `ui-designer` look.
+- **Stale archived contracts** (architect-owned, not touched): `docs/contracts/archive/
+  P63-forge-graph-signals.md` and `archive/P90-ci-checks.md` still document
+  `forgeCommitStatuses → CommitStatus[]` "same order". In-code docs are updated.
+- **AC not verifiable here:** "a comparable session records zero `forgeRateLimited`" needs a real
+  session. The tests prove the mechanism, not the field outcome — carry it to the USER CHECKPOINT.
+
+**Open in-code follow-ups from review round 1** (not spun out — small, and they live in files a
+future P113 pass will touch anyway):
+
+- **NIT 6 — a 404'd sha keeps its stale badge on a cut-short batch.** `useForgeSignals.ts:271`
+  narrows `requested` to *resolved* shas, so a sha that 404'd before the stop is also retained,
+  contrary to the "drop a 404'd sha" rule at `:86-88`. Not a regression (pre-P113a the whole batch
+  threw and everything stayed stale). Clean fix: an `attempted` count on `CommitStatusBatch` so TS
+  can use `chunk.slice(0, attempted)`.
+- **NIT 8 — the mock's doc contradicts its arithmetic.** `mock/handlers/forgeRateLimit.ts:48-53`
+  says "a single-sha batch resolves nothing and the handler rejects", but
+  `rateLimitCutoff(1) = max(1, 0) = 1`, so a one-sha batch resolves fully *and* sets `stoppedBy`.
+  Mock-only.
+- **NIT 9** — typo, `ratelimit.rs:18`: "A absurd/garbage header".
+- **NIT 11** — `src/ipc/mock/handlers/forge.ts` is at 492 lines, one increment from the soft limit.
+  The new mock seam was correctly given its own file; keep it that way.
+- **Doc drift owed to `docs-curator`/`architect`:** `docs/contracts/archive/P63-forge-graph-signals.md`
+  and `archive/P90-ci-checks.md` still say `forgeCommitStatuses → CommitStatus[]` "same order";
+  `docs/contracts/P91-observability.md:1122` still lists `is_sensitive_key` with no exception.
+  In-code docs are current.
+
+**Deferred to background tasks** (spun out, not blocking): the 24 non-Tags render-storms from
+refresh-round fan-out, 23 `redundant-refresh` pairs, the 5/60 graph cache hit rate,
+`settings.json` stale-path pruning (`D:\Repos` no longer exists; the `ham-digi-backend`
+`repoForgeOverrides` entry is dead), the TS/Rust `OBS_SCHEMA_VERSION` parity test, **extending the
+backoff to the Checks and PR panels** (6 of the 8 observed rate limits were `forgeListPrs`, and the
+ChecksPanel currently extends a window it never consults), and **locking the `AppError` wire shape
++ the redaction-exclusion tripwire**.
+
+**Verified clean, do not re-chase:** `mcpToken` appears in zero log records across all three files;
+empty `lifetime` totals are correct inside the 90-day window; the 1.2 KB log is a sink restart on
+the `includeRawNames` toggle, not a crash.
+
 ## Follow-ups, ranked, none blocking
 
 - **✅ SPLIT 2026-09-16 (`934a280`) — both zero-slack files now have room, and the baseline is

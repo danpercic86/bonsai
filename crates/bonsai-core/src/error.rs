@@ -10,6 +10,10 @@
 /// | "externalToolFailed" | "hookRejected" | "gitNotFound"
 /// | "forgeUnsupported" | "forgeAuthRequired" | "forgeRateLimited" | "forgeApi",
 /// "message": "..." }`.
+///
+/// P113a: `forgeRateLimited` additionally carries `"retryAfterSecs": <u32>` when
+/// the provider advertised a usable wait hint. The field is OPTIONAL and omitted
+/// otherwise, so every other variant serializes exactly as before.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("git error: {0}")]
@@ -110,10 +114,21 @@ pub enum AppError {
     #[error("{0}")]
     ForgeAuthRequired(String),
     /// The forge API returned a rate-limit response (403 with
-    /// `X-RateLimit-Remaining: 0`, or 429). Carries a message including the
-    /// `X-RateLimit-Reset` epoch hint when available.
-    #[error("{0}")]
-    ForgeRateLimited(String),
+    /// `X-RateLimit-Remaining: 0`, or 429).
+    ///
+    /// P113a: the wait hint is STRUCTURAL, not only prose. `retry_after_secs` is
+    /// the provider's advertised wait in seconds — parsed from `Retry-After`
+    /// (Azure/Bitbucket) or derived from the `*-RateLimit-Reset` epoch
+    /// (GitHub/GitLab) — and `None` when the response carried no usable hint (no
+    /// header, an HTTP-date `Retry-After`, or a reset already in the past). The
+    /// message still spells the hint out for humans; callers that need to BACK
+    /// OFF read the field instead of parsing the sentence. Choosing the fallback
+    /// wait for `None` is the caller's policy, not this crate's.
+    #[error("{message}")]
+    ForgeRateLimited {
+        message: String,
+        retry_after_secs: Option<u32>,
+    },
     /// A forge API call failed with an unexpected status (404, other 4xx/5xx)
     /// or a malformed/unparseable response body. NEVER carries a token or an
     /// `Authorization` header value.
@@ -155,7 +170,7 @@ impl AppError {
             AppError::GitNotFound(_) => "gitNotFound",
             AppError::ForgeUnsupported(_) => "forgeUnsupported",
             AppError::ForgeAuthRequired(_) => "forgeAuthRequired",
-            AppError::ForgeRateLimited(_) => "forgeRateLimited",
+            AppError::ForgeRateLimited { .. } => "forgeRateLimited",
             AppError::ForgeApi(_) => "forgeApi",
         }
     }
@@ -190,11 +205,32 @@ impl AppError {
             | AppError::GitNotFound(m)
             | AppError::ForgeUnsupported(m)
             | AppError::ForgeAuthRequired(m)
-            | AppError::ForgeRateLimited(m)
             | AppError::ForgeApi(m) => m,
+            AppError::ForgeRateLimited { message, .. } => message,
             AppError::NoRepo => "no repository is open",
             AppError::EmptyMessage => "commit message is empty",
             AppError::NothingToCommit => "nothing to commit (index matches HEAD)",
+        }
+    }
+
+    /// P113a: build a rate-limit error from a human message + the provider's
+    /// advertised wait. One constructor so every provider's `rest.rs` states the
+    /// hint once, in both the prose and the machine-readable field.
+    pub fn forge_rate_limited(message: impl Into<String>, retry_after_secs: Option<u32>) -> Self {
+        AppError::ForgeRateLimited {
+            message: message.into(),
+            retry_after_secs,
+        }
+    }
+
+    /// The advertised wait in seconds, when this is a rate limit that carried a
+    /// usable hint. `None` for every other variant.
+    pub fn retry_after_secs(&self) -> Option<u32> {
+        match self {
+            AppError::ForgeRateLimited {
+                retry_after_secs, ..
+            } => *retry_after_secs,
+            _ => None,
         }
     }
 }
@@ -205,9 +241,16 @@ impl serde::Serialize for AppError {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("AppError", 2)?;
+        // P113a: `retryAfterSecs` rides along ONLY when a hint exists, so the
+        // wire shape of every other error (and of a hintless rate limit) is
+        // byte-identical to the pre-P113a one.
+        let retry = self.retry_after_secs();
+        let mut s = serializer.serialize_struct("AppError", if retry.is_some() { 3 } else { 2 })?;
         s.serialize_field("kind", self.kind())?;
         s.serialize_field("message", self.message())?;
+        if let Some(secs) = retry {
+            s.serialize_field("retryAfterSecs", &secs)?;
+        }
         s.end()
     }
 }

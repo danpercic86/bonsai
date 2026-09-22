@@ -161,12 +161,18 @@ fn header<'a>(resp: &'a HttpResponse, name: &str) -> Option<&'a str> {
 }
 
 /// A 429 rate-limit error, carrying the `Retry-After` hint when present.
+///
+/// P113a: the hint is emitted TWICE — as prose for the user and as
+/// `retry_after_secs` for a caller that has to back off. The prose still echoes
+/// the raw header (an HTTP-date form stays readable) while the field is `None`
+/// unless the value parsed as delta-seconds.
 fn rate_limited_error(resp: &HttpResponse) -> AppError {
     match header(resp, "retry-after") {
-        Some(retry) => AppError::ForgeRateLimited(format!(
-            "Azure DevOps API rate limit exceeded (retry after {retry}s)"
-        )),
-        None => AppError::ForgeRateLimited("Azure DevOps API rate limit exceeded".to_string()),
+        Some(retry) => AppError::forge_rate_limited(
+            format!("Azure DevOps API rate limit exceeded (retry after {retry}s)"),
+            crate::ratelimit::parse_retry_after_secs(retry),
+        ),
+        None => AppError::forge_rate_limited("Azure DevOps API rate limit exceeded", None),
     }
 }
 
@@ -437,12 +443,19 @@ mod tests {
         ));
         let err = map_status(&resp(429, vec![("Retry-After", "90")])).unwrap();
         match err {
-            AppError::ForgeRateLimited(m) => assert!(m.contains("90")),
+            // P113a: the hint is in the prose AND in the structural field.
+            AppError::ForgeRateLimited {
+                message,
+                retry_after_secs,
+            } => {
+                assert!(message.contains("90"), "message: {message}");
+                assert_eq!(retry_after_secs, Some(90));
+            }
             other => panic!("expected ForgeRateLimited, got {other:?}"),
         }
         assert!(matches!(
             map_status(&resp(429, vec![])),
-            Some(AppError::ForgeRateLimited(_))
+            Some(AppError::ForgeRateLimited { .. })
         ));
         assert!(matches!(
             map_status(&resp(404, vec![])),

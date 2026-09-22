@@ -261,7 +261,7 @@ fn combined_status_maps_pipeline_vocabulary() {
 }
 
 #[test]
-fn commit_statuses_batch_omits_not_found_and_propagates_fatal() {
+fn commit_statuses_batch_omits_not_found_and_reports_a_cut_short_batch() {
     let ok = r#"[ { "name": "ci", "status": "success" } ]"#;
     // aa11 resolves; bb22 404s (omitted).
     let p = provider(
@@ -270,16 +270,24 @@ fn commit_statuses_batch_omits_not_found_and_propagates_fatal() {
     );
     let shas = vec!["aa11".to_string(), "bb22".to_string()];
     let out = p.commit_statuses(&shas).unwrap();
-    assert_eq!(out.len(), 1);
-    assert_eq!(out[0].sha, "aa11");
+    assert_eq!(out.statuses.len(), 1);
+    assert_eq!(out.statuses[0].sha, "aa11");
+    assert!(out.stopped_by.is_none());
 
-    // A 401 on a sha ⇒ AuthFailed fails the whole batch.
+    // P113a: a 401 on the SECOND sha cuts the batch short but KEEPS aa11 — the
+    // first call's result was already paid for. The error rides in `stopped_by`.
     let p_fatal = provider(
         Some("bad"),
         vec![("aa11/statuses", 200, ok), ("bb22/statuses", 401, "{}")],
     );
-    let err = p_fatal.commit_statuses(&shas).unwrap_err();
-    assert!(matches!(err, AppError::AuthFailed(_)), "got {err:?}");
+    let cut = p_fatal.commit_statuses(&shas).unwrap();
+    assert_eq!(cut.statuses.len(), 1, "aa11 survives the 401 on bb22");
+    assert_eq!(cut.statuses[0].sha, "aa11");
+    assert!(
+        matches!(cut.stopped_by, Some(AppError::AuthFailed(_))),
+        "got {:?}",
+        cut.stopped_by
+    );
 }
 
 #[test]

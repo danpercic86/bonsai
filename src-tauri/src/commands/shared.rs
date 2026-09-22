@@ -24,14 +24,15 @@ pub(crate) use bonsai_core::git::activity::{GitActivityCategory, GitActivityReco
 // re-exported (mirrors the `compose_apply` / `ai_operation` convention below —
 // avoids an unused-import warning under -D warnings); the still-nested DTOs
 // (`PrSummary`/`PrState`/`PrStateFilter`/`CommentKind`/`StatusContext`/
-// `CheckRollup`) travel inside these and are never named here. `CommitStatus`
-// is named directly by P63's `forge_commit_statuses`.
+// `CheckRollup`) travel inside these and are never named here. Since P113a the
+// command layer names only `CommitStatusBatch` (P63's `forge_commit_statuses`
+// returns the batch; the individual `CommitStatus` travels inside it).
 pub(crate) use bonsai_core::git::ai_branch_name::{self, BranchNameProposal, BranchNameSource};
 pub(crate) use bonsai_core::git::ai_changelog::{self, AiChangelog, ChangelogRange};
 pub(crate) use bonsai_core::git::ai_commit::{self, CommitMessageProposal};
 pub(crate) use bonsai_core::git::ai_compose::{self, ComposeProposal};
 pub(crate) use bonsai_forge::{
-    AccountSource, CommitStatus, CreatePrInput, ForgeAccount, ForgeKind, ForgeRepoContext,
+    AccountSource, CommitStatusBatch, CreatePrInput, ForgeAccount, ForgeKind, ForgeRepoContext,
     ForgeViewer, MergePrInput, PrDetail, PrListQuery, PrPage, ReviewComment,
 };
 // P54b apply side. Only the names referenced by the command layer are re-exported

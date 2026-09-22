@@ -153,12 +153,15 @@ fn is_rate_limited(resp: &HttpResponse) -> bool {
     header(resp, "ratelimit-remaining").map(|v| v.trim() == "0") == Some(true)
 }
 
+/// P113a: the reset epoch also becomes a machine-readable `retry_after_secs`
+/// (seconds from now); a window that already elapsed advertises no wait.
 fn rate_limited_error(resp: &HttpResponse) -> AppError {
     match header(resp, "ratelimit-reset") {
-        Some(reset) => AppError::ForgeRateLimited(format!(
-            "GitLab API rate limit exceeded (resets at epoch {reset})"
-        )),
-        None => AppError::ForgeRateLimited("GitLab API rate limit exceeded".to_string()),
+        Some(reset) => AppError::forge_rate_limited(
+            format!("GitLab API rate limit exceeded (resets at epoch {reset})"),
+            crate::ratelimit::secs_until_epoch(reset),
+        ),
+        None => AppError::forge_rate_limited("GitLab API rate limit exceeded", None),
     }
 }
 
@@ -385,12 +388,21 @@ mod tests {
         ))
         .unwrap();
         match err {
-            AppError::ForgeRateLimited(m) => assert!(m.contains("1700000000")),
+            // P113a: a reset epoch long in the PAST advertises no usable wait,
+            // so the structural hint stays `None` while the prose keeps the raw
+            // epoch (the caller applies its own default backoff).
+            AppError::ForgeRateLimited {
+                message,
+                retry_after_secs,
+            } => {
+                assert!(message.contains("1700000000"), "message: {message}");
+                assert_eq!(retry_after_secs, None);
+            }
             other => panic!("expected ForgeRateLimited, got {other:?}"),
         }
         assert!(matches!(
             map_status(&resp(429, vec![])),
-            Some(AppError::ForgeRateLimited(_))
+            Some(AppError::ForgeRateLimited { .. })
         ));
         assert!(matches!(
             map_status(&resp(404, vec![])),

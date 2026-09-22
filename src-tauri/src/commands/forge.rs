@@ -378,18 +378,25 @@ pub(crate) async fn forge_pr_file_diff_inner(
     .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
-/// Batch commit/CI statuses (P63): one [`CommitStatus`] per requested sha, in
-/// the SAME order (nothing skipped). Runs the whole batch of combined-status
-/// lookups inside ONE `spawn_blocking`, mirroring `verify_commits`. Errors:
-/// `noRepo` | `forgeUnsupported` | `noRemote` | `forgeApi` | `forgeRateLimited`
-/// | `authFailed` | `networkError` | `git`.
+/// Batch commit/CI statuses (P63): a `CommitStatus` for each requested sha
+/// that resolved, keyed by `sha` (unordered — a 404'd sha is omitted). Runs the
+/// whole batch of combined-status lookups inside ONE `spawn_blocking`,
+/// mirroring `verify_commits`.
+///
+/// P113a: returns a [`CommitStatusBatch`], so a rate limit / auth / network
+/// failure PART-WAY through no longer discards the statuses already fetched —
+/// they come back with `stoppedBy` set to the error that ended the batch (and
+/// `retryAfterSecs` on it when the provider advertised a wait). Only a failure
+/// with NOTHING resolved rejects. Errors: `noRepo` | `forgeUnsupported` |
+/// `noRemote` | `forgeApi` | `forgeRateLimited` | `authFailed` |
+/// `networkError` | `git`.
 #[tauri::command]
 pub async fn forge_commit_statuses(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     repo_id: String,
     shas: Vec<String>,
-) -> Result<Vec<CommitStatus>, AppError> {
+) -> Result<CommitStatusBatch, AppError> {
     let file = settings::settings_file(&app)?;
     forge_commit_statuses_inner(state.inner(), &file, &repo_id, shas).await
 }
@@ -400,7 +407,7 @@ pub(crate) async fn forge_commit_statuses_inner(
     settings_file: &std::path::Path,
     repo_id: &str,
     shas: Vec<String>,
-) -> Result<Vec<CommitStatus>, AppError> {
+) -> Result<CommitStatusBatch, AppError> {
     let workdir = repo_path(state, repo_id)?;
     let file = settings_file.to_path_buf();
     tauri::async_runtime::spawn_blocking(move || {

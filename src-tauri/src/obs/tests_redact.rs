@@ -234,6 +234,54 @@ fn sensitive_keys_lose_their_value_whatever_its_shape() {
     assert_eq!(v["list"][1], json!("fine"));
 }
 
+/// P113c — a shape map holds TYPE NAMES, never values, so value-redacting it
+/// protects nothing and destroys the field that matters most when a forge auth
+/// failure is being debugged. Every `forgeRepoContext` result used to log
+/// `"authenticated":"<redacted:token>"` because `is_sensitive_key` matches the
+/// substring "auth".
+#[test]
+fn shape_maps_keep_contentless_type_names_for_sensitive_key_names() {
+    let mut v = json!({
+        "kind": "ipc.result",
+        "cmd": "forgeRepoContext",
+        "resultShape": {
+            "authenticated": "bool",
+            "viewer": "null",
+            "host": "str",
+            "token": "str",
+            "accountSource": "str",
+        },
+        "argsShape": { "authRetries": "num" },
+    });
+    scrub_value(&mut v, None);
+    // The bool/num/null shapes survive — they cannot carry content.
+    assert_eq!(v["resultShape"]["authenticated"], json!("bool"));
+    assert_eq!(v["resultShape"]["viewer"], json!("null"));
+    assert_eq!(v["argsShape"]["authRetries"], json!("num"));
+    // A non-sensitive key is untouched either way.
+    assert_eq!(v["resultShape"]["host"], json!("str"));
+    assert_eq!(v["resultShape"]["accountSource"], json!("str"));
+    // `str` is NOT exempt: a sensitive key whose shape could ever grow a length
+    // or a sample still collapses (fail-safe direction preserved).
+    assert_eq!(v["resultShape"]["token"], json!(REDACTED_TOKEN));
+}
+
+/// The exemption is scoped to the two shape maps and to contentless tokens —
+/// a REAL value that merely spells "bool" outside a shape map is still redacted,
+/// and a shape-named key holding a nested object gets no exemption.
+#[test]
+fn shape_exemption_does_not_leak_outside_shape_maps() {
+    let mut v = json!({
+        "authenticated": "bool",
+        "nested": { "authToken": "bool" },
+        "resultShape": { "authHeader": { "sneaky": "bool" } },
+    });
+    scrub_value(&mut v, None);
+    assert_eq!(v["authenticated"], json!(REDACTED_TOKEN));
+    assert_eq!(v["nested"]["authToken"], json!(REDACTED_TOKEN));
+    assert_eq!(v["resultShape"]["authHeader"], json!(REDACTED_TOKEN));
+}
+
 // ---------------------------------------------------------- cross-side vectors
 
 /// The salt the mock IPC layer reports (`src/ipc/mock/handlers/obs.ts`), so a

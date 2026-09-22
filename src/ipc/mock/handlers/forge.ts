@@ -11,6 +11,9 @@
 //   ?forgeSetTokenFail=rolled-back|kept|rollback-failed → the per-repo Connect
 //                   field's settings write fails; same copy as ?forgeAddFail
 //                   because the backend delegates to the same core.
+//   ?forgeRateLimit=batch|prs|all → P113a: a 429 cuts a commit-status batch
+//                   short (partial + stoppedBy) and/or rejects forgeListPrs;
+//                   drives the per-host back-off. See ./forgeRateLimit.
 // P79: a module-level `accounts` index backs the global Accounts settings
 // section; forgeSetToken*/clear* keep it in sync so both views agree.
 // Spread into mockIpc via forgeHandlers.
@@ -24,6 +27,12 @@ import {
   FORGE_VIEWER,
 } from '../../fixtures/forge';
 import { offGuard } from './forgeOffline';
+import {
+  FORGE_RATE_LIMIT_BATCH,
+  prsRateLimitGuard,
+  rateLimitCutoff,
+  rateLimitError,
+} from './forgeRateLimit';
 import { forgePrDiffHandlers } from './forgePrDiffHandlers';
 import { addAccountRejection } from './forgeAddFailure';
 import type { ForgeAddFailSeam } from './forgeAddFailure';
@@ -41,6 +50,7 @@ import {
 import type {
   AppError,
   CommitStatus,
+  CommitStatusBatch,
   CreatePrInput,
   ForgeAccount,
   ForgeKind,
@@ -134,6 +144,9 @@ export const forgeHandlers = {
     await delay(150);
     requireRepo(repoId);
     offGuard();
+    // P113a: `?forgeRateLimit=prs` — a list call has nothing partial to report,
+    // so it rejects (and the UI's back-off suppresses the next refresh round).
+    prsRateLimitGuard();
     // P79 (§4): under ?forge=expired the first list call rejects authFailed once,
     // driving the PR panel into the reauth flow (invalidate viewer + reconnect).
     if (expiredArmed) {
@@ -357,16 +370,25 @@ export const forgeHandlers = {
     };
   },
 
-  async forgeCommitStatuses(repoId: string, shas: string[]): Promise<CommitStatus[]> {
+  async forgeCommitStatuses(repoId: string, shas: string[]): Promise<CommitStatusBatch> {
     await delay(150);
     requireRepo(repoId);
     offGuard();
     // Best-effort parity with the batch contract (§9): map each sha via
     // commitStatusFor, dropping unknowns (the real backend omits not-found).
     // The frontend keys the result by sha, so order/gaps are harmless.
-    return shas
-      .map((sha) => commitStatusFor(sha))
-      .filter((s): s is CommitStatus => s !== null);
+    const resolve = (list: string[]): CommitStatus[] =>
+      list.map((sha) => commitStatusFor(sha)).filter((s): s is CommitStatus => s !== null);
+    // P113a `?forgeRateLimit=batch`: the 429 lands MID-batch. Everything before
+    // the cutoff still comes back; the error rides in `stoppedBy`. With nothing
+    // resolved there is no partial result, so it rejects — exactly like Rust's
+    // `batch_commit_statuses`.
+    if (FORGE_RATE_LIMIT_BATCH) {
+      const statuses = resolve(shas.slice(0, rateLimitCutoff(shas.length)));
+      if (statuses.length === 0) throw rateLimitError();
+      return { statuses, stoppedBy: rateLimitError() };
+    }
+    return { statuses: resolve(shas), stoppedBy: null };
   },
 
   // P79: global forge account management (repo-independent). Offline, mirrors the

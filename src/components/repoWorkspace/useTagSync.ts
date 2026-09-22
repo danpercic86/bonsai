@@ -8,6 +8,23 @@ import { ipc } from '../../ipc';
 import type { RemoteInfo, TagSyncReport } from '../../ipc';
 import type { TagSyncState } from '../sidebar/TagsSection';
 
+/** P113b — the in-flight duplicate floor.
+ *
+ *  Measured: `listTagSync` ran 138 times in one session, 86 of them superseded,
+ *  with 12 `dup-ipc` anomalies that were PAIRS with an identical argsHash. The
+ *  pairs come from two triggers landing in the same tick (e.g. an auto-fetch
+ *  completing fires both the refresh round's tagSync slice and
+ *  `afterAutoFetch`) — and the ~10 s cache window could not stop them, because
+ *  it lives inside the `!force` branch AND reads React state that has not
+ *  re-rendered yet within a tick.
+ *
+ *  So the floor keys off the synchronous `lastFetch`/`inFlight` refs instead,
+ *  and applies to FORCED calls too. It is deliberately tiny and gated on a
+ *  request still being in flight: a forced check issued after the previous one
+ *  SETTLED always runs, so no freshness is lost — only the redundant twin of a
+ *  request that is already on the wire is dropped. */
+const IN_FLIGHT_FLOOR_MS = 2_000;
+
 export interface UseTagSync {
   report: TagSyncReport | null;
   state: TagSyncState;
@@ -48,6 +65,9 @@ export function useTagSync(repoId: string, remotes: RemoteInfo[]): UseTagSync {
   }, [remotes]);
   const reqId = useRef(0);
   const lastFetch = useRef(0);
+  // P113b: true while a check is on the wire. Synchronous (a ref, not state),
+  // because the duplicate arrives in the SAME tick as the original.
+  const inFlight = useRef(false);
   // Latest-state mirror so the force path can read the current state without
   // widening the callback's deps (would re-create it on every check).
   const stateRef = useRef<TagSyncState>('idle');
@@ -65,6 +85,11 @@ export function useTagSync(repoId: string, remotes: RemoteInfo[]): UseTagSync {
       }
       if (force && stateRef.current === 'idle') return;
       const now = Date.now();
+      // P113b: drop the redundant twin of a check that is ALREADY on the wire —
+      // the identical `listTagSync(repoId, null)` would only supersede it. This
+      // runs before the `!force` cache guard because the duplicates it kills are
+      // mostly forced ones (see IN_FLIGHT_FLOOR_MS).
+      if (inFlight.current && now - lastFetch.current < IN_FLIGHT_FLOOR_MS) return;
       if (!force && stateRef.current === 'ready' && now - lastFetch.current < 10_000) {
         return; // within the cache window — reuse the last verdict
       }
@@ -72,6 +97,7 @@ export function useTagSync(repoId: string, remotes: RemoteInfo[]): UseTagSync {
       // Stamp the cache clock at initiation (the guard above only suppresses when
       // the last attempt reached `ready`, so a failed check never self-suppresses).
       lastFetch.current = now;
+      inFlight.current = true;
       setState('checking');
       try {
         // Pass null → Rust resolves the default remote (origin, else first); the
@@ -86,6 +112,13 @@ export function useTagSync(repoId: string, remotes: RemoteInfo[]): UseTagSync {
         // §2.3: degrade quietly — no error banner, no toast. Keep the last
         // `checkedAt` for the "last checked" tooltip.
         setState('unavailable');
+        // P113b: a FAILED check must never self-suppress, so reset the clock —
+        // the next trigger (retry, manual refresh) goes straight to the remote.
+        lastFetch.current = 0;
+      } finally {
+        // Only the latest request owns the flag; a superseded one must not
+        // unlock a newer check that is still running.
+        if (id === reqId.current) inFlight.current = false;
       }
     },
     [repoId, remoteCount],
@@ -98,6 +131,7 @@ export function useTagSync(repoId: string, remotes: RemoteInfo[]): UseTagSync {
   const clear = useCallback(() => {
     reqId.current += 1;
     lastFetch.current = 0;
+    inFlight.current = false;
     setReport(null);
     setState('idle');
     setCheckedAt(null);

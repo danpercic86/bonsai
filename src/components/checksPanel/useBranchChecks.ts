@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ipc } from '../../ipc';
 import type { CommitStatus, ForgeRepoContext } from '../../ipc';
 import { errorMessage } from '../../utils/errors';
+import { noteForgeRateLimit } from '../repoWorkspace/forgeBackoff';
 import type { ChecksTarget } from './checksTarget';
 
 export type ChecksState =
@@ -63,6 +64,10 @@ export function useBranchChecks(deps: {
   const [connectSeq, setConnectSeq] = useState(0);
 
   const reqRef = useRef(0);
+  // P113a: host of the last resolved context — the key for the shared,
+  // per-account rate-limit back-off (read in the catch, where `context` is out
+  // of scope).
+  const ctxHostRef = useRef<string | null>(null);
   // Last successfully-loaded status, keyed by tip — the source for stale-while-error
   // (read synchronously in the catch, unlike a setState updater's closure).
   const lastGoodRef = useRef<{ tip: string; status: CommitStatus } | null>(null);
@@ -90,6 +95,7 @@ export function useBranchChecks(deps: {
           const context = await ipc.forgeRepoContext(repoId);
           if (id !== reqRef.current) return;
           setCtx(context);
+          ctxHostRef.current = context.host;
           if (context.provider === 'unknown') {
             setState({ kind: 'noForge', target });
             setRefreshing(false);
@@ -100,8 +106,13 @@ export function useBranchChecks(deps: {
             setRefreshing(false);
             return;
           }
-          const statuses = await ipc.forgeCommitStatuses(repoId, [tip]);
+          // P113a: the batch payload. A one-sha batch either resolves or
+          // rejects (there is no partial result to cut short), so `stoppedBy`
+          // is recorded for the shared back-off and the rest reads as before.
+          const batch = await ipc.forgeCommitStatuses(repoId, [tip]);
           if (id !== reqRef.current) return;
+          if (batch.stoppedBy !== null) noteForgeRateLimit(context.host, batch.stoppedBy);
+          const { statuses } = batch;
           const status = statuses.find((s) => s.sha === tip) ?? statuses[0] ?? null;
           if (status === null || status.contexts.length === 0) {
             const reason = !target.hasUpstream
@@ -120,6 +131,10 @@ export function useBranchChecks(deps: {
           setRefreshing(false);
         } catch (e: unknown) {
           if (id !== reqRef.current) return;
+          // P113a: a rate limit here belongs to the whole host budget, so the
+          // background badge refresh backs off too (ctxRef holds the host of
+          // the context this run resolved, if it got that far).
+          if (ctxHostRef.current !== null) noteForgeRateLimit(ctxHostRef.current, e);
           // Stale-while-error (§4.10): if we have last-good rows for this same tip,
           // keep them under the banner instead of blanking the panel.
           const stale =

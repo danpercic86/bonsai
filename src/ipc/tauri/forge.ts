@@ -1,5 +1,5 @@
 import { invoke } from './invoke';
-import type { CommitStatus, CreatePrInput, FileDiff, ForgeAccount, ForgeKind, ForgeRemoveOutcome, ForgeRepoContext, ForgeViewer, MergePrInput, PrDetail, PrDiffStats, PrListQuery, PrPage, ReviewComment } from '../types';
+import type { CommitStatusBatch, CreatePrInput, FileDiff, ForgeAccount, ForgeKind, ForgeRemoveOutcome, ForgeRepoContext, ForgeViewer, MergePrInput, PrDetail, PrDiffStats, PrListQuery, PrPage, ReviewComment } from '../types';
 
 export const forgeCommands = {
 
@@ -67,8 +67,8 @@ export const forgeCommands = {
     return invoke<void>('forge_clear_token', { repoId });
   },
 
-  forgeCommitStatuses(repoId: string, shas: string[]): Promise<CommitStatus[]> {
-    return invoke<CommitStatus[]>('forge_commit_statuses', { repoId, shas });
+  forgeCommitStatuses(repoId: string, shas: string[]): Promise<CommitStatusBatch> {
+    return invoke<CommitStatusBatch>('forge_commit_statuses', { repoId, shas });
   },
 
   // P79: global forge account management (repo-independent). Arg keys match the

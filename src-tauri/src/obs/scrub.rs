@@ -354,6 +354,59 @@ pub fn scrub_salt(line: String, salt_hex: &str) -> String {
     line
 }
 
+/// P113c — the two `ArgShape` maps (`record.rs`: `args_shape` / `result_shape`).
+/// Their values are TYPE NAMES, never values: `"bool"`, `"num"`, `"str"`,
+/// `"arr:8"` (see `objectShape`/`shapeOf` in `src/obs/redact.ts`).
+fn is_shape_map_key(key: &str) -> bool {
+    key == "resultShape" || key == "argsShape"
+}
+
+/// A shape token that CANNOT carry content: the field's JSON type, nothing
+/// else. Deliberately a closed list, and deliberately WITHOUT `str`/`arr:N`/
+/// `obj:N`/`fn` — if the shape vocabulary ever grows a length or a sample for
+/// those, the key rule must still catch them. An unrecognised token falls
+/// through to the normal (redacting) path, so the fail-safe direction is
+/// preserved for anything this list does not name.
+fn is_contentless_shape(shape: &str) -> bool {
+    matches!(shape, "bool" | "num" | "null" | "undef")
+}
+
+/// Scrub one `resultShape`/`argsShape` object.
+///
+/// The bug this fixes: [`is_sensitive_key`] matched the FIELD NAME
+/// `authenticated` (it contains "auth") and collapsed its shape to
+/// `<redacted:token>`. A shape map holds no values, so that protected nothing
+/// while destroying the single most useful field when debugging a forge auth
+/// failure — every `forgeRepoContext` result logged
+/// `"authenticated":"<redacted:token>"` instead of `"bool"`.
+///
+/// The exemption is kept as narrow as it can be: only inside these two maps,
+/// only for a value that is a plain string, and only when that string is a
+/// shape token that cannot contain content. Everything else — a nested object,
+/// a non-string value, an unknown token, a `str` shape — takes the unchanged
+/// [`scrub_value`] path, so a map that is NOT really a shape map cannot use
+/// this as a way out.
+fn scrub_shape_map(v: &mut Value, home: Option<&str>) {
+    let Value::Object(map) = v else {
+        // Not the expected shape-map object ⇒ no exemption at all.
+        scrub_value(v, home);
+        return;
+    };
+    for (k, val) in map.iter_mut() {
+        let exempt = val.as_str().is_some_and(is_contentless_shape);
+        if exempt {
+            continue;
+        }
+        if is_sensitive_key(k) {
+            if !val.is_null() {
+                *val = Value::String(REDACTED_TOKEN.to_string());
+            }
+            continue;
+        }
+        scrub_value(val, home);
+    }
+}
+
 /// Walks a serialized record and scrubs it IN PLACE (§7.2 "runs last, on every
 /// string field, in both modes").
 ///
@@ -375,6 +428,10 @@ pub fn scrub_value(v: &mut Value, home: Option<&str>) {
         }
         Value::Object(map) => {
             for (k, val) in map.iter_mut() {
+                if is_shape_map_key(k) {
+                    scrub_shape_map(val, home);
+                    continue;
+                }
                 if is_sensitive_key(k) {
                     if !val.is_null() {
                         *val = Value::String(REDACTED_TOKEN.to_string());

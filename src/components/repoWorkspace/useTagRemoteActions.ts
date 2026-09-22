@@ -26,7 +26,15 @@ export function useTagRemoteActions(
   /** P77 §5 / P88a row 1: refetch the surfaces a tag resolve touches — the ref set
    *  (graph + branch/tag list + compare, via `refsOnly`) and the FORCED sync verdict
    *  (no scope forces an ls-remote, so keep the explicit forced tagSync). Armed
-   *  refresh drops the tag write's own watcher echo → one round. */
+   *  refresh drops the tag write's own watcher echo → one round.
+   *
+   *  P113b re-checked this pair against the `listTagSync` double-fire: the
+   *  explicit `refetchTagSync` here is NOT redundant. `refsOnly`'s slice matrix
+   *  (`refreshScope.ts` — `{ graph, branches, compare }`) carries no `tagSync`
+   *  at all, so `refreshAll('refsOnly')` never pushes a tag-sync task and
+   *  dropping this call would leave a tag write with no drift re-check. The
+   *  duplicate pairs came from elsewhere (two triggers in one tick) and are
+   *  handled by `useTagSync`'s in-flight floor. */
   async function refreshAfterTagOp(trace?: TraceId) {
     await Promise.all([refreshAll('refsOnly', trace), refetchTagSync({ force: true })]);
   }

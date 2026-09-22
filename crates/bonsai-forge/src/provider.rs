@@ -13,8 +13,8 @@ use bonsai_core::error::AppError;
 // `provider::ForgeKind` alongside the trait, per contract §2a.
 pub use crate::types::ForgeKind;
 use crate::types::{
-    CommitStatus, CreatePrInput, ForgeRepoContext, ForgeViewer, MergePrInput, PrDetail,
-    PrListQuery, PrPage, PrRefs, ReviewComment,
+    CommitStatus, CommitStatusBatch, CreatePrInput, ForgeRepoContext, ForgeViewer, MergePrInput,
+    PrDetail, PrListQuery, PrPage, PrRefs, ReviewComment,
 };
 
 pub trait ForgeProvider: Send + Sync {
@@ -55,9 +55,16 @@ pub trait ForgeProvider: Send + Sync {
     /// Defined + implemented in P62; exposed as an IPC command in P63.
     fn combined_status(&self, sha: &str) -> Result<CommitStatus, AppError>;
 
-    /// Batch form of [`combined_status`](Self::combined_status): one
-    /// [`CommitStatus`] per input sha, in the SAME order (nothing skipped).
-    /// P63 wires this to the `forge_commit_statuses` IPC command, which runs
-    /// the whole batch inside a single `spawn_blocking`.
-    fn commit_statuses(&self, shas: &[String]) -> Result<Vec<CommitStatus>, AppError>;
+    /// Batch form of [`combined_status`](Self::combined_status): a
+    /// [`CommitStatus`] for each input sha that resolved, keyed by
+    /// `status.sha` (a 404'd sha is OMITTED, and P113a a sha after an early
+    /// stop is absent — neither is ordered, so callers must not index by
+    /// position). P63 wires this to the `forge_commit_statuses` IPC command,
+    /// which runs the whole batch inside a single `spawn_blocking`.
+    ///
+    /// P113a: a rate limit / auth / network failure mid-batch returns
+    /// `Ok(batch)` with `stopped_by = Some(err)` and everything resolved so
+    /// far; it is an `Err` only when nothing resolved. See
+    /// [`CommitStatusBatch`].
+    fn commit_statuses(&self, shas: &[String]) -> Result<CommitStatusBatch, AppError>;
 }

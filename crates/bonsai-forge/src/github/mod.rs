@@ -16,8 +16,8 @@ use crate::detect::ForgeTarget;
 use crate::http::HttpTransport;
 use crate::provider::ForgeProvider;
 use crate::types::{
-    CommitStatus, CreatePrInput, ForgeKind, ForgeRepoContext, ForgeViewer, MergePrInput, PrDetail,
-    PrListQuery, PrPage, PrRefs, ReviewComment,
+    CommitStatus, CommitStatusBatch, CreatePrInput, ForgeKind, ForgeRepoContext, ForgeViewer,
+    MergePrInput, PrDetail, PrListQuery, PrPage, PrRefs, ReviewComment,
 };
 
 /// `origin` always resolves to a single remote; the provider reports it.
@@ -193,7 +193,7 @@ impl ForgeProvider for GitHubProvider {
         dto::build_combined_status(sha, &combined.body, &checks.body)
     }
 
-    fn commit_statuses(&self, shas: &[String]) -> Result<Vec<CommitStatus>, AppError> {
+    fn commit_statuses(&self, shas: &[String]) -> Result<CommitStatusBatch, AppError> {
         // Dedup + cap + per-sha error classification (omit not-found, propagate
         // fatal) is provider-neutral ⇒ shared in `crate::rollup`.
         crate::rollup::batch_commit_statuses(shas, |sha| self.combined_status(sha))

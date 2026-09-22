@@ -111,10 +111,11 @@ fn header<'a>(resp: &'a HttpResponse, name: &str) -> Option<&'a str> {
 /// A 429 rate-limit error, carrying the `Retry-After` hint when present.
 fn rate_limited_error(resp: &HttpResponse) -> AppError {
     match header(resp, "retry-after") {
-        Some(retry) => AppError::ForgeRateLimited(format!(
-            "Bitbucket API rate limit exceeded (retry after {retry}s)"
-        )),
-        None => AppError::ForgeRateLimited("Bitbucket API rate limit exceeded".to_string()),
+        Some(retry) => AppError::forge_rate_limited(
+            format!("Bitbucket API rate limit exceeded (retry after {retry}s)"),
+            crate::ratelimit::parse_retry_after_secs(retry),
+        ),
+        None => AppError::forge_rate_limited("Bitbucket API rate limit exceeded", None),
     }
 }
 
@@ -332,12 +333,19 @@ mod tests {
         // 429 ⇒ rate limited, carrying the Retry-After hint when present.
         let err = map_status(&resp(429, vec![("Retry-After", "120")])).unwrap();
         match err {
-            AppError::ForgeRateLimited(m) => assert!(m.contains("120")),
+            // P113a: the hint is in the prose AND in the structural field.
+            AppError::ForgeRateLimited {
+                message,
+                retry_after_secs,
+            } => {
+                assert!(message.contains("120"), "message: {message}");
+                assert_eq!(retry_after_secs, Some(120));
+            }
             other => panic!("expected ForgeRateLimited, got {other:?}"),
         }
         assert!(matches!(
             map_status(&resp(429, vec![])),
-            Some(AppError::ForgeRateLimited(_))
+            Some(AppError::ForgeRateLimited { .. })
         ));
         assert!(matches!(
             map_status(&resp(404, vec![])),

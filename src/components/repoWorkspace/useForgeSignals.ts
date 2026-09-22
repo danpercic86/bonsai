@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ipc } from '../../ipc';
+import { isForgeSuppressed, noteForgeRateLimit } from './forgeBackoff';
 import type { CommitStatus, GraphLayout } from '../../ipc';
 import type { CiBadge, PrBadge } from '../../graph/forgeBadges';
 
@@ -83,7 +84,12 @@ export function collectCiShas(
  *   - the statuses `fetched` this cycle (fresh values).
  *  A sha that left `currentSet` (branch deleted / PR closed) is dropped, and a
  *  sha we `requested` but the batch OMITTED (404 — force-pushed/gone tip) is
- *  dropped too (showing its stale CI would be wrong). */
+ *  dropped too (showing its stale CI would be wrong).
+ *
+ *  P113a: `requested` therefore means "asked for AND actually attempted". When a
+ *  batch comes back CUT SHORT, the caller passes only the resolved shas — the
+ *  ones after the stop were never attempted, and dropping them here would blank
+ *  perfectly good badges on a rate limit. */
 export function rebuildCiCache(
   prev: ReadonlyMap<string, CiEntry>,
   currentSet: ReadonlySet<string>,
@@ -150,6 +156,10 @@ export function useForgeSignals(deps: {
   repoIdRef.current = repoId;
 
   const reqIdRef = useRef(0);
+  // P113a: the host of the last resolved repo context — the key the rate-limit
+  // back-off window is stored under (an ACCOUNT-level budget, shared by every
+  // repo on that host), read in the catch where `ctx` is out of scope.
+  const hostRef = useRef<string | null>(null);
   const debounceRef = useRef<number | null>(null);
   // P63: force is STICKY across a debounce window — if any coalesced call in the
   // window forced (fetch/pull/manual), the resulting fetch bypasses the TTL even
@@ -185,8 +195,20 @@ export function useForgeSignals(deps: {
         // KNOWN provider (gitHub | gitLab | …) proceeds to fetch PR + CI signals.
         const ctx = await ipc.forgeRepoContext(repo);
         if (reqIdRef.current !== reqId) return;
+        hostRef.current = ctx.host;
         if (ctx.provider === 'unknown') {
           clearAll();
+          return;
+        }
+        // P113a: the host told us to back off — keep the current badges and make
+        // NO further forge call until the advertised wait elapses. Checked after
+        // `forgeRepoContext` (local, no network) because that is where the host
+        // comes from, and before the PR list, which is what most often trips the
+        // limit. `force` does not bypass it: the budget belongs to the server.
+        if (isForgeSuppressed(ctx.host)) {
+          if (import.meta.env.DEV) {
+            console.warn('[bonsai] forge signals suppressed — rate limited', ctx.host);
+          }
           return;
         }
 
@@ -225,14 +247,29 @@ export function useForgeSignals(deps: {
           const shas = collectCiShas(tips, prHeadShas, ciCacheRef.current, now, TTL_MS, force, MAX);
           if (shas.length > 0) {
             const collected: CommitStatus[] = [];
+            // P113a: a batch can come back CUT SHORT (rate limit / auth /
+            // network part-way through). What it did resolve is kept; the shas
+            // after the stop were never attempted, so we stop chunking and —
+            // crucially — treat only the RESOLVED shas as "requested" below, so
+            // the un-attempted ones keep their previous badge instead of being
+            // dropped as phantom 404s.
+            let cutShort = false;
             for (let i = 0; i < shas.length; i += MAX) {
               const chunk = shas.slice(i, i + MAX);
               const res = await ipc.forgeCommitStatuses(repo, chunk);
               if (reqIdRef.current !== reqId) return;
-              collected.push(...res);
+              collected.push(...res.statuses);
+              if (res.stoppedBy !== null) {
+                cutShort = true;
+                noteForgeRateLimit(ctx.host, res.stoppedBy);
+                if (import.meta.env.DEV) {
+                  console.warn('[bonsai] forge CI batch cut short', res.stoppedBy);
+                }
+                break;
+              }
             }
             const currentSet = new Set<string>([...tips, ...prHeadShas]);
-            const requested = new Set(shas);
+            const requested = cutShort ? new Set(collected.map((s) => s.sha)) : new Set(shas);
             const rebuilt = rebuildCiCache(
               ciCacheRef.current,
               currentSet,
@@ -248,6 +285,11 @@ export function useForgeSignals(deps: {
         }
       } catch (e) {
         // SILENT (decoration, not a user action): keep stale maps, no toast.
+        // P113a: a rate limit is still recorded, so the NEXT round is suppressed
+        // instead of re-requesting the same set. `hostRef` is whatever the
+        // context resolved to before the failure (null if that call itself
+        // failed — nothing to key a window on then).
+        if (hostRef.current !== null) noteForgeRateLimit(hostRef.current, e);
         if (import.meta.env.DEV) console.warn('[bonsai] forge signals refresh failed', e);
       }
     },

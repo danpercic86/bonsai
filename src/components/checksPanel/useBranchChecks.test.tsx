@@ -4,11 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { mockIpc } from '../../ipc/mock';
 import { FORGE_REPO_CONTEXT } from '../../ipc/fixtures/forge';
-import type { CommitStatus, ForgeRepoContext, StatusContext } from '../../ipc';
+import type { AppError, CommitStatus, CommitStatusBatch, ForgeRepoContext, StatusContext } from '../../ipc';
+import { forgeBackoffUntil, resetForgeBackoff } from '../repoWorkspace/forgeBackoff';
 import { useBranchChecks } from './useBranchChecks';
 import type { ChecksTarget } from './checksTarget';
 
-beforeEach(() => vi.useFakeTimers());
+beforeEach(() => {
+  vi.useFakeTimers();
+  resetForgeBackoff();
+});
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -23,6 +27,10 @@ function stat(contexts: StatusContext[]): CommitStatus {
   return { sha: TARGET.tip, state: 'success', total: contexts.length, passed: 0, failed: 0, pending: 0, contexts };
 }
 const one: StatusContext = { name: 'build', state: 'success', description: null, targetUrl: null };
+/** P113a: the hook consumes a CommitStatusBatch, not a bare array. */
+function batch(statuses: CommitStatus[], stoppedBy: AppError | null = null): CommitStatusBatch {
+  return { statuses, stoppedBy };
+}
 
 type Deps = Parameters<typeof useBranchChecks>[0];
 function mount(over: Partial<Deps> = {}) {
@@ -44,7 +52,7 @@ describe('useBranchChecks', () => {
 
   it('loads contexts into the loaded state', async () => {
     vi.spyOn(mockIpc, 'forgeRepoContext').mockResolvedValue(ctx());
-    vi.spyOn(mockIpc, 'forgeCommitStatuses').mockResolvedValue([stat([one])]);
+    vi.spyOn(mockIpc, 'forgeCommitStatuses').mockResolvedValue(batch([stat([one])]));
     const { result } = mount();
     await settle();
     expect(result.current.state.kind).toBe('loaded');
@@ -53,7 +61,7 @@ describe('useBranchChecks', () => {
 
   it('reports noChecks when the fetched status has no contexts', async () => {
     vi.spyOn(mockIpc, 'forgeRepoContext').mockResolvedValue(ctx());
-    vi.spyOn(mockIpc, 'forgeCommitStatuses').mockResolvedValue([stat([])]);
+    vi.spyOn(mockIpc, 'forgeCommitStatuses').mockResolvedValue(batch([stat([])]));
     const { result } = mount();
     await settle();
     expect(result.current.state.kind).toBe('noChecks');
@@ -84,7 +92,7 @@ describe('useBranchChecks', () => {
 
   it('refresh() forces a refetch', async () => {
     vi.spyOn(mockIpc, 'forgeRepoContext').mockResolvedValue(ctx());
-    const spy = vi.spyOn(mockIpc, 'forgeCommitStatuses').mockResolvedValue([stat([one])]);
+    const spy = vi.spyOn(mockIpc, 'forgeCommitStatuses').mockResolvedValue(batch([stat([one])]));
     const { result } = mount();
     await settle();
     expect(spy).toHaveBeenCalledTimes(1);
@@ -95,7 +103,7 @@ describe('useBranchChecks', () => {
 
   it('reports noChecks with reason no-upstream for an unpushed branch', async () => {
     vi.spyOn(mockIpc, 'forgeRepoContext').mockResolvedValue(ctx());
-    vi.spyOn(mockIpc, 'forgeCommitStatuses').mockResolvedValue([stat([])]);
+    vi.spyOn(mockIpc, 'forgeCommitStatuses').mockResolvedValue(batch([stat([])]));
     const local: ChecksTarget = { ...TARGET, hasUpstream: false };
     const { result } = mount({ target: local });
     await settle();
@@ -108,7 +116,7 @@ describe('useBranchChecks', () => {
     vi.spyOn(mockIpc, 'forgeRepoContext').mockResolvedValue(ctx());
     const spy = vi
       .spyOn(mockIpc, 'forgeCommitStatuses')
-      .mockResolvedValue([stat([one])]);
+      .mockResolvedValue(batch([stat([one])]));
     const { result } = mount();
     await settle();
     expect(result.current.state.kind).toBe('loaded');
@@ -122,6 +130,25 @@ describe('useBranchChecks', () => {
       expect(result.current.state.message).toContain('offline');
     }
     expect(result.current.failedRefreshAt).not.toBeNull();
+  });
+
+  // P113a: a 429 on this user-facing panel still feeds the SHARED per-host
+  // back-off, so the background badge refresh stops re-requesting too.
+  it('records a rate-limit rejection in the per-host back-off', async () => {
+    const context = ctx();
+    vi.spyOn(mockIpc, 'forgeRepoContext').mockResolvedValue(context);
+    const err: AppError = {
+      kind: 'forgeRateLimited',
+      message: 'GitHub API rate limit exceeded (resets at epoch 1700000000)',
+      retryAfterSecs: 30,
+    };
+    vi.spyOn(mockIpc, 'forgeCommitStatuses').mockRejectedValue(err);
+    const { result } = mount();
+    await settle();
+    expect(result.current.state.kind).toBe('error');
+    const until = forgeBackoffUntil(context.host);
+    expect(until).not.toBeNull();
+    expect((until ?? 0) - Date.now()).toBeGreaterThan(25_000);
   });
 
   it('does not fetch while inactive', async () => {

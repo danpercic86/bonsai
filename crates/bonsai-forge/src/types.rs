@@ -301,5 +301,45 @@ pub struct CommitStatus {
     pub contexts: Vec<StatusContext>,
 }
 
+/// P113a — the outcome of a BATCHED commit-status lookup.
+///
+/// The batch is N serial HTTP calls; before P113a a rate limit on call #90 threw
+/// away the 89 statuses already paid for (`return Err(e)`), and the UI — having
+/// received nothing — re-requested the identical set on its next refresh, which
+/// re-triggered the limit. So a cut-short batch now REPORTS what it resolved:
+///
+///   * `statuses` — every sha resolved before the batch stopped (plus every sha
+///     resolved when it did not stop). Callers key by `status.sha`; a sha that
+///     404'd is omitted exactly as before.
+///   * `stopped_by` — `Some(err)` iff an account/transport-level error
+///     (rate limit / auth / network) ended the batch early. The remaining shas
+///     were NEVER ATTEMPTED, so a caller must keep their previous values rather
+///     than treat them as "no CI".
+///
+/// A failure with NOTHING resolved stays an `Err` from
+/// `commit_statuses` — there is no partial success to report, and callers that
+/// show one sha's checks keep their existing error path.
+// NOT `Clone`/`Deserialize`: `AppError` is neither (it wraps non-clonable
+// sources and has a hand-written `Serialize`). Nothing needs to copy or parse a
+// batch — it is produced once and serialized straight over IPC.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitStatusBatch {
+    pub statuses: Vec<CommitStatus>,
+    /// Serializes as the usual `{kind, message, retryAfterSecs?}` error object,
+    /// or `null` when the batch ran to completion.
+    pub stopped_by: Option<bonsai_core::error::AppError>,
+}
+
+impl CommitStatusBatch {
+    /// A batch that ran to completion.
+    pub fn complete(statuses: Vec<CommitStatus>) -> Self {
+        Self {
+            statuses,
+            stopped_by: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;

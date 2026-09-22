@@ -1,3 +1,4 @@
+import type { AppError } from './common';
 import type { FileDiffHeader } from './diff';
 
 // --- P62 forge / PR integration (mirrors crates/bonsai-forge/src/types.rs) ---
@@ -185,6 +186,28 @@ export interface CommitStatus {
   failed: number;
   pending: number;
   contexts: StatusContext[];
+}
+
+/** P113a: the outcome of a BATCHED commit-status lookup (mirrors the Rust
+ *  `CommitStatusBatch`).
+ *
+ *  The backend resolves the batch with one serial HTTP call per sha. When an
+ *  account-level failure (rate limit / auth / network) ends it early, the
+ *  statuses already fetched are STILL returned — discarding them is what made
+ *  the UI re-request the identical set and re-trigger the limit.
+ *
+ *  - `statuses` — every sha that resolved, keyed by `sha` (UNORDERED, and a sha
+ *    the forge 404s is simply absent).
+ *  - `stoppedBy` — non-null iff the batch stopped early. The shas after the stop
+ *    were NEVER ATTEMPTED, so treat them as unknown (keep their previous badge),
+ *    never as "no CI". On a `forgeRateLimited` stop, `retryAfterSecs` carries the
+ *    advertised wait.
+ *
+ *  A failure with NOTHING resolved still REJECTS — there is no partial result to
+ *  report. */
+export interface CommitStatusBatch {
+  statuses: CommitStatus[];
+  stoppedBy: AppError | null;
 }
 
 /** P63: external "open PR N" request threaded from a graph PR-badge click into

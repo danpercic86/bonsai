@@ -20,6 +20,19 @@ function report(remote = 'origin'): TagSyncReport {
   };
 }
 
+/** P113b: a controllable `Date.now` — the in-flight duplicate floor is a
+ *  wall-clock window, so tests that need two SEPARATE checks while one is in
+ *  flight move the clock past it instead of waiting 2 real seconds. */
+function fakeClock(start = 1_700_000_000_000) {
+  let now = start;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  return {
+    advance(ms: number) {
+      now += ms;
+    },
+  };
+}
+
 /** A promise whose resolution/rejection the test drives by hand. */
 function deferred<T>() {
   let resolve!: (v: T) => void;
@@ -63,6 +76,7 @@ describe('useTagSync lifecycle', () => {
   });
 
   it('last-wins: a stale in-flight result never overwrites the newest', async () => {
+    const clock = fakeClock();
     const d1 = deferred<TagSyncReport>();
     const d2 = deferred<TagSyncReport>();
     const spy = vi
@@ -76,6 +90,9 @@ describe('useTagSync lifecycle', () => {
     act(() => {
       p1 = result.current.refetch(); // request #1
     });
+    // P113b: past the in-flight duplicate floor, so this is a genuinely NEW
+    // check rather than the same-tick twin the floor now drops.
+    clock.advance(3_000);
     act(() => {
       p2 = result.current.refetch(); // request #2 (while #1 in flight)
     });
@@ -209,5 +226,87 @@ describe('useTagSync afterAutoFetch', () => {
     });
     expect(spy).not.toHaveBeenCalled();
     expect(result.current.state).toBe('idle');
+  });
+});
+
+/** P113b — the in-flight duplicate floor. A measured session logged 12 `dup-ipc`
+ *  anomalies for `listTagSync`, each a PAIR with an identical argsHash: two
+ *  triggers (a refresh round's tagSync slice and `afterAutoFetch`) landing in
+ *  the same tick. The floor drops the twin without costing any freshness. */
+describe('useTagSync in-flight duplicate floor', () => {
+  it('drops the same-tick twin of an in-flight forced check', async () => {
+    fakeClock();
+    const d = deferred<TagSyncReport>();
+    const spy = vi.spyOn(mockIpc, 'listTagSync').mockReturnValue(d.promise);
+    const { result } = renderHook(() => useTagSync(REPO, ORIGIN));
+
+    // Open the section once so `force` is no longer a no-op.
+    let first!: Promise<void>;
+    act(() => {
+      first = result.current.refetch();
+    });
+    await act(async () => {
+      d.resolve(report());
+      await first;
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // The double-fire: two forced triggers in ONE tick (Promise.all-style).
+    const d2 = deferred<TagSyncReport>();
+    spy.mockReturnValue(d2.promise);
+    let pair!: Promise<unknown>;
+    act(() => {
+      pair = Promise.all([
+        result.current.refetch({ force: true }),
+        result.current.refetch({ force: true }),
+      ]);
+    });
+    expect(spy).toHaveBeenCalledTimes(2); // ONE new call, not two
+
+    await act(async () => {
+      d2.resolve(report());
+      await pair;
+    });
+    expect(result.current.state).toBe('ready');
+  });
+
+  it('never suppresses a forced check issued after the previous one settled', async () => {
+    fakeClock();
+    const spy = vi.spyOn(mockIpc, 'listTagSync').mockResolvedValue(report());
+    const { result } = renderHook(() => useTagSync(REPO, ORIGIN));
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+    // Same millisecond, but nothing is in flight → the check runs. This is what
+    // keeps the floor from costing freshness.
+    await act(async () => {
+      await result.current.refetch({ force: true });
+    });
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('a FAILED check never self-suppresses the next one', async () => {
+    fakeClock();
+    const spy = vi.spyOn(mockIpc, 'listTagSync');
+    spy.mockResolvedValueOnce(report());
+    const { result } = renderHook(() => useTagSync(REPO, ORIGIN));
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    spy.mockRejectedValueOnce({ kind: 'networkError', message: 'offline' });
+    await act(async () => {
+      await result.current.refetch({ force: true });
+    });
+    expect(result.current.state).toBe('unavailable');
+
+    // Immediately afterwards, at the SAME clock value: the retry must go out.
+    spy.mockResolvedValueOnce(report());
+    await act(async () => {
+      await result.current.refetch({ force: true });
+    });
+    expect(spy).toHaveBeenCalledTimes(3);
+    expect(result.current.state).toBe('ready');
   });
 });

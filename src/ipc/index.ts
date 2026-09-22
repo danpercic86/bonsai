@@ -62,6 +62,7 @@ export type {
   CommitRef,
   CommitResult,
   CommitStatus,
+  CommitStatusBatch,
   CommitVerification,
   CompareDiff,
   CompareEndpoint,

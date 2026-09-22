@@ -25,6 +25,7 @@ mod azure;
 mod bitbucket;
 mod github;
 mod gitlab;
+mod ratelimit;
 mod rollup;
 
 use std::path::Path;

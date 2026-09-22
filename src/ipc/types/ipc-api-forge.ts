@@ -1,5 +1,5 @@
 import type {
-  CommitStatus,
+  CommitStatusBatch,
   CreatePrInput,
   ForgeAccount,
   ForgeKind,
@@ -57,11 +57,14 @@ export interface IpcApiForge {
   /** Sign out: delete the host's PAT from the keychain + evict the cached
    *  viewer. Idempotent. Rejects AppError (`noRepo` | `noRemote`). */
   forgeClearToken(repoId: string): Promise<void>;
-  /** P63: batch commit/CI statuses for graph badges — one CommitStatus per
-   *  requested sha, in the SAME order (one round-trip / one spawn_blocking).
-   *  Rejects AppError (`noRepo` | `forgeUnsupported` | `noRemote` | `forgeApi`
-   *  | `forgeRateLimited` | `authFailed` | `networkError` | `git`). */
-  forgeCommitStatuses(repoId: string, shas: string[]): Promise<CommitStatus[]>;
+  /** P63: batch commit/CI statuses for graph badges — one round-trip / one
+   *  spawn_blocking. P113a: resolves with a {@link CommitStatusBatch}; a sha the
+   *  forge 404s is omitted and a rate limit / auth / network failure part-way
+   *  through returns what resolved plus `stoppedBy` (never discards it).
+   *  Rejects AppError ONLY when nothing resolved (`noRepo` | `forgeUnsupported`
+   *  | `noRemote` | `forgeApi` | `forgeRateLimited` | `authFailed` |
+   *  `networkError` | `git`). */
+  forgeCommitStatuses(repoId: string, shas: string[]): Promise<CommitStatusBatch>;
   /** P89: auto-fetch the PR's base+head endpoints, then compute the base…head
    *  (three-dot) diff LOCALLY — `+X / −Y / N files` + headers-only file list.
    *  Prefer this over `PrDetail`'s forge counts once loaded. Fork/un-fetched

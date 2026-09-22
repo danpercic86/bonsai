@@ -151,6 +151,13 @@ export interface AppError {
      *  paths that shell out — SSH-agent authentication never produces it. */
     | 'gitNotFound';
   message: string;
+  /** P113a: present ONLY on `forgeRateLimited`, and only when the provider
+   *  advertised a usable wait — seconds from now, parsed from `Retry-After`
+   *  (Azure/Bitbucket) or the `*-RateLimit-Reset` epoch (GitHub/GitLab). The
+   *  message still spells it out for humans; anything that BACKS OFF reads this
+   *  instead of parsing the sentence. Absent ⇒ the caller picks its own
+   *  default wait (see `forgeBackoff.ts`). */
+  retryAfterSecs?: number;
 }
 
 /** P70: which rung of the resolver ladder produced the git path. Mirrors the
