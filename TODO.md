@@ -337,8 +337,20 @@ that were owed.
 
 ## P113 — dev-mode log review fixes — `in-progress`
 
-**Current step:** P113 — P113d contract **rev 2 approved and ready to implement** (waiting on the
-senior-dev running P113a–c, to avoid two concurrent cargo builds); P113a–c in progress.
+**Current step:** P113a–c **committed green** (`a7a7882`, full gate 9/9 in 502s) —
+**awaiting USER CHECKPOINT**, see below. P113d contract rev 2 approved and ready to implement;
+not started.
+
+**USER CHECKPOINT owed for P113a–c.** The AI gate cannot prove the acceptance criterion that
+matters — "a comparable session records zero `forgeRateLimited`" is an absence in a live session
+against a real Azure DevOps account, and the tests prove the mechanism, not the field outcome.
+What the user needs to confirm in `pnpm tauri dev` with the same 5 repos open for a comparable
+stretch: (1) `metrics/usage.json` shows no `forgeRateLimited` under `errors`; (2)
+`cmd.forgeCommitStatuses` total time falls well below 286,888 ms; (3) `listTagSync` `dup-ipc`
+anomalies are gone from the log; (4) CI badges still populate normally — the known failure mode is
+badges staying blank during an open suppression window, which is indistinguishable from "no CI
+configured"; (5) `forgeRepoContext` records now show `"authenticated":"bool"` instead of
+`<redacted:token>`.
 
 Source: review of a real 124-min Dev-mode session (2026-09-22, 5 repos open, Azure DevOps forge).
 Evidence is `%APPDATA%\com.bonsai.app\logs\bonsai-2026-09-22T04-52-03-scca8269e.jsonl` (13,667
