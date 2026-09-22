@@ -6,6 +6,7 @@ import type { TreeNode } from '../../utils/pathTree';
 import { Tree } from '../Tree';
 import { ListFilterInput } from '../ListFilterInput';
 import { SectionHeader } from './SectionHeader';
+import { SidebarActionButton } from './SidebarActionButton';
 import { ConfiguredRemoteRow, RemoteRow } from './rows';
 import { useRenderCount } from '../../obs/react';
 
@@ -14,7 +15,8 @@ export interface RemotesSectionProps {
   remotes: RemoteInfo[];
   remotesCollapsed: boolean;
   setRemotesCollapsed: Dispatch<SetStateAction<boolean>>;
-  actionsDisabled: boolean;
+  /** NO `actionsDisabled` PROP (P118) — see BranchesSection; the "+" button
+   *  reads `SidebarBusyContext` itself. */
   treeMode: boolean;
   onAddRemote(): void;
   onContextMenu(
@@ -40,7 +42,6 @@ function RemotesSectionImpl({
   remotes,
   remotesCollapsed,
   setRemotesCollapsed,
-  actionsDisabled,
   treeMode,
   onAddRemote,
   onContextMenu,
@@ -63,19 +64,15 @@ function RemotesSectionImpl({
         collapsed={remotesCollapsed}
         onToggle={() => setRemotesCollapsed((c) => !c)}
         extra={
-          <button
-            type="button"
-            className="sidebar-add"
-            aria-label="Add remote"
-            title="Add remote"
-            disabled={actionsDisabled}
+          <SidebarActionButton
+            label="Add remote"
             onClick={() => {
               setRemotesCollapsed(false);
               onAddRemote();
             }}
           >
             {'+'}
-          </button>
+          </SidebarActionButton>
         }
       />
       {!remotesCollapsed && (

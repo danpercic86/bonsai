@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type {
   BranchesSnapshot,
   ListView,
@@ -10,23 +10,20 @@ import type {
   WorktreeInfo,
 } from '../ipc';
 import type { RevealTarget } from '../graph/reveal';
-import { StashIcon } from './appIcons';
 import { errorMessage } from '../utils/errors';
 import { useRenderCount } from '../obs/react';
 import { buildPathTree } from '../utils/pathTree';
 import { SubmoduleRow } from './sidebar/SubmoduleRow';
 import { SectionHeader } from './sidebar/SectionHeader';
+import { StashesSection } from './sidebar/StashesSection';
 import { TagsSection, type TagSyncState } from './sidebar/TagsSection';
 import { BranchesSection } from './sidebar/BranchesSection';
 import { RemotesSection } from './sidebar/RemotesSection';
 import type { SubmoduleBusy } from './repoWorkspace/types';
 import { filterItems, filterTree } from './repoWorkspace/listFilter';
-import {
-  SkeletonRows,
-  StashRow,
-  WorktreeRow,
-} from './sidebar/rows';
+import { SkeletonRows, WorktreeRow } from './sidebar/rows';
 import { SidebarTreeProvider } from './sidebar/SidebarTreeContext';
+import { SidebarBusyContext, SidebarBusyRefContext } from './sidebar/sidebarBusyContext';
 import { useSidebarTreeNav } from './sidebar/useSidebarTreeNav';
 
 /** P50d: show a section's inline type-to-filter box only once the list is long
@@ -192,6 +189,13 @@ export function Sidebar({
   // P3c §8.5: while an operation is in progress, every branch mutation
   // (checkout / delete / create / merge) is disabled.
   const actionsDisabled = busy || opActive;
+  // P118: the same flag, in a stable box, for the handlers that only need it at
+  // event time (BranchRow's checkout gesture, `submitCreate` below). Written in
+  // the render body on purpose — this container re-renders on every flip, and no
+  // reader looks at it during render, so the ref is always current by the time
+  // an event can fire. Same idiom as repoWorkspace/useSidebarCallbacks.ts.
+  const busyRef = useRef(actionsDisabled);
+  busyRef.current = actionsDisabled;
 
   // P3b §5.3 — tree-grouped refs (display-only; full names drive all actions).
   const treeMode = listView === 'tree';
@@ -266,14 +270,17 @@ export function Sidebar({
 
   const submitCreate = useCallback(async () => {
     const trimmed = createValue.trim();
-    if (trimmed === '' || actionsDisabled) return;
+    // `busyRef`, NOT `actionsDisabled` (P118): as a dep it reminted this
+    // callback on every mutation flip, which re-rendered the memoised
+    // BranchesSection — the very churn the context split removes.
+    if (trimmed === '' || busyRef.current) return;
     try {
       await onCreateBranch(trimmed);
       closeCreate();
     } catch (e) {
       setCreateError(errorMessage(e));
     }
-  }, [createValue, actionsDisabled, onCreateBranch, closeCreate]);
+  }, [createValue, onCreateBranch, closeCreate]);
 
   return (
     <aside className="sidebar" style={{ width }}>
@@ -295,12 +302,16 @@ export function Sidebar({
         loading && <SkeletonRows />
       ) : (
         <SidebarTreeProvider value={nav.context}>
+          {/* P118: two views of the in-flight flag — a stable ref box for
+              event-time readers (rows), the boolean for the leaf controls that
+              render `disabled`. Sections take neither as a prop. */}
+          <SidebarBusyRefContext.Provider value={busyRef}>
+          <SidebarBusyContext.Provider value={actionsDisabled}>
           <div className="sidebar-tree" {...nav.rootProps}>
             <BranchesSection
               data={data}
               branchesCollapsed={branchesCollapsed}
               setBranchesCollapsed={setBranchesCollapsed}
-              actionsDisabled={actionsDisabled}
               onCleanupBranches={onCleanupBranches}
               treeMode={treeMode}
               currentBranch={currentBranch}
@@ -329,7 +340,6 @@ export function Sidebar({
               remotes={remotes}
               remotesCollapsed={remotesCollapsed}
               setRemotesCollapsed={setRemotesCollapsed}
-              actionsDisabled={actionsDisabled}
               treeMode={treeMode}
               onAddRemote={onAddRemote}
               onContextMenu={onContextMenu}
@@ -358,50 +368,16 @@ export function Sidebar({
               now={now}
             />
 
-            <section className="sidebar-section">
-              <SectionHeader
-                label="Stashes"
-                collapsed={stashesCollapsed}
-                onToggle={() => setStashesCollapsed((c) => !c)}
-                extra={
-                  !data.head.unborn && (
-                    <button
-                      type="button"
-                      className="sidebar-add sidebar-add-icon"
-                      aria-label="Stash changes"
-                      title="Stash changes"
-                      disabled={actionsDisabled}
-                      onClick={() => {
-                        setStashesCollapsed(false);
-                        onCreateStash();
-                      }}
-                    >
-                      <StashIcon />
-                    </button>
-                  )
-                }
-              />
-              {!stashesCollapsed &&
-                (stashes.length === 0 ? (
-                  <p className="branch-muted">No stashes</p>
-                ) : (
-                  <ul className="branch-list" role="group">
-                    {stashes.map((s) => (
-                      <StashRow
-                        key={s.index}
-                        index={s.index}
-                        oid={s.oid}
-                        message={s.message}
-                        ts={s.ts}
-                        now={now}
-                        onContextMenu={onStashContextMenu}
-                        onReveal={onReveal}
-                        treeKey={`stash:${s.index}`}
-                      />
-                    ))}
-                  </ul>
-                ))}
-            </section>
+            <StashesSection
+              stashes={stashes}
+              collapsed={stashesCollapsed}
+              setCollapsed={setStashesCollapsed}
+              headUnborn={data.head.unborn}
+              onCreateStash={onCreateStash}
+              onContextMenu={onStashContextMenu}
+              onReveal={onReveal}
+              now={now}
+            />
 
             {/* P60d: always shown so a submodule can be added even when none
                 exist yet; the "+" opens the add (url + path) dialog. */}
@@ -484,6 +460,8 @@ export function Sidebar({
                 ))}
             </section>
           </div>
+          </SidebarBusyContext.Provider>
+          </SidebarBusyRefContext.Provider>
         </SidebarTreeProvider>
       )}
     </aside>

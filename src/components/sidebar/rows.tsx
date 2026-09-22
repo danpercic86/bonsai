@@ -32,6 +32,7 @@ import {
 import { RefFilterMarker } from './RefFilterMarker';
 import { useSidebarTreeItem } from './useSidebarTreeItem';
 import { useRenderCount } from '../../obs/react';
+import { useSidebarBusyRef } from './sidebarBusyContext';
 import { rowPropsEqual } from '../../utils/structuralEqual';
 
 type BranchContextMenu = (
@@ -57,7 +58,11 @@ export function AheadBehindBadge({ branch }: { branch: BranchInfo }) {
 
 export interface BranchRowProps {
   branch: BranchInfo;
-  busy: boolean;
+  /** NO `busy` PROP, DELIBERATELY (P118). The in-flight flag flips twice per
+   *  mutation and is invisible on this row — it only gates the checkout gesture
+   *  — so it arrives through `useSidebarBusyRef()` (stable identity) and is read
+   *  at event time. As a prop it re-rendered every row twice per mutation, which
+   *  is the `BranchRow: 100 renders vs 25 instances` storm. */
   onCheckout(name: string): void;
   onContextMenu: BranchContextMenu;
   /** P84: single-click reveals the branch tip in the graph (additive to
@@ -72,7 +77,6 @@ export interface BranchRowProps {
 
 function BranchRowImpl({
   branch,
-  busy,
   onCheckout,
   onContextMenu,
   onReveal,
@@ -81,6 +85,7 @@ function BranchRowImpl({
   level = 2,
 }: BranchRowProps) {
   useRenderCount('BranchRow', undefined, 'aggregate'); // §9.2 — one shared tally key
+  const busyRef = useSidebarBusyRef();
   const isHead = branch.isHead;
   // HEAD branch: Enter no-op (already checked out). The keyboard menu opens for
   // every row — spec-003 gives the HEAD row a (filter-only) menu, matching
@@ -90,7 +95,14 @@ function BranchRowImpl({
     level,
     kind: 'leaf',
     ariaCurrent: isHead,
-    onPrimary: isHead || busy ? undefined : () => onCheckout(branch.name),
+    // Busy is checked INSIDE the handler, not by withholding it: a leaf with
+    // `menuIsPrimary: false` and no `onPrimary` already does `preventDefault()`
+    // then nothing, so a defined-but-no-op handler is behaviourally identical.
+    onPrimary: isHead
+      ? undefined
+      : () => {
+          if (!busyRef.current) onCheckout(branch.name);
+        },
     openMenuAt: (x, y) => onContextMenu(branch.name, 'localBranch', x, y),
   });
   return (
@@ -101,7 +113,7 @@ function BranchRowImpl({
       onClick={() => onReveal?.({ kind: 'ref', name: branch.name })}
       onDoubleClick={() => {
         // GitKraken muscle memory: double-click checks out (contract §4.2).
-        if (!isHead && !busy) onCheckout(branch.name);
+        if (!isHead && !busyRef.current) onCheckout(branch.name);
       }}
       onContextMenu={(e) => {
         e.preventDefault();

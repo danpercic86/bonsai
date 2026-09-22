@@ -513,6 +513,192 @@ ChecksPanel currently extends a window it never consults), and **locking the `Ap
 empty `lifetime` totals are correct inside the 90-day window; the 1.2 KB log is a sink restart on
 the `includeRawNames` toggle, not a crash.
 
+## P118 — sidebar render-storm from refresh-round fan-out — `reviewer approved`
+
+**Current step:** P118 — `reviewer` **approve**, no MUST-FIX. Ready to commit.
+
+> **Renumbered P114 → P118 before commit.** The orchestrator's brief invented "P114", which was
+> already taken by the shipped forge credential-failure copy work
+> (`docs/contracts/P114-forge-failure-copy-ui.md`, commit `61af79b`, `TODO.md:2130`). The reviewer
+> caught it with ~15 code citations already pointing at the ambiguous ID. P115–P117 are held by the
+> three concurrent background increments, so this is P118.
+
+Target: the 24 non-Tags `render-storm` anomalies from the 2026-09-22 Dev session — RemotesSection 9,
+BranchesSection 8, BranchRow 7 (tallies read `100 renders vs 25 instances`, a 4x multiplier). The
+other 37 were TagsSection and were handled by P113b. Almost all correlate with
+`refresh:{remoteMeta,stash,worktree,full}` at origin **`mutation`**.
+
+**Mechanism — settled on the THIRD diagnosis. The first two were wrong; do not resurrect them.**
+
+1. ~~The task brief guessed `refreshAll` awaits its slices sequentially.~~ It does not —
+   `runRefreshRound` (`RepoWorkspace.tsx:843-887`) has exactly one `await Promise.all`.
+2. ~~The orchestrator then modelled it as "1 loading commit + 3 completion commits = 4".~~ **Also
+   wrong.** The 4x is **StrictMode double-rendering** — `obs/react.ts` documents that `renders`
+   doubles while `instances` does not, so `100 renders / 25 instances` is **2 real renders per
+   row**, not 4. The commit model matched the number by coincidence. The log histogram settles it:
+   BranchRow tallies are 50/25, 100/25, 140/70, 280/70 — a clean 2x (fine) / 4x (storm) split.
+3. **Actual cause: the `busy` / `actionsDisabled` boolean prop.** A mutation runs
+   `setMutating(true)` → git call → `await refreshAll(...)` → `setMutating(false)` in a `finally` —
+   **two flips inside one 500 ms tally window**, reaching both memoized sections and every
+   `BranchRow`. On a row `busy` has *zero* visual effect (it only gates the checkout gesture), so
+   every one of those renders was pure waste. Exactly 2 real renders per instance, matching every
+   observed storm.
+
+Ruled out with evidence, not assumption: `rowPropsEqual` bails correctly, and
+`useSidebarCallbacks` / `contextMenuOpeners` / `handleReveal` are all ref-latched and stable — a
+churning callback would have produced 8x, not 4x.
+
+**Fix.** Split the flag in two: `sidebarBusyContext.ts` provides `SidebarBusyRefContext` (a stable
+`useRef` box for event-time readers — consuming it re-renders nothing) and `SidebarBusyContext`
+(the boolean, for controls that actually render `disabled`). `BranchRow` drops its `busy` prop and
+reads the ref at event time; `BranchesSection`/`RemotesSection` drop `actionsDisabled`. Three
+components extracted (`SidebarActionButton`, `BranchCreateRow`, and `StashesSection` purely to
+satisfy the size ratchet — `Sidebar.tsx` 507 → 469).
+
+**The fan-out (a) is real but does not cause these storms.** It produces extra commits of
+`RepoWorkspace`/`Sidebar`, which are `each`-mode and not subject to the `render-storm` rule. It only
+reaches a tallied component when that component's own IPC props change identity — and `status`,
+`branches`, `opState`, `stashes`, `submodules`, `worktrees` and `remotes` all already store through
+`keepIfUnchanged`. **The 11-callback inversion of `RepoWorkspace.tsx` is therefore NOT worth doing
+for this acceptance criterion.**
+
+**Residual — RemotesSection is not fully covered, but it is NOT a design-pass problem.** The
+implementer framed this as needing the container state-model pass; the reviewer showed that
+**two of the three couplings are one-liners**, and the design-pass framing only applies after
+those:
+
+- `RemotesSection.tsx:14` takes the whole `data: BranchesSnapshot` but reads it exactly once —
+  `data.remote.length === 0` at `:143`. A `hasRemoteRefs: boolean` prop removes the coupling.
+- `Sidebar.tsx:216-219` — `remoteTree`'s deps are `[treeMode, data]`, **not** `[treeMode,
+  data?.remote]`. Compare `remoteFlatFiltered` at `:252-255`, which narrows correctly. So any
+  *local*-branch change remints `remoteTree` → `remoteTreeFiltered` → re-renders RemotesSection.
+  Flat mode is worse: the `: []` branch mints a fresh array literal every recompute.
+- **The new test bakes this in:** its round changes only a local branch's ahead count, yet
+  `Sidebar.busyChurn.test.tsx:227` asserts `RemotesSection {renders: 2}` — one avoidable real
+  render, asserted as correct.
+
+Only after both narrowings is the remainder the genuine `data.remote`-vs-`remotes`
+two-continuation fan-out. The 9-vs-8 anomaly asymmetry explanation survives either way.
+
+Also checked and unrelated: `refetchGraph`'s unconditional `setGraphLoading(true)` (`:765`) reaches
+only `WorkspaceToolbar`, never the sidebar.
+
+## P115 — stale repo paths in settings.json: prune + forge-override migration — `in-progress`
+
+**Current step:** P115 — `architect` writing the pruning/migration policy contract
+(`docs/contracts/P115-stale-repo-paths.md`); `senior-dev` next, then `reviewer`.
+
+**Evidence (a real user's `%APPDATA%\com.bonsai.app\settings.json`, 2026-09-22).** The directory
+`D:\Repos` no longer exists — the repos moved to `D:\Data\Repos` — yet the file still carries
+5 `recentRepos` entries under `D:\Repos\*`, a `repoForgeOverrides` entry for
+`D:\Repos\ham-digi-backend` (DEAD: the path is gone, and the repo's live path
+`D:\Data\Repos\ham-digi-backend` has **no** override — so the user silently lost their per-repo
+forge account binding), and `hooksAckRepos` carrying both the old and the new path for two repos.
+
+**NOT a bug, do not "fix":** the one forward-slash recents entry (`D:/Repos/.worktrees/...`).
+`record_recent` dedups through `same_repo_path` (`settings.rs:449`), a canonicalizing compare —
+the slash difference is cosmetic and already dedups correctly.
+
+**Goal.** Prune `recentRepos` entries whose path is gone, and decide + implement what happens to
+`repoForgeOverrides` / `hooksAckRepos` entries pointing at a vanished path. Two asymmetric risks
+drive the policy: dropping a `hooksAckRepos` entry re-prompts a security disclosure, and silently
+dropping a forge override is exactly what produced the invisible breakage above. A path can also be
+*temporarily* absent (unplugged drive, unmounted share), so the prune must gate on something
+stronger than one failed `exists()`.
+
+## P116 — `OBS_SCHEMA_VERSION` TS/Rust drift + parity test — `done`
+
+**Current step:** P116 — **done**, `reviewer` approved (no MUST-FIX), committed `e49cf20`.
+**No USER CHECKPOINT applies** — nothing user-visible changes. This board edit is deliberately left
+uncommitted: `TODO.md` also carries in-flight P114/P115 hunks from other sessions, so `e49cf20`
+stages only the four code files.
+
+Spun out of the P113 follow-up list ("the TS/Rust `OBS_SCHEMA_VERSION` parity test"), found during
+the **P113d contract review (2026-09-22)**.
+
+**Defect (real but latent).** Rust `src-tauri/src/obs/record.rs:35` declared `2`; TS
+`src/ipc/types/obs.ts:16` still declared `1`. No parity test existed, so the two drifted silently
+for six days after the 2026-09-16 v1 → v2 bump (`RenderTally::changed_props`
+`Vec` → `Option<Vec>`).
+
+**Rust is authoritative, verified not assumed:** `writer.rs:198` is the ONLY emitter and stamps
+`schema: OBS_SCHEMA_VERSION` into the session header, so on-disk records really carry `"schema":2`.
+The TS constant has **zero consumers** — declared once, re-exported at `src/obs/types.ts:26`,
+nothing imports or branches on it — so the bump is a label correction with **no behaviour change**.
+
+**Not drift, do not "fix":** the `schema: 1` literals in `src/ipc/mock/handlers/obs.ts`,
+`src/ipc/mock/handlers/history.ts`, `useHistorySearch.test.tsx` and `unusableRepoTeardown.test.tsx`
+are the separate `METRICS_SCHEMA_VERSION` (=1) and `IndexStatus.schema` counters.
+
+**Fix.** TS → `2`; new `src-tauri/src/obs/tests_schema_parity.rs` (51 lines,
+`obs::tests_schema_parity::ts_mirror_matches_the_rust_schema_version`) `include_str!`s the TS source
+and asserts the declaration literal appears exactly once. Follows the **forge copy-guard** pattern
+(`forge_add_account_tests.rs:368`), NOT the JSON-oracle one — that one's direction is
+TS-owns/Rust-checks, backwards here. Own file because `record.rs` is 503 lines (over the soft limit)
+and `tests_record.rs` is narrowly the `changedProps` serde contract.
+
+**Reviewer follow-up (not blocking, for `docs-curator`):** `docs/contracts/P91-observability.md:252`
+and `:648` still show `OBS_SCHEMA_VERSION` as `1` — pre-existing doc drift outside the code fix's
+scope. (`P113d-watcher-log-volume.md:187/:398` already say `2` correctly.)
+
+**AI gate:** mutation-proved green → red → green (TS reverted to `1` ⇒ fails, count 0 vs 1);
+`tsc --noEmit`, `clippy --tests -D warnings`, `cargo fmt --check` all green. **No USER CHECKPOINT** —
+nothing user-visible changes.
+
+## P117 — two 2026-09-22 perf signals: graph-cache wipe + repo-blind anomaly rules — `in-progress`
+
+**Current step:** P117 — findings report written (`docs/audit-2026-09-22-perf-signals.md`);
+`architect` next for the two contract changes. **No code changed yet.**
+
+Investigated from a real 124-min Dev-mode session with **5 repos open**
+(`logs/bonsai-2026-09-22T04-52-03-scca8269e.jsonl`, 19,547 records + `metrics/usage.json` day
+`2026-09-22`). Both signals arrived undiagnosed; the report is the diagnosis. Full evidence,
+numbers and the corrected framings live in the audit file — only the verdicts are duplicated here.
+
+**Signal 1 — graph cache hit rate 8% ⇒ REAL DEFECT (low severity, design-level).**
+The cache is **per-repo** (`RepoEntry.graph_cache`), so the single-slot hypothesis is FALSE and
+`graph_cache.rs` is correct. The defect is a composition: `refreshScope.ts`'s `full` slice sets
+`openRepo: true` **and** `graph: true`, and `open_repo_inner` has **no early return** for an
+already-open repo — its dedupe scan only reuses the key, then unconditionally inserts a fresh
+`RepoEntry` with `graph_cache: None` (`src-tauri/src/commands/repo.rs:293`). So every `full` round
+wipes the cache it is about to read. **62 of 81 graph requests (77%) were structurally guaranteed
+misses**; 62 full rounds ↔ 63 `openRepo` calls; repos whose node count never changed
+(`items` 1041, 5376, 5374, 1009, 409) re-walked on nearly every request; `HitRedecorate` fired
+**0** times all day for the same reason. Excluding the forced misses the cache ran at **32%**
+(6 of 19), and the 13 remaining misses are explained by 3 `stash` rounds, ~6 new commits in
+`bonsai` itself and 7 fetches. Recoverable: **~9.0 s of blocking-pool time per 152-min session**.
+The wipe's stated justification ("topology may have changed while closed") does not apply to a
+repo that was never closed, and is redundant regardless — `classify` is exact-set on
+`(tips, head, hide)` from a freshly probed seed.
+
+**Signal 2 — redundant-refresh ×23 ⇒ MOSTLY CORRECT BEHAVIOUR + a monitoring defect.**
+`detect_redundant_refresh` (`src-tauri/src/obs/anomaly/window.rs:152`) keys on `scope` **and
+nothing else**, because `RefreshPayload` carries **no repo id** (`src/obs/types.ts:108`) — the
+coalescer receives `repoId` but never emits it. With 5 repos and 5 watchers, two *different* repos
+each doing one legitimate refresh inside 1000 ms is flagged as one repo refreshing twice.
+`round` is per-repo (a `useRef` per coalescer), which separates the populations: **~17 of 26 are
+cross-repo false positives, including all five `full`-scope pairs** — so the reported
+"541 ms + 684 ms full pair" is round 9 of one repo and round 28 of another, not a redundancy.
+The **9 genuine** same-repo pairs are all `worktree`, Δt 381–935 ms, and cost **805 ms total over
+152 minutes**; every Δt exceeds the 300 ms trailing-edge quiet period, i.e. the watcher really did
+see new external writes and the debounce behaved exactly as specified.
+⇒ **`DEBOUNCE` stays at 300 ms and no post-fire quiet window is added.** The architecture invariant
+needs no contract change; the fix belongs in the obs rule. The same repo-blindness also explains
+both `cache-collapse` firings (five spans, five *different* repos, 217 ms apart — not a user
+tab-switching over 100 s as first read).
+
+**Two contract changes for `architect` (both routed, neither implemented):**
+1. `graph_cache` preserve-on-re-arm — contradicts the P86 B1 contract line *"reset to `None` on
+   `open_repo` re-arm"*.
+2. `repoId` on `RefreshPayload` + the `graph.get` span record, and key
+   `redundant-refresh` / `cache-collapse` / the `mutations` list on `(repoId, scope)` — P91 §2.5 + §5.1.
+
+**Follow-up, not in scope:** `perf.repo_opens` = 564/day is the same root cause
+(`bump_repo_generation` on every `full` round evicts the pool handle cache) — re-measure after
+fix 1 lands. **Open question, do not fix blind:** day-wide `perf.graph_walks` (103) over-reports
+by exactly the hit count (6) versus the 97 spans that actually ran a `revwalk`; the offset predates
+the observed session and could not be attributed from static reading.
+
 ## Follow-ups, ranked, none blocking
 
 - **✅ SPLIT 2026-09-16 (`934a280`) — both zero-slack files now have room, and the baseline is

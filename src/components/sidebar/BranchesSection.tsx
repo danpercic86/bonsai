@@ -6,7 +6,9 @@ import type { TreeNode } from '../../utils/pathTree';
 import { DeleteIcon } from '../menuIcons';
 import { Tree } from '../Tree';
 import { ListFilterInput } from '../ListFilterInput';
+import { BranchCreateRow } from './BranchCreateRow';
 import { SectionHeader } from './SectionHeader';
+import { SidebarActionButton } from './SidebarActionButton';
 import { BranchRow, DetachedHeadRow } from './rows';
 import { useRenderCount } from '../../obs/react';
 
@@ -23,7 +25,9 @@ export interface BranchesSectionProps {
   data: BranchesSnapshot;
   branchesCollapsed: boolean;
   setBranchesCollapsed: Dispatch<SetStateAction<boolean>>;
-  actionsDisabled: boolean;
+  /** NO `actionsDisabled` PROP (P118) — the two header buttons and the create
+   *  input read it from `SidebarBusyContext` themselves, so a mutation's
+   *  true→false flip re-renders those leaves instead of this whole section. */
   onCleanupBranches?: () => void;
   treeMode: boolean;
   currentBranch: string | null;
@@ -56,7 +60,6 @@ function BranchesSectionImpl({
   data,
   branchesCollapsed,
   setBranchesCollapsed,
-  actionsDisabled,
   onCleanupBranches,
   treeMode,
   currentBranch,
@@ -90,30 +93,23 @@ function BranchesSectionImpl({
           !data.head.unborn && (
             <>
               {onCleanupBranches && (
-                <button
-                  type="button"
-                  className="sidebar-add sidebar-add-icon"
-                  aria-label="Clean up branches…"
-                  title="Clean up branches…"
-                  disabled={actionsDisabled}
+                <SidebarActionButton
+                  label="Clean up branches…"
+                  iconOnly
                   onClick={() => onCleanupBranches()}
                 >
                   <DeleteIcon />
-                </button>
+                </SidebarActionButton>
               )}
-              <button
-                type="button"
-                className="sidebar-add"
-                aria-label="Create branch"
-                title="Create branch"
-                disabled={actionsDisabled}
+              <SidebarActionButton
+                label="Create branch"
                 onClick={() => {
                   setBranchesCollapsed(false);
                   setCreateOpen(true);
                 }}
               >
                 {'+'}
-              </button>
+              </SidebarActionButton>
             </>
           )
         }
@@ -129,36 +125,14 @@ function BranchesSectionImpl({
             />
           )}
           {createOpen && (
-            <div className="branch-create-row">
-              <input
-                className="branch-create-input"
-                type="text"
-                placeholder="new-branch-name"
-                autoFocus
-                value={createValue}
-                disabled={actionsDisabled}
-                onChange={(e) => {
-                  setCreateValue(e.target.value);
-                  setCreateError(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    void submitCreate();
-                  } else if (e.key === 'Escape') {
-                    closeCreate();
-                  }
-                }}
-                onBlur={() => {
-                  if (createValue.trim() === '') closeCreate();
-                }}
-              />
-              {createError !== null && (
-                <div className="branch-create-error" role="alert">
-                  {createError}
-                </div>
-              )}
-            </div>
+            <BranchCreateRow
+              value={createValue}
+              setValue={setCreateValue}
+              error={createError}
+              setError={setCreateError}
+              close={closeCreate}
+              submit={submitCreate}
+            />
           )}
           {(data.head.detached || !treeMode) && (
             <ul className="branch-list" role="group">
@@ -170,7 +144,6 @@ function BranchesSectionImpl({
                   <BranchRow
                     key={branch.name}
                     branch={branch}
-                    busy={actionsDisabled}
                     onCheckout={onCheckout}
                     onContextMenu={onContextMenu}
                     onReveal={onReveal}
@@ -202,7 +175,6 @@ function BranchesSectionImpl({
               renderLeaf={(l, level) => (
                 <BranchRow
                   branch={l.item}
-                  busy={actionsDisabled}
                   onCheckout={onCheckout}
                   onContextMenu={onContextMenu}
                   onReveal={onReveal}
