@@ -3,8 +3,15 @@
  *
  * This file NARROWS the wire types (`src/ipc/types/obs.ts`, increment 1) into the
  * per-`kind` discriminated union the emitters use. The wire types are re-exported
- * rather than re-declared: there is exactly one definition of `LogRecord`,
- * `LogKind` and `OBS_SCHEMA_VERSION` in the codebase.
+ * rather than re-declared: there is exactly one FRONTEND definition of
+ * `LogRecord`, `LogKind` and `OBS_SCHEMA_VERSION`.
+ *
+ * "Frontend" is load-bearing for `OBS_SCHEMA_VERSION`: it is a MIRROR of Rust's
+ * `obs::record::OBS_SCHEMA_VERSION`, which is the value `writer.rs` actually
+ * stamps into every `session` header. Reading the sentence above as "one
+ * definition anywhere" is what let the two sides sit at 2 and 1 for six days
+ * after the v1 → v2 bump; `src-tauri/src/obs/tests_schema_parity.rs` now pins
+ * them together.
  */
 import type { LogKind, LogLevel, LogRecordBase, SpanId, TraceId } from '../ipc/types/obs';
 

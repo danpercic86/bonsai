@@ -78,6 +78,10 @@ mod tests_raw_args;
 #[path = "tests_scrub_home.rs"]
 mod tests_scrub_home;
 
+#[cfg(test)]
+#[path = "tests_schema_parity.rs"]
+mod tests_schema_parity;
+
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 

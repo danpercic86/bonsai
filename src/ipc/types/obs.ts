@@ -12,8 +12,14 @@ import type { LogLevel, RedactionMode } from './settings';
 
 export type { LogLevel, RedactionMode } from './settings';
 
-/** Record-schema version written into every `session` header (§3). */
-export const OBS_SCHEMA_VERSION = 1;
+/**
+ * Record-schema version written into every `session` header (§3).
+ *
+ * MIRROR, not source: Rust's `obs::record::OBS_SCHEMA_VERSION` owns this value
+ * — `src-tauri/src/obs/writer.rs` is what actually stamps it into the header —
+ * and `src-tauri/src/obs/tests_schema_parity.rs` pins this copy to it.
+ */
+export const OBS_SCHEMA_VERSION = 2;
 
 /** 12-char base36, monotonic-prefixed (§2.1). */
 export type TraceId = string;
