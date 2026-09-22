@@ -69,11 +69,15 @@ being wrong is kept deliberately.
 
 ## 🚀 RELEASE v1.6.0 — PREPARED 2026-09-18, **NOT PUBLISHED**
 
-**Current step:** prep is DONE and verified locally at the ≈CI tier, the installer bundles, and the
-branch is **pushed** (branch only, no PR — user choice 2026-09-18). **Three blockers remain, all the
-user's**: the P112 native checkpoint, the `updater-prod.key` backup, and the signing secrets. No
-agent task remains. **The highest-value next action is a manual `workflow_dispatch` CI run on this
-branch** — see the section directly below.
+**Current step: v1.6.0 IS CLEAR TO PUBLISH — zero blockers.** Prep done and verified at the ≈CI
+tier, the installer bundles, the branch is pushed (branch only, 2026-09-18), and on **2026-09-22 the
+user confirmed the three remaining blockers done and verified**: the P112 native checkpoint, the
+`updater-prod.key` backup, and the signing secrets. No agent task remains.
+
+**Two things stay RECOMMENDED rather than required**, and neither is a blocker: a manual
+`workflow_dispatch` CI run on this branch — still the only ubuntu/macOS verification that exists —
+and routing the release through `main`, so the default branch stops lagging its own release and its
+Dependabot alert clears.
 
 ### 🔓 PUSHED 2026-09-18 — branch only, by explicit user choice. Ruling #25 SUPERSEDED for this branch
 
@@ -286,10 +290,12 @@ them** — HEAD is a strict superset of `main`, `dev`, `origin/*` and all 17 fea
 releasing from `feat/post-p91-rulings` drops nothing, and `origin/main` is an ancestor **313**
 commits back, i.e. **a PR to `main` fast-forwards**.
 
-### 🚨 BLOCKS RELEASE — **three** items, all the user's (was four; #2 cleared 2026-09-18)
+### ✅ BLOCKS RELEASE — **EMPTY.** All four cleared (#2 on 2026-09-18, #1/#3/#4 on 2026-09-22)
 
-1. **The P112 native USER CHECKPOINT** — the five items under `## 🚨 THE USER CHECKPOINT` above;
-   `pnpm tauri dev` → Settings → General. Unchanged, and the orchestrator must never self-declare it.
+1. ~~**The P112 native USER CHECKPOINT**~~ — **CONFIRMED DONE AND VERIFIED BY THE USER, 2026-09-22**,
+   covering all five items under `## ✅ THE USER CHECKPOINT` below. This is the **user's
+   attestation**, which is the only thing that can clear it: the orchestrator neither ran it nor
+   could. **P112 is now done in both halves.**
 2. ~~**The code has to reach GitHub.**~~ **CLEARED 2026-09-18 — the branch is pushed (branch only,
    user's choice).** What is left is a **recommendation, not a blocker**: `release.yml` is
    `workflow_dispatch` and tags `context.sha`, so **Release is now technically dispatchable from
@@ -298,12 +304,14 @@ commits back, i.e. **a PR to `main` fast-forwards**.
    branch**, so only a merge clears it. And `release.yml` **only builds — it never tests**, which is
    why the manual `workflow_dispatch` CI run described in the push block, not the Release run, is
    what actually verifies ubuntu and macOS.
-3. **`.tauri/updater-prod.key` still exists in exactly ONE place: this working copy.** Untracked
-   and gitignored. Losing it permanently breaks auto-update for every installed client. Ruling #14
-   deferred the backup; cutting a release is where that stops being deferrable.
-4. **GitHub secrets `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` must be
-   present**, or the updater artifacts are unsigned and every client rejects them. Unverifiable
-   from here — no `gh` authorised.
+3. ~~**`.tauri/updater-prod.key` still exists in exactly ONE place**~~ — **CONFIRMED BACKED UP BY
+   THE USER, 2026-09-22**, which closes ruling #14. It is no longer single-copy. No agent ever read
+   or copied the key; the only thing verified from here was that its **public** half matches the
+   shipped `tauri.conf.json` (`B4E84ADA465319A8`).
+4. ~~**GitHub secrets `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` must be
+   present**~~ — **CONFIRMED PRESENT BY THE USER, 2026-09-22.** Still unverifiable from here (no
+   `gh`), so this stands as the user's attestation rather than a measurement. **If a Release run
+   ever yields unsigned artifacts or clients reject an update, re-check this first.**
 
 ### Verify-on-tag, and what does NOT block
 
@@ -330,9 +338,10 @@ commits back, i.e. **a PR to `main` fast-forwards**.
 
 ## ⏸ RESUME HERE — updated 2026-09-16
 
-**Current step:** see the **P112** entry below — *all four sub-increments in, AI gate green,
-awaiting USER CHECKPOINT (native window)*. That entry owns the line; keep it updated there, not here.
-Its five checkpoint items are the only thing left in P112.
+**Current step: nothing is pending in this section — see the release block at the top of the file.**
+P112 is **done in both halves**: AI gate green at `9fca997`, native checkpoint **confirmed by the
+user 2026-09-22**. Its five checkpoint items are cleared, so this section no longer owns a live
+step. v1.6.0 is prepared, verified and clear to publish.
 
 **2026-09-17 — the board's two owed code items are DONE and the gate is green at `3948478`**
 (three commits: `105131a` lock consolidation, `e583f11` account-removal honesty, `3948478`
@@ -343,8 +352,8 @@ already IMPLEMENTED in `871d16a`**, exactly as this board's own `### ✅ ALL FOU
 2026-09-17 ARE IMPLEMENTED` entry records. This paragraph contradicted that one for a day; the
 contradiction was found by `docs-curator` during the v1.6.0 changelog sweep, not by me. Two
 follow-ups do remain queued (`ui-designer` copy pass; `P113` contract debt for the new mock seams).
-**None of them gate P112 — the native checkpoint still does, and it now gates the release too (see
-the release block above).**
+**Neither gates P112 — and as of 2026-09-22 nothing does: the native checkpoint was confirmed by the
+user, so P112 is done and the release is unblocked (see the release block at the top).**
 
 ~~**Branch `feat/post-p91-rulings`, no upstream — 92 commits ahead of `origin/dev` (`8b88efd`),
 unpushed, and it stays unpushed (ruling #25, do not raise it again).**~~ **EVERY CLAUSE OF THAT IS
@@ -391,22 +400,30 @@ until 2026-09-17 because nobody came back to it after the outcome was recorded e
 board — the same stale-entry failure as item 6 below.
 No outcome is recorded here because none exists yet — do not read this entry as closed.
 
-# ✅ P112 — AI GATE GREEN, ALL FOUR SUB-INCREMENTS IN. **USER CHECKPOINT IS THE ONLY THING LEFT.**
+# ✅ P112 — **DONE, BOTH HALVES.** AI gate green; USER CHECKPOINT confirmed by the user 2026-09-22.
 
-**Per the workflow, a milestone is done when BOTH halves pass. The AI half is done; the native half
-is not, and I must not self-confirm it.**
+**Per the workflow, a milestone is done when BOTH halves pass. ✅ BOTH NOW HAVE** — the AI half green
+at `9fca997`, the native half **confirmed done and verified by the user on 2026-09-22**. I did not
+and could not self-confirm the second half; the user's attestation is what cleared it.
 
-**Current step: P112 — all four sub-increments in, AI gate green, awaiting USER CHECKPOINT (native
-window).** This is the canonical `Current step:` line; `## ⏸ RESUME HERE` points here.
+**Current step: P112 is DONE.** Nothing remains in it. The project's live step is now the release
+block at the top of this file.
 
 **AI gate, 2026-09-15 at `9fca997`: 437.6s, exit 0, all 8 steps, zero FAIL lines.** nextest 136.5s
 (**2556 passed, 10 skipped**) · doctests 3.5s · clippy 0.94s · eslint 13.2s · ratchet 0.69s · vitest
 58.1s (**2963 passed, 265 files**) · tsc+build 10.9s · e2e 213.7s (**185 passed, 1 skipped**).
 **Windows-only evidence** — unchanged by this green; see the CI note below.
 
-## 🚨 THE USER CHECKPOINT — `pnpm tauri dev`, then Settings → General
+## ✅ THE USER CHECKPOINT — CONFIRMED DONE AND VERIFIED BY THE USER, 2026-09-22
 
-Five things, and **not one of them is reachable from any tier here**:
+**All five items below were confirmed by the user on 2026-09-22** (`pnpm tauri dev` → Settings →
+General). They are kept **in full rather than deleted**, because they are the record of exactly what
+was unreachable from here — and therefore of what the confirmation covers. Item 4's open
+sub-question in particular (whether the dialog behaves as a child of the Bonsai window, which the
+auditor could not establish statically) is covered by that same confirmation rather than by any
+measurement of mine.
+
+Five things, and **not one of them was reachable from any tier here**:
 1. **The page itself.** Two free-text command fields are **gone**, replaced by a strict picker and a
    `Browse…` button. Verified by me in the **mock** harness only.
 2. **The popover's real scroll geometry** (UC-UI-1) — the editor picker sits near the bottom of the
@@ -555,16 +572,17 @@ run is the verification, and it has not happened yet.
      re-declares `CLAUDE_BIN_ENV`/`STUB_MODE_ENV` locally. **Routed to `senior-dev` 2026-09-17.**
      `src/fixture.rs:230` is NOT in scope — that lock guards the fixture cache dir, not env.
 
-### Four USER ACTIONS — only the user can clear these
+### Four USER ACTIONS — only the user can clear these. **TWO NOW CLEARED**
 
 - **✅ CLEARED 2026-09-16 — the user booted with Dev mode ON and the parse is DONE.** Log:
   `%APPDATA%/com.bonsai.app/logs/bonsai-2026-09-16T09-03-46-s636c0dc4.jsonl`, session `s636c0dc4`.
-  Evidence + the one defect it exposed are in `### P91 — open items` below. **Three USER ACTIONS
-  remain**, not four.
-- **Back up `.tauri/updater-prod.key`** (ruling #14, deferred). Gitignored and untracked, so it exists
-  in exactly ONE place: this working copy. Losing it permanently breaks auto-update for every
-  installed client. The committed `tauri.conf.json` pubkey was verified to match it. **P71 must not
-  touch it.**
+  Evidence + the one defect it exposed are in `### P91 — open items` below. ~~**Three USER ACTIONS
+  remain**, not four.~~ **As of 2026-09-22, ONE remains** — see the next two bullets.
+- **✅ CLEARED 2026-09-22 — the user confirmed `.tauri/updater-prod.key` is backed up**, closing
+  ruling #14. It had existed in exactly ONE place (this working copy, gitignored and untracked), and
+  losing it permanently breaks auto-update for every installed client. **No agent ever read or copied
+  the key**; the only thing verified from here was that its **public** half matches the committed
+  `tauri.conf.json` (`B4E84ADA465319A8`). **P71 must still not touch it.**
 - **Identify the Dependabot moderate alert** (ruling #15 — "not now", and **no `gh` install
   authorised**, so the orchestrator cannot read the page). The *high* is the known `nanoid`
   GHSA-2v37-7h3g-55p8: build/test tooling only, deliberately ignored in `pnpm-workspace.yaml`.
@@ -640,7 +658,7 @@ ruling is kept in place in the sections that follow; this ledger is the authorit
 | 11 | P77 tag-sync check | **Fold into the existing auto-fetch cycle** (on, 5-min). No new trigger, no repo-open network call. |
 | 12 | Process changes | **ALL THREE ADOPTED** — see the new rules block below. |
 | 13 | P108 `AC11` | **ACCEPT the source-derived figures** for the two unreachable states; record the limitation and **close AC11**. |
-| 14 | Back up `.tauri/updater-prod.key` | **Not now** — stays on the board as a user action. Still single-copy; still breaks auto-update for every installed client if lost. |
+| 14 | Back up `.tauri/updater-prod.key` | ~~**Not now** — stays on the board as a user action.~~ **✅ DONE — the user confirmed the backup on 2026-09-22.** No longer single-copy. |
 | 15 | Dependabot moderate alert | **Not now**, and **no `gh` install authorised** — so the orchestrator cannot read the page. Stays open as a user action. |
 | 16 | P91 owed AI-gate item (real `logs/*.jsonl`) | **User will boot `pnpm tauri dev` with Dev mode ON.** Orchestrator parses the files once they exist. Verified 2026-09-11: no Dev-mode key in persisted `settings.json`, so it cannot be pre-set from disk. |
 | 17 | macOS ad-hoc signing | **PARK as blocked-on-release.** Re-raise when a tag is next cut. Not open work. |
@@ -834,7 +852,8 @@ The rulings are in the two ledgers above; the contracts are on disk and indexed 
 ### P112 — remove user-supplied `terminalCommand` / `editorCommand` (rulings #4 → #21)
 
 - Contracts: `P112-external-tool-detection.md` (behaviour) · `P112-tool-catalog.md` (data) ·
-  `P112-ui.md` (signed 2026-09-11). Status `pending` (contracted).
+  `P112-ui.md` (signed 2026-09-11). Status ~~`pending` (contracted)~~ → **`done` — both halves, the
+  native checkpoint confirmed by the user 2026-09-22.**
 - Both settings are **empty strings** in the user's real `settings.json` — nothing installed depends
   on this capability.
 - **`safe_cwd()` must STAY.** The board once claimed removal retires it; the architect refuted that —
@@ -3284,7 +3303,7 @@ part number. The table below is the short form.
 | File | Covers |
 |---|---|
 | `docs/history/README.md` | **The archive index** — which file/part holds which milestone. |
-| `docs/history/todo-archive-2026-09.md` | **Parts 71-75 (moved 2026-09-16; P112 itself STAYED — its USER CHECKPOINT is pending):** the P112 sub-inc 3/4 build + review transcript, incl. the `P112-ui.md` §17 rulings, the four bad citations, the coalescing lesson and the sub-inc-3 audit (71) · superseded gate states (`d0e6cf0`, `dcff54b`, the 427.4s confirming run, the `e9ed93d` Rust tier) and the completed 2026-09-14 queue — F6, P77, the e2e cold-timing measurement, the UNC clearance (72) · the P112 sub-inc 2 + P113 phase-1 review transcript (73) · **the two items CLOSED 2026-09-16 with their evidence** — "Open in editor" (fixed `fd93616`, with its `os error 193` measurement table) and the false General subtitle (resolved by the picker landing) — plus the `.cmd` launch-path audit (74) · superseded curator bookkeeping, the duplicated `cargo fmt` measurement and the pre-consolidation `cargo fmt` section (75). **Parts 62-70 (moved 2026-09-14, after the user ruled all 22 FOR-USER items on 2026-09-11):** the stale 2026-09-10 resume block + FU-1 residue (62) · the FOR-USER evidence blocks for items 0-6 (63) · the `IN FLIGHT` queue, the 2026-09-11 orchestrator closures, the unreviewed-MCP-merge warning (64) · **`SEC-2026-09-11`**, the MCP tool-contract audit, with its verified-CLEAN register (65) · **`SEC-2026-09-11b`**, the review of that implementation, with its verified-CLEAN register (66) · P108 `AC11`, closed by ruling #13 (67) · the happy-dom load-flake narrative (68) · the open follow-ups as they stood pre-condensation (69.1 P91 · 69.2 SEC-2026-09-03 through the 2026-09-01 hoisted items · 69.3 P69 Settings) · superseded curator bookkeeping (70). **Parts 54-61 (moved 2026-09-10):** the whole USER-CHECKPOINT block — P102+P105, P106, P107, P108, P91 (54) · P110 + P109 (55) · the 2026-09-03 closures + SEC-2026-09-03 remediation (56) · `Queued housekeeping` incl. the `e149382` CSS-split proof (57) · the superseded `c218258` and earlier gate states (58) · the 2026-09-10 session: P111, FU-1, six reviewer-follow-up closures (59) · the board's record of the confirmation (60) · superseded curator bookkeeping (61). **Parts 51-53 (2026-09-03):** the `5c2dcd2` + `c6cd7dd` gate states and the e2e-contention mis-diagnosis · the full narratives of everything closed 2026-09-03 · the durable-lessons stories and worked numbers. **Parts 36-50 (2026-09-03):** the file-size refactor pass · P102+P105, P106, P107, P108 and the P91 security arc + audit + build diary · superseded pre-ship filings · the 2026-09-03 velocity pass · P99, P100, P101, P98, P95, P96, P97 · built-bundle e2e + P103 + P104 · the DX/velocity stubs · the pre-condensation open-follow-up text. **Parts 33-35 (2026-09-01):** the P84 record gap · macOS ad-hoc signing · the two 2026-08-22 design reviews. **Parts 22-32 (2026-09-01):** P94 · P93+P92 · DEP REFRESH · P90+P89 · P88 · the P85-P87 batch · P82+P83 · divergence reconcile + Release 1.1.0 · the DX dev-loop text · the confirmed-checkpoints block · the 2026-08-21 resolved follow-ups. |
+| `docs/history/todo-archive-2026-09.md` | **Parts 71-75 (moved 2026-09-16; P112 itself STAYED — its USER CHECKPOINT was pending *then*, and was confirmed by the user 2026-09-22):** the P112 sub-inc 3/4 build + review transcript, incl. the `P112-ui.md` §17 rulings, the four bad citations, the coalescing lesson and the sub-inc-3 audit (71) · superseded gate states (`d0e6cf0`, `dcff54b`, the 427.4s confirming run, the `e9ed93d` Rust tier) and the completed 2026-09-14 queue — F6, P77, the e2e cold-timing measurement, the UNC clearance (72) · the P112 sub-inc 2 + P113 phase-1 review transcript (73) · **the two items CLOSED 2026-09-16 with their evidence** — "Open in editor" (fixed `fd93616`, with its `os error 193` measurement table) and the false General subtitle (resolved by the picker landing) — plus the `.cmd` launch-path audit (74) · superseded curator bookkeeping, the duplicated `cargo fmt` measurement and the pre-consolidation `cargo fmt` section (75). **Parts 62-70 (moved 2026-09-14, after the user ruled all 22 FOR-USER items on 2026-09-11):** the stale 2026-09-10 resume block + FU-1 residue (62) · the FOR-USER evidence blocks for items 0-6 (63) · the `IN FLIGHT` queue, the 2026-09-11 orchestrator closures, the unreviewed-MCP-merge warning (64) · **`SEC-2026-09-11`**, the MCP tool-contract audit, with its verified-CLEAN register (65) · **`SEC-2026-09-11b`**, the review of that implementation, with its verified-CLEAN register (66) · P108 `AC11`, closed by ruling #13 (67) · the happy-dom load-flake narrative (68) · the open follow-ups as they stood pre-condensation (69.1 P91 · 69.2 SEC-2026-09-03 through the 2026-09-01 hoisted items · 69.3 P69 Settings) · superseded curator bookkeeping (70). **Parts 54-61 (moved 2026-09-10):** the whole USER-CHECKPOINT block — P102+P105, P106, P107, P108, P91 (54) · P110 + P109 (55) · the 2026-09-03 closures + SEC-2026-09-03 remediation (56) · `Queued housekeeping` incl. the `e149382` CSS-split proof (57) · the superseded `c218258` and earlier gate states (58) · the 2026-09-10 session: P111, FU-1, six reviewer-follow-up closures (59) · the board's record of the confirmation (60) · superseded curator bookkeeping (61). **Parts 51-53 (2026-09-03):** the `5c2dcd2` + `c6cd7dd` gate states and the e2e-contention mis-diagnosis · the full narratives of everything closed 2026-09-03 · the durable-lessons stories and worked numbers. **Parts 36-50 (2026-09-03):** the file-size refactor pass · P102+P105, P106, P107, P108 and the P91 security arc + audit + build diary · superseded pre-ship filings · the 2026-09-03 velocity pass · P99, P100, P101, P98, P95, P96, P97 · built-bundle e2e + P103 + P104 · the DX/velocity stubs · the pre-condensation open-follow-up text. **Parts 33-35 (2026-09-01):** the P84 record gap · macOS ad-hoc signing · the two 2026-08-22 design reviews. **Parts 22-32 (2026-09-01):** P94 · P93+P92 · DEP REFRESH · P90+P89 · P88 · the P85-P87 batch · P82+P83 · divergence reconcile + Release 1.1.0 · the DX dev-loop text · the confirmed-checkpoints block · the 2026-08-21 resolved follow-ups. |
 | `docs/history/todo-archive-2026-08.md` | Parts 1-9: P65 to P28 build detail, the Phase 1-4 banners, resolved FOR-USER decisions, P69(1.0.0)/P67/P68 detail. Parts 10-16: the P62-P74 checkpoint waiver + P71-P74, the P69 Settings redesign, the Audit #2 fix batch. Parts 17-18: P70 and P77. Part 19: the follow-ups resolved 2026-08-21, verbatim. Part 20: P78/P79/P80. Part 21: P80b/P81/P82. |
 | `docs/history/todo-archive.md` | P27 to P2, M0-M6 |
 | `docs/history/milestones-mvp.md` | the M0-M6 AI-gate vs USER CHECKPOINT split |
