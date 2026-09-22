@@ -1,8 +1,8 @@
-//! P91 §6 writer tests — rotation at the part cap, start-of-session pruning,
-//! the `session` header that every file must open with, and (2026-09-11) the
-//! §7.2 home-masking WIRING: that the writer actually passes its configured home
-//! to the scrubber and stamps `homeMasking` truthfully. The masking rules
-//! themselves are `tests_scrub_home`'s job.
+//! P91 §6 writer tests — rotation at the part cap, start-of-session pruning, the
+//! `session` header that every file must open with, and (2026-09-11) the §7.2
+//! home-masking WIRING: that the writer passes its configured home to the scrubber
+//! and stamps `homeMasking` truthfully. Masking rules themselves belong to
+//! `tests_scrub_home`; P117 §2.2's `repo` field rule to `tests_repo_redaction`.
 
 use std::path::Path;
 
@@ -40,6 +40,7 @@ fn rec(component: &str) -> LogRecord {
         trace: Some("t1".into()),
         span: None,
         caused_by: None,
+        repo: None,
         payload: LogPayload::Render {
             component: component.into(),
             count: 1,
@@ -74,7 +75,7 @@ fn first_line_is_a_valid_session_header() {
     );
     let rows = lines(&dir.path().join(&name));
     assert_eq!(rows[0]["kind"], "session");
-    assert_eq!(rows[0]["schema"], 2);
+    assert_eq!(rows[0]["schema"], 3);
     assert_eq!(rows[0]["redaction"], "strict");
     assert_eq!(rows[0]["devMode"], true);
     assert_eq!(rows[0]["sessionId"], "sdeadbeef");
@@ -428,8 +429,7 @@ fn a_persistent_rotation_block_keeps_write_failed_sticky() {
 fn a_configured_home_is_masked_out_of_every_written_field() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut c = cfg(dir.path(), Limits::default());
-    // Raw mode, because strict mode collapses paths to `path#N` on its own and
-    // would hide whether the home pass ran at all.
+    // Raw mode: strict collapses paths to `path#N` and would hide the home pass.
     c.redaction = RedactionMode::Raw;
     c.home_mask = Some("c:/users/jane".to_string());
     let mut w = LogWriter::open(c, test_redactor()).expect("open");

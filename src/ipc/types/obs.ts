@@ -19,7 +19,7 @@ export type { LogLevel, RedactionMode } from './settings';
  * — `src-tauri/src/obs/writer.rs` is what actually stamps it into the header —
  * and `src-tauri/src/obs/tests_schema_parity.rs` pins this copy to it.
  */
-export const OBS_SCHEMA_VERSION = 2;
+export const OBS_SCHEMA_VERSION = 3;
 
 /** 12-char base36, monotonic-prefixed (§2.1). */
 export type TraceId = string;
@@ -97,6 +97,18 @@ export interface LogRecordBase {
   trace?: TraceId;
   span?: SpanId;
   causedBy?: TraceId;
+  /**
+   * P117 §2.2 — the canonical `repoId` this record is about. Absent ⇒ not
+   * repo-scoped, or unattributed. Never rendered in the UI; it is a correlation
+   * key that makes `redundant-refresh` and `cache-collapse` repo-aware.
+   *
+   * **NORMATIVE: the RAW string, never redacted on this side.** `tagPath` /
+   * `tagValue` must never touch it. A `ui:path#3` here would never equal the
+   * Rust span's raw path, so `cache-collapse` would fire right after a real
+   * mutation — the exact inversion of the suppression argument. The Rust writer
+   * is the only redaction point for this field (strict ⇒ `repo#N`).
+   */
+  repo?: string;
   kind: LogKind;
 }
 

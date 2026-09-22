@@ -126,6 +126,7 @@ pub fn make_record(sink: &Sink, lvl: LogLevel, meta: &TraceMeta, payload: LogPay
         trace: Some(meta.trace.clone()),
         span: None,
         caused_by: meta.caused_by.clone(),
+        repo: None,
         payload,
     }
 }

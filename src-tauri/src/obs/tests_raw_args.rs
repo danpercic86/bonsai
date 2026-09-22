@@ -32,6 +32,7 @@ fn ipc_call(cmd: &str, args: Value, arity: &[(&str, &str)]) -> LogRecord {
         trace: Some("t1".into()),
         span: Some("s1".into()),
         caused_by: None,
+        repo: None,
         payload: LogPayload::IpcCall {
             cmd: cmd.into(),
             args_hash: "abc123".into(),

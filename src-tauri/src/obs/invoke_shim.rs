@@ -93,6 +93,7 @@ pub fn instrumented_handler<R: Runtime>(
                     trace,
                     span,
                     caused_by: None,
+                    repo: None,
                     payload: LogPayload::IpcRecv { cmd },
                 };
                 sink.enqueue(rec);

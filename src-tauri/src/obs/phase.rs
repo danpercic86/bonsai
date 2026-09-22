@@ -125,6 +125,9 @@ struct Inner {
     deadline_frac: Option<f32>,
     cache: Option<CacheOutcome>,
     items: Option<u64>,
+    /// P117 §2.2 — the canonical `repoId` this span is about, RAW. The writer
+    /// redacts it; nothing here may.
+    repo: Option<String>,
 }
 
 /// Explicit sub-span recorder (§3.1.1). Holds the live sink, so `finish` can emit
@@ -157,6 +160,7 @@ impl PhaseRecorder {
             deadline_frac: None,
             cache: None,
             items: None,
+            repo: None,
         });
         PhaseRecorder { sink, inner }
     }
@@ -229,6 +233,17 @@ impl PhaseRecorder {
         }
     }
 
+    /// P117 §2.2 — attributes this span to a repo, so the repo-keyed
+    /// `cache-collapse` rule can partition its window. Takes the RAW canonical
+    /// `repoId` (the `AppState::repos` key); redaction is the writer's job and
+    /// no producer may pre-redact it, or the detector would never match the
+    /// UI's `refresh` record. Call before [`PhaseRecorder::finish`].
+    pub fn note_repo(&mut self, repo_id: &str) {
+        if let Some(inner) = self.inner.as_mut() {
+            inner.repo = Some(repo_id.to_string());
+        }
+    }
+
     /// Emits the single `span` record. Trace causality is explicit, like
     /// [`super::trace::emit_logged`]. A no-op recorder drops silently.
     pub fn finish(self, meta: &TraceMeta, outcome: SpanOutcome) {
@@ -261,7 +276,10 @@ impl PhaseRecorder {
             items: inner.items,
             outcome: Some(outcome.as_str().to_string()),
         };
-        let rec = trace::make_record(&sink, LogLevel::Debug, meta, payload);
+        let mut rec = trace::make_record(&sink, LogLevel::Debug, meta, payload);
+        // P117 §2.2 — a base field, not a payload field, so `make_record` (which
+        // knows only trace/causality) cannot stamp it.
+        rec.repo = inner.repo;
         sink.enqueue(rec);
     }
 }
@@ -284,6 +302,7 @@ impl PhaseRecorder {
                 deadline_frac: None,
                 cache: None,
                 items: None,
+                repo: None,
             }),
         }
     }
@@ -294,6 +313,11 @@ impl PhaseRecorder {
         let names = inner.phases.into_iter().map(|p| p.name).collect();
         let cache = inner.cache.map(|c| c.as_str());
         (names, cache)
+    }
+
+    /// The raw repo attribution [`PhaseRecorder::note_repo`] recorded, if any.
+    pub fn test_repo(&self) -> Option<&str> {
+        self.inner.as_ref().and_then(|i| i.repo.as_deref())
     }
 }
 

@@ -8,9 +8,14 @@
 //! written straight back into the same stream, each getting its own `seq`.
 //!
 //! **Redaction-independent by construction (§7.2 (c)).** Every rule keys off `cmd`
-//! names, `argsHash`, scopes, component ids, counts and timings — never off repo
-//! content and **never off a redaction ordinal**. A `strict` log yields byte-
-//! identical anomaly output to a `raw` one; `tests_anomaly` asserts it.
+//! names, `argsHash`, scopes, component ids, counts, timings and — since P117
+//! §2.2 — the record's `repo` correlation key. Never off repo *content* and
+//! **never off a redaction ordinal**: `repo` is observed in its RAW pre-redaction
+//! form because `sink::writer_loop` feeds the detector the in-memory record while
+//! redaction runs on a separate `serde_json::Value` copy in `writer.rs`. So a
+//! `strict` log still yields byte-identical anomaly output to a `raw` one — and
+//! no anomaly `detail` ever interpolates the value (§2.2 point 8), which is what
+//! keeps that true; `tests_anomaly` asserts it.
 //!
 //! **Time base.** Every window and rate limit keys off the record's own `ts`
 //! (wall-clock ms), never arrival/`Instant::now()` time: frontend records arrive
@@ -32,6 +37,7 @@ use std::sync::Arc;
 
 use super::record::{AnomalySeverity, LogPayload, LogRecord, LogSource};
 
+mod cache;
 mod slow;
 mod window;
 
@@ -55,9 +61,17 @@ const OPEN_CALLS_CAP: usize = 1024;
 /// a finite catalogue.
 #[derive(Default)]
 pub struct AnomalyDetector {
-    /// Wall-clock ts of every mutation-command `ipc.call` seen, pruned to
-    /// `MAX_HISTORY_MS`. Shared by `dup-ipc`, `redundant-refresh`, `cache-collapse`.
-    mutations: Vec<i64>,
+    /// Wall-clock ts of every mutation-command `ipc.call` seen, WITH the repo it
+    /// was attributed to, pruned to `MAX_HISTORY_MS`. Shared by `dup-ipc`,
+    /// `redundant-refresh`, `cache-collapse`.
+    ///
+    /// P117 §2.4 — `None` means "unattributed" and suppresses EVERYWHERE, which
+    /// is the deliberately conservative direction (a missed anomaly, never a
+    /// false one) and is exactly today's behaviour for any producer that does not
+    /// set `repo`. A repo-keyed rule treats a mutation as intervening when
+    /// `m.repo == this_repo || m.repo.is_none()`; `dup-ipc` treats all of them as
+    /// intervening, unchanged.
+    mutations: Vec<(i64, Option<String>)>,
 
     ipc_calls: Sliding,
     refreshes: Sliding,
@@ -100,7 +114,7 @@ impl AnomalyDetector {
                 // requirement). A future payload gaining an `args_hash` therefore
                 // cannot leak into this rule.
                 if is_mutation_cmd(cmd) {
-                    self.mutations.push(ts);
+                    self.mutations.push((ts, rec.repo.clone()));
                 }
                 self.detect_dup_ipc(ts, seq, cmd, args_hash, &mut out);
                 self.track_open_call(rec.trace.as_deref(), seq);
@@ -112,7 +126,7 @@ impl AnomalyDetector {
                     .on_ipc_result(ts, seq, cmd, *ms, trace.as_deref(), &mut out);
             }
             LogPayload::Refresh { scope, .. } => {
-                self.detect_redundant_refresh(ts, seq, scope, &mut out);
+                self.detect_redundant_refresh(ts, seq, rec.repo.as_deref(), scope, &mut out);
             }
             LogPayload::Effect {
                 component, effect, ..
@@ -173,6 +187,19 @@ impl AnomalyDetector {
         self.slow.baseline_len()
     }
 
+    /// TEST ONLY — §11 boundedness of the per-repo `cache-collapse` debounce map.
+    #[cfg(test)]
+    pub(super) fn cache_last_fire_len(&self) -> usize {
+        self.slow.cache_last_fire_len()
+    }
+
+    /// TEST ONLY — §11 boundedness of the `redundant-refresh` debounce map, whose
+    /// key became `repo\0scope` in P117 §2.3.
+    #[cfg(test)]
+    pub(super) fn refresh_last_fire_len(&self) -> usize {
+        self.refreshes.last_fire_len()
+    }
+
     /// Session-end pass (§5): every unanswered `ipc.call` is an `orphan-trace`.
     pub fn on_session_end(&mut self) -> Vec<LogRecord> {
         let now = super::writer::now_ms();
@@ -219,7 +246,7 @@ impl AnomalyDetector {
 
     fn prune(&mut self, now: i64) {
         let cutoff = now - MAX_HISTORY_MS;
-        self.mutations.retain(|&m| m >= cutoff);
+        self.mutations.retain(|(m, _)| *m >= cutoff);
         self.slow.prune(now);
     }
 
@@ -262,6 +289,7 @@ pub(super) fn build_anomaly(
         trace: None,
         span: None,
         caused_by: None,
+        repo: None,
         payload: LogPayload::Anomaly {
             rule: rule.to_string(),
             severity,
@@ -276,6 +304,30 @@ pub(super) fn build_anomaly(
 /// if any.
 fn traces_of(rec: &LogRecord) -> Vec<String> {
     rec.trace.iter().cloned().collect()
+}
+
+/// P117 §2.4 — does mutation `m` count as intervening for a rule keyed on
+/// `this_repo`? Yes when it is attributed to the same repo, and yes when it is
+/// UNATTRIBUTED (`None`), which suppresses everywhere for its window. Rare,
+/// conservative, accepted — suppression only ever costs a missed anomaly, never
+/// a false one.
+///
+/// The `None` bucket is NOT reachable via "a mutation command with no `repoId`
+/// argument" — the contract's §2.4 example (`clone`, `init`) is factually wrong
+/// twice over, and the wrong version stood in this doc comment until the P117
+/// follow-up pass. First, `cloneRepo`/`initRepo` never enter `mutations` at all:
+/// `is_mutation_cmd` below is keyed on snake_case while the only producer of
+/// `ipc.call` logs the camelCase JS property name verbatim, so they match
+/// nothing and suppress nothing. Second, since the follow-up added
+/// `REPO_PARAM_FALLBACK` in `src/obs/repoArg.ts`, **all 29 recognised mutations
+/// attribute**. What actually still reaches `None`: a `schema: 2` line replayed
+/// from an older log (§2.6/AC2-10), a repo lift that failed its non-empty-string
+/// check, and any future producer that omits the field.
+pub(super) fn mutation_attributed_to(m: Option<&str>, this_repo: Option<&str>) -> bool {
+    match m {
+        None => true,
+        Some(repo) => Some(repo) == this_repo,
+    }
 }
 
 /// Repo-mutating commands (§5 "no intervening mutation"; §5.1 `cache-collapse`).
@@ -337,6 +389,10 @@ mod tests_anomaly;
 #[cfg(test)]
 #[path = "tests_anomaly_slow.rs"]
 mod tests_anomaly_slow;
+
+#[cfg(test)]
+#[path = "tests_anomaly_repo.rs"]
+mod tests_anomaly_repo;
 
 #[cfg(test)]
 #[path = "tests_histogram.rs"]

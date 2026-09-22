@@ -170,6 +170,24 @@ pub fn enforce(v: &mut Value, r: &Redactor) {
         // argsShape"). Removed unconditionally: only `ipc.call` carries it, and a
         // producer that invents the key elsewhere must not get a free pass.
         map.remove("args");
+        // P117 §2.2 point 4 — the record's `repo` base field is a canonical
+        // `repoId`, i.e. an absolute worktree PATH, and it must reach a strict
+        // file as `repo#N` and nothing else.
+        //
+        // A FIELD-NAME rule, deliberately, and NOT left to `redact_names`' shape
+        // heuristic below: `is_run_char` splits runs on whitespace, so
+        // `D:\Repos\my project` would ordinalise `D:\Repos\my` and leave
+        // `project` in the clear. Do not relax this to "the generic walk already
+        // redacts paths" — for this one field it demonstrably does not. The
+        // payload is `#[serde(flatten)]`, so `repo` is a top-level key.
+        //
+        // Runs BEFORE `walk`, which then sees `repo#N` — separator-free, so not
+        // path-shaped, so left alone. `Kind::Repo`'s own ordinal namespace keeps
+        // `repo#3` unrelated to `path#3`.
+        if let Some(Value::String(raw)) = map.get("repo") {
+            let tag = r.tag(Kind::Repo, raw);
+            map.insert("repo".to_string(), Value::String(tag));
+        }
     }
     walk(v, r);
 }

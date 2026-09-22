@@ -12,6 +12,15 @@
  * like strict mode (`argsHash` + `argsShape`, no values), so a command added
  * tomorrow cannot leak by omission.
  *
+ * **Second consumer (P117 §2.2).** `src/obs/repoArg.ts` reads this table as a
+ * positional NAME map, to attribute an `ipc.call` record to a repo. So nulling a
+ * `repoId` slot out — a safe direction for leaks — silently drops that
+ * attribution, and per `anomaly.rs`'s `mutation_attributed_to` an
+ * **unattributed** mutation suppresses `redundant-refresh`/`cache-collapse` in
+ * **every** repo: a privacy tightening would quietly WIDEN anomaly suppression.
+ * The "every recognised mutation attributes" guard in `rawArgPolicy.test.ts`
+ * fails when that happens; keep it passing rather than deleting a row's name.
+ *
  * The writer (`src-tauri/src/obs/raw_args.rs`) enforces an *independent*
  * shape+vocabulary invariant and deliberately does NOT read this table: a shared
  * table cannot defend against a wrong row or against producer code that ignores

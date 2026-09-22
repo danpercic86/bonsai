@@ -133,7 +133,15 @@ impl AnomalyDetector {
             .map(|e| (e.seq, e.ts));
         self.ipc_calls.push(ts, seq, key.clone());
         if let Some((prior_seq, prior_ts)) = prior {
-            let mutation_between = self.mutations.iter().any(|&m| m > prior_ts && m <= ts);
+            // P117 §2.5 — `dup-ipc` is UNCHANGED: its key is `cmd\0argsHash` and
+            // `argsHash` already hashes the whole args object (which carries
+            // `repoId` for every repo-scoped command), so it is repo-discriminating
+            // already. It adopts the attributed `mutations` tuple and deliberately
+            // IGNORES the attribution — any mutation still intervenes.
+            let mutation_between = self
+                .mutations
+                .iter()
+                .any(|(m, _)| *m > prior_ts && *m <= ts);
             if !mutation_between && self.ipc_calls.arm(&key, ts, W_DUP_IPC_MS) {
                 out.push(self.anomaly(
                     "dup-ipc",
@@ -149,30 +157,51 @@ impl AnomalyDetector {
         }
     }
 
+    /// §5 `redundant-refresh`, P117 §2.3 — keyed on `(repo, scope)`, not `scope`
+    /// alone. With 5 repos open, 17 of 26 firings in the measured session were
+    /// cross-repo pairs sharing a scope and nothing else.
+    ///
+    /// `repo: None` gets its own bucket (`""`), i.e. today's repo-blind behaviour
+    /// for any unattributed producer (§2.5) — never merged into a repo's bucket.
+    /// The composite key goes through ALL FOUR uses — the `find` lookup, `push`,
+    /// `arm` and `refs_for`. Missing any one reintroduces the bug elsewhere:
+    /// `arm` keyed on `scope` alone would rate-limit repo B out of a genuine
+    /// finding because repo A had just fired.
     pub(super) fn detect_redundant_refresh(
         &mut self,
         ts: i64,
         seq: u64,
+        repo: Option<&str>,
         scope: &str,
         out: &mut Vec<LogRecord>,
     ) {
+        let key = format!("{}\u{0}{scope}", repo.unwrap_or(""));
         self.refreshes.prune(ts, W_REFRESH_MS);
         let prior_ts = self
             .refreshes
             .events
             .iter()
             .rev()
-            .find(|e| e.key == scope)
+            .find(|e| e.key == key)
             .map(|e| e.ts);
-        self.refreshes.push(ts, seq, scope.to_string());
+        self.refreshes.push(ts, seq, key.clone());
         if let Some(prior_ts) = prior_ts {
-            let mutation_between = self.mutations.iter().any(|&m| m > prior_ts && m <= ts);
-            if !mutation_between && self.refreshes.arm(scope, ts, W_REFRESH_MS) {
-                let refs = self.refreshes.refs_for(scope);
+            let mutation_between = self.mutations.iter().any(|(m, m_repo)| {
+                *m > prior_ts && *m <= ts && super::mutation_attributed_to(m_repo.as_deref(), repo)
+            });
+            if !mutation_between && self.refreshes.arm(&key, ts, W_REFRESH_MS) {
+                let refs = self.refreshes.refs_for(&key);
+                // §2.2 point 8 — the detail names the SCOPE only. Interpolating
+                // the repo value would leak a path in raw mode and break the
+                // strict/raw byte-identity of the anomaly stream; `refs` already
+                // points at the records that carry the dimension.
                 out.push(self.anomaly(
                     "redundant-refresh",
                     AnomalySeverity::Warn,
-                    format!("{scope}: repeated refresh within {W_REFRESH_MS}ms, no intervening mutation"),
+                    format!(
+                        "{scope}: repeated refresh for the same repo within \
+                         {W_REFRESH_MS}ms, no intervening mutation"
+                    ),
                     refs,
                     Vec::new(),
                     ts,

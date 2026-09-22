@@ -69,6 +69,12 @@ export function useCoalescedRefresh(
 ): UseCoalescedRefresh {
   const runRef = useRef(run);
   runRef.current = run;
+  // P117 §2.2 — the coalescer closure below is built ONCE, so `repoId` has to be
+  // read through a ref exactly like `run`: a captured value would attribute
+  // every later round to whichever repo was open at mount, which is precisely
+  // the cross-repo confusion the dimension exists to remove.
+  const repoIdRef = useRef(repoId);
+  repoIdRef.current = repoId;
 
   // P86a: pending-scope accumulator — the union of every scope requested since
   // the last executed round started. Read+cleared when a round begins, so the
@@ -100,6 +106,9 @@ export function useCoalescedRefresh(
     pendingCountRef.current = 0;
     roundNoRef.current += 1;
     const round = roundNoRef.current;
+    // Read at round START: this is the repo the round executes for, even if the
+    // user switches repos while it settles.
+    const repo = repoIdRef.current;
     countRefreshRound(scope);
     // §2.5 — ONE record per executed round, emitted when the round SETTLES so `ms`
     // is the round's execution duration (matching `ipc.result`/`span` semantics),
@@ -116,6 +125,12 @@ export function useCoalescedRefresh(
         contributingTraces,
         collapsed,
         ms: Date.now() - runStart,
+        // P117 §2.2 — the repo dimension, RAW and unredacted. Without it
+        // `redundant-refresh` keys on `scope` alone and every pair of repos
+        // refreshing together reads as one repo refreshing twice (17 of 26
+        // firings in the measured 5-repo session). Must stay byte-identical to
+        // the `repoId` the Rust `graph.get` span reports, so no `tagPath` here.
+        repo,
       });
     });
   }));

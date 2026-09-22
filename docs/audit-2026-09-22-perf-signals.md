@@ -133,9 +133,12 @@ Two consequences:
 ## Finding 2 — `redundant-refresh`: MOSTLY CORRECT BEHAVIOUR + a monitoring defect
 
 **Verdict: the app is behaving correctly. The detector is wrong.** Of 26 firings
-in this session, **~17 are false positives**, ~9 are genuine same-repo double
-rounds costing **≈0.8 s in total over 152 minutes**. The 300 ms debounce needs no
-change.
+in this session, **at least ~17 are false positives**, and **at most ~9** are genuine same-repo
+double rounds costing **≤ ≈0.8 s in total over 152 minutes**. The 300 ms debounce needs no
+change. (The 17/9 split was originally stated as exact; see the CORRECTION under
+"Separating the two populations" — the mutation clause used to classify them is
+itself broken by a casing mismatch, so 9 is a ceiling and the false-positive
+share can only be larger. The verdict is unaffected, and is in fact reinforced.)
 
 ### The detector is repo-blind
 
@@ -179,6 +182,29 @@ B-side rounds even form two strictly increasing series (A: 34, 35, 36 / B: 48, 5
 11→12, 13→14, 18→19, 35→36, 50→51, 60→61, 62→63; Δt = 879, 381, 857, 477, 417,
 796, 384, 607, 935 ms. Second-round cost: 16, 20, 247, 199, 88, 45, 23, 60,
 107 ms = **805 ms total**.
+
+> **CORRECTION (2026-09-22, from the P117 increment-2 review — read this with the 9).**
+> Treat **9 as an upper bound, not a count.** The classification above leans on the rule's
+> "no intervening mutation" clause, and that clause is far weaker than this report assumed:
+> `is_mutation_cmd`'s table is **snake_case** (`anomaly.rs:326-366`) while the only producer of
+> `ipc.call` is `wrapMethod`, which logs the JS property name verbatim — **camelCase**
+> (`ipcProxy.ts:112,129`) — and Rust's snake_case `ipc.recv` is consumed by no rule
+> (`anomaly.rs:173` is `_ => {}`). So only the **13 single-word prefixes** ever match: `commit`,
+> `stage`, `unstage`, `discard`, `checkout`, `merge`, `rebase`, `cherrypick`, `revert`, `reset`,
+> `fetch`, `pull`, `push`. **34 plausible mutations never register at all**, including `forcePush`,
+> `cloneRepo`, `initRepo`, `createBranch`, `deleteBranch`, `createTag`, `createStash`, `applyStash`,
+> `addRemote`, `add`/`removeWorktree`, `bisect*` and `autoSyncTags`. Some of the 9 may therefore be
+> legitimate post-mutation refreshes that the rule simply failed to recognise as such.
+>
+> This **strengthens** the finding's verdict rather than weakening it — the false-positive share is
+> larger than the ~17 estimated, not smaller — but the specific figure 9 is no longer defensible as
+> a true-positive count, and the cost figure (805 ms) is correspondingly an upper bound too.
+> Independently: **scheduled auto-fetch mutations are invisible to the clause in every mode**, before
+> and after P117 — periodic fetch runs entirely in Rust (`scheduler/exec.rs:151` calls `fetch_all`
+> directly) and `LogPayload::IpcCall` has no Rust producer, so a `cache-collapse` immediately after
+> an auto-fetch tick is an *unsuppressable* false positive. Filed as its own task; fixing it needs a
+> Rust-side `repo` producer, which `record.rs`'s three-producer allow-list forbids without a
+> contract change.
 
 ### The genuine 9 are also correct behaviour
 

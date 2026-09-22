@@ -1,4 +1,4 @@
-//! P91 §3 — the observability record schema (v2).
+//! P91 §3 — the observability record schema (v3).
 //!
 //! ONE concern: the wire/on-disk shape of a log record. No IO, no policy, no
 //! redaction — those live in `writer.rs` / `sink.rs` / `redact.rs`.
@@ -28,11 +28,23 @@
 //! schema-1 records, 680 of them carrying the old ambiguous `[]`. A reader can
 //! now tell the two encodings apart by the header's `schema`, which is the whole
 //! point of the field.
+//!
+//! **v2 → v3 (2026-09-22, P117 §2.6).** The new [`LogRecord::repo`] field is
+//! additive and optional, so by the rule above it would NOT bump on its own.
+//! The bump is for an EXISTING field changing MEANING: in a v3 file a
+//! `redundant-refresh` or `cache-collapse` `anomaly` record means *one repo* did
+//! the thing, where in a v2 file the identical `rule`/`detail`/`refs` shape
+//! means *any set of repos* did (the rules pooled every open repo). A reader
+//! cannot tell those two apart except by the header's `schema` — exactly the
+//! v1 → v2 argument. **Do not "correct" this back to 2.** A `schema: 2` line
+//! still deserialises (missing `repo` ⇒ `None`) and replays repo-blind.
 
 use serde::{Deserialize, Serialize};
 
-/// Record-schema version, written into the `session` header record (§6).
-pub const OBS_SCHEMA_VERSION: u32 = 2;
+/// Record-schema version, written into the `session` header record (§6). At 3
+/// since P117 §2.6 — see the module note for why a purely additive field moved
+/// it: the *meaning* of an existing `anomaly` record changed.
+pub const OBS_SCHEMA_VERSION: u32 = 3;
 
 /// Verbosity level of a record AND the Dev-mode capture threshold
 /// (`DevSettings::level`, §10). Ordered most- to least-severe; `trace`
@@ -164,6 +176,22 @@ pub struct LogRecord {
     pub span: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub caused_by: Option<String>,
+    /// P117 §2.2 — the repo this record is about, as the canonical `repoId` (the
+    /// `AppState::repos` key / `open_repo`'s returned id). In memory this is the
+    /// RAW string: the anomaly detector keys on it (`obs/sink.rs` feeds it the
+    /// in-memory record, never the redacted copy), so the repo-keyed rules are
+    /// bit-identical in strict and raw mode. The WRITER decides what reaches
+    /// disk (§7.1): strict ⇒ `repo#N` via `strict::enforce`'s field-name rule,
+    /// raw ⇒ the home-masked path. NOT a promised cross-side join key —
+    /// correlate on `trace`/`span`/`argsHash`, as the `redactionNote` says.
+    ///
+    /// Emitted by exactly three producers (allow-list, do not widen without a
+    /// contract change): the UI `refresh` record, the Rust `span{op:"graph.get"}`
+    /// record, and `ipc.call` for repo-scoped commands. Every other kind leaves
+    /// it `None`, which is its own bucket in the repo-keyed rules (§2.5) — i.e.
+    /// today's repo-blind behaviour.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
     /// Carries the `kind` discriminant (internally tagged) plus the per-kind
     /// fields, flattened into the same JSON object as the base fields.
     #[serde(flatten)]
@@ -240,7 +268,7 @@ pub enum LogPayload {
         /// and `raw_args`' W6 rule would be unreachable in production.
         ///
         /// Optional + additive, so this field alone does not move
-        /// `OBS_SCHEMA_VERSION` (the version is at 2 for an unrelated reason —
+        /// `OBS_SCHEMA_VERSION` (the version is at 3 for unrelated reasons —
         /// see the module note).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         args_omitted: Option<u32>,
@@ -472,32 +500,4 @@ pub struct PhaseTiming {
     /// Optional unit count for the phase (commits walked, files scanned).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub n: Option<u64>,
-}
-
-impl LogPayload {
-    /// The wire `kind` string of this payload — used by the capture filters
-    /// without re-serialising.
-    pub fn kind(&self) -> &'static str {
-        match self {
-            LogPayload::Session { .. } => "session",
-            LogPayload::Gesture { .. } => "gesture",
-            LogPayload::IpcCall { .. } => "ipc.call",
-            LogPayload::IpcResult { .. } => "ipc.result",
-            LogPayload::IpcRecv { .. } => "ipc.recv",
-            LogPayload::Event { .. } => "event",
-            LogPayload::Channel { .. } => "channel",
-            LogPayload::Watcher { .. } => "watcher",
-            LogPayload::Refresh { .. } => "refresh",
-            LogPayload::Render { .. } => "render",
-            LogPayload::RenderTally { .. } => "render.tally",
-            LogPayload::Effect { .. } => "effect",
-            LogPayload::State { .. } => "state",
-            LogPayload::Frame { .. } => "frame",
-            LogPayload::Error { .. } => "error",
-            LogPayload::Anomaly { .. } => "anomaly",
-            LogPayload::Span { .. } => "span",
-            LogPayload::Drop { .. } => "drop",
-            LogPayload::Truncate { .. } => "truncate",
-        }
-    }
 }

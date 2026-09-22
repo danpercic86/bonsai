@@ -131,6 +131,7 @@ fn ipc_recv_json_has_cmd_and_no_args_hash() {
         trace: Some("abc123-x9".into()),
         span: Some("s0f1a2".into()),
         caused_by: None,
+        repo: None,
         payload: LogPayload::IpcRecv {
             cmd: "get_graph".into(),
         },

@@ -28,6 +28,7 @@ pub mod metrics_purge;
 pub mod phase;
 pub mod raw_args;
 pub mod record;
+mod record_kind;
 pub mod redact;
 pub mod scrub;
 /// Home-directory masking for raw-mode paths (§7.2, 2026-09-11) — resolved
@@ -81,6 +82,10 @@ mod tests_scrub_home;
 #[cfg(test)]
 #[path = "tests_schema_parity.rs"]
 mod tests_schema_parity;
+
+#[cfg(test)]
+#[path = "tests_repo_redaction.rs"]
+mod tests_repo_redaction;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};

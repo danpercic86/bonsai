@@ -2,10 +2,15 @@
 //! keep each file focused and under the size limit.
 //!
 //! Rules here: `slow-command` (self-calibrating per `cmd`), `slow-phase`,
-//! `queue-delay`, `pool-saturation`, `watchdog-pressure`, `cache-collapse`, and
-//! `jank-trace` (frame → overlapping span attribution). All of them key strictly
-//! off `cmd` names, timings and cache/pool counts — never off repo content or a
-//! redaction ordinal (§7.2 (c)).
+//! `queue-delay`, `pool-saturation`, `watchdog-pressure`, and `jank-trace`
+//! (frame → overlapping span attribution). All of them key strictly off `cmd`
+//! names, timings and pool counts — never off repo content or a redaction
+//! ordinal (§7.2 (c)) — and all of them pool across repos, which is the correct
+//! reading: three repos saturating the blocking pool together IS pool saturation
+//! (§2.5).
+//!
+//! `cache-collapse` moved to [`super::cache`] in P117 §2.3: it is the one rule
+//! here whose window is keyed (by repo), so it owns its state.
 
 use super::build_anomaly;
 use crate::obs::histogram::Histogram;
@@ -41,16 +46,12 @@ fn slow_rule_for(cmd: &str) -> (f64, f64) {
 
 /// `queue-delay` / `pool-saturation` windows (§5).
 const W_SATURATION_MS: i64 = 5_000;
-/// `cache-collapse` window (§5.1).
-const W_CACHE_MS: i64 = 10_000;
 /// `slow-phase` keeps recent spans this long to correlate with a late `ipc.result`.
 const W_SPAN_MS: i64 = 10_000;
 
 const QUEUE_DELAY_MIN: usize = 3;
 const QUEUE_MS_THRESHOLD: u32 = 100;
 const POOL_SATURATION_MIN: usize = 3;
-const CACHE_COLLAPSE_MIN: usize = 5;
-const CACHE_HIT_FLOOR: f64 = 0.2;
 const DEADLINE_FRAC_THRESHOLD: f32 = 0.8;
 const SLOW_PHASE_SHARE: f64 = 0.70;
 const JANK_FRAME_MS: f64 = 100.0;
@@ -64,14 +65,6 @@ struct SpanInfo {
     ms: f64,
     /// `(phase_name, ms)` — allow-listed names only, never user-derived.
     phases: Vec<(String, f64)>,
-}
-
-/// A graph.get cache outcome inside the `cache-collapse` window.
-struct CacheSample {
-    ts: i64,
-    seq: u64,
-    /// `hit` | `miss` | `redecorate` (from `span.cache`).
-    kind: String,
 }
 
 /// Per-`cmd` rolling baseline plus its LRU recency stamp (session `seq`).
@@ -88,10 +81,10 @@ pub(super) struct SlowState {
     spans: Vec<SpanInfo>,
     queue: Vec<(i64, u64)>,
     pool: Vec<(i64, u64)>,
-    cache: Vec<CacheSample>,
+    /// §5.1 `cache-collapse` — its own window + per-repo debounce (P117 §2.3).
+    cache: super::cache::CacheRule,
     queue_last_fire: Option<i64>,
     pool_last_fire: Option<i64>,
-    cache_last_fire: Option<i64>,
 }
 
 impl SlowState {
@@ -196,7 +189,7 @@ impl SlowState {
         ts: i64,
         seq: u64,
         rec: &LogRecord,
-        _mutations: &[i64],
+        mutations: &[(i64, Option<String>)],
         out: &mut Vec<LogRecord>,
     ) {
         let LogPayload::Span {
@@ -299,51 +292,12 @@ impl SlowState {
             ));
         }
 
-        // cache-collapse (graph.get spans only)
+        // cache-collapse (graph.get spans only) — delegated to `super::cache`.
         if op == "graph.get" {
             if let Some(kind) = cache {
-                self.cache.push(CacheSample {
-                    ts,
-                    seq,
-                    kind: kind.clone(),
-                });
-                self.cache.retain(|c| c.ts >= ts - W_CACHE_MS);
-                self.detect_cache_collapse(ts, _mutations, out);
+                self.cache
+                    .on_span(ts, seq, kind, rec.repo.as_deref(), mutations, out);
             }
-        }
-    }
-
-    fn detect_cache_collapse(&mut self, ts: i64, mutations: &[i64], out: &mut Vec<LogRecord>) {
-        if self.cache.len() < CACHE_COLLAPSE_MIN {
-            return;
-        }
-        // A real mutation legitimately invalidates the cache — suppress then.
-        let window_start = ts - W_CACHE_MS;
-        if mutations.iter().any(|&m| m >= window_start && m <= ts) {
-            return;
-        }
-        let mut hits = 0usize;
-        let mut total = 0usize;
-        for c in &self.cache {
-            total += 1;
-            if c.kind == "hit" {
-                hits += 1;
-            }
-        }
-        let hit_rate = hits as f64 / total as f64;
-        if hit_rate < CACHE_HIT_FLOOR && rate_ok(&mut self.cache_last_fire, ts, W_CACHE_MS) {
-            let refs: Vec<u64> = self.cache.iter().map(|c| c.seq).collect();
-            out.push(build_anomaly(
-                "cache-collapse",
-                AnomalySeverity::Warn,
-                format!(
-                    "graph cache hit rate {:.0}% over {total} spans, no intervening mutation",
-                    hit_rate * 100.0
-                ),
-                refs,
-                Vec::new(),
-                ts,
-            ));
         }
     }
 
@@ -383,7 +337,7 @@ impl SlowState {
         self.spans.retain(|s| s.ts >= now - W_SPAN_MS);
         self.queue.retain(|(t, _)| *t >= now - W_SATURATION_MS);
         self.pool.retain(|(t, _)| *t >= now - W_SATURATION_MS);
-        self.cache.retain(|c| c.ts >= now - W_CACHE_MS);
+        self.cache.prune(now);
     }
 
     /// Per-`cmd` rate limit (1 per `SLOW_RATE_MS`). Stamps on success.
@@ -428,9 +382,15 @@ impl SlowState {
     pub(super) fn baseline_len(&self) -> usize {
         self.baselines.len()
     }
+
+    /// §11 boundedness of the per-repo `cache-collapse` debounce map.
+    #[cfg(test)]
+    pub(super) fn cache_last_fire_len(&self) -> usize {
+        self.cache.last_fire_len()
+    }
 }
 
-/// Shared single-slot rate limiter for the windowed saturation/cache rules.
+/// Shared single-slot rate limiter for the windowed saturation rules.
 fn rate_ok(last: &mut Option<i64>, ts: i64, window: i64) -> bool {
     match *last {
         Some(prev) if ts - prev < window => false,

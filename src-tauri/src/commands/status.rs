@@ -160,6 +160,11 @@ pub async fn stream_graph(
     // `spawn_blocking`; the closure's first statement computes the delta.
     let queued_at = std::time::Instant::now();
     let deadline = bonsai_core::git::timeout::effective_deadline();
+    // P117 §2.2 — the `graph.get` span carries the repo it is about, so
+    // `cache-collapse` partitions its 10 s window per repo instead of pooling
+    // one first-walk from each open repo. Cloned because `repo_id` itself is
+    // borrowed by `with_repo_mut_timed` while the inner `move` closure runs.
+    let span_repo = repo_id.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let pool = crate::obs::phase::PoolGuard::enter();
         let queued_ms = queued_at.elapsed().as_millis().min(u32::MAX as u128) as u32;
@@ -184,6 +189,9 @@ pub async fn stream_graph(
                 let mut recorder =
                     crate::obs::phase::PhaseRecorder::start(crate::obs::phase::OP_GRAPH_GET);
                 recorder.note_queue(queued_ms, inflight, pool_max);
+                // RAW repoId — the writer redacts it (§2.2); pre-redacting here
+                // would stop it ever matching the UI `refresh` record's value.
+                recorder.note_repo(&span_repo);
                 let op_start = std::time::Instant::now();
                 // Cache-aware: an unchanged-topology refresh replays (HitVerbatim)
                 // or re-pills (HitRedecorate) the cached chunks with no revwalk; a

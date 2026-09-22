@@ -37,6 +37,7 @@ fn rec(component: &str) -> LogRecord {
         trace: Some("t1".into()),
         span: None,
         caused_by: None,
+        repo: None,
         payload: LogPayload::Render {
             component: component.into(),
             count: 1,

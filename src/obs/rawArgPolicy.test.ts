@@ -19,6 +19,7 @@ import {
   RAW_ARG_MAX_STR,
   RAW_ARG_POLICY,
 } from './rawArgPolicy';
+import { repoIdArg } from './repoArg';
 
 const POLICY: Readonly<Record<string, readonly (string | null)[]>> = RAW_ARG_POLICY;
 
@@ -251,5 +252,112 @@ describe('A26 positional drift guard', () => {
     expect([...synthetic.keys()]).toEqual(['shorthand', 'propStyle']);
     expect(synthetic.get('shorthand')).toEqual(['repoId', 'onProgress']);
     expect(synthetic.get('propStyle')).toEqual(['repoId', 'oid']);
+  });
+});
+
+/**
+ * P117 review fix 4 — the table has a SECOND consumer (`repoArg.ts`), and the
+ * two read it as different contracts: a privacy allow-list, and a positional
+ * name map for repo attribution. Nulling a `repoId` slot is the safe direction
+ * for the first and the wrong direction for the second — an unattributed
+ * mutation suppresses `redundant-refresh`/`cache-collapse` in EVERY repo
+ * (`anomaly.rs::mutation_attributed_to`). Nothing in the table itself says so,
+ * and no existing test goes red. These two do.
+ */
+describe('P117 repo-attribution guard', () => {
+  /**
+   * The prefixes from `is_mutation_cmd` (`src-tauri/src/obs/anomaly.rs`) that
+   * can actually match a wire `cmd`. That table is snake_case while the only
+   * `ipc.call` producer logs the camelCase `IpcApi` property name verbatim, so
+   * only its single-word entries ever fire — the multi-word ones
+   * (`create_branch`, `force_push`, …) match nothing. §2.4 freezes
+   * `is_mutation_cmd`, so this mirrors the effective behaviour, not the wish.
+   */
+  const MUTATION_PREFIXES = [
+    'commit',
+    'stage',
+    'unstage',
+    'discard',
+    'checkout',
+    'merge',
+    'rebase',
+    'cherrypick',
+    'revert',
+    'reset',
+    'fetch',
+    'pull',
+    'push',
+  ] as const;
+
+  /** Every declared `IpcApi` method the Rust detector counts as a mutation. */
+  function recognisedMutations(): Map<string, string[]> {
+    const out = new Map<string, string[]>();
+    for (const [cmd, params] of declaredSignatures()) {
+      if (MUTATION_PREFIXES.some((p) => cmd.startsWith(p))) out.set(cmd, params);
+    }
+    return out;
+  }
+
+  it('attributes every recognised mutation to a repo', () => {
+    const mutations = recognisedMutations();
+    // 29 at the time of writing. A floor, so adding one is caught below rather
+    // than here — but a DELETION of the parse would not hide the guard.
+    expect(mutations.size, 'too few mutations parsed').toBeGreaterThanOrEqual(29);
+    const unattributed: string[] = [];
+    for (const [cmd, params] of mutations) {
+      const at = params.indexOf('repoId');
+      if (at < 0) continue; // genuinely not repo-scoped: nothing to attribute
+      // Distinct markers per slot, so a lift from the WRONG position returns
+      // `arg0`/`arg1` rather than the expected value and fails loudly.
+      const args = params.map((_, i) => `arg${i}`);
+      args[at] = 'THE-REPO';
+      const got = repoIdArg(cmd, args);
+      if (got !== 'THE-REPO') unattributed.push(`${cmd}[${at}]: got ${String(got)}`);
+    }
+    expect(
+      unattributed,
+      'a recognised mutation with no repo attribution suppresses anomalies in EVERY repo — ' +
+        'add its repoId position to REPO_PARAM_FALLBACK in src/obs/repoArg.ts',
+    ).toEqual([]);
+  });
+
+  /** Rows that exist but no longer name the `repoId` their signature declares. */
+  function droppedRepoSlots(
+    policy: Readonly<Record<string, readonly (string | null)[]>>,
+    declared: Map<string, string[]>,
+  ): string[] {
+    const dropped: string[] = [];
+    for (const [cmd, row] of Object.entries(policy)) {
+      const params = declared.get(cmd);
+      if (params === undefined) continue; // the A26 guard above owns that case
+      params.forEach((name, i) => {
+        if (name === 'repoId' && row[i] !== 'repoId') {
+          dropped.push(`${cmd}[${i}]: declared repoId, policy ${JSON.stringify(row[i] ?? null)}`);
+        }
+      });
+    }
+    return dropped;
+  }
+
+  it('never nulls a declared repoId slot in a row that exists', () => {
+    expect(
+      droppedRepoSlots(POLICY, declaredSignatures()),
+      'this row is also read as a name map by src/obs/repoArg.ts: a null here drops repo ' +
+        'attribution and widens anomaly suppression to every open repo',
+    ).toEqual([]);
+  });
+
+  /**
+   * The negative control, synthetic so no tracked file has to be broken to
+   * prove the guard bites: the exact tightening the audit named
+   * (`forgeSetToken: ["repoId", null]` → `[null, null]`) must be reported.
+   */
+  it('reports the privacy tightening it exists to catch (self-check)', () => {
+    const declared = declaredSignatures();
+    expect(declared.get('forgeSetToken')?.[0], 'fixture assumes repoId at 0').toBe('repoId');
+    expect(droppedRepoSlots({ forgeSetToken: [null, null] }, declared)).toEqual([
+      'forgeSetToken[0]: declared repoId, policy null',
+    ]);
+    expect(droppedRepoSlots({ forgeSetToken: ['repoId', null] }, declared)).toEqual([]);
   });
 });

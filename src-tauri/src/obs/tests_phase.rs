@@ -220,3 +220,28 @@ fn recorder_overhead_is_small() {
         "recorder overhead {per:.2} µs/op exceeds 5 µs budget"
     );
 }
+
+/// P117 §2.2 — `note_repo` stores the canonical `repoId` VERBATIM. A recorder
+/// that trimmed, normalised or pre-redacted it would stop the span ever
+/// matching the UI `refresh` record's value, which is the join the repo-keyed
+/// rules depend on.
+#[test]
+fn note_repo_keeps_the_raw_repo_id() {
+    const REPO: &str = r"D:\Repos\my project";
+    let mut rec = PhaseRecorder::start_test(OP_GRAPH_GET);
+    assert_eq!(rec.test_repo(), None, "unattributed until noted");
+    rec.note_repo(REPO);
+    assert_eq!(rec.test_repo(), Some(REPO));
+}
+
+/// An INACTIVE recorder (Dev mode off) swallows the attribution with no
+/// allocation, exactly like every other `note_*`.
+#[test]
+fn note_repo_is_a_no_op_when_the_recorder_is_inactive() {
+    let _guard = trace::test_sink_lock();
+    trace::set_active_sink(None);
+    let mut rec = PhaseRecorder::start(OP_GRAPH_GET);
+    assert!(!rec.is_active());
+    rec.note_repo("ignored");
+    assert_eq!(rec.test_repo(), None);
+}

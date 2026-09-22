@@ -15,6 +15,16 @@
 //! * no key is in the free-text or credential vocabulary;
 //! * every value is a short single-line scalar.
 //!
+//! It also applies that same scalar check to the **`repo`** base field
+//! (P117 §2.2), for the same reason: `log_append` accepts arbitrary records from
+//! the frontend, so `repo` — the one renderer-supplied string that reaches a
+//! raw-mode file as a VALUE — cannot be trusted to hold a repoId just because
+//! the producer is supposed to put one there. A failing value is replaced by
+//! [`REPO_REJECTED`], so the channel is bounded free text in no mode. That is a
+//! value rewrite on an existing optional field: no schema move, and it is a
+//! no-op in strict mode, where `strict::enforce` has already turned the field
+//! into `repo#N` before this runs.
+//!
 //! Any violation drops the **whole** `args` object — a producer that mislabelled
 //! one argument is untrusted about the rest — and stamps a writer-set
 //! `argsPolicyViolation: true`. That flag cannot be forged: [`LogPayload`] has no
@@ -24,9 +34,12 @@
 //! **This amendment does not move `OBS_SCHEMA_VERSION`**: every field it adds
 //! (`argsOmitted`, `argsPolicyViolation`) is optional and additive, and the
 //! version only moves when an existing field changes shape or meaning. (It now
-//! reads 2, bumped for `changedProps` — see `record.rs`'s module note; the §13
-//! row 23 pre-release carve-out that once justified 1 no longer applies, a v1
-//! corpus having been written to disk.)
+//! reads **3**: bumped to 2 for `changedProps`, then to 3 by P117 §2.6 — not for
+//! that increment's additive `repo` field, but for the changed *meaning* of
+//! existing `anomaly` records, a v3 `redundant-refresh` denoting one repo where
+//! a v2 one denoted any set. See `record.rs`'s module note; the §13 row 23
+//! pre-release carve-out that once justified 1 no longer applies, a v1 corpus
+//! having been written to disk.)
 //!
 //! [`LogPayload`]: super::record::LogPayload
 
@@ -47,6 +60,12 @@ pub const RAW_ARG_MAX_STR: usize = 512;
 const VIOLATION_KEY: &str = "argsPolicyViolation";
 const ARGS_KEY: &str = "args";
 const OMITTED_KEY: &str = "argsOmitted";
+const REPO_KEY: &str = "repo";
+
+/// Replaces a `repo` value that fails the scalar gate. Deliberately carries
+/// nothing from the input, and deliberately does NOT match `^repo#\d+$` — a
+/// rejected value must not be readable as a strict-mode ordinal.
+const REPO_REJECTED: &str = "repo-rejected";
 
 /// §7.4.1 free-text vocabulary — applied to raw `args` KEYS only.
 ///
@@ -80,6 +99,23 @@ pub fn enforce(v: &mut Value) -> bool {
         .is_none_or(|o| o.as_u64().is_some_and(|n| n <= u32::MAX as u64));
     if !omitted_ok {
         map.remove(OMITTED_KEY);
+    }
+    // P117 §2.2 — the `repo` base field, gated by the SAME scalar check as an
+    // `args` value. Before the `args` early return, deliberately: the two main
+    // `repo` producers (`refresh`, `span{op:"graph.get"}`) carry no `args` at
+    // all and would otherwise skip this entirely.
+    //
+    // Documentation is not enforcement (A26): a renderer bug or a hand-written
+    // `logRecord({ repo: … })` can put anything here, and in raw mode the value
+    // is written after home-masking and credential scrubbing only. There is no
+    // line-forging risk — `serde_json` escapes control characters, so a
+    // multi-line value cannot split a JSONL record — this bounds free-text
+    // CAPTURE, which the header's `redactionNote` forbids outright.
+    if map
+        .get(REPO_KEY)
+        .is_some_and(|repo| !is_allowed_scalar(repo))
+    {
+        map.insert(REPO_KEY.to_string(), Value::String(REPO_REJECTED.into()));
     }
     if !map.contains_key(ARGS_KEY) {
         return false;

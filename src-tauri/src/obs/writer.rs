@@ -194,6 +194,7 @@ impl LogWriter {
             trace: None,
             span: None,
             caused_by: None,
+            repo: None,
             payload: LogPayload::Session {
                 schema: OBS_SCHEMA_VERSION,
                 app: self.cfg.app_version.clone(),
@@ -403,6 +404,7 @@ fn truncate_record(dropped_idx: u32, bytes: u64, dropped_parts: u32) -> LogRecor
         trace: None,
         span: None,
         caused_by: None,
+        repo: None,
         payload: LogPayload::Truncate {
             reason: "max-parts".to_string(),
             dropped_parts,

@@ -89,12 +89,22 @@ pub(super) fn base(ts: i64, payload: LogPayload) -> LogRecord {
         trace: None,
         span: None,
         caused_by: None,
+        repo: None,
         payload,
     }
 }
 
 pub(super) fn with_trace(mut r: LogRecord, trace: &str) -> LogRecord {
     r.trace = Some(trace.to_string());
+    r
+}
+
+/// P117 §2.2 — attributes a built record to a repo. A combinator rather than an
+/// extra parameter on all nine builders: only three kinds ever carry the
+/// dimension, and every existing test then keeps reading as "no repo", which is
+/// the `None` bucket the rules must preserve (§2.5).
+pub(super) fn with_repo(mut r: LogRecord, repo: &str) -> LogRecord {
+    r.repo = Some(repo.to_string());
     r
 }
 

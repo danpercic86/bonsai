@@ -36,6 +36,7 @@ fn rec(n: u64) -> LogRecord {
         trace: None,
         span: None,
         caused_by: None,
+        repo: None,
         payload: LogPayload::Gesture {
             origin: "click".into(),
             gesture: format!("test.{n}"),

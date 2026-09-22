@@ -263,6 +263,10 @@ export type UiRecordInput = UiPayload & {
   trace?: TraceId;
   span?: SpanId;
   causedBy?: TraceId;
+  /** P117 §2.2 — RAW canonical `repoId`; see {@link LogRecordBase.repo}. It
+   *  reaches the wire through `log.ts`'s spread of this input, so there is no
+   *  per-field pick to update — and that spread must not become one. */
+  repo?: string;
 };
 
 export type UiRecord = LogRecordBase & Record<string, unknown>;

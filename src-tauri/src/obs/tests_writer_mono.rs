@@ -52,6 +52,7 @@ fn rec(src: LogSource, mono: u64, gesture: &str) -> LogRecord {
         trace: None,
         span: None,
         caused_by: None,
+        repo: None,
         payload: LogPayload::Gesture {
             origin: "click".into(),
             gesture: gesture.into(),

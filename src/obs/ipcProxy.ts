@@ -25,6 +25,7 @@ import {
   redactionReady,
 } from './redact';
 import { buildRawArgs } from './rawArgPolicy';
+import { repoIdArg } from './repoArg';
 import { bindTrace, currentTrace, newSpan, withIpcSpan } from './trace';
 import type { ArgShape, IpcCallPayload, IpcOutcome, SpanId } from './types';
 
@@ -117,6 +118,12 @@ function wrapMethod(target: object, cmd: string, fn: AnyFn): AnyFn {
     const argsHash = hashArgs(args) ?? '';
     const shape: ArgShape = argsShape(args);
     const raw = obsRedaction() === 'raw';
+    // P117 §2.2/§2.4 — the repo this call is about, on the record BASE so it is
+    // present in strict mode too (`args` is raw-only, so without this an
+    // `ipc.call` carries no repo in the shipping configuration and a mutation in
+    // repo A would go on suppressing findings in repo B). RAW and unredacted:
+    // the detector matches it against the Rust span's raw `repoId`.
+    const repo = repoIdArg(cmd, args);
     logRecord({
       kind: 'ipc.call',
       cmd,
@@ -124,6 +131,7 @@ function wrapMethod(target: object, cmd: string, fn: AnyFn): AnyFn {
       argsShape: shape,
       span,
       ...(trace ? { trace } : {}),
+      ...(repo !== undefined ? { repo } : {}),
       // §7.1 + A26: argument VALUES only ever appear in `raw` mode, and even
       // there only the allow-listed IDENTIFIER scalars of `rawArgPolicy.json`,
       // keyed by parameter NAME. Free text (commit messages, search strings) and

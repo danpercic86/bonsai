@@ -392,6 +392,7 @@ pub(super) fn emit_pending_drops(writer: &mut LogWriter, dropped: &AtomicU64, re
         trace: None,
         span: None,
         caused_by: None,
+        repo: None,
         payload: LogPayload::Drop {
             dropped: delta,
             since_seq,
