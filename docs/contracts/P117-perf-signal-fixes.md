@@ -44,8 +44,14 @@ Also `grep -n "re-arm" docs/architecture-reference.md` and fix any copy of the r
 
 Three distinct values are in play in `open_repo_inner`:
 
-- `info.path` — `read_repo_info`'s resolved **canonical workdir path string**. This is the
-  candidate `repoId`.
+- `info.path` — the candidate `repoId`. **CORRECTION (2026-09-22, from the inc-1 review): this is
+  the RAW caller string, not a canonical path.** `read_repo_info` returns `path.to_string_lossy()`
+  verbatim (`crates/bonsai-core/src/git/repo.rs:43`, `:64`) — it never calls `canonicalize` and
+  never consults `repo.workdir()` — and nothing canonicalises before `open_repo_inner`. So the map
+  key is the raw string of whichever open came first. The pre-existing comment at `repo.rs:225`
+  ("repoId == canonical workdir path string") carries the same inaccuracy. The *comparison*
+  described below is what the code does; only this description of the value was wrong, and the
+  fix's safety does not depend on it.
 - the existing map **key** `k` found by the dedupe scan, via
   `same_repo_path(k, &candidate)` (`repo.rs:253-260`), which canonicalises both sides. On a match,
   `repo_id` is reassigned to that existing key.
@@ -173,10 +179,18 @@ Numbered for reviewer check-off. Rust-only; no frontend, no harness.
   `tests_repo_session_misc.rs:93`) → `open` again → graph pass ⇒ `graph_cache_hits` does **not**
   increase on the post-reopen pass (it is a Miss from an empty slot). Ruling per §1.4(a): cold,
   because the entry was dropped.
-- **AC1-4 — path variant that does NOT match gets a fresh slot.** Using the same path-variant
-  construction as `tests_repo_isolation.rs:128`, an open whose canonical id differs from every
-  existing key inserts an entry whose `graph_cache` is not `Arc::ptr_eq` to any pre-existing
-  entry's, and starts `None`.
+- **AC1-4 — path variant that does NOT match gets a fresh slot.** An open whose canonical id
+  differs from every existing key inserts an entry whose `graph_cache` is not `Arc::ptr_eq` to any
+  pre-existing entry's, and starts `None`.
+  **CORRECTION (2026-09-22): this AC originally named "the same path-variant construction as
+  `tests_repo_isolation.rs:128`", which is UNIMPLEMENTABLE** — confirmed independently by
+  senior-dev and the reviewer. The `to_uppercase()` construction can only yield (a) on
+  Windows/macOS a canonicalize-equal path, so `same_repo_path` matches and it becomes a *same-path
+  re-arm* — the opposite of what this AC asks — or (b) on a case-sensitive filesystem a
+  nonexistent directory, which `read_repo_info`'s `is_dir()` precheck rejects before any insert.
+  Symlinks and junctions canonicalise back too. **A second distinct repo is the only construction
+  that satisfies this AC**; the case-variant belongs in a `cfg`-gated complement asserting the
+  slot IS carried, which is the §1.4(d) branch the real `full` scope hits.
 - **AC1-5 — the watcher is still replaced on re-arm.** Two `open_repo_inner` calls for the same
   path invoke the `make_on_change` factory **twice** (count it in the closure), the installed
   entry's `watcher` is `Some` after each, and the first arm's callback is **dropped** by the second
@@ -284,7 +298,20 @@ redaction rules for one concept.
 |---|---|---|
 | `refresh` | `src/components/repoWorkspace/useCoalescedRefresh.ts:111-119` — add `repo: repoId` to the `logRecord({ kind: 'refresh', … })` call | the hook's `repoId` argument (`:67`), already in scope |
 | `span{op:'graph.get'}` | `src-tauri/src/commands/status.rs:184-215` — `PhaseRecorder::start(OP_GRAPH_GET)` then `recorder.note_repo(&repo_id)` before `finish` | `stream_graph`'s `repo_id` param (`:137`) |
-| `ipc.call` | `src/obs/ipcProxy.ts` — lift `args.repoId` when the invoke args object has a string `repoId`, else omit | the invoke argument |
+| `ipc.call` | `src/obs/ipcProxy.ts` — see the CORRECTION below; lift the `repoId` **positional** argument, else omit | the invoke argument |
+
+**CORRECTION (2026-09-22) — the row above originally said "lift `args.repoId` when the invoke args
+object has a string `repoId`". There is no args object at the proxy.** Every `IpcApi` method is
+**positional** (`streamGraph(repoId, filter, onChunk)`); only `src/ipc/tauri/invoke.ts` ever sees a
+keyed payload, long after the record is emitted. As implemented, `src/obs/repoArg.ts` resolves the
+*position* of the `repoId` parameter from `rawArgPolicy.json` (whose non-null slots are
+name-checked against the real signatures by the A26 drift guard), falling back to a private
+`REPO_PARAM_FALLBACK` map for the 10 recognised mutations the policy omits. Unknown command or
+unknown name ⇒ omit, never guess. Note the coupling this creates, called out in
+`rawArgPolicy.ts`'s module doc: a **privacy** allow-list is now also read as a **name** map, so
+nulling a `repoId` slot to tighten raw-mode exposure would silently degrade attribution to `None`
+— which widens suppression to every repo. Guarded by the two tests in
+`rawArgPolicy.test.ts`'s `P117 repo-attribution guard`.
 
 New `PhaseRecorder` method (the only signature added in Section 2):
 
@@ -424,9 +451,16 @@ Attribution rule (normative):
   when `m.repo == this_repo` **OR `m.repo.is_none()`**. Unattributed suppresses everywhere —
   deliberately conservative: suppression is the *safe* direction (a missed anomaly, never a false
   one), and it keeps today's behaviour exactly for any producer that does not set `repo`.
-- Consequence to expect, not a defect: mutation commands with **no `repoId` argument** (e.g.
-  `clone`, `init`) land in the `None` bucket and therefore suppress everywhere for their window.
-  Rare and conservative; accepted.
+- ~~Consequence to expect, not a defect: mutation commands with **no `repoId` argument** (e.g.
+  `clone`, `init`) land in the `None` bucket and therefore suppress everywhere for their window.~~
+  **CORRECTION (2026-09-22): this example was wrong twice over and is withdrawn.** First,
+  `cloneRepo`/`initRepo` never enter `mutations` **at all** — `is_mutation_cmd` is keyed on
+  snake_case while the only producer of `ipc.call` logs the camelCase JS property name verbatim, so
+  they match nothing and suppress nothing. Second, the follow-up pass added `REPO_PARAM_FALLBACK`
+  (`src/obs/repoArg.ts`), so **all 29 recognised mutations now attribute** and the "no `repoId`
+  argument" route does not exist. What actually still reaches the `None` bucket: a `schema: 2` line
+  replayed from an older log (§2.6/AC2-10), a lift that failed its non-empty-string check, and any
+  future producer that omits the field.
 - `dup-ipc` treats **all** mutations as intervening (unchanged behaviour) — its
   `mutation_between` closure at `window.rs:136` must destructure the new tuple and ignore the
   attribution.
