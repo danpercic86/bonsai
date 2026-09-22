@@ -62,9 +62,15 @@ pub struct RepoEntry {
     pub watcher: Option<WatcherHandle>,
     /// Per-repo graph-layout cache (P86 B1). A fresh entry starts empty; the
     /// slot is cloned out under the map lock and locked only for classify +
-    /// replay/store, never across a cold walk. Dropped on `close_repo`; a new
-    /// `RepoEntry` on `open_repo` re-arm starts `None` again (topology may have
-    /// changed while closed).
+    /// replay/store, never across a cold walk. Dropped on `close_repo`.
+    ///
+    /// P117 §1.3 (supersedes P86 B1's "a re-arm starts `None` again"): an
+    /// `open_repo` re-arm of an entry ALREADY present under the same key
+    /// CARRIES this slot over. Safe because `classify` re-proves the cache on
+    /// every single request — an exact-set comparison of (tips, head, hide)
+    /// against a seed probed fresh from the live repository — so a changed
+    /// topology already Misses, wipe or no wipe. A `close_repo` drops the entry
+    /// (and this `Arc`), so a later open starts `None` by construction.
     pub graph_cache: Arc<GraphCache>,
 }
 

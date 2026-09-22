@@ -283,14 +283,34 @@ where
                 .repos
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+            // P117 §1.3: a re-arm of an entry ALREADY PRESENT under this exact
+            // key carries its layout cache over — this SUPERSEDES P86 B1's
+            // "a re-arm must start `None`". The wipe was never a correctness
+            // mechanism: `classify` is an exact-set comparison of
+            // (tips, head, hide) against a seed probed fresh from the live
+            // repository on EVERY request (gated first by `filter.walk_eq`), so
+            // any topology difference — including one made while the app was
+            // not looking — already forces a Miss. Wiping only discarded a
+            // cache whose validity is re-proved on every use, and the `full`
+            // refresh scope re-opens + refetches the graph in the same round,
+            // so the wipe destroyed the cache it was about to read.
+            //
+            // Read under the SAME lock acquisition as the insert, deliberately:
+            // it closes the dedupe scan's TOCTOU (entry closed in between ⇒
+            // `get` is `None` ⇒ a fresh cache, the correct cold start) and needs
+            // no state threaded out of the scan. After `close_repo` the entry
+            // (and its `Arc`) is gone, so a later open starts cold by
+            // construction — no special case.
+            let carried = repos
+                .get(&repo_id)
+                .map(|e| std::sync::Arc::clone(&e.graph_cache));
             repos.insert(
                 repo_id.clone(),
                 RepoEntry {
                     path: workdir,
                     watcher,
-                    // Fresh empty layout cache (P86 B1): a re-arm of an open repo
-                    // must start `None` — topology may have changed while closed.
-                    graph_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+                    graph_cache: carried
+                        .unwrap_or_else(|| std::sync::Arc::new(std::sync::Mutex::new(None))),
                 },
             )
         };

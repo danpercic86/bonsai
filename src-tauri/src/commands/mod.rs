@@ -83,6 +83,12 @@ mod tests_branch_merge_guards;
 #[cfg(test)]
 mod tests_repo_isolation;
 
+// P117 §1: the layout cache survives a same-path `open_repo` re-arm. Its own
+// module because `tests_repo_session_misc.rs` (which AC1-1 names) is already
+// over the ~500-line soft limit.
+#[cfg(test)]
+mod tests_repo_graph_cache_rearm;
+
 #[cfg(test)]
 mod tests_obs;
 

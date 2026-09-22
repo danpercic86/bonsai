@@ -79,9 +79,9 @@ pub struct CachedGraph {
     pub merge_rows: Vec<u32>,
 }
 
-/// Per-repo cache slot. `None` until the first walk; reset to `None` on
-/// `open_repo` re-arm (a fresh `RepoEntry` is inserted) and dropped on
-/// `close_repo`.
+/// Per-repo cache slot. `None` until the first walk; dropped on `close_repo`;
+/// carried over on a same-path `open_repo` re-arm (P117 §1.3, superseding P86
+/// B1's wipe: `classify` exact-set-matches a live seed probed on every request).
 pub type GraphCache = Mutex<Option<CachedGraph>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
