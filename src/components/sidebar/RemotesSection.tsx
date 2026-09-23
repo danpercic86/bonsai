@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import type { BranchesSnapshot, RemoteBranchInfo, RemoteInfo } from '../../ipc';
+import type { RemoteBranchInfo, RemoteInfo } from '../../ipc';
 import type { RevealTarget } from '../../graph/reveal';
 import type { TreeNode } from '../../utils/pathTree';
 import { Tree } from '../Tree';
@@ -11,7 +11,10 @@ import { ConfiguredRemoteRow, RemoteRow } from './rows';
 import { useRenderCount } from '../../obs/react';
 
 export interface RemotesSectionProps {
-  data: BranchesSnapshot;
+  /** NO `data: BranchesSnapshot` PROP (P118b) — the section read it exactly once,
+   *  for the "no remotes" empty state, and the whole-snapshot coupling made any
+   *  LOCAL-branch change re-render it. A boolean instead. */
+  hasRemoteRefs: boolean;
   remotes: RemoteInfo[];
   remotesCollapsed: boolean;
   setRemotesCollapsed: Dispatch<SetStateAction<boolean>>;
@@ -38,7 +41,7 @@ export interface RemotesSectionProps {
 }
 
 function RemotesSectionImpl({
-  data,
+  hasRemoteRefs,
   remotes,
   remotesCollapsed,
   setRemotesCollapsed,
@@ -140,7 +143,7 @@ function RemotesSectionImpl({
           {remoteNoMatch && (
             <p className="branch-muted">{`No remotes match '${remoteFilter.trim()}'`}</p>
           )}
-          {remotes.length === 0 && data.remote.length === 0 && (
+          {remotes.length === 0 && !hasRemoteRefs && (
             <p className="branch-muted">No remotes</p>
           )}
         </>

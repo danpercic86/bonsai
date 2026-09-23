@@ -77,6 +77,19 @@ describe('Sidebar sections', () => {
     expect(screen.getByText('No worktrees')).toBeInTheDocument();
   });
 
+  it('"No remotes" shows only with neither a configured remote nor a tracking ref', () => {
+    // P118b guards this line: the section stopped taking the whole snapshot and
+    // now takes `hasRemoteRefs`, so the empty state needs its own coverage.
+    const { unmount } = renderSidebar({ remotes: [], data: snapshot({ remote: [] }) });
+    expect(screen.getByText('No remotes')).toBeInTheDocument();
+    unmount();
+
+    // A tracking ref alone (no configured remote) is still "not empty".
+    renderSidebar({ remotes: [] });
+    expect(screen.queryByText('No remotes')).not.toBeInTheDocument();
+    expect(screen.getByText('origin/main')).toBeInTheDocument();
+  });
+
   it('null data + loading shows only skeletons; null data without loading shows nothing', () => {
     const { container } = renderSidebar({ data: null, loading: true });
     expect(container.querySelector('.skeleton-group')).toBeInTheDocument();

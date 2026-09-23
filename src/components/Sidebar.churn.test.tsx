@@ -278,15 +278,26 @@ describe('acceptance (d) — 500-ref sidebar, one ref change ≤ 8 react records
  * StrictMode (obs/react.ts documents the 2x dev inflation) — hence
  * MAX_RENDERS_PER_INSTANCE = 2, which cannot improve and must not be raised.
  *
+ * Observed 2026-09-23, after P118b: **6 renders across 3 tallies** —
+ * BranchesSection 2/1, BranchRow 2/1, TagsSection 2/1. RemotesSection dropped
+ * out entirely: the fixture's ref change is LOCAL-only, and the section no
+ * longer takes the whole snapshot (`hasRemoteRefs: boolean`) while `Sidebar.tsx`
+ * identity-caches `data.remote` structurally, so the fresh-but-equal remote
+ * array of a new snapshot no longer reaches it. A component that renders zero
+ * times emits NO `render.tally` record at all (obs/renderTally.ts), which is why
+ * the tally COUNT drops with it. Ratchet lowered 8 → 6 to match, per the
+ * only-lower rule above — at 8 a regression back to RemotesSection 2/1 would
+ * have passed silently.
+ *
  * Proof this still fails on a regression: with one induced extra prop change
- * (`churnOfRefChange(2)`) it measures 16 renders across 8 tallies — the tally
- * flushes twice, so the second change produces its own set of 4 records, the
- * per-instance ratio stays 2 in each, and the SUM is what fails ("expected 16 to
- * be less than or equal to 8"). The two forms are complementary: the sum catches
+ * (`churnOfRefChange(2)`) it measures 12 renders across 6 tallies — the tally
+ * flushes twice, so the second change produces its own set of 3 records, the
+ * per-instance ratio stays 2 in each, and the SUM is what fails ("expected 12 to
+ * be less than or equal to 6"). The two forms are complementary: the sum catches
  * extra renders across windows, the per-instance ratio catches several commits
  * inside ONE window (the render-storm shape).
  */
-const MAX_TALLY_RENDERS = 8;
+const MAX_TALLY_RENDERS = 6;
 const MAX_RENDERS_PER_INSTANCE = 2;
 
 /** A local-branch change must reach these — a budget over an empty set of
@@ -299,8 +310,12 @@ const MUST_REPORT = ['BranchRow', 'BranchesSection'];
  *  vacuously: the §9.4 refs-only fixture has an empty stash list and the Tags
  *  section defaults to COLLAPSED, so neither row ever mounts here. They are
  *  memoised the same way (TagsSection.tsx / sidebar/rows.tsx); this file just
- *  cannot witness it, and an assertion that cannot fail is worse than none. */
-const MUST_NOT_REPORT = ['RemoteRow', 'ConfiguredRemoteRow'];
+ *  cannot witness it, and an assertion that cannot fail is worse than none.
+ *
+ *  `RemotesSection` joined the list in P118b: nothing it renders depends on a
+ *  local branch, and it no longer takes the whole snapshot, so a local-only
+ *  change must not reach the section either — not just its rows. */
+const MUST_NOT_REPORT = ['RemoteRow', 'ConfiguredRemoteRow', 'RemotesSection'];
 
 describe('render churn budget — one ref change may not cost extra renders', () => {
   it('stays within the renders ratchet, at ≤2 renders per instance', async () => {

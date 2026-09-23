@@ -1,6 +1,8 @@
 /**
- * P118 — one mutation round must cost ONE render of each memoised sidebar
- * surface, and re-render only the rows whose own data changed.
+ * P118 — one mutation round must cost AT MOST ONE render of each memoised
+ * sidebar surface, and re-render only the rows whose own data changed. A
+ * surface whose data did not change must not render at all: since P118b that
+ * is RemotesSection, because this round touches only a LOCAL branch.
  *
  * WHAT THIS REPRODUCES. A mutation (`useBranchActions.ts` and friends) is
  * `setMutating(true)` → git call → `await refreshAll(...)` → `setMutating(false)`
@@ -211,7 +213,7 @@ async function mutationRound(): Promise<Map<string, Tally>> {
 }
 
 describe('P118 — a mutation round does not storm the sidebar', () => {
-  it('re-renders each memoised section once and only the changed row', async () => {
+  it('re-renders only the section whose data changed, and only the changed row', async () => {
     const tallies = await mutationRound();
 
     // Negative control: the container really did commit three times (×2 under
@@ -221,10 +223,22 @@ describe('P118 — a mutation round does not storm the sidebar', () => {
     ).length;
     expect(containerRenders).toBe(6);
 
-    // One real render each (the refreshed snapshot); the two busy flips cost
-    // them nothing now that the flag travels by context.
+    // BranchesSection: ONE real render (the refreshed snapshot really does
+    // change the local list); the two busy flips cost it nothing now that the
+    // flag travels by context.
     expect(tallies.get('BranchesSection')).toEqual({ renders: 2, instances: 1 });
-    expect(tallies.get('RemotesSection')).toEqual({ renders: 2, instances: 1 });
+    // RemotesSection: ZERO renders. This round moves one LOCAL branch's ahead
+    // count, so nothing it displays changed — and since P118b it no longer sees
+    // the whole snapshot (`hasRemoteRefs: boolean`) and its refs are identity-
+    // cached structurally in Sidebar.tsx, so the fresh-but-equal `data.remote`
+    // of a new snapshot no longer reaches it.
+    //
+    // An ABSENT record IS the zero-render signal: `renderTally` only creates a
+    // bucket when a component renders, so zero renders emits no `render.tally`
+    // record at all (never `{renders: 0}`). Not vacuous — the `containerRenders`
+    // 6 above and `BranchesSection`'s surviving `{renders: 2}` prove the round
+    // really happened and that tallies really were collected in this window.
+    expect(tallies.get('RemotesSection')).toBeUndefined();
 
     // Exactly the ONE branch whose ahead count moved — not all 25.
     expect(tallies.get('BranchRow')).toEqual({ renders: 2, instances: 1 });

@@ -13,6 +13,7 @@ import type { RevealTarget } from '../graph/reveal';
 import { errorMessage } from '../utils/errors';
 import { useRenderCount } from '../obs/react';
 import { buildPathTree } from '../utils/pathTree';
+import type { TreeNode } from '../utils/pathTree';
 import { SubmoduleRow } from './sidebar/SubmoduleRow';
 import { SectionHeader } from './sidebar/SectionHeader';
 import { StashesSection } from './sidebar/StashesSection';
@@ -25,14 +26,16 @@ import { SkeletonRows, WorktreeRow } from './sidebar/rows';
 import { SidebarTreeProvider } from './sidebar/SidebarTreeContext';
 import { SidebarBusyContext, SidebarBusyRefContext } from './sidebar/sidebarBusyContext';
 import { useSidebarTreeNav } from './sidebar/useSidebarTreeNav';
+import { useStableRemoteRefs } from './sidebar/useStableRemoteRefs';
 
 /** P50d: show a section's inline type-to-filter box only once the list is long
  *  enough to warrant it — keeps short lists uncluttered (contract §7). */
 const FILTER_MIN_ROWS = 6;
 
-/** One stable empty array for the no-snapshot case, so the memo below does not
- *  mint a fresh `[]` identity on every render. */
-const NO_REMOTE_BRANCHES: readonly RemoteBranchInfo[] = Object.freeze([]);
+/** One stable empty array for the tree memo's flat-mode branch: a fresh `[]`
+ *  literal there would mint a new identity on every recompute, so the memo
+ *  could never bail. */
+const NO_REMOTE_TREE: readonly TreeNode<RemoteBranchInfo>[] = Object.freeze([]);
 
 export interface SidebarProps {
   data: BranchesSnapshot | null;
@@ -198,6 +201,13 @@ export function Sidebar({
   busyRef.current = actionsDisabled;
 
   // P3b §5.3 — tree-grouped refs (display-only; full names drive all actions).
+  //
+  // The `: []` fallback below deliberately did NOT get the `NO_REMOTE_TREE`
+  // treatment (`:35-38`) that `remoteTree` did: `BranchesSection` still takes
+  // `data={data}` whole, so it re-renders on any snapshot identity change
+  // regardless — the fallback is not the binding identity here, the
+  // whole-snapshot prop is, and fixing it alone would buy zero renders. It
+  // belongs with the BranchesSection data-prop pass, not with P118b.
   const treeMode = listView === 'tree';
   const localTree = useMemo(
     () =>
@@ -213,9 +223,12 @@ export function Sidebar({
     const rest = data.local.filter((b) => !b.isHead);
     return [...head, ...rest];
   }, [data]);
+  // P118b — a structurally-stable identity for the remote refs, so a LOCAL
+  // branch change does not re-render the whole Remotes section (see the hook).
+  const remoteRefs = useStableRemoteRefs(data?.remote);
   const remoteTree = useMemo(
-    () => (treeMode && data !== null ? buildPathTree(data.remote, (r) => r.name) : []),
-    [treeMode, data],
+    () => (treeMode ? buildPathTree(remoteRefs, (r) => r.name) : NO_REMOTE_TREE),
+    [treeMode, remoteRefs],
   );
 
   // P50d — apply the per-section filters. The box shows only when the section
@@ -240,18 +253,18 @@ export function Sidebar({
   // The Remotes section counts configured remotes + tracking rows and filters
   // both by the same query.
   const showRemoteFilter =
-    !remotesCollapsed && remotes.length + (data?.remote.length ?? 0) >= FILTER_MIN_ROWS;
+    !remotesCollapsed && remotes.length + remoteRefs.length >= FILTER_MIN_ROWS;
   const remoteQuery = showRemoteFilter ? remoteFilter : '';
   const remoteFiltering = remoteQuery.trim() !== '';
   const remotesFiltered = useMemo(
     () => filterItems(remotes, remoteQuery, (r) => r.name),
     [remotes, remoteQuery],
   );
-  // `data.remote` directly (not `?? []`) so an absent snapshot yields ONE stable
+  // `remoteRefs` (not a `?? []` literal) so an absent snapshot yields ONE stable
   // empty array instead of a fresh literal per render.
   const remoteFlatFiltered = useMemo(
-    () => filterItems(data?.remote ?? NO_REMOTE_BRANCHES, remoteQuery, (r) => r.name),
-    [data?.remote, remoteQuery],
+    () => filterItems(remoteRefs, remoteQuery, (r) => r.name),
+    [remoteRefs, remoteQuery],
   );
   const remoteTreeFiltered = useMemo(
     () => filterTree(remoteTree, remoteQuery, (r) => r.name),
@@ -336,7 +349,7 @@ export function Sidebar({
             />
 
             <RemotesSection
-              data={data}
+              hasRemoteRefs={remoteRefs.length > 0}
               remotes={remotes}
               remotesCollapsed={remotesCollapsed}
               setRemotesCollapsed={setRemotesCollapsed}
