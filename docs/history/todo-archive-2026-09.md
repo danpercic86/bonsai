@@ -9346,3 +9346,934 @@ statement rather than a condensation, which is why it is archived here verbatim.
   `MOCK_LONG_TARGET` · §8/§9's **literal U+202E / zero-width chars in the very section that forbids
   them**), plus `P87b-FU1-FU4-git-dock-ui.md` F-F(a). `2aa1e06` and `f00fad3` claim to have closed
   some; **which ones is unverified.** Hand the list to the next `architect` spawn on that file.
+
+
+---
+
+## Part 83 — P116 (`OBS_SCHEMA_VERSION` TS/Rust drift + parity test), in full, verbatim, moved off the board 2026-09-23
+
+**Why this one could be archived and its neighbours could not.** P116 is the only milestone on the
+2026-09-23 board that reads `done` **and** states "**No USER CHECKPOINT applies**" in its own text —
+nothing user-visible changes, so there is no native half for the user to clear. P113 (`in-progress`),
+P115 (`in-progress`), P117 (`awaiting USER CHECKPOINT`) and P118/P118b (`reviewer approved`, which is
+not `done`) all stayed on the board. No status was upgraded by the curator.
+
+**Two lines of it were NOT archived away and stay live in `TODO.md`:**
+1. the **reviewer follow-up addressed to `docs-curator`** — `docs/contracts/P91-observability.md:252`
+   and `:648` still declare `OBS_SCHEMA_VERSION` as `1`. That is contract substance, owned by
+   `architect`, not the curator's to edit; it is also the *same* item the board already carries under
+   `### Filed 2026-09-16 — the real-log residue` ("Contract drift"). One canonical open line is kept
+   there, re-measured 2026-09-23.
+2. the fact that `tests_schema_parity.rs` exists at all — P117 inc 2's 2 → 3 bump had to move that
+   guard, which the live P117 section records.
+
+**Dead as of this archiving:** the process note "This board edit is deliberately left uncommitted"
+— `e49cf20` landed and the tree has moved on **seven** commits since (`git log --oneline
+e49cf20..473d9fa`: `8790b62`, `d63a571`, `bbd8993`, `83bbdf3`, `91d9377`, `c6ae304`, `473d9fa`).
+
+### Part 83.1 — the P116 section, verbatim as it stood at `473d9fa`
+
+## P116 — `OBS_SCHEMA_VERSION` TS/Rust drift + parity test — `done`
+
+**Current step:** P116 — **done**, `reviewer` approved (no MUST-FIX), committed `e49cf20`.
+**No USER CHECKPOINT applies** — nothing user-visible changes. This board edit is deliberately left
+uncommitted: `TODO.md` also carries in-flight P114/P115 hunks from other sessions, so `e49cf20`
+stages only the four code files.
+
+Spun out of the P113 follow-up list ("the TS/Rust `OBS_SCHEMA_VERSION` parity test"), found during
+the **P113d contract review (2026-09-22)**.
+
+**Defect (real but latent).** Rust `src-tauri/src/obs/record.rs:35` declared `2`; TS
+`src/ipc/types/obs.ts:16` still declared `1`. No parity test existed, so the two drifted silently
+for six days after the 2026-09-16 v1 → v2 bump (`RenderTally::changed_props`
+`Vec` → `Option<Vec>`).
+
+**Rust is authoritative, verified not assumed:** `writer.rs:198` is the ONLY emitter and stamps
+`schema: OBS_SCHEMA_VERSION` into the session header, so on-disk records really carry `"schema":2`.
+The TS constant has **zero consumers** — declared once, re-exported at `src/obs/types.ts:26`,
+nothing imports or branches on it — so the bump is a label correction with **no behaviour change**.
+
+**Not drift, do not "fix":** the `schema: 1` literals in `src/ipc/mock/handlers/obs.ts`,
+`src/ipc/mock/handlers/history.ts`, `useHistorySearch.test.tsx` and `unusableRepoTeardown.test.tsx`
+are the separate `METRICS_SCHEMA_VERSION` (=1) and `IndexStatus.schema` counters.
+
+**Fix.** TS → `2`; new `src-tauri/src/obs/tests_schema_parity.rs` (51 lines,
+`obs::tests_schema_parity::ts_mirror_matches_the_rust_schema_version`) `include_str!`s the TS source
+and asserts the declaration literal appears exactly once. Follows the **forge copy-guard** pattern
+(`forge_add_account_tests.rs:368`), NOT the JSON-oracle one — that one's direction is
+TS-owns/Rust-checks, backwards here. Own file because `record.rs` is 503 lines (over the soft limit)
+and `tests_record.rs` is narrowly the `changedProps` serde contract.
+
+**Reviewer follow-up (not blocking, for `docs-curator`):** `docs/contracts/P91-observability.md:252`
+and `:648` still show `OBS_SCHEMA_VERSION` as `1` — pre-existing doc drift outside the code fix's
+scope. (`P113d-watcher-log-volume.md:187/:398` already say `2` correctly.)
+
+**AI gate:** mutation-proved green → red → green (TS reverted to `1` ⇒ fails, count 0 vs 1);
+`tsc --noEmit`, `clippy --tests -D warnings`, `cargo fmt --check` all green. **No USER CHECKPOINT** —
+nothing user-visible changes.
+
+
+---
+
+## Part 84 — The `P117` section, verbatim as it stood before the 2026-09-23 tightening
+
+**NOT an archived milestone — P117 is LIVE on the board and is `awaiting USER CHECKPOINT`.** Its two
+increments are implemented, reviewed, audited, gated and committed (`d63a571`, `83bbdf3`) and the AI
+gate passed, but the orchestrator does not self-declare the native half, so the section stays in
+`TODO.md`. This part exists only so the tightening is lossless.
+
+**Measured: 380 → 352 content lines, −28 (−7.4%).** A small return, and honestly so — like the release
+block before it (269 → 229 on 2026-09-22), this section is almost entirely evidence: gate output,
+`file:line` citations, measured counts, a pending USER CHECKPOINT and 5 + 2 open follow-ups. What
+can be cut from a block like this is duplication and spent in-flight state, not substance.
+
+**Every number, SHA, path, caveat and provenance qualifier in this text was carried forward** — in
+particular the two "senior-dev-reported, not orchestrator-verified" caveats (the `d63a571` 4-of-6
+negative control, and AC2-9's mutation direction), the accepted residual risk on the `logAppend`
+transport, the two INFO audit follow-ups, and the owed `#[cfg(any(windows, target_os = "macos"))]`
+Linux leg.
+
+**What the tightening actually removed, and why it is not a loss:**
+- the **duplicated `CLAUDE.md` gate-rule correction** — it was stated at length here *and* in the
+  P115 section (board lines 686-694 and 851-872 at `473d9fa`). One canonical copy now stands in the
+  P115 section, carrying both citations (`scripts/gate.mjs:15`, `:17`, `:79`, `:206`, `:207`, `:215`)
+  and both sessions' independent corroboration;
+- the **in-flight states that the 561.2s green and `83bbdf3` superseded**: "`security-auditor` still
+  running. Not committed", the two-fixes-queued-behind-the-audit paragraph (both shipped as fixes 1
+  and 2 of the follow-up pass), and the whole "step-7 gate is currently blocked by a FOREIGN defect"
+  narrative (the `prune_tests.rs:290-291` `\x` escape, P115's, since committed in `bbd8993`). The
+  *lesson* that block earned — three sessions sharing one `cargo` test binary — is kept live;
+- two **mid-paragraph splices** from concurrent sessions, where an unrelated sentence had been
+  pasted into the middle of another (board lines 912 and 1037 at `473d9fa`), which are untangled
+  rather than deleted;
+- the **inverted chronology** (inc-2 results appearing above inc-1's), reordered.
+
+### Part 84.1 — the P117 section, verbatim as it stood at `473d9fa`
+
+## P117 — two 2026-09-22 perf signals: graph-cache wipe + repo-blind anomaly rules — `awaiting USER CHECKPOINT`
+
+**Current step:** P117 — contract signed (`docs/contracts/P117-perf-signal-fixes.md`, 583 lines,
+two standalone increments). **Both increments implemented, reviewed, audited, gated and committed —
+`d63a571` (inc 1) and `83bbdf3` (inc 2). AI gate PASSED. Status is `awaiting USER CHECKPOINT`,
+which the orchestrator does not self-declare.**
+
+**AI gate — the actual printed output, run in this session (CLAUDE.md's paste-don't-paraphrase
+rule):**
+
+```
+════ gate summary — pre-commit — 561.2s total ════
+  ✓   257.9s  [rust] cargo nextest
+  ✓     4.7s  [rust] cargo test --doc
+  ✓     2.1s  [rust] cargo fmt --check
+  ✓    18.6s  [rust] cargo clippy
+  ✓    13.4s  [frontend] eslint
+  ✓   759ms   [frontend] file-size ratchet
+  ✓    66.3s  [frontend] vitest
+  ✓    12.4s  [frontend] tsc + vite build
+  ✓   185.0s  [e2e] playwright e2e
+✓ all 9 steps passed
+```
+
+Plus the **audit** group, run separately (see the CLAUDE.md correction below):
+`cargo deny --all-features check` → `advisories ok, bans ok, licenses ok, sources ok` (two benign
+`license-not-encountered` warnings for unmatched `deny.toml` allowances, not failures);
+`pnpm audit --audit-level high` → `No known vulnerabilities found`.
+
+**⚠ CORRECTION OWED TO `CLAUDE.md` ITSELF — do not fix silently, it is another session's file.**
+The new gate-output rule states that "`pnpm gate` (`scripts/gate.mjs`) is the canonical gate — it
+**already runs the `rust`, `frontend` and `audit` groups**". That is **factually wrong**, and the
+gate's own header says so: `scripts/gate.mjs:15` documents bare `pnpm gate` as "rust + frontend +
+e2e", `:17` documents `--full` as "gate + supply-chain audit + coverage", and `:215` gates the
+audit group behind `wantAudit`. Bare `pnpm gate` never runs `cargo deny` or `pnpm audit`. The rule
+is self-defeating as written: it tells a reader that running one command covers advisories, when
+rule 4 in the same block calls advisories a red gate. Either the rule should say `--full`, or it
+should pair `pnpm gate` with the two audit commands explicitly. **Raised with the user; not edited
+here.**
+
+**Independently corroborated by the P115 session, at source rather than from this board.** Its
+citation is the more precise one — `scripts/gate.mjs:79` is
+`const wantAudit = full && !rustOnly && !frontOnly`, so bare `pnpm gate` cannot reach `cargo deny`
+(`:206`) or `pnpm audit` (`:207`). Verified here by reading `:79` directly, not accepted on report.
+Two independent `pnpm gate` runs over a tree containing **both** `bbd8993` and `83bbdf3` each
+printed the same nine steps across three groups with no audit group — the claim is disproved twice
+by the tool's own output. **Neither session edited `CLAUDE.md`**: a peer flagging a defect is not
+authorization to change an instruction file, and that holds even when the change would be a
+correction and both agents agree on the facts. Worth recording what the rule achieved while being
+wrong about the mechanism: its *intent* is what made both sessions run `cargo deny` separately
+instead of assuming coverage. A wrong sentence inside a right rule.
+
+**Owed, and stated as owed: a platform-gated test leg in inc 1 has never compiled on Linux.**
+`commands/tests_repo_graph_cache_rearm.rs:228` is `#[cfg(any(windows, target_os = "macos"))]`,
+covering the case-insensitive-filesystem complement of `distinct_canonical_path_gets_a_fresh_slot`
+— which per the inc-1 review is **the one place** where "cache carried while `entry.path` is
+overwritten with a different path string" is checked end to end. On Linux that leg vanishes and the
+test still *passes*, because its fresh-slot half uses a second distinct repo — so the coverage loss
+is silent, which is the part worth writing down. This matters against the v1 definition of done
+("Runs on Windows, macOS, and Linux"): the Unix build of this leg is owed to CI, exactly as the
+P115 session owes its `#[cfg(unix)]` case-fold legs. Found by self-checking after that session
+disclosed its own gap — the disclosure norm earned its keep. Inc 2 has **no** platform-gated
+tests (grepped), so it is clean on this axis.
+
+**USER CHECKPOINT (pending — both items need the native app and real repos; neither is
+AI-verifiable):**
+1. **Inc 1 — the cache actually retains across real refreshes.** Run `pnpm tauri dev`, open the
+   same ~5 repos, work normally for a while (let `full` rounds fire via focus/activation), then
+   read `%APPDATA%\com.bonsai.app\metrics\usage.json` for the day. **The unconditional signal is
+   `perf.graph_cache_hits` rising sharply against the `cmd.streamGraph` count** (was 6 of 81 in the
+   session, 6 of 103 across the day).
+
+   **CORRECTED — an earlier version of this item said a still-zero `perf.graph_redecorates` "would
+   mean the fix did not take". That is false, and would have sent the checkpoint chasing a phantom
+   regression.** `HitRedecorate` requires a ref to move onto an **already-walked** oid — a branch
+   created at an existing commit, or a checkout between existing branches (`classify`:
+   `c.tips.is_subset(tips)` AND `tips ⊆ c.node_oids`). A session of only new commits and fetches
+   produces **new** oids, which are legitimate Misses, so redecorates can correctly stay 0 with the
+   fix working perfectly. Make it the **conditional** check instead: *if* you switched branches or
+   created a branch at an existing commit at least once and redecorates is still 0, then the fix
+   did not take.
+2. **Inc 2 — the rules stop firing cross-repo.** Same session, then grep the new
+   `logs/*.jsonl` for `"rule":"redundant-refresh"` and `"rule":"cache-collapse"`. Expect the
+   count to fall substantially (the estimate was ~17 of 26 firings were cross-repo), and expect
+   every surviving firing's records to share one `repo` ordinal. Note the log is **v3** now, so
+   records carry `"repo":"repo#N"` in strict mode — if a raw path appears there instead, that is a
+   redaction regression and is the one thing worth stopping for.
+
+Why these cannot be AI-verified: the defect was only visible in a real multi-repo session with the
+real `notify` watcher and real focus events, none of which the mock harness or the e2e suite
+reproduces. That is exactly how it was found. **Increment 2 (obs repo dimension) with `senior-dev`.** `TODO.md` and
+`docs/contracts/INDEX.md` deliberately left out of `d63a571` — they carry in-flight P114/P115
+hunks from concurrent sessions.
+
+**Increment 2 (obs repo dimension) — implemented; `reviewer` APPROVED, no MUST-FIX;
+`security-auditor` still running. Not committed.** Reviewer independently re-ran `cargo test --lib
+obs::` **243 passed / 0 failed / 1 ignored**, `tsc` clean, `vitest src/obs src/components/repoWorkspace`
+**678/678 in 64 files**, ratchet OK, and verified every freeze by diff (`git diff d63a571 --
+src-tauri/src/watcher` **empty**; `DEBOUNCE` still 300 ms; the pinned `redactionNote` at
+`record.rs:74-91` untouched; `dup-ipc` only destructures the tuple). Both size-forced splits
+confirmed behaviour-preserving — `tests_anomaly_slow.rs` is **byte-unchanged** and still drives the
+relocated `cache-collapse` through the `None` bucket.
+
+**Two fixes ACCEPTED from SHOULD-FIX (deviating from velocity mode deliberately: ~10 lines, and one
+of them is a test asserting on an input that cannot occur).** Queued behind `security-auditor`
+because both touch `src/obs/repoArg.ts`, which that audit is reading — editing it mid-audit would
+invalidate the read:
+- **(a)** 10 of the 29 recognised camelCase mutations have no repo attribution — `fetch`, `pull`,
+  `push`, `rebaseContinue/Skip/Abort`, `cherrypickContinue/Abort`, `revertContinue/Abort` — so a
+  manual fetch in repo A suppresses `cache-collapse` in every *other* open repo for 10 s. Fix via a
+  small private name map in `repoArg.ts`, **NOT** `rawArgPolicy.json` rows: rows would also start
+  emitting `args:{repoId}` for fetch/pull/push in raw mode, a real (if benign) privacy widening.
+  The reviewer's mechanism choice, and the right one.
+- **(b)** `tests_anomaly_repo.rs:198,232` feed `"clone_repo"`, which **cannot occur** — the wire
+  `cmd` is `cloneRepo` and never matches `is_mutation_cmd`. Switch to `"fetch"`, which makes the
+  fixture realistic *and* pins (a).
+
+**Inc-2 follow-up pass (5 fixes) — landed, targeted gates green.** `cargo test --lib obs::`
+**248 passed / 0 failed / 1 ignored**; `vitest src/obs src/components/repoWorkspace` **684 passed /
+64 files**; check/clippy/fmt/eslint/tsc/ratchet all clean. (1) `REPO_PARAM_FALLBACK` in
+`src/obs/repoArg.ts` — a private name map for the 10 unattributed mutations, **not**
+`rawArgPolicy.json` rows, so raw-mode `args` exposure is not widened to buy a signal fix; all 10
+verified `repoId`-at-position-0 against `ipc-api.ts`. (2) the fictional `"clone_repo"` fixture →
+`"fetch"`. (3) `is_allowed_scalar` now gates `repo` in `raw_args::enforce`, placed **before** the
+`contains_key(ARGS_KEY)` early return — span and refresh records carry no `args` and would
+otherwise have skipped the gate entirely. (4) second-consumer note + two guards. (5) the UI-sourced
+strict assertion now reuses the same fragment loop as the Rust-sourced one, plus an
+`ipc.call`-through-the-writer case.
+
+**REAL BUG found in passing and fixed — `repoIdArg('constructor', …)` threw a `TypeError`.**
+`POLICY_LOOKUP` is a plain object, so prototype keys (`constructor`, `toString`, …) resolved to
+**functions** and `row.indexOf` blew up — inside the proxy that wraps **every** user-facing IPC
+call. Introduced by increment 2, caught only because the follow-up pass wrote a negative-control
+test for commands deliberately absent from the fallback map. Fixed with `Array.isArray(row)` + a
+test. **Follow-up:** `buildRawArgs` in `rawArgPolicy.ts` has the identical shape but degrades safely
+(`row[i]` → `undefined` → skipped), so it was left alone — worth the same guard on principle, since
+"degrades safely today" is how this one started.
+
+**Third instance of a spec being too literal to implement (a pattern now, not bad luck).** After
+AC1-4 and §2.4's `clone`/`init` example, the orchestrator's own wording for fix 4 — "every `IpcApi`
+method that declares a `repoId` parameter has a non-null policy entry" — is unimplementable: **157**
+methods declare `repoId` at position 0 and **57 have no policy row**, of which 47 are
+non-mutations (`getStatus`, `streamGraph`, `forge*`, `list*`) that are unattributed **by design**
+because they never feed `mutations`. The narrower shipped guards are the correct reading: (a) every
+recognised mutation attributes *positionally*, (b) no existing row nulls a declared `repoId` slot,
+(c) a synthetic self-check proving (b) bites — so no tracked file had to be broken to show the
+guard red.
+
+**Consequence of fix 1 worth recording:** all 29 recognised mutations now attribute, so the `None`
+bucket is reachable only via a `schema: 2` line replayed from an older log (§2.6/AC2-10), a lift
+that failed its non-empty-string check, or a future producer. There is no command that "truly
+yields no repo".
+
+**Two stale comments corrected by the orchestrator directly (post-review, comment-only, disclosed):**
+`obs/anomaly.rs`'s `mutation_attributed_to` doc repeated §2.4's factually wrong `clone`/`init`
+example — wrong twice over, since those never match `is_mutation_cmd` *and* fix 1 removed the
+"no `repoId` argument" route entirely; and `obs/raw_args.rs:37` still said the schema "now reads 2".
+Left standing, both would have misled the next session exactly the way the INDEX.md false-report
+chain did.
+
+**`security-auditor` (SEC-2026-09-22, P117 inc 2 redaction surface): CLEAN at HIGH and above.** No
+repo path, and no fragment of one, could be got onto a strict-mode line or into any other sink
+through the new `repo` field. What earned it, recorded so a future session need not re-derive it:
+`LogWriter::append_record` (`writer.rs:247-282`) is the **only** place a `LogRecord` becomes bytes
+(grepped — no second `serde_json::to_string` of a record in `src-tauri`; the session header and
+`truncate` records deliberately re-enter through it), and `strict::enforce` (`strict.rs:187-190`)
+matches the **key name** before `walk` runs, so UNC, non-ASCII, space-bearing, under-home and
+drive-rooted paths all collapse identically to `repo#N`. **The contract's whitespace rationale is
+verified real, not theoretical:** `is_run_char` excludes space and `is_path_shaped` requires a
+separator, so without the field rule `D:\Repos\my project` yields `path#N project` — which makes
+the bare-word `"project"` assertion at `tests_repo_redaction.rs:103` load-bearing. No UI/Rust
+asymmetry: UI records take the same `logAppend → log_append → sink.enqueue → append_record` path,
+and there is no `console.*`/`localStorage`/`tauri-plugin-log`/devtools sink anywhere in
+`src/obs/*` or `src/ipc/tauri/`. Anomaly records carry `repo: None` and the composite key
+`"{repo}\0{scope}"` lives only in `Sliding.events[].key`, never serialised. Raw mode is
+**double-gated** (`dev.enabled` AND `include_raw_names`, both false by default,
+`settings/prefs.rs:299`).
+
+**ACCEPTED RESIDUAL RISK, stated rather than dropped.** In the shipping **strict** configuration
+the `logAppend` IPC batch now carries **raw paths** where previously it carried none. Bonsai adds
+no sink that would capture them — verified — but whether the WebView2/Tauri transport itself
+buffers or diagnostically logs invoke payloads is **outside what can be read from here**. Same for
+Windows crash-dump/WER capture of the in-memory raw paths in `anomaly/cache.rs`, `mutations` and
+the `Redactor` ordinal map (the last already held `Kind::Path` values, so not new). Judged
+acceptable: it is no worse than `AppState::repos` itself, and nothing today dumps detector state.
+Re-open if a "dump detector state" affordance is ever added.
+
+**Audit follow-ups (INFO, deliberately NOT fixed in this increment):** (i) `strict.rs`'s field rule
+is **top-level-only by construction** — `walk`, with its whitespace gap, is the fallback for any
+deeper `repo` key. Nothing nests one today (checked against every `LogPayload` variant) and the
+typed round-trip drops unknown keys, but making `walk` key-aware at any depth would make the
+guarantee depth- and ordering-independent. (ii) The `redact_names` whitespace gap remains the
+default for every *other* string field — an `error.message` embedding `D:\Repos\my project` would
+put `project` on a strict line. **Latent only because `LogPayload::Error` has no producer at all**
+in Rust or TS; file this against whichever increment first wires one, not against P117.
+
+**Orchestrator-verified first-hand for inc 2 (not quoted from a subagent):** both
+`OBS_SCHEMA_VERSION` literals read **3** (`record.rs:47`, `src/ipc/types/obs.ts:22`) and
+`cargo test --lib -- obs::tests_schema_parity` → **1 passed, 0 failed, 678 filtered out**.
+AC2-9's *mutation* direction (revert the TS literal ⇒ red) stays **senior-dev-reported**,
+deliberately: proving it means temporarily editing a tracked file in a tree other sessions build
+in, which is the hazard this session twice asked peers not to create. Not exempting itself from
+its own rule. The non-mutating half — both literals at 3, guard green, `include_str!` so a moved
+TS file becomes a build error — is first-hand.
+
+**Owed housekeeping (docs-curator's remit, not the orchestrator's):** `docs/contracts/INDEX.md`
+has **no row for `P117-perf-signal-fixes.md`**. `bbd8993` added P115's row and carried no foreign
+hunks, so nothing was lost — P117's row was simply never written. Add it when the milestone closes,
+together with a pointer to `docs/audit-2026-09-22-perf-signals.md` (which carries a CORRECTION
+block, so the index line must not restate the original 17/9 split as exact).
+
+**Two framing corrections the reviewer made to the orchestrator's own brief, worth keeping:**
+`forcePush` is not part of gap (a) at all — it never matches `is_mutation_cmd` (`forcePush` vs
+snake-case `force_push`), so a policy row would change nothing for it; and the exposure is
+**click-rate-bounded, not periodic**, because scheduled auto-fetch runs entirely in Rust
+(`scheduler/exec.rs:151`) and `LogPayload::IpcCall` has no Rust producer. 24 modified files + 7 new; `OBS_SCHEMA_VERSION` 2 → 3; the repo
+dimension sits on `LogRecordBase` as one optional field. Two behaviour-preserving splits were forced
+by the size ratchet *inside* a behavioural increment (`LogPayload::kind()` → `obs/record_kind.rs` to
+hold `record.rs` at its 503 ceiling; `cache-collapse` → `obs/anomaly/cache.rs` because `slow.rs` hit
+508) — flagged to the reviewer precisely because that is when a split goes wrong.
+`security-auditor` was invoked because the new field carries an **absolute filesystem path** into
+every record and the privacy property rests entirely on one writer-side enforcement point
+(`strict.rs`), in the **default** mode. Not a mandatory path trigger — a judgement call.
+
+**Browser-harness AI-gate item, verified first-hand by the orchestrator (2026-09-22).** This was
+AC2-12's one clause senior-dev could not check (no browser tool in its session). `pnpm dev:mock` on
+port 1420, viewport 1440×900, localStorage seeded per the harness traps at the top of this file:
+app boots, graph canvas renders with ref pills (`stash@{0..2}`, `main`), branches sidebar populated,
+and **four real `full`-scope refresh rounds driven through the modified `useCoalescedRefresh`
+producer with zero console errors** (`read_console_messages` onlyErrors → empty, checked three
+times). Two rapid clicks correctly coalesced into ONE round (`__bonsaiRefreshScopes` = `{full:1}`),
+so the coalescer still collapses as designed with the new field attached. **Not** verified here: the
+`repo` value on the wire — obs logging is gated off in mock/dev mode, so the emitted record is not
+observable from the harness. That assertion rests on `useCoalescedRefresh.repo.test.tsx`, which
+spies `logAppend` with a space-bearing path-shaped repoId. Said plainly rather than implied.
+
+**Provenance caveat on `d63a571`'s message (CLAUDE.md gate-output rule).** Its claim that reverting
+the carry-over "fails 4 of the 6 new tests" is **senior-dev-reported, not orchestrator-verified** —
+and it will stay that way deliberately: reproducing it means temporarily mutating `repo.rs` in a
+working tree two other sessions are building in, which is exactly the hazard this session asked a
+peer not to create. The forward direction (6/6 green) is now first-hand. Read the negative-control
+figure as a subagent claim.
+
+**Concurrency note (2026-09-22).** P115 was being implemented in this same working tree by another
+session while P117 inc 1 was in flight (`settings/prune*.rs`, `settings.rs`, `settings/forge_accounts.rs`,
+`lib.rs`, `tests_repo_session_misc.rs`). P117's reviews must therefore be **path-scoped**, not
+"the whole working-tree diff" — step 4's usual framing would hand the reviewer P115's code as well.
+P116 landing `e49cf20` first is convenient rather than conflicting: it pinned the TS
+`OBS_SCHEMA_VERSION` to Rust's 2 and added `tests_schema_parity.rs`, which is exactly the guard
+inc 2's 2 → 3 bump has to move.
+
+**Step-7 gate is currently blocked by a FOREIGN defect, not by P117.** `cargo test` cannot build
+the shared lib test binary: `src-tauri/src/settings/prune_tests.rs:290-291` (P115's, unstaged) has
+`assert_eq!(norm("D:\x\Api"), …)` in a **non-raw** string literal — `\x` opens a hex escape, so
+`\x\` is `invalid character in numeric character escape` (and `\A` is an unknown escape). Needs
+`r"D:\x\Api"`. It sits inside `#[cfg(windows)]`, so it only bites on this platform — which is this
+platform. Reported to that session; **do not fix it here, it is theirs.** Earlier the same binary
+was blocked by inc 2's `obs/anomaly.rs` declaring `mod tests_anomaly_repo;` before the file
+existed, and by P115's `mod prune_forge_tests;` doing the same — three different foreign edits
+rotating through one blocker. Consequence for P117: inc 1's 6/6 green and the 4-of-6 negative
+control ran BEFORE the tree went red and are unaffected (`d63a571` isolates them), but the full
+`pnpm gate` cannot run until the foreign tree compiles.
+
+**Lesson for the shared-tree situation (worth keeping):** with three sessions in one working tree
+the shared `cargo` test binary is a single point of failure — any one session declaring a `mod`
+before writing its file, or landing a syntax error, red-lines everyone's verification. Path-scoped
+staging protects the *commits*; nothing protects the *build*. Verify and commit an increment as
+soon as it is green rather than batching, because the window in which the tree compiles is not
+under your control.
+
+**Orchestrator rulings on the architect's four flags (all accepted):** (1) §2.4's scope widening to
+`ipc.call` is necessary, not optional — `IpcCall.args` is raw-mode-only, so attributing the
+`mutations` timeline in the default strict mode requires `repo` on the record base. (2)
+`OBS_SCHEMA_VERSION` **does** bump 2 → 3, despite `record.rs:18-19`'s additive-no-bump rule: the
+justification is the changed *meaning* of existing `anomaly` records (a v3 `redundant-refresh`
+means one repo; a v2 one means any set), which is exactly the bar that comment sets. Staying at 2
+would leave a reader unable to tell the two apart — rejected. (3) The dimension lives on
+`LogRecordBase` as one optional field, not three per-payload fields. (4) The writer-side
+field-name redaction rule stands and must not be relaxed to "`strict::enforce` already redacts
+paths" — `is_run_char` splits on whitespace, so `D:\Repos\my project` would leak `project`.
+
+Investigated from a real 124-min Dev-mode session with **5 repos open**
+(`logs/bonsai-2026-09-22T04-52-03-scca8269e.jsonl`, 19,547 records + `metrics/usage.json` day
+`2026-09-22`). Both signals arrived undiagnosed; the report is the diagnosis. Full evidence,
+numbers and the corrected framings live in the audit file — only the verdicts are duplicated here.
+
+**Signal 1 — graph cache hit rate 8% ⇒ REAL DEFECT (low severity, design-level).**
+The cache is **per-repo** (`RepoEntry.graph_cache`), so the single-slot hypothesis is FALSE and
+`graph_cache.rs` is correct. The defect is a composition: `refreshScope.ts`'s `full` slice sets
+`openRepo: true` **and** `graph: true`, and `open_repo_inner` has **no early return** for an
+already-open repo — its dedupe scan only reuses the key, then unconditionally inserts a fresh
+`RepoEntry` with `graph_cache: None` (`src-tauri/src/commands/repo.rs:293`). So every `full` round
+wipes the cache it is about to read. **62 of 81 graph requests (77%) were structurally guaranteed
+misses**; 62 full rounds ↔ 63 `openRepo` calls; repos whose node count never changed
+(`items` 1041, 5376, 5374, 1009, 409) re-walked on nearly every request; `HitRedecorate` fired
+**0** times all day for the same reason. Excluding the forced misses the cache ran at **32%**
+(6 of 19), and the 13 remaining misses are explained by 3 `stash` rounds, ~6 new commits in
+`bonsai` itself and 7 fetches. Recoverable: **~9.0 s of blocking-pool time per 152-min session**.
+The wipe's stated justification ("topology may have changed while closed") does not apply to a
+repo that was never closed, and is redundant regardless — `classify` is exact-set on
+`(tips, head, hide)` from a freshly probed seed.
+
+**Signal 2 — redundant-refresh ×23 ⇒ MOSTLY CORRECT BEHAVIOUR + a monitoring defect.**
+`detect_redundant_refresh` (`src-tauri/src/obs/anomaly/window.rs:152`) keys on `scope` **and
+nothing else**, because `RefreshPayload` carries **no repo id** (`src/obs/types.ts:108`) — the
+coalescer receives `repoId` but never emits it. With 5 repos and 5 watchers, two *different* repos
+each doing one legitimate refresh inside 1000 ms is flagged as one repo refreshing twice.
+`round` is per-repo (a `useRef` per coalescer), which separates the populations: **~17 of 26 are
+cross-repo false positives, including all five `full`-scope pairs** — so the reported
+"541 ms + 684 ms full pair" is round 9 of one repo and round 28 of another, not a redundancy.
+The **9 genuine** same-repo pairs are all `worktree`, Δt 381–935 ms, and cost **805 ms total over
+152 minutes**; every Δt exceeds the 300 ms trailing-edge quiet period, i.e. the watcher really did
+see new external writes and the debounce behaved exactly as specified.
+⇒ **`DEBOUNCE` stays at 300 ms and no post-fire quiet window is added.** The architecture invariant
+needs no contract change; the fix belongs in the obs rule. The same repo-blindness also explains
+both `cache-collapse` firings (five spans, five *different* repos, 217 ms apart — not a user
+tab-switching over 100 s as first read).
+
+**Increment 1 — DONE, `reviewer` approved with no MUST-FIX (2026-09-22).** Fix: `open_repo_inner`
+carries the existing `Arc<GraphCache>` over when an entry is already present under the same key,
+read **under the same lock acquisition as the insert** (which also closes the dedupe scan's TOCTOU
+for free — an entry closed in between makes `get` return `None`, the correct cold start). Watcher
+still rebuilt and installed on every re-arm; `bump_repo_generation` untouched. All three durable
+doc-comment copies updated (`repo.rs`, `state.rs`, `graph_cache.rs` — the last net-zero-lines
+because the ratchet pins it at 511, `scripts/file-size-baseline.json:26`). New
+`commands/tests_repo_graph_cache_rearm.rs` (343 lines, own module because
+`tests_repo_session_misc.rs` is 560). **The evidence is the negative control, not the green run:**
+reverting only the carry-over fails 3 of 5 new tests, while the other 2 pass in both states because
+they are boundary guards. Reviewer independently re-ran 45 tests green and verified the soundness,
+TOCTOU, `path`-overwrite and concurrency claims one by one.
+
+**P117 inc-1 follow-ups from the review (none blocking, ranked):**
+
+1. **`seed_fingerprint` is refs-only, and P117 lengthens the window where that matters.**
+   `crates/bonsai-core/src/graph/seed.rs:43-55` seeds from refs alone, so `classify` assumes a tip
+   oid pins its whole ancestry. That holds except when parentage is overridden *externally*:
+   `.git/shallow` (a CLI `fetch --unshallow`/deepen leaves tips, HEAD and hide identical while the
+   DAG grows), `info/grafts`, `refs/replace/*`. Pre-P117 the `full`-round wipe masked this within a
+   session by accident; now a truncated layout can be served as `HitVerbatim` until a tip moves or
+   the tab closes. **Bonsai is a Git client, so external CLI use in an open repo is the normal
+   case, not an edge case** — that is why this is worth carrying even though nothing in our own
+   code creates shallow clones (`grep -rn "shallow|grafts|refs/replace" --include=*.rs` → empty).
+   Fix shape: fold `repo.is_shallow()` / `.git/shallow` mtime into `seed_fingerprint`. Hedge on
+   libgit2's exact revwalk behaviour for replace refs rather than assuming it.
+2. **Contract-record correction for `architect`: §1.2 mis-describes `info.path` as canonical.**
+   `read_repo_info` returns `path.to_string_lossy()` verbatim
+   (`crates/bonsai-core/src/git/repo.rs:43`, `:64`) — it never calls `canonicalize` and never
+   consults `repo.workdir()`, and nothing canonicalizes before `open_repo_inner`. So `info.path` is
+   the **raw caller string** and the map key is the raw string of whichever open came first. The
+   pre-existing comment at `repo.rs:225` ("repoId == canonical workdir path string") carries the
+   same inaccuracy. §1.2's *comparison* is what the code does; only its narrative is wrong. Does
+   not affect the fix's safety.
+3. **Contract-record correction for `architect`: AC1-4 is unimplementable as written.** The
+   `to_uppercase()` construction at `tests_repo_isolation.rs:127` can only yield a
+   canonicalize-equal path (Windows/macOS ⇒ `same_repo_path` matches ⇒ a *same-path* re-arm, the
+   opposite of what the AC asks) or a nonexistent directory (case-sensitive FS ⇒ `is_dir()` rejects
+   it first). Junctions/symlinks canonicalize back too. A second distinct repo is the only
+   construction that yields "canonical id differs from every existing key". Reword the AC; the
+   implementation is the right reading of §1.4(d).
+4. §1.2 should also name `same_repo_path`'s fallback branch (`repo.rs:408`): when either side fails
+   to canonicalize it degrades to `eq_ignore_ascii_case`, so "same path" can mean "same string
+   modulo ASCII case" for a vanished directory. Safe under §1.4(b), but unstated.
+5. **AC1-7 is only partially verified in this tree** — `tests_repo_session_misc.rs` is modified by
+   the concurrent P115 session, so the reviewer deliberately did not run it. Its green status rests
+   on senior-dev's 61-test run, not an independent one. Re-verify once P115 lands.
+
+Dropped deliberately: the reviewer's NITs (comment duplication between `repo.rs` and
+`RepoEntry::graph_cache`; `drop(dir_a)` needing a comment) — not worth a round trip.
+
+**Two contract changes for `architect` (both routed, neither implemented):**
+1. `graph_cache` preserve-on-re-arm — contradicts the P86 B1 contract line *"reset to `None` on
+   `open_repo` re-arm"*.
+2. `repoId` on `RefreshPayload` + the `graph.get` span record, and key
+   `redundant-refresh` / `cache-collapse` / the `mutations` list on `(repoId, scope)` — P91 §2.5 + §5.1.
+
+**Follow-up, not in scope:** `perf.repo_opens` = 564/day is the same root cause
+(`bump_repo_generation` on every `full` round evicts the pool handle cache) — re-measure after
+fix 1 lands. **Open question, do not fix blind:** day-wide `perf.graph_walks` (103) over-reports
+by exactly the hit count (6) versus the 97 spans that actually ran a `revwalk`; the offset predates
+the observed session and could not be attributed from static reading.
+
+
+---
+
+## Part 85 — The `P115` section, verbatim as it stood before the 2026-09-23 tightening
+
+**NOT an archived milestone — P115 is LIVE on the board and is `in-progress`.** Its code is
+committed (`bbd8993`) and a full 9-step gate ran green over a tree containing it (574.5s, exit 0),
+but **a Linux/macOS run is still owed** (gate gap 2: the `#[cfg(unix)]` legs have never compiled on
+this machine), so it is not `done` and the curator did not make it so. This part exists only so the
+tightening is lossless.
+
+**Measured: 134 → 134 lines, net zero — and that is the honest result, not a failed attempt.**
+Nine lines came out (the spent shared-working-tree warning, and two condensed paragraphs) and nine
+went back in, because the `CLAUDE.md` gate-rule correction was promoted here as the **canonical**
+copy and absorbed P117's citations (`gate.mjs:15`, `:17`, `:79`, `:206`, `:207`, `:215`). The board
+net is a saving of ~20 lines across the two sections, taken entirely out of P117.
+
+**Carried forward in full:** the pasted 9-step gate summary with every per-step time, the separately
+run `cargo deny` / `pnpm audit` results, the F1/F3/F4/INFO-2 audit findings with all their
+`file:line` citations, the accepted residual (two same-host repos sharing a basename), the
+negative-control experiment and its `overrides_migrated` left-1-right-0 result, the real
+`settings.json` evidence, the "NOT a bug, do not fix" forward-slash entry, and all five P115
+follow-ups.
+
+**What the tightening removed:**
+- the **shared-working-tree warning** ("a concurrent session is running P117 here … P115's commit
+  must be staged by explicit path"). P117 committed `83bbdf3`, P115 committed `bbd8993`; the
+  instruction is spent. The *process note* it produced — that the negative-control experiment
+  temporarily mutated a shared tree and was disclosed after the fact — is kept, because it is the
+  lesson, not the state;
+- the **second copy of the `CLAUDE.md` gate-rule correction**. P115's version is the one kept live,
+  because its citation (`scripts/gate.mjs:79`) is the precise one; P117's corroboration is folded
+  into it and P117's own copy is Part 84.
+
+### Part 85.1 — the P115 section, verbatim as it stood at `473d9fa`
+
+## P115 — stale repo paths in settings.json: prune + forge-override migration — `in-progress`
+
+**Current step:** P115 — **code committed `bbd8993`** (contract now rev 2.1, 722 lines).
+Both a code re-review and a security re-audit returned **approve / zero MUST-FIX**, the audit
+confirming **F1, F3, F4 closed** and ack-safety not regressed by the phase-split rewrite.
+**Full gate GREEN over a tree containing this commit** (9/9, 574.5s, exit 0 — pasted below), plus
+`cargo deny` and `pnpm audit` run separately because the bare gate does not cover them.
+**Still owed before `done`: a Linux/macOS run** — gate gap 2 below.
+No USER CHECKPOINT is owed beyond the orchestrator's own run: nothing user-visible changes, and
+the effect (five stale recents gone, the pin moved) is verifiable from `settings.json` itself.
+
+**Verified in-session before committing** (not from a subagent's summary, per the new `CLAUDE.md`
+rule): `cargo test -p bonsai --lib settings::prune` → **43 passed, 0 failed**;
+`cargo clippy -p bonsai --lib --all-targets -- -D warnings` clean; `cargo fmt --check` clean;
+`check-file-size` OK.
+
+**✅ GATE GAP 1 — CLOSED.** The P117 session committed its `obs/**` work (`83bbdf3`), the tree went
+static, and the full gate ran clean over a tree containing `bbd8993`. Pasted, not paraphrased:
+
+```
+════ gate summary — pre-commit — 574.5s total ════
+  ✓   200.9s  [rust] cargo nextest
+  ✓     8.6s  [rust] cargo test --doc
+  ✓     4.4s  [rust] cargo fmt --check
+  ✓     2.7s  [rust] cargo clippy
+  ✓    17.7s  [frontend] eslint
+  ✓   972ms   [frontend] file-size ratchet
+  ✓    78.4s  [frontend] vitest
+  ✓    22.7s  [frontend] tsc + vite build
+  ✓   238.1s  [e2e] playwright e2e
+✓ all 9 steps passed                                         [exited with code 0]
+```
+
+**Advisories run SEPARATELY, and deliberately so — bare `pnpm gate` does NOT cover them.**
+`cargo deny --all-features check` → `advisories ok, bans ok, licenses ok, sources ok` (two benign
+`license-not-encountered` warnings for unmatched `deny.toml` allowances);
+`pnpm audit --audit-level high` → `No known vulnerabilities found`.
+
+> **⚠️ `CLAUDE.md`'s new gate rule is factually wrong and should be corrected.** It states that
+> `pnpm gate` "already runs the `rust`, `frontend` and `audit` groups". It does not:
+> `scripts/gate.mjs:79` is `const wantAudit = full && !rustOnly && !frontOnly`, and `:17`
+> documents `--full` as "gate + supply-chain audit + coverage". The gate summary above is
+> self-confirming — nine steps, three groups, no audit group. Since the same `CLAUDE.md` block
+> calls advisories a **red gate**, anyone following it literally would run the bare gate and
+> believe advisories were covered. Use `pnpm gate --full`, or pair the bare gate with the two
+> commands above. Raised independently by the P117 session; neither of us edited `CLAUDE.md`
+> (uncommitted, not ours). **Owed to the user.**
+
+**⚠️ GATE GAP 2 — STILL OWED.**
+2. **The `#[cfg(unix)]` legs have never compiled or run on this machine.** They cover F4's
+   case-fold fix and the `\`-is-a-filename-character leg — i.e. exactly the platform where that
+   bug lives. Verified by construction + a simulated-Unix negative control (below); **execution
+   proof is owed to Linux/macOS CI.**
+
+**Negative control, run not asserted.** The macOS rule-(4) bug cannot manifest on Windows
+(`norm` already folds case there), so `senior-dev` simulated a Unix build — made `norm`
+case-sensitive unconditionally, reverted the fallback to `==` — and ran the new test alone:
+`rule_four_blocks_a_case_variant_of_the_candidates_path` **FAILED**, `overrides_migrated` left 1
+right 0 (the dead pin landing on an already-pinned repo). Files restored and independently
+re-verified by the orchestrator (`prune.rs:281`, `prune_gate.rs:159`, no stray backups).
+**Process note:** that experiment temporarily mutated a shared working tree, which is the hazard
+the P117 session had explicitly warned about — a peer's `cargo` run during the window sees
+phantom breakage. Disclosed to them after the fact. The instruction gap was mine: "don't touch
+files outside your surface" does not forbid temporarily mutating files *inside* it.
+
+**Rev 2 — what the audit changed (all in §4, none in §1's policy verdicts).**
+- **F1 (MEDIUM, blocking) — rule (6), positive forge identity.** Basename-only migration could
+  destroy the binding P115 exists to preserve. A dead pin on `…\work\api` (a github.com account)
+  migrating onto a live `…\personal\api` whose origin is gitlab.com yields a pin that (a) never
+  resolves — `forge_accounts.rs:33-40` host-filters *before* the `account_id` find, so it falls
+  through; (b) is **unremovable**, because both clearing affordances
+  (`ForgeAccountSwitcher.tsx:100-104`, `:124-131`) are gated on `accountSource === 'override'`,
+  which it can never produce, and no Settings pane lists overrides; (c) is **permanent**, because
+  the override now names a Live path so rule (1) blocks it forever. Rule (6) requires the live
+  candidate's own forge host to equal the pinned account's host. Empty host (unparseable origin,
+  `bonsai-forge/src/lib.rs:85-92`) blocks, never wildcards. Resolver runs in lock-free phase 1,
+  lazy-gated so a clean launch opens zero repos (AC22).
+- **F4 (blocking) — `norm`'s case fold is now `#[cfg(windows)]`.** Rev 1 lowercased
+  unconditionally; on a case-sensitive FS `/x/api` and `/x/Api` collapse to one key, and since
+  `collect_paths` keeps the first-seen string a dead twin's verdict lands on a **live** repo.
+- **F3 — comparison split: dead side = `norm`, live side = canonical.** Rev 1's claim that every
+  comparison has a dead side is false for rule (4); `read_repo_info` stores the raw opened path
+  (`git/repo.rs:43,64`), so two strings for one directory are routine.
+- **INFO-2** — `classify_all` probes distinct roots first and short-circuits under a dead root,
+  collapsing N dead-UNC entries to one slow probe.
+
+**Accepted residual, on the record:** two same-host repos sharing a basename can still
+mis-migrate. Post-rule-6 that pin *does* resolve, so it shows "Pinned to this repo" and one unpin
+clears it — but nothing distinguishes a machine-made pin from a user-set one. Closer is a
+`pinnedBy: "user" | "migration"` marker, logged as a UI follow-up in §10, not specified.
+
+**Audit returned CLEAN on:** ack safety (no code path can migrate or add an ack), TOCTOU, log
+redaction (counts only, never paths), and malformed-`settings.json` robustness.
+
+⚠️ **Shared working tree:** a concurrent session is running **P117** here. `repo.rs`,
+`graph_cache.rs`, `state.rs`, `CLAUDE.md`, `docs/contracts/P117-*`, `docs/audit-2026-09-22-*` and
+part of this file are **theirs**. P115's commit must be staged by explicit path.
+
+**Evidence (a real user's `%APPDATA%\com.bonsai.app\settings.json`, 2026-09-22).** The directory
+`D:\Repos` no longer exists — the repos moved to `D:\Data\Repos` — yet the file still carries
+5 `recentRepos` entries under `D:\Repos\*`, a `repoForgeOverrides` entry for
+`D:\Repos\ham-digi-backend` (DEAD: the path is gone, and the repo's live path
+`D:\Data\Repos\ham-digi-backend` has **no** override — so the user silently lost their per-repo
+forge account binding), and `hooksAckRepos` carrying both the old and the new path for two repos.
+
+**NOT a bug, do not "fix":** the one forward-slash recents entry (`D:/Repos/.worktrees/...`).
+`record_recent` dedups through `same_repo_path` (`settings.rs:449`), a canonicalizing compare —
+the slash difference is cosmetic and already dedups correctly.
+
+**Goal.** Prune `recentRepos` entries whose path is gone, and decide + implement what happens to
+`repoForgeOverrides` / `hooksAckRepos` entries pointing at a vanished path. Two asymmetric risks
+drive the policy: dropping a `hooksAckRepos` entry re-prompts a security disclosure, and silently
+dropping a forge override is exactly what produced the invisible breakage above. A path can also be
+*temporarily* absent (unplugged drive, unmounted share), so the prune must gate on something
+stronger than one failed `exists()`.
+
+**P115 follow-ups — none blocking, all filed rather than silently dropped.**
+- **`pinnedBy: "user" | "migration"`** — the closer for the accepted F2 residual (two same-host
+  repos sharing a basename can still mis-migrate). Post-rule-6 such a pin *resolves*, so it shows
+  "Pinned to this repo" and one unpin clears it, but nothing distinguishes a machine-made pin from
+  a user-set one. **UI increment — `ui-designer` first.** Contract §10.
+- **Surfacing kept-dead overrides** — a dead pin that is kept but not migrated (ambiguous
+  basename) is the one case where the user still learns nothing. It is retention, not loss.
+  Also a UI increment; contract §10.
+- **`settings.rs` is at EXACTLY 500 lines** — the ratchet is `> 500`, so the next line added there
+  by anyone trips it. Fix is splitting `record_recent` + the hooks-ack helpers into
+  `settings/recents.rs` (`refactorer`). Deliberately not done under three-way tree concurrency.
+- **Uncapped lists are re-probed every launch** — `hooks_ack_repos`, `repo_forge_overrides` and
+  `open_repos` have no cap, and every distinct path is probed at each launch. Roots-first
+  collapses N dead entries under one dead share to a single timeout, but the unbounded growth
+  itself is untouched. Contract §10.
+- **`recents-changed` event** — the frontend's first `getRecentRepos` can race the pass and show
+  the unpruned list once, for one launch. Taking it would make P115 an IPC change; deliberately
+  deferred. Contract §10.
+
+
+---
+
+## Part 86 — The open follow-up entries rewritten by the 2026-09-23 staleness sweep, verbatim as they stood at `473d9fa`
+
+**Nothing here was closed on inference.** Every closure below was verified against the **current
+tree** (file contents, `wc -l`, `grep`), never from a commit subject — the rule the 2026-09-03 pass
+earned when it found 11 of 35 open entries had drifted. Where the tree could not settle an item, the
+item stayed open on the board and says so.
+
+Each sub-part is the pre-sweep text; the board now carries the re-measured replacement.
+
+### Part 86.1 — `### Filed 2026-09-16 — the real-log residue`, whole section, pre-sweep
+
+Four of its bullets changed: **cross-tab detector keying** and **`RemotesSection` re-renders** are
+now CLOSED in the tree; **contract drift** got worse and was re-measured; **headroom** was
+re-measured and all three numbers were stale.
+
+### Filed 2026-09-16 — the real-log residue (full narrative: archive Part 78.1)
+
+The real-log investigation landed in `88a4004`, `7f186b3`, `2fc03cc`, `5654eaa`: the render storm is
+fixed (`MAX_TALLY_RENDERS` **1012 → 8** for one ref change), `mono` is stamped, the StrictMode
+activation guard is fixed, `changedProps` absence now means "not tracked", `OBS_SCHEMA_VERSION` is 2.
+**Still open:**
+
+- **The one-commit refactor.** A *genuinely-changed* round still lands **up to 3** commits, because
+  each IPC response resolves in its own microtask. Having the refetches **return** data and applying
+  it once after `Promise.all` is the real next step. **The 126× win is the no-change case, not
+  universal.**
+- **`Sink::mono()` (`sink.rs:401/405`) is wall-clock derived** (`now_ms() - started_ms`), which
+  contradicts the "jitter-free" framing on the producer path. ~4 lines (an `Instant` beside
+  `started_ms`). Interacts with "0 means unset": the sink can legitimately return 0 in the first ms.
+- **`each`-mode `changedProps` still cannot distinguish** tracked-unchanged from untracked (it omits
+  when empty, by instruction). Only `render.tally` carries the three-state guarantee.
+- **The 10 `useRenderCount(…, undefined, 'aggregate')` sites** — pass real props to make the gauge
+  diagnostic. Deliberately NOT done: inventing props for 10 sites is a judgment call, not a fix.
+- **Cross-tab detector keying → `architect`.** `window.rs:158-165` keys the redundant-refresh window
+  on `scope` **alone** and the refresh record carries **no repoId**, so two unrelated repos refreshing
+  within 1 s are indistinguishable. Latent, but the log shows two coalescer instances both at
+  `round: 1`, so multiple tabs do happen. Needs a DTO field.
+- **Dev-mode log VOLUME:** 10,280 watcher records = **87%** of a 2.2 MB / 6-minute log, and **7,247
+  had `relevant: 0`** — a record per file change it then correctly ignores. Cost, not correctness.
+- **`RemotesSection` still re-renders on a local-branch change** — it receives `data` directly; the
+  `remoteFlatFiltered` dep narrowing does not stop it. 2 renders / 1 instance.
+- **Contract drift (contracts are not the orchestrator's to edit):**
+  `docs/contracts/P91-observability.md:261` still says "jitter-free ordering aid" and
+  `:230,235,252,322` still say schema 1; the **P81** contract names `pendingTagForceRef`, **renamed**
+  to `pendingUserOriginRef` (a rename, not a merge — reviewer-verified byte-identical).
+- **Headroom:** `Sidebar.tsx` **491/500** (9 lines — the next sidebar prop needs a split),
+  `writer.rs` **491**, `record.rs` **487**. All hard caps, not baselined.
+
+### Part 86.2 — A4 finding 6's citation paragraph, pre-sweep
+
+`useSettingsWriteQueue.ts:128` drifted to `:151`. **The finding itself is NOT closed** — the raw
+error is still discarded; only the line number moved.
+
+**But I checked what happened to the underlying error and it is gone.** `useSettingsWriteQueue.ts:128`
+calls `noteFailure(streak)` with **only the streak**; there is no `errorMessage(e)`, no `console`, no
+log call anywhere on the new path. The raw OS error previously rode in the toast text
+(`Could not save settings: ${errorMessage(e)}`) and **now nothing captures it at all.**
+
+### Part 86.3 — the U+200B closure bullet, pre-sweep
+
+Already marked closed on 2026-09-22; condensed to one line rather than kept as a five-line entry.
+
+- **✅ CLOSED 2026-09-22 (curator-verified) — the U+200B at `P107-F2-copy-chip-ui.md:249` is gone.**
+  A codepoint grep for U+200B / U+202E / U+200E over `docs/contracts/*.md` returns **zero hits**;
+  `2233cc0` touched that file. **Three more remain under `docs/contracts/archive/`** — out of scope
+  as history.
+
+### Part 86.4 — `### 🆕 WORK QUEUE — 20 files the reformat pushed over the 500-line limit`, whole section, pre-sweep
+
+Re-measured file by file on 2026-09-23. The board's own "known live trap" — that the queue was
+listed as possibly complete and is not — is confirmed and now carries fresh counts.
+
+### 🆕 WORK QUEUE — 20 files the reformat pushed over the 500-line limit
+
+Baseline absorbed them (`5f015be`): **18 → 38** files over limit, **3405 → 4591** excess lines.
+**Bookkeeping, not absolution** — rustfmt wraps lines, so these crossed the limit without gaining
+any complexity, and they are now genuine split candidates. Presented split per the standing rule
+(already-clean vs has-violations, with counts, user chooses):
+
+**Genuinely oversized — 12 files, 510-616 lines:** `tests/worktree_submodule/submodule_wedge_cli.rs`
+**616** · `src-tauri/src/commands/tests_diff_search_history.rs` **602** ·
+`src/git/cred_cache/tests.rs` **588** · `src-tauri/src/graph_cache/tests.rs` **568** ·
+`tests/rebase_merge/essentials_autostash_cli.rs` **567** · `tests/status_stage/branches_cli.rs`
+**553** · `src/git/hooks/tests.rs` **543** · `tests/remote/signing_cli.rs` **530** ·
+`src-tauri/src/obs/tests_metrics.rs` **522** · `src/tools/scan_tests.rs` **520** ·
+`src/git/ai_operation_preview.rs` **519** · `tests/remote/force_push_cli.rs` **516**.
+
+**Marginal — 8 files within 11 lines, will fall back under on any real cleanup:**
+`ai_resolve_cli.rs` 513 · `graph_cache.rs` 511 · `bisect/tests.rs` 510 · `detect_tests.rs` 508 ·
+`tests_writer.rs` 507 · `hooks_commit_cli.rs` 504 · `gitbin.rs` 504 · `record.rs` 503.
+
+**Only 2 of the 20 are application code** (`ai_operation_preview.rs`, `graph_cache.rs`); the other 18
+are test files, where `refactorer` can prove equivalence by identical before/after test counts.
+**NOT queued — awaiting the user.**
+
+
+**STATUS 2026-09-22 — 5 of 20 done, verified with `git show --stat fbf81d0`** ("split five files the
+reformat pushed over the limit"): `submodule_wedge_cli.rs` (616), `essentials_autostash_cli.rs`
+(567), `branches_cli.rs` (553), `signing_cli.rs` (530) and `force_push_cli.rs` (516) were split into
+eleven files, and `scripts/file-size-baseline.json` shrank by 5 entries. **The remaining seven
+genuinely-oversized files and all eight marginal ones stand as listed above.** The two application
+files (`ai_operation_preview.rs`, `graph_cache.rs`) are both still on the list.
+
+### Part 86.5 — the `gitbin.rs` is EXACTLY 500 lines bullet, pre-sweep
+
+Stale: it is **504** and has been absorbed into `scripts/file-size-baseline.json` at 504.
+
+2. **`crates/bonsai-core/src/gitbin.rs` is at EXACTLY 500 lines** — zero headroom; one added line
+   trips the ratchet, which also means **comment-only fixes there are blocked**. `refactorer`.
+
+### Part 86.6 — the gate `DEP0190` bullet and its flagged contradiction, pre-sweep
+
+**CLOSED 2026-09-23, verified in the tree, not from `833f2f9`'s subject.**
+
+- **The gate script emits Node `DEP0190`** — it passed args to a child with `shell: true`, which
+  concatenates rather than escapes. **CONTRADICTION flagged 2026-09-10:** `833f2f9`'s commit message
+  is "the gate stops concatenating argv", so this looks already closed. Not closed by the curator.
+
+### Part 86.7 — `### Velocity follow-ups from the 2026-09-01 pass`, whole section, pre-sweep
+
+The `repoState.ts:160` item was re-measured: the module now carries a Node-environment guard. It is
+**not** closed — whether the 19 files left the DOM project is still unverified.
+
+### Velocity follow-ups from the 2026-09-01 pass (`docs/history/velocity-2026-09-01.md`)
+
+- **`submodule_cli::oracle_add_deinit_remove_roundtrip` 12-14s** — not a proptest (a git-CLI oracle
+  roundtrip), so banding does not apply; needs its own look if the ~12s floor matters.
+- **The vitest-environment item is DONE** (happy-dom, `1953c0a`). **Still owed from the same ruling
+  #8: make `src/ipc/mock/repoState.ts:160` lazy** — it calls `new URLSearchParams(
+  window.location.search)` at **module init**, the single root cause keeping 19 otherwise-DOM-free
+  files in the DOM project. ~3 lines, worth ~70 s of CPU. **Whether `1953c0a` included it is
+  unverified.**
+- **`pnpm gate --quick` is 305s and only drops e2e** — not a fast tier; `cargo nextest --workspace`
+  alone is 181s of it. Add a genuinely narrow tier or lean on `--rust` / `--frontend`.
+
+### Part 86.8 — the struck `no_proxy_client()` bullet, pre-sweep
+
+Closed 2026-09-03 and kept struck-through ever since; condensed to one line.
+
+- ~~`no_proxy_client()` `.expect(...)`~~ — **CLOSED 2026-09-03:** it survives at
+  `src-tauri/src/mcp/http_support.rs:221`, but the module is `#[cfg(test)]` (`mcp.rs:410-411`), so it
+  never reaches a shipped binary. Detail: archive Part 52.5.
+
+### Part 86.9 — P80 forge follow-up (a), pre-sweep
+
+Its citation drifted from `src-tauri/src/commands/forge.rs:290/:291` to
+`src-tauri/src/commands/forge_set_token.rs:65/:69`, and at the new location it **contradicts**
+another live board entry. Both facts are now on the board; the item stays open.
+
+- (a) `forge_set_token_inner` validates before the `host.is_empty()` guard — guard host first.
+  Still open, re-verified 2026-09-03: `src-tauri/src/commands/forge.rs:290` calls
+  `validate_repo_token`, `:291` is the `host.is_empty()` guard.
+
+
+---
+
+## Part 87 — Superseded curator bookkeeping, verbatim, replaced 2026-09-23
+
+Not project history: this is the board's own navigation and self-measurement text, kept so the
+2026-09-23 pass is lossless down to the meta-lines it rewrote.
+
+### Part 87.1 — the pre-pass `Where the rest of the board went` body
+
+Full detail for everything compacted out of this file is in `docs/history/` — start at
+`docs/history/README.md`. The **Archive** table at the bottom is the short form. Nothing below was
+closed by the curator: a pending USER CHECKPOINT, an owed AI-gate item and an open follow-up all stay
+here however old they are.
+
+**2026-09-22 pass — Parts 76-82. P112's native USER CHECKPOINT was confirmed and verified by the
+user on 2026-09-22 (`ba4b9d3`), which is what finally made it and everything downstream archivable.**
+Archived: **P112 in full** — its milestone entry, AI gate, the five checkpoint items as confirmed
+(incl. item 4's `set_parent` sub-question) and the 41-file process-failure narrative (**76**) · the
+completed 2026-09-14/15 queue, the superseded `5654eaa`/`934a280` gate states, ruling #24's scope
+facts and the second-round rulings' evidence blocks, and the whole 2026-09-11 ruling queue (**77**) ·
+the 2026-09-16 session — the real-log investigation, the nine-file second review pass and its
+closure, the Settings-scrim finding, **P113 phases 1+2** (**78**) · the 2026-09-17 session — the
+orphaned-credential arc, **P114**, contract hygiene, the rustfmt pass, three security audits and the
+superseded `ea6d323`/`5f015be`/`3948478` greens (**79**) · the release block's pre-tightening text
+(**80**) · P91's closed `logs/*.jsonl` parse, the `mono` defect it found (fixed `88a4004`) and the
+superseded `cargo fmt` section (**81**) · superseded curator bookkeeping (**82**).
+
+**Not archived, deliberately:** the live release block, the **two** remaining USER ACTIONS — the
+macOS ad-hoc signature, verify-on-tag (ruling #17) and the Dependabot moderate (ruling #15, which
+the release block argues a merge to `main` should clear) — **every open follow-up**, all four ruling ledgers, the durable rules, the
+accepted decisions, the cross-platform-gap finding, both security CLEAN registers' pointers, and
+**A4 finding 6** — a diagnostic regression with no commit that closes it.
+
+**Order of operations, mandatory since `c5b3ea5`.** That pass cut 1950 lines from this file and wrote
+them **nowhere**; `67e2ce6` had to restore them wholesale. **Extract → diff byte-identical against
+`git show HEAD:TODO.md` → only then remove → leave a Part pointer.** 2026-09-22: **17 ranges, 2425
+lines, all 17 verified byte-identical inside `todo-archive-2026-09.md` after the append**, plus a
+whole-file check that every non-blank line of `git show HEAD:TODO.md` still exists in the board or
+the archive. 2026-09-16: 20 ranges, 935 lines, all 20 verified.
+
+**Earlier passes.** 2026-09-16 → Parts 71-75; 2026-09-14 → Parts 62-70 (the 22 FOR-USER rulings);
+2026-09-10 → Parts 54-61 (the eight confirmed native checkpoints); 2026-09-03 → Parts 36-53, plus a
+staleness sweep that found **11 of 35 open entries had drifted**; 2026-09-01 → Parts 22-35. The
+board's own record of being wrong is kept deliberately.
+
+### Part 87.2 — the pre-pass `Archive` table, the move rule, and the 2026-09-22 curator note
+
+The curator note's **final paragraph is the one this pass acted on**: "*The one structural option,
+unchanged from the last two notes and still not a curator's call: give the durable rules their own
+file under `docs/` and leave a pointer here.*" The user decided in favour on **2026-09-23**; the
+block is now `docs/durable-rules.md`.
+
+**Start at `docs/history/README.md`** — it is the navigable index of every archived milestone and
+part number. The table below is the short form.
+
+| File | Covers |
+|---|---|
+| `docs/history/README.md` | **The archive index** — which file/part holds which milestone. |
+| `docs/history/todo-archive-2026-09.md` | **Parts 76-82 (moved 2026-09-22, after the user confirmed P112's native checkpoint on 2026-09-22 — `ba4b9d3`):** P112 in full, incl. the five checkpoint items as confirmed and item 4's `set_parent` sub-question (76) · the completed 2026-09-14/15 queue, the superseded `5654eaa`/`934a280` gate states, ruling #24's scope facts, the second-round rulings' evidence blocks and the whole 2026-09-11 ruling queue (77) · the 2026-09-16 session — the real-log investigation, the nine-file second review pass and its closure, the Settings-scrim finding, **P113 phases 1+2** (78) · the 2026-09-17 session — the orphaned-credential arc, **P114**, contract hygiene, the rustfmt pass, three security audits with their two CLEAN registers, and the superseded `ea6d323`/`5f015be`/`3948478` greens (79) · the release block's pre-tightening text (80) · P91's closed `logs/*.jsonl` parse + the `mono` defect it found + the superseded `cargo fmt` section (81) · superseded curator bookkeeping (82). **Parts 71-75 (moved 2026-09-16):** the P112 sub-inc 3/4 build + review transcript incl. the `P112-ui.md` §17 rulings, the four bad citations, the coalescing lesson and the sub-inc-3 audit (71) · superseded gate states (`d0e6cf0`, `dcff54b`, the 427.4s confirming run, the `e9ed93d` Rust tier) and the completed 2026-09-14 queue — F6, P77, the e2e cold-timing measurement, the UNC clearance (72) · the P112 sub-inc 2 + P113 phase-1 review transcript (73) · the two items CLOSED 2026-09-16 with their evidence — "Open in editor" (fixed `fd93616`, with its `os error 193` measurement table) and the false General subtitle — plus the `.cmd` launch-path audit (74) · superseded curator bookkeeping and the duplicated `cargo fmt` measurement (75). **Parts 62-70 (moved 2026-09-14, after the user ruled all 22 FOR-USER items on 2026-09-11):** the stale 2026-09-10 resume block + FU-1 residue (62) · the FOR-USER evidence blocks for items 0-6 (63) · the `IN FLIGHT` queue, the 2026-09-11 orchestrator closures, the unreviewed-MCP-merge warning (64) · **`SEC-2026-09-11`**, the MCP tool-contract audit, with its verified-CLEAN register (65) · **`SEC-2026-09-11b`**, the review of that implementation, with its verified-CLEAN register (66) · P108 `AC11`, closed by ruling #13 (67) · the happy-dom load-flake narrative (68) · the open follow-ups as they stood pre-condensation (69.1 P91 · 69.2 SEC-2026-09-03 through the 2026-09-01 hoisted items · 69.3 P69 Settings) · superseded curator bookkeeping (70). **Parts 54-61 (moved 2026-09-10):** the whole USER-CHECKPOINT block — P102+P105, P106, P107, P108, P91 (54) · P110 + P109 (55) · the 2026-09-03 closures + SEC-2026-09-03 remediation (56) · `Queued housekeeping` incl. the `e149382` CSS-split proof (57) · the superseded `c218258` and earlier gate states (58) · the 2026-09-10 session: P111, FU-1, six reviewer-follow-up closures (59) · the board's record of the confirmation (60) · superseded curator bookkeeping (61). **Parts 51-53 (2026-09-03):** the `5c2dcd2` + `c6cd7dd` gate states and the e2e-contention mis-diagnosis · the full narratives of everything closed 2026-09-03 · the durable-lessons stories and worked numbers. **Parts 36-50 (2026-09-03):** the file-size refactor pass · P102+P105, P106, P107, P108 and the P91 security arc + audit + build diary · superseded pre-ship filings · the 2026-09-03 velocity pass · P99, P100, P101, P98, P95, P96, P97 · built-bundle e2e + P103 + P104 · the DX/velocity stubs · the pre-condensation open-follow-up text. **Parts 33-35 (2026-09-01):** the P84 record gap · macOS ad-hoc signing · the two 2026-08-22 design reviews. **Parts 22-32 (2026-09-01):** P94 · P93+P92 · DEP REFRESH · P90+P89 · P88 · the P85-P87 batch · P82+P83 · divergence reconcile + Release 1.1.0 · the DX dev-loop text · the confirmed-checkpoints block · the 2026-08-21 resolved follow-ups. |
+| `docs/history/todo-archive-2026-08.md` | Parts 1-9: P65 to P28 build detail, the Phase 1-4 banners, resolved FOR-USER decisions, P69(1.0.0)/P67/P68 detail. Parts 10-16: the P62-P74 checkpoint waiver + P71-P74, the P69 Settings redesign, the Audit #2 fix batch. Parts 17-18: P70 and P77. Part 19: the follow-ups resolved 2026-08-21, verbatim. Part 20: P78/P79/P80. Part 21: P80b/P81/P82. |
+| `docs/history/todo-archive.md` | P27 to P2, M0-M6 |
+| `docs/history/milestones-mvp.md` | the M0-M6 AI-gate vs USER CHECKPOINT split |
+| `docs/history/context-pollution-audit.md` | the context/token-cost audit |
+| `docs/history/velocity-2026-09-01.md` | gate wall-clock, test-suite hotspots, inner-loop rebuild cost, ceremony-vs-machine-time split (2026-09-01) |
+| `docs/contracts/INDEX.md` | one line per contract file — milestone, scope, status |
+
+Move a milestone's section into the current dated archive file only once **both** halves of its gate
+have passed (or the native half is explicitly waived). A milestone with a pending USER CHECKPOINT
+stays on this board. **An owed AI-gate item also keeps its entry here** — both live examples are now
+closed (P91's `logs/*.jsonl` parse on 2026-09-16, P108's `AC11` by user ruling on 2026-09-11), which
+is why P91 and P112 could finally leave.
+
+### Why this board is ~1810 lines, not ~300 (curator note, 2026-09-22)
+
+**3361 → 1810, a 46% cut.** **2425 lines were extracted verbatim into archive Parts 76-82 across 17
+ranges, and every range was diffed byte-identical against `git show HEAD:TODO.md` before removal and
+then re-verified in place inside `todo-archive-2026-09.md` after the append — 17 of 17, twice.** A
+final whole-file check confirmed that **every non-blank, non-`---` line of `git show HEAD:TODO.md`
+still exists** either on this board or in the archive: zero lines unaccounted for. Nothing was
+summarized away and **no status was upgraded by the curator.**
+
+**The release block was tightened, not archived: 269 → 229 lines**, with the verbatim pre-tightening
+text kept as **archive Part 80**. Every number, SHA, path and caveat survived — which is why the cut
+is only 40 lines; that block is almost entirely evidence.
+
+**What was closed this pass, each verified against the tree first, never from a commit subject
+alone:** P112 (the user's own 2026-09-22 attestation — the only thing that could) · the
+`CLAUDE.md` audit-trigger decision (`3f78d50`, and `CLAUDE.md` carries the text today) · the two
+INFO user decisions of 2026-09-17 (`871d16a`) · the `ui-designer` copy pass (`61af79b` = P114) · the
+P113 contract debt (`2233cc0`) · audit MEDIUM-2 (`ea6d323`) · the `h_ai` env race (`80a852e` +
+`105131a`) · the U+200B in `P107-F2-copy-chip-ui.md` (codepoint grep, zero hits).
+
+**What was REFUSED, and why.** The live release block and its **two** remaining USER ACTIONS (macOS
+ad-hoc signature verify-on-tag — ruling #17 — and the Dependabot moderate, ruling #15) ·
+**A4 finding 6**, a diagnostic regression with no
+commit that closes it · the three AWAITING-USER credential items · the open `render-storm` threshold
+decision · the Dependabot user action · **the 20-file split queue, which the task listed as possibly
+complete and is not** — `fbf81d0` did 5 of 20 · every other open follow-up · all four ruling ledgers
+· the durable rules · the accepted decisions · the cross-platform-gap finding.
+
+**Composition of what is left, measured with `awk` over the finished file:** header + conventions +
+navigation **78** · the release block **229** · P112's closure record + its live follow-ups **63** ·
+the queue/verification summary **41** · **the four ruling ledgers, verbatim and authoritative, 187**
+(the 17, the two of 2026-09-14, the four of 2026-09-11, the 2026-09-17 credential set, plus the
+security auditor's do-not-re-audit register) · durable rules incl. the ten earned 2026-09-16/17
+**214** · accepted decisions **120** · **open follow-ups 803** · the ruling-queue closure line **7** ·
+archive table + this note **68**.
+
+**What sets the floor is still one number: 803, the open-follow-up backlog.** It is below the 845 the
+2026-09-16 note measured despite two sessions filing ~60 new items, because this pass condensed those
+findings to one line each with their `file:line` citations intact. Every line of it is an unresolved
+item, and **working the backlog down is the only thing that moves the number; curating cannot.** The
+four must-survive blocks — ledgers **187**, rules **214**, accepted decisions **120** and the release
+evidence **229** — are **750** lines on their own, so ~300 is unreachable by curation at all.
+
+**The one structural option, unchanged from the last two notes and still not a curator's call:** give
+the durable rules their own file under `docs/` and leave a pointer here. That trades 214 board lines
+for one more hop on the session's most load-bearing content. **User/orchestrator decision.**

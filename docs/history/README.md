@@ -4,7 +4,19 @@ Everything ever removed from `TODO.md` lives here. Compaction is **lossless**: a
 moved, never summarized away. If you are looking for a milestone that is not on the board, it is in
 one of the files below.
 
-Curated by `docs-curator`. Last updated **2026-09-22**.
+Curated by `docs-curator`. Last updated **2026-09-23**.
+
+## ⚠️ One live reference used to be on the board and is NOT here
+
+**`docs/durable-rules.md`** — the "durable lessons" block, moved off `TODO.md` on **2026-09-23** by
+explicit user decision (211 lines, byte-identical, from `TODO.md:1474-1684` at `473d9fa`). It is
+**live reference content, deliberately not filed under `docs/history/`**: read it before asserting
+that anything is tested, measured, covered, closed or green. It holds the six failed app-wide
+claims, the aliasing rule, the grep-counting rules, the BASE rule, the three P91 testing rules, the
+measurement rules, **the gate-running rules**, the coverage and evidence rules, the two durable
+constraints (no `tracing` in this workspace; the settings-load path cannot use the `obs` sink), and
+the rules earned 2026-09-16/17. **The stories and worked numbers behind them are Part 53** — cite
+the rule there, read the story here.
 
 ## How to find a milestone
 
@@ -42,7 +54,7 @@ Curated by `docs-curator`. Last updated **2026-09-22**.
 | OPEN follow-ups as they stood before the 2026-09-03 condensation | `todo-archive-2026-09.md` Part 50 | Nothing here was closed; the board carries one line per item. |
 | Gate states `5c2dcd2` + `c6cd7dd` and the e2e-contention mis-diagnosis story | `todo-archive-2026-09.md` Part 51 | Moved 2026-09-03. The operational rules they earned stay live in `TODO.md`. |
 | Full narratives of everything closed on 2026-09-03 (P107 F2, the four `112800c` ticks, the `4002ad2` struck entries) | `todo-archive-2026-09.md` Part 52 | The `ai::session*` clock-seam item is **not** closed — only its evidence paragraph moved. |
-| "Durable lessons" — the stories, worked numbers and measurement narrative | `todo-archive-2026-09.md` Part 53 | Moved 2026-09-03. **The rules stay live in `TODO.md`.** |
+| "Durable lessons" — the stories, worked numbers and measurement narrative | `todo-archive-2026-09.md` Part 53 | Moved 2026-09-03. **The rules themselves are live in `docs/durable-rules.md`** (moved off `TODO.md` 2026-09-23, byte-identical) — *not* in `TODO.md` any more, and *not* in this archive. |
 | **The whole USER-CHECKPOINT block: P102+P105, P106, P107, P108, P91** | `todo-archive-2026-09.md` Part 54 (54.1 banner · 54.2 P102+P105 · 54.3 P106 · 54.4 P107 · 54.5 P108 · 54.6 P91) | Moved **2026-09-10**, after the user confirmed all eight native checkpoints (`548cc0a`). **Still live in `TODO.md`:** P91's user decisions / architectural rulings / F7 / F9 / SHOULD-FIX list. **The owed logs parse is CLOSED** (2026-09-16, Part 81.1). **Superseded 2026-09-11:** P108 `AC11` was closed by user ruling (Part 67) and the do-not-merge note is void (the branch was merged). |
 | **P110** (selection flicker + watcher burst scoping) and **P109** (status-badge semantics) | `todo-archive-2026-09.md` Part 55 | Moved 2026-09-10; both checkpoints confirmed. P110's op-state-file gap stays live as a candidate follow-up. |
 | The 2026-09-03 closure one-liners and the full **SEC-2026-09-03** external-launch section | `todo-archive-2026-09.md` Part 56 | Moved 2026-09-10. SEC's residual symlink case, its test gap and MEDIUM-2 / LOW-1 stay live. |
@@ -72,6 +84,11 @@ Curated by `docs-curator`. Last updated **2026-09-22**.
 | The **`RELEASE v1.6.0` block**, verbatim as it stood before the 2026-09-22 tightening | `todo-archive-2026-09.md` Part 80 | **NOT an archived section — the release block is LIVE at the top of `TODO.md`** and v1.6.0 is prepared, verified and **not published**. This part exists only so the 269 → 229-line tightening is lossless. |
 | **P91's closed `logs/*.jsonl` parse** (ruling #16), the `mono` defect it found, and the superseded `cargo fmt` section | `todo-archive-2026-09.md` Part 81 (81.1 the parse + the `mono` defect · 81.2 the `cargo fmt` section) | Moved 2026-09-22. The parse closed P91's last owed AI-gate item; the `mono` defect was **fixed in `88a4004`** with `OBS_SCHEMA_VERSION` 1 → 2. The `cargo fmt` section is **void in full** — `8ad3c72` rustfmt'd the tree and `cargo fmt --all --check` is gate step 3. Still live: the 431-anomalies-in-6-minutes product signal. |
 | Superseded curator bookkeeping (the pre-pass navigation body, the `Archive` table, the "~1800 lines" note) and the pre-pass P87b-residue bullet | `todo-archive-2026-09.md` Part 82 (82.1 navigation · 82.2 the Archive table + curator note · 82.3 the P87b bullet) | Moved 2026-09-22. 82.3 is the one range this pass replaced with a *different* statement rather than a condensation — the architect's 2026-09-17 verification answered its "which ones is unverified". |
+| **P116** (`OBS_SCHEMA_VERSION` TS/Rust drift + parity test) — in full | `todo-archive-2026-09.md` Part 83 | Moved **2026-09-23**. `done`, `e49cf20`, and its own text states **"No USER CHECKPOINT applies"** — the only cleanly archivable milestone on that board. **Still live in `TODO.md`:** the `P91-observability.md` schema drift it filed "for `docs-curator`" is contract substance owned by `architect`, folded into the one canonical contract-drift entry and re-measured (code is at **3**, the contract still says **1** at six sites). |
+| **The `P117` section, verbatim as it stood before the 2026-09-23 tightening** | `todo-archive-2026-09.md` Part 84 | **NOT an archived milestone — P117 is LIVE on the board and `awaiting USER CHECKPOINT`.** `d63a571` + `83bbdf3`, AI gate green, but both checkpoint items need the native app and real repos. This part exists only so the **380 → 352** tightening is lossless. What came out: the duplicated `CLAUDE.md` gate-rule correction (canonical copy now in P115), the spent in-flight states, two mid-paragraph splices. |
+| **The `P115` section, verbatim as it stood before the 2026-09-23 tightening** | `todo-archive-2026-09.md` Part 85 | **NOT an archived milestone — P115 is LIVE on the board and `in-progress`.** `bbd8993`, full gate green (9/9, 574.5s), but **a Linux/macOS run is still owed** — the `#[cfg(unix)]` legs have never compiled on this machine. **134 → 134, net zero**: nine lines out, nine back in, because the `CLAUDE.md` gate-rule correction was promoted here as canonical. |
+| **The open follow-up entries rewritten by the 2026-09-23 staleness sweep** | `todo-archive-2026-09.md` Part 86 (86.1 the real-log residue · 86.2 A4 finding 6's citation · 86.3 the U+200B closure · 86.4 the 20-file split queue · 86.5 the `gitbin.rs` count · 86.6 the gate `DEP0190` bullet · 86.7 the velocity follow-ups · 86.8 the struck `no_proxy_client` · 86.9 P80 forge follow-up (a)) | **Three items were CLOSED, each verified against the current tree and never from a commit subject:** cross-repo detector keying (`obs/anomaly/window.rs:160-178` + `src/obs/types.ts:266-269`; P117 inc 2, `83bbdf3`) · `RemotesSection` re-rendering on a local-branch change (`RemotesSection.tsx:13-17`, `:156`; P118b, `c6ae304`) · the gate's `DEP0190` / `shell: true` argv concatenation (zero live uses in `scripts/`). **Everything else was re-measured and left open**, including the 20-file split queue (**5 of 20 done, 15 open**) and the `P91-observability.md` schema drift, which got worse. |
+| Superseded curator bookkeeping (the pre-pass navigation body, the `Archive` table, the 2026-09-22 "~1810 lines" note) | `todo-archive-2026-09.md` Part 87 (87.1 navigation · 87.2 the Archive table + curator note) | Moved 2026-09-23. 87.2's final paragraph is the one this pass acted on: it escalated moving the durable rules to their own file for the third time, and the user decided in favour. |
 
 ## Non-milestone records
 
@@ -99,5 +116,16 @@ old they are.
 
 **And the order is mandatory, since `c5b3ea5` truncated 1950 lines into nowhere:** extract → diff
 byte-identical against `git show HEAD:TODO.md` → *then* remove → leave a Part pointer where the text
-stood. The 2026-09-22 pass moved **2425 lines across 17 ranges, all 17 verified byte-identical in
-place after the append**, plus a whole-file check that no non-blank line of the board went missing.
+stood. The 2026-09-23 pass moved **956 lines across 15 ranges, all 15 verified byte-identical in
+the destination after the append** (14 here as Parts 83-87, 1 in `docs/durable-rules.md`), plus a
+whole-file check over all 2305 unique non-blank, non-`---` lines of `git show HEAD:TODO.md`:
+**zero unaccounted for.** The 2026-09-22 pass moved **2425 lines across 17 ranges, all 17 verified
+byte-identical in place after the append**, plus the same whole-file check.
+
+**Two rules the 2026-09-23 pass adds, both earned:**
+1. **A staleness sweep closes an item against the tree, or not at all.** Three items closed this
+   pass; seven more were re-measured and deliberately **left open** because the tree still shows
+   them live. Two of the seven had *drifted line numbers* and would have read as closed to anyone
+   checking the citation instead of the behaviour.
+2. **`.claude/worktrees/` holds stale copies of repo paths.** A `find`-based measurement of the
+   20-file split queue returned counts from a worktree for two files. Measure the repo path.
