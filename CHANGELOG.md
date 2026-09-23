@@ -8,6 +8,13 @@ All notable changes to Bonsai are documented here. The format is based on
 
 ## [1.6.0] — 2026-09-18
 
+> **⚠️ PREPARED, NOT YET PUBLISHED (noted 2026-09-23).** The version is bumped in `package.json` and
+> `src-tauri/tauri.conf.json` and the release is verified and clear to publish, but **no `v1.6.0`
+> tag exists** — `git tag --list` ends at `v1.5.0` (2026-08-26). The `[1.6.0]` compare link at the
+> bottom of this file therefore 404s until the tag is pushed. The date above is the date the
+> release was prepared. Status and the two remaining recommendations are tracked in `TODO.md` under
+> `🚀 RELEASE v1.6.0`. **Delete this note when the tag lands.**
+
 Five new ways to read the commit graph — a first-parent view, branch solo/hide, folded linear runs,
 an overview rail with a minimap, and colouring by author — plus an animated Replay mode, a Bonsai
 tree style for the graph itself, and a local-only diagnostics page in Settings. External tools are
