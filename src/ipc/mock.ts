@@ -34,6 +34,7 @@ import { externalHandlers } from './mock/handlers/external';
 import { toolsHandlers } from './mock/handlers/tools';
 import { forgeHandlers } from './mock/handlers/forge';
 import { obsHandlers } from './mock/handlers/obs';
+import { countIpcCalls } from '../obs/stability/perfCounters';
 
 // Assembled from per-domain handler groups. Public surface unchanged: index.ts
 // still imports { mockIpc } from './mock'.
@@ -42,7 +43,8 @@ import { obsHandlers } from './mock/handlers/obs';
 // worktree scope) with no Tauri watcher present.
 installWatcherHarness();
 
-export const mockIpc: IpcApi = {
+// P120: per-command call counts for `window.__bonsai.perf.snapshot()`.
+export const mockIpc: IpcApi = countIpcCalls({
   ...repoHandlers,
   ...statusHandlers,
   ...diffHandlers,
@@ -76,4 +78,4 @@ export const mockIpc: IpcApi = {
   ...toolsHandlers,
   ...forgeHandlers,
   ...obsHandlers,
-};
+});

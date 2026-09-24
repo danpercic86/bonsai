@@ -271,7 +271,7 @@ export function WorkspaceGraphPane({
     aiPanel !== null ||
     diffBrowserView !== null;
   return (
-    <main className="graph-pane">
+    <main className="graph-pane" data-obs-region="graph">
       {/* M1: polite live region announcing the settled graph-grid selection
           (canvas is opaque to SR). Permanently mounted for reliable pickup. */}
       <GraphSelectionAnnouncer graph={graph} selectedIndex={selectedIndex} display={display} fold={announcerFold} />

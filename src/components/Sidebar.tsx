@@ -296,7 +296,7 @@ export function Sidebar({
   }, [createValue, onCreateBranch, closeCreate]);
 
   return (
-    <aside className="sidebar" style={{ width }}>
+    <aside className="sidebar" data-obs-region="sidebar" style={{ width }}>
       {error !== null && (
         <div className="error-banner error-banner-dismissible sidebar-error" role="alert">
           <span className="error-banner-text">{error}</span>

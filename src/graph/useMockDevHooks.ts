@@ -12,6 +12,7 @@ import { createFrameRecorder } from './frameStats';
 import type { FrameStats, P7SelfTestResult } from './frameStats';
 import { headGuide } from './viewport';
 import { runP7SelfTest } from './selfTest';
+import { perfSnapshot, resetPerfCounters } from '../obs/stability/perfCounters';
 
 const MOCK_MODE = import.meta.env.VITE_MOCK_IPC === '1';
 
@@ -55,7 +56,10 @@ export function useMockDevHooks(
     const p7 = { initials, avatarColor, groupRefs, layoutRefLabels, refColArea, avatarHit, relativeDate, headGuide };
     const p7SelfTest = (): P7SelfTestResult => runP7SelfTest(canvasRef.current);
 
-    window.__bonsai = { scrollSweep, p7, p7SelfTest };
+    // P120 part a: lab counters since reset() (the counter sink itself registers
+    // at boot in obs/stability/install.ts, outside React/StrictMode).
+    const perf = { reset: resetPerfCounters, snapshot: perfSnapshot };
+    window.__bonsai = { scrollSweep, p7, p7SelfTest, perf };
     return () => {
       if (window.__bonsai?.scrollSweep === scrollSweep) delete window.__bonsai;
     };

@@ -188,7 +188,7 @@ export const AiActivityPanel = forwardRef<AiActivityPanelHandle, AiActivityPanel
 
     return (
       <section
-        className="ai-dock"
+        className="ai-dock" data-obs-region="dock"
         role="region"
         aria-label="AI activity"
         data-density={density}

@@ -1,0 +1,11 @@
+{
+  "_comment": "Spec-008 layout operation counters for the small fixture in tests/graph_layout_counts.rs. Values may only go down: run with BONSAI_UPDATE_PERF_BASELINE=1 to lower them; raising one requires a hand edit and review.",
+  "counters": {
+    "edges_emitted": 426,
+    "lane_scans": 2337,
+    "lane_steps": 410,
+    "lanes_allocated": 6,
+    "parent_lookups": 426,
+    "rows_visited": 410
+  }
+}

@@ -380,7 +380,7 @@ export const DiffView = memo(function DiffView({
   return (
     <div
       className={`diff-view${discardable ? ' diff-view--discardable' : ''}`}
-      ref={containerRef}
+      ref={containerRef} data-obs-region="diff"
     >
       {diff.hunks.map((h, hi) => (
         <Fragment key={hi}>

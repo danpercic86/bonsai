@@ -14,7 +14,9 @@ use std::collections::HashSet;
 use crate::error::AppError;
 
 use super::fold::{FoldScan, FoldSpan};
-use super::{collect_seed, open_no_search, seeded_revwalk, GraphFilter, LaneWalker, RefLabel};
+use super::{
+    collect_seed, open_no_search, seeded_revwalk, GraphFilter, LaneWalker, LayoutCounters, RefLabel,
+};
 
 /// First flush: the first screenful + generous overscan, kept small so the
 /// initial paint is instant.
@@ -250,6 +252,8 @@ fn stream_graph_inner(
     let revwalk = seeded_revwalk(repo, &tips, filter.first_parent)?;
     let hidden: HashSet<git2::Oid> = hide.iter().copied().collect();
     let mut walker = LaneWalker::new(hidden, filter.first_parent);
+    // The streaming path is uncounted: a throwaway tally (spec-008).
+    let mut counters = LayoutCounters::default();
 
     let mut buf_nodes: Vec<StreamNode> = Vec::new();
     let mut buf_edges: Vec<GraphStreamEdge> = Vec::new();
@@ -271,7 +275,7 @@ fn stream_graph_inner(
             truncated = true;
             break;
         }
-        let (node, edges) = walker.step(repo, oid, row, &mut refs)?;
+        let (node, edges) = walker.step(repo, oid, row, &mut refs, &mut counters)?;
         let real_merge = walker.last_was_merge();
         if real_merge {
             if let Some(out) = merge_out.as_deref_mut() {

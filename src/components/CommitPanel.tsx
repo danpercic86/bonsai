@@ -129,7 +129,7 @@ export function CommitPanel({
   const body = details !== null ? messageBody(details.message) : '';
 
   return (
-    <div className="commit-panel" data-testid="commit-details">
+    <div className="commit-panel" data-testid="commit-details" data-obs-region="details">
       <div className="commit-panel-header">
         <div className="commit-panel-title">
           <div className="commit-summary">{details?.summary ?? node.summary}</div>

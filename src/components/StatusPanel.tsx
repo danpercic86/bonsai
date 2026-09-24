@@ -133,7 +133,7 @@ export function StatusPanel({
   return (
     <div
       className={isEmpty ? 'status-panel status-panel-empty' : 'status-panel'}
-      data-testid="status-panel"
+      data-testid="status-panel" data-obs-region="details"
     >
       {visibleError !== null && (
         <div className="error-banner error-banner-dismissible" role="alert">

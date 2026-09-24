@@ -1,6 +1,7 @@
 /** Frame-timing instrumentation (contract M2-graph.md §4.7). Only active when
  * `import.meta.env.DEV || import.meta.env.VITE_MOCK_IPC === '1'` — callers
  * gate on that check so release paths never record. */
+import type { PerfSnapshot } from '../obs/stability/perfCounters';
 
 export interface FrameStats {
   frames: number;
@@ -123,6 +124,9 @@ export interface BonsaiDevHooks {
   /** P12 §2.2: run the conflict-region helper assertions (mock/dev only).
    * Registered non-destructively by ConflictEditor's mount effect. */
   conflictSelfTest?(): P7SelfTestResult;
+  /** P120 part a: lab counters (React commits, IPC calls, unprompted shifts,
+   *  focus losses) since the last reset(). Mock only. */
+  perf?: { reset(): void; snapshot(): PerfSnapshot };
 }
 
 declare global {

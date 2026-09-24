@@ -162,7 +162,7 @@ export const GitActivityDock = forwardRef<GitActivityDockHandle, GitActivityDock
 
     return (
       <section
-        className="git-activity-dock"
+        className="git-activity-dock" data-obs-region="dock"
         role="region"
         aria-label="Git activity"
         data-density={density}

@@ -4,7 +4,7 @@
 // container only wires TabStrip / EmptyState to it; `pushToast` is the sole
 // input because every failure here surfaces either as a toast (tabs open) or as
 // the empty-state error (no tabs).
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { TabMeta } from '../components/TabStrip';
 import { ipc } from '../ipc';
@@ -12,6 +12,7 @@ import type { RecentRepo } from '../ipc';
 import type { PushToast } from '../ToastContext';
 import { errorMessage, isAppError } from '../utils/errors';
 import { isUsableRepo, unusableRepoMessage } from '../appHelpers';
+import { beginRepoBoot } from '../obs/stability/readiness';
 
 export interface UseRepoTabs {
   error: string | null;
@@ -75,6 +76,10 @@ export function useRepoTabs(pushToast: PushToast): UseRepoTabs {
     if (!sessionReadyRef.current) return;
     persistSession(tabs.map((t) => t.repoId), activeRepo);
   }, [tabs, activeRepo, persistSession]);
+
+  // P120 §3.3: open/switch re-arms the stability boot phase — a LAYOUT effect so
+  // it lands before the new workspace paints (its shifts are boot, not interactive).
+  useLayoutEffect(() => beginRepoBoot(activeRepo), [activeRepo]);
 
   // Tell the backend the focused-tab repoId (P16 §5) so new embedded-MCP
   // sessions seed from it. Fires on tab activation, open, close, and once on

@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::error::AppError;
 
-use super::{GraphStreamEdge, RefMap, StreamNode};
+use super::{GraphStreamEdge, LayoutCounters, RefMap, StreamNode};
 
 /// An edge created at child time, finalized when the parent row is emitted.
 struct PendingEdge {
@@ -27,11 +27,16 @@ struct PendingEdge {
 }
 
 /// Lowest free lane index; grows the vector when all lanes are busy. Scanning
-/// always starts at 0 — simple and deterministic (§8.5).
-fn first_free(lanes: &mut Vec<Option<git2::Oid>>) -> usize {
-    match lanes.iter().position(Option::is_none) {
+/// always starts at 0 — simple and deterministic (§8.5). Each examined slot
+/// counts one `lane_scans`; a growth counts one `lanes_allocated`.
+fn first_free(lanes: &mut Vec<Option<git2::Oid>>, counters: &mut LayoutCounters) -> usize {
+    match lanes.iter().position(|l| {
+        counters.lane_scans += 1;
+        l.is_none()
+    }) {
         Some(i) => i,
         None => {
+            counters.lanes_allocated += 1;
             lanes.push(None);
             lanes.len() - 1
         }
@@ -128,13 +133,16 @@ impl LaneWalker {
     /// each carrying its child's parent ordinal `ord`. Mutates lane state
     /// EXACTLY as the pre-refactor `layout_walk` did — the single source of lane
     /// truth. `refs` labels for `oid` are moved into the emitted node.
+    /// `counters` tallies the work done (spec-008); it never affects output.
     pub(super) fn step(
         &mut self,
         repo: &git2::Repository,
         oid: git2::Oid,
         row: u32,
         refs: &mut RefMap,
+        counters: &mut LayoutCounters,
     ) -> Result<(StreamNode, Vec<GraphStreamEdge>), AppError> {
+        counters.lane_steps += 1;
         let commit = repo.find_commit(oid)?;
 
         // 1. Which lanes were waiting for this commit? (ascending)
@@ -142,13 +150,16 @@ impl LaneWalker {
             .lanes
             .iter()
             .enumerate()
-            .filter(|(_, l)| **l == Some(oid))
+            .filter(|(_, l)| {
+                counters.lane_scans += 1;
+                **l == Some(oid)
+            })
             .map(|(i, _)| i)
             .collect();
 
         // 2. Pick this commit's lane.
         let lane = if reserved.is_empty() {
-            first_free(&mut self.lanes) // tip / new branch head / orphan root
+            first_free(&mut self.lanes, counters) // tip / new branch head / orphan root
         } else {
             // Leftmost waiting lane wins; converging lines free their lanes.
             for &i in &reserved[1..] {
@@ -160,6 +171,7 @@ impl LaneWalker {
         // 3. Finalize every edge that was waiting for this commit.
         let mut finalized: Vec<GraphStreamEdge> = Vec::new();
         for pe in self.pending.remove(&oid).unwrap_or_default() {
+            counters.edges_emitted += 1;
             finalized.push(GraphStreamEdge {
                 from: pe.from,
                 to: row,
@@ -173,7 +185,10 @@ impl LaneWalker {
         //    → a single `W → B` edge and no dangling lane reservation.
         let mut parents: Vec<git2::Oid> = commit
             .parent_ids()
-            .filter(|p| !self.hidden.contains(p))
+            .filter(|p| {
+                counters.parent_lookups += 1;
+                !self.hidden.contains(p)
+            })
             .collect();
         // Spec-004: record the REAL merge bit before any truncation.
         self.last_real_merge = parents.len() > 1;
@@ -197,10 +212,13 @@ impl LaneWalker {
             for (k, &pk) in parents.iter().enumerate().skip(1) {
                 // Merge parents (octopus-safe): join an existing line if one is
                 // already waiting for pk, else open a new lane.
-                let j = match self.lanes.iter().position(|l| *l == Some(pk)) {
+                let j = match self.lanes.iter().position(|l| {
+                    counters.lane_scans += 1;
+                    *l == Some(pk)
+                }) {
                     Some(j) => j,
                     None => {
-                        let j = first_free(&mut self.lanes);
+                        let j = first_free(&mut self.lanes, counters);
                         self.lanes[j] = Some(pk);
                         j
                     }
