@@ -31,6 +31,9 @@ import {
   Ellipsis,
   GitGraph,
   Sprout,
+  Package,
+  FolderDown,
+  FolderPlus,
 } from 'lucide-react';
 
 // Shared render props for all Lucide chrome icons (identical to menuIcons').
@@ -127,6 +130,17 @@ export const WorktreeIcon = () => <FolderGit2 {...ICON_PROPS} />;
 
 /** Target (Lucide) — detached HEAD (bullseye off any branch). */
 export const DetachedIcon = () => <Target {...ICON_PROPS} />;
+
+/* ---------- Git-activity dock glyphs (P119-ui §5) ---------- */
+
+/** Package (Lucide) — submodule family (a nested repository). */
+export const SubmoduleIcon = () => <Package {...ICON_PROPS} />;
+
+/** FolderDown (Lucide) — clone a repository into a folder. */
+export const CloneIcon = () => <FolderDown {...ICON_PROPS} />;
+
+/** FolderPlus (Lucide) — create (init) a repository in a folder. */
+export const InitRepoIcon = () => <FolderPlus {...ICON_PROPS} />;
 
 /* ---------- File-row + overflow ---------- */
 

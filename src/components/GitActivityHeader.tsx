@@ -9,6 +9,8 @@ import {
   durationLabel,
   objectsReadout,
   phaseLabel,
+  runNoun,
+  runOutcomeDetail,
   runTarget,
   statusPill,
 } from './gitActivityFormat';
@@ -34,10 +36,16 @@ export function GitActivityHeader(props: GitActivityHeaderProps) {
   const running = lead?.status === 'running';
   // FU-1 §3.3: null = this run has no target; nothing is rendered in its place.
   const target = lead !== null ? runTarget(lead) : null;
+  // Running → live phase / transfer readout; a terminal success → its P119-ui
+  // §4.7 outcome detail (`· Fast-forwarded`); otherwise nothing.
   const detail =
-    running && lead !== null
-      ? (objectsReadout(lead) ?? phaseLabel(lead.category, lead.phase))
-      : null;
+    lead === null
+      ? null
+      : running
+        ? (objectsReadout(lead) ?? phaseLabel(lead.category, lead.phase))
+        : runOutcomeDetail(lead);
+  const detailTitle =
+    running && lead !== null ? phaseLabel(lead.category, lead.phase) : undefined;
 
   return (
     <div className="git-dock-header">
@@ -58,7 +66,7 @@ export function GitActivityHeader(props: GitActivityHeaderProps) {
           <span className="git-dock-glyph" aria-hidden="true">
             {Glyph !== null && <Glyph />}
           </span>
-          <span className="git-dock-noun">{meta.noun}</span>
+          <span className="git-dock-noun">{runNoun(lead)}</span>
           {target !== null && (
             <RefLabel value={target} className="git-dock-target" withTitle />
           )}
@@ -69,7 +77,7 @@ export function GitActivityHeader(props: GitActivityHeaderProps) {
             {pill.label}
           </span>
           {detail !== null && (
-            <span className="git-dock-detail" title={phaseLabel(lead.category, lead.phase)}>
+            <span className="git-dock-detail" title={detailTitle}>
               {`· ${detail}`}
             </span>
           )}

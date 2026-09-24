@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties } from 'react';
+import { useRef, useState } from 'react';
 import { minutesLabel } from './workspaceUtils';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
@@ -12,16 +12,16 @@ import {
   RefreshIcon,
 } from './appIcons';
 import { ToolbarPhaseReadout } from './ToolbarPhaseReadout';
+import { useMinimumBusy } from './repoWorkspace/useMinimumBusy';
 import { categoryMeta } from './gitActivityFormat';
 import type { BranchInfo, GitActivityCategory, JobStatus } from '../ipc';
 import { shortcutLabel } from '../utils/platform';
 
 export interface WorkspaceToolbarProps {
   remoteOp: 'fetch' | 'pull' | 'push' | null;
+  /** A MANUAL refresh is in flight (button / Ctrl+R / F5 — never the watcher
+   *  or window-focus rescans). Drives the P119-ui §3 Refresh-glyph spin. */
   refreshing: boolean;
-  /** P73 §6.2: a non-remote background op (submodule init/update/sync) is
-   *  running — drives the 2px sweep only; remote buttons keep `remoteOp`. */
-  netBusy?: boolean;
   mutating: boolean;
   statusLoading: boolean;
   graphLoading: boolean;
@@ -61,9 +61,6 @@ export interface WorkspaceToolbarProps {
    *  `12,340 / 50,000 objects`), rendered in an adjacent `.toolbar-phase` span so
    *  the toolbar never reflows. Null unless a remote op is running. */
   gitPhase?: string | null;
-  /** P87b §2.3: the determinate progress fraction (0..1) during a fetch/pull
-   *  transfer, or null → the indeterminate sweep. */
-  gitProgress?: number | null;
   /** P87b §5-3: expand the git activity dock + reveal the active run. */
   onShowGitActivity?: () => void;
 }
@@ -74,7 +71,6 @@ export interface WorkspaceToolbarProps {
 export function WorkspaceToolbar({
   remoteOp,
   refreshing,
-  netBusy,
   mutating,
   statusLoading,
   graphLoading,
@@ -98,7 +94,6 @@ export function WorkspaceToolbar({
   externalItems,
   gitCategory,
   gitPhase,
-  gitProgress,
   onShowGitActivity,
 }: WorkspaceToolbarProps) {
   // P37b: anchor for the Push caret dropdown (positioned at the caret's rect).
@@ -107,6 +102,9 @@ export function WorkspaceToolbar({
   // P49b: anchor + open-state for the "Open externally" dropdown (same idiom).
   const externalRef = useRef<HTMLButtonElement>(null);
   const [externalMenu, setExternalMenu] = useState<{ x: number; y: number } | null>(null);
+  // P119-ui §3.1: the glyph spins for at least one full 600 ms turn; the button's
+  // `disabled` keeps following the raw `refreshing` (never block input for looks).
+  const spinning = useMinimumBusy(refreshing, 600);
 
   const openPushMenu = () => {
     const rect = caretRef.current?.getBoundingClientRect();
@@ -280,27 +278,14 @@ export function WorkspaceToolbar({
             className="btn-icon toolbar-refresh"
             disabled={refreshing || statusLoading || graphLoading || mutating}
             onClick={() => onRefresh()}
-            title={`Refresh (${shortcutLabel('Mod+R')})`}
+            title={spinning ? 'Refreshing…' : `Refresh (${shortcutLabel('Mod+R')})`}
             aria-label="Refresh"
+            aria-busy={spinning ? 'true' : undefined}
           >
             <RefreshIcon />
           </button>
         </div>
       </div>
-      {(remoteOp !== null || refreshing || netBusy === true) && (
-        <div
-          className="header-progress"
-          aria-hidden="true"
-          data-determinate={
-            gitProgress !== null && gitProgress !== undefined ? 'true' : undefined
-          }
-          style={
-            gitProgress !== null && gitProgress !== undefined
-              ? ({ '--progress': gitProgress } as CSSProperties)
-              : undefined
-          }
-        />
-      )}
       {pushMenu !== null && (
         <ContextMenu
           x={pushMenu.x}

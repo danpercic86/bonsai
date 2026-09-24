@@ -33,6 +33,8 @@ function run(over: Partial<GitActivityRun> = {}): GitActivityRun {
     linesDropped: over.linesDropped ?? 0,
     seq: over.seq ?? 0,
     target: over.target ?? null,
+    targetCount: over.targetCount ?? null,
+    outcome: over.outcome ?? null,
   };
 }
 

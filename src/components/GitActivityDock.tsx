@@ -17,6 +17,7 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  type CSSProperties,
 } from 'react';
 
 import { GitActivityHeader } from './GitActivityHeader';
@@ -28,6 +29,7 @@ import {
   GIT_DOCK_HEIGHT_MIN,
   GIT_DOCK_NUDGE_PX,
   clampGitDockHeight,
+  dockBarFraction,
   gitAnnounceFor,
 } from './gitActivityFormat';
 import type { PanelDensity } from '../ipc';
@@ -155,6 +157,8 @@ export const GitActivityDock = forwardRef<GitActivityDockHandle, GitActivityDock
 
     const effectiveHeight = dragHeight ?? height;
     const lead = activeRun ?? runs[0] ?? null;
+    // P119-ui §2: determinate iff the ACTIVE (newest running) run has a fraction.
+    const fraction = dockBarFraction(activeRun);
 
     return (
       <section
@@ -164,7 +168,14 @@ export const GitActivityDock = forwardRef<GitActivityDockHandle, GitActivityDock
         data-density={density}
         onKeyDown={onSectionKeyDown}
       >
-        {activeRun !== null && <div className="git-dock-progress" aria-hidden="true" />}
+        {activeRun !== null && (
+          <div
+            className="git-dock-progress"
+            aria-hidden="true"
+            data-determinate={fraction !== null ? 'true' : undefined}
+            style={fraction !== null ? ({ '--progress': fraction } as CSSProperties) : undefined}
+          />
+        )}
 
         {!collapsed && (
           <PaneDivider
@@ -201,7 +212,7 @@ export const GitActivityDock = forwardRef<GitActivityDockHandle, GitActivityDock
               <div className="git-dock-empty">
                 <p className="git-dock-empty-title">No git activity yet.</p>
                 <p className="git-dock-empty-hint">
-                  Fetch, pull, push, or commit and it will show up here.
+                  Every change Bonsai makes to this repository shows up here.
                 </p>
               </div>
             ) : (

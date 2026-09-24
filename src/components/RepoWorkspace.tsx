@@ -1822,7 +1822,6 @@ export function RepoWorkspace({
       <WorkspaceToolbar
         remoteOp={remoteOp}
         refreshing={refreshing}
-        netBusy={submoduleBusy !== null}
         mutating={mutating}
         statusLoading={statusLoading}
         graphLoading={graphLoading}

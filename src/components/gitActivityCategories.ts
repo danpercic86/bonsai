@@ -3,36 +3,34 @@
  * Moved out of `gitActivityFormat.ts` (size). Both tables are
  * `Record<GitActivityCategory, …>`, so tsc refuses a category without an entry.
  *
- * P119-1 lands PLACEHOLDER copy for the 56 new categories (noun = verb = the
- * operation name); P119-4 replaces it with the final P119-ui table (which also
- * owns any extra fields such as a count noun).
+ * Copy is the final P119-ui §4.3 table (keyed by the §1 wire identifiers). The
+ * seven P87 rows are LOCKED and unchanged. Glyph rule (§5): one glyph per
+ * family, reusing the menu glyph the user clicked; the noun carries the verb.
  */
 import type { ComponentType } from 'react';
 
 import {
+  CloneIcon,
   CloudIcon,
   FetchIcon,
+  InitRepoIcon,
   PullIcon,
   PushIcon,
+  RefBranchIcon,
   RefDotIcon,
   StashIcon,
-  UndoIcon,
+  SubmoduleIcon,
   WorktreeIcon,
 } from './appIcons';
 import {
   BisectIcon,
-  BranchIcon,
   CheckoutIcon,
   CherryPickIcon,
-  DeleteIcon,
-  FolderOpenIcon,
   MergeIcon,
   RebaseIcon,
   RebaseInteractiveIcon,
   ResetIcon,
   RevertIcon,
-  StashApplyIcon,
-  StashPopIcon,
   TagIcon,
 } from './menuIcons';
 import type { GitActivityCategory } from '../ipc';
@@ -40,96 +38,148 @@ import type { GitActivityCategory } from '../ipc';
 type IconComponent = ComponentType;
 
 export interface CategoryMeta {
-  /** Idle button + palette verb ("Push"). */
+  /** Idle button + palette verb, and the announcer's phrasing ("Push", "Check out"). */
   verb: string;
-  /** Layout-stable busy button participle ("Pushing…"). */
+  /** Layout-stable busy participle ("Pushing…"); also the running sub-label of
+   *  the P119 categories in `preparing` / `finalizing` (P119-ui §4.2-4). */
   participle: string;
-  /** Terminal row noun ("Push", "Merge commit"). */
+  /** Row + collapsed-bar noun ("Push", "Merge commit", "Checkout"). */
   noun: string;
   /** The category glyph icon (reused graph/menu icon). */
   glyph: IconComponent;
+  /** Lowercase object of the blocking-hook note: `This hook blocked the {blockedNoun}.` */
+  blockedNoun: string;
+  /** P119-ui §4.4: the noun-slot words when `targetCount` (≥2) is set. Only the
+   *  two categories that ever carry a count define it. */
+  countNoun?: (n: number) => string;
+  /** P119-ui §4.2-4: the `network`-phase label for a new op that talks to a remote. */
+  networkLabel?: string;
 }
 
-/** Placeholder entry: noun = verb (P119-1; final copy lands in P119-4). */
-function meta(verb: string, participle: string, glyph: IconComponent): CategoryMeta {
-  return { verb, participle, noun: verb, glyph };
+type Extra = Pick<CategoryMeta, 'countNoun' | 'networkLabel'>;
+
+/** A P119 entry whose verb equals its noun (every §4.3 row but checkout). */
+function op(
+  noun: string,
+  participle: string,
+  glyph: IconComponent,
+  blockedNoun: string,
+  extra: Extra = {},
+): CategoryMeta {
+  return { verb: noun, participle, noun, glyph, blockedNoun, ...extra };
 }
+
+/** Checkout: the noun is `Checkout`, the verb (announcer) is `Check out`. */
+const CHECKOUT: CategoryMeta = {
+  verb: 'Check out',
+  participle: 'Checking out…',
+  noun: 'Checkout',
+  glyph: CheckoutIcon,
+  blockedNoun: 'checkout',
+};
+
+const BRANCH = 'branch change';
+const TAG = 'tag change';
+const SUBMODULE = 'submodule change';
+const WORKTREE = 'worktree change';
+const REMOTE = 'remote change';
 
 export const CATEGORY_META: Record<GitActivityCategory, CategoryMeta> = {
   // P87 (locked copy). Key order = the Rust enum's declaration order, which
   // `GIT_ACTIVITY_CATEGORIES` below relies on.
-  commit: { verb: 'Commit', participle: 'Committing…', noun: 'Commit', glyph: RefDotIcon },
-  amend: { verb: 'Amend', participle: 'Amending…', noun: 'Amend', glyph: RefDotIcon },
-  mergeCommit: { verb: 'Merge', participle: 'Merging…', noun: 'Merge commit', glyph: MergeIcon },
-  push: { verb: 'Push', participle: 'Pushing…', noun: 'Push', glyph: PushIcon },
-  forcePush: { verb: 'Force-push', participle: 'Force-pushing…', noun: 'Force-push', glyph: PushIcon },
-  fetch: { verb: 'Fetch', participle: 'Fetching…', noun: 'Fetch', glyph: FetchIcon },
-  pull: { verb: 'Pull', participle: 'Pulling…', noun: 'Pull', glyph: PullIcon },
-  // P119 — placeholders
-  checkoutBranch: meta('Checkout', 'Checking out…', CheckoutIcon),
-  checkoutCommit: meta('Checkout commit', 'Checking out…', CheckoutIcon),
-  checkoutRemote: meta('Checkout remote branch', 'Checking out…', CheckoutIcon),
-  createBranch: meta('Create branch', 'Creating branch…', BranchIcon),
-  deleteBranch: meta('Delete branch', 'Deleting branch…', DeleteIcon),
-  deleteBranches: meta('Delete branches', 'Deleting branches…', DeleteIcon),
-  renameBranch: meta('Rename branch', 'Renaming branch…', BranchIcon),
-  deleteRemoteTracking: meta('Delete remote-tracking branch', 'Deleting…', DeleteIcon),
-  merge: meta('Merge', 'Merging…', MergeIcon),
-  abortMerge: meta('Abort merge', 'Aborting merge…', MergeIcon),
-  rebase: meta('Rebase', 'Rebasing…', RebaseIcon),
-  interactiveRebase: meta('Interactive rebase', 'Rebasing…', RebaseInteractiveIcon),
-  rebaseContinue: meta('Continue rebase', 'Rebasing…', RebaseIcon),
-  rebaseSkip: meta('Skip rebase step', 'Rebasing…', RebaseIcon),
-  rebaseAbort: meta('Abort rebase', 'Aborting rebase…', RebaseIcon),
-  cherryPick: meta('Cherry-pick', 'Cherry-picking…', CherryPickIcon),
-  cherryPickContinue: meta('Continue cherry-pick', 'Cherry-picking…', CherryPickIcon),
-  cherryPickAbort: meta('Abort cherry-pick', 'Aborting cherry-pick…', CherryPickIcon),
-  revert: meta('Revert', 'Reverting…', RevertIcon),
-  revertContinue: meta('Continue revert', 'Reverting…', RevertIcon),
-  revertAbort: meta('Abort revert', 'Aborting revert…', RevertIcon),
-  resetSoft: meta('Soft reset', 'Resetting…', ResetIcon),
-  resetMixed: meta('Mixed reset', 'Resetting…', ResetIcon),
-  resetHard: meta('Hard reset', 'Resetting…', ResetIcon),
-  stashCreate: meta('Stash', 'Stashing…', StashIcon),
-  stashApply: meta('Apply stash', 'Applying stash…', StashApplyIcon),
-  stashPop: meta('Pop stash', 'Popping stash…', StashPopIcon),
-  stashDrop: meta('Drop stash', 'Dropping stash…', DeleteIcon),
-  createTag: meta('Create tag', 'Creating tag…', TagIcon),
-  deleteTag: meta('Delete tag', 'Deleting tag…', TagIcon),
-  pushTag: meta('Push tag', 'Pushing tag…', TagIcon),
-  deleteRemoteTag: meta('Delete remote tag', 'Deleting remote tag…', TagIcon),
-  forceRefreshTag: meta('Update tag', 'Updating tag…', TagIcon),
-  submoduleAdd: meta('Add submodule', 'Adding submodule…', FolderOpenIcon),
-  submoduleInit: meta('Initialize submodule', 'Initializing submodule…', FolderOpenIcon),
-  submoduleUpdate: meta('Update submodule', 'Updating submodule…', FolderOpenIcon),
-  submoduleSync: meta('Sync submodule', 'Syncing submodule…', FolderOpenIcon),
-  submoduleDeinit: meta('Deinitialize submodule', 'Deinitializing submodule…', FolderOpenIcon),
-  submoduleRemove: meta('Remove submodule', 'Removing submodule…', DeleteIcon),
-  worktreeAdd: meta('Add worktree', 'Adding worktree…', WorktreeIcon),
-  worktreeRemove: meta('Remove worktree', 'Removing worktree…', WorktreeIcon),
-  worktreeLock: meta('Lock worktree', 'Locking worktree…', WorktreeIcon),
-  worktreeUnlock: meta('Unlock worktree', 'Unlocking worktree…', WorktreeIcon),
-  discard: meta('Discard changes', 'Discarding…', UndoIcon),
-  bisectStart: meta('Start bisect', 'Starting bisect…', BisectIcon),
-  bisectGood: meta('Mark good', 'Marking…', BisectIcon),
-  bisectBad: meta('Mark bad', 'Marking…', BisectIcon),
-  bisectSkip: meta('Skip commit', 'Skipping…', BisectIcon),
-  bisectReset: meta('End bisect', 'Ending bisect…', BisectIcon),
-  composeCommits: meta('Compose commits', 'Composing…', RefDotIcon),
-  cloneRepo: meta('Clone', 'Cloning…', CloudIcon),
-  initRepo: meta('Initialize repository', 'Initializing…', FolderOpenIcon),
-  addRemote: meta('Add remote', 'Adding remote…', CloudIcon),
-  removeRemote: meta('Remove remote', 'Removing remote…', CloudIcon),
-  renameRemote: meta('Rename remote', 'Renaming remote…', CloudIcon),
-  setRemoteUrl: meta('Change remote URL', 'Updating remote…', CloudIcon),
+  commit: { verb: 'Commit', participle: 'Committing…', noun: 'Commit', glyph: RefDotIcon, blockedNoun: 'commit' },
+  amend: { verb: 'Amend', participle: 'Amending…', noun: 'Amend', glyph: RefDotIcon, blockedNoun: 'commit' },
+  mergeCommit: { verb: 'Merge', participle: 'Merging…', noun: 'Merge commit', glyph: MergeIcon, blockedNoun: 'merge' },
+  push: { verb: 'Push', participle: 'Pushing…', noun: 'Push', glyph: PushIcon, blockedNoun: 'push' },
+  forcePush: { verb: 'Force-push', participle: 'Force-pushing…', noun: 'Force-push', glyph: PushIcon, blockedNoun: 'push' },
+  fetch: { verb: 'Fetch', participle: 'Fetching…', noun: 'Fetch', glyph: FetchIcon, blockedNoun: 'fetch' },
+  pull: { verb: 'Pull', participle: 'Pulling…', noun: 'Pull', glyph: PullIcon, blockedNoun: 'pull' },
+  // P119-ui §4.3
+  checkoutBranch: CHECKOUT,
+  checkoutCommit: CHECKOUT,
+  checkoutRemote: CHECKOUT,
+  createBranch: op('Create branch', 'Creating branch…', RefBranchIcon, BRANCH),
+  deleteBranch: op('Delete branch', 'Deleting branch…', RefBranchIcon, BRANCH),
+  deleteBranches: op('Delete branch', 'Deleting branches…', RefBranchIcon, BRANCH, {
+    countNoun: (n) => `Delete ${n.toLocaleString()} branches`,
+  }),
+  renameBranch: op('Rename branch', 'Renaming branch…', RefBranchIcon, BRANCH),
+  deleteRemoteTracking: op('Delete remote branch', 'Deleting remote branch…', RefBranchIcon, BRANCH),
+  merge: op('Merge', 'Merging…', MergeIcon, 'merge'),
+  abortMerge: op('Abort merge', 'Aborting merge…', MergeIcon, 'merge'),
+  rebase: op('Rebase', 'Rebasing…', RebaseIcon, 'rebase'),
+  interactiveRebase: op('Interactive rebase', 'Rebasing…', RebaseInteractiveIcon, 'rebase'),
+  rebaseContinue: op('Continue rebase', 'Continuing rebase…', RebaseIcon, 'rebase'),
+  rebaseSkip: op('Skip rebase commit', 'Skipping commit…', RebaseIcon, 'rebase'),
+  rebaseAbort: op('Abort rebase', 'Aborting rebase…', RebaseIcon, 'rebase'),
+  cherryPick: op('Cherry-pick', 'Cherry-picking…', CherryPickIcon, 'cherry-pick'),
+  cherryPickContinue: op('Continue cherry-pick', 'Continuing cherry-pick…', CherryPickIcon, 'cherry-pick'),
+  cherryPickAbort: op('Abort cherry-pick', 'Aborting cherry-pick…', CherryPickIcon, 'cherry-pick'),
+  revert: op('Revert', 'Reverting…', RevertIcon, 'revert'),
+  revertContinue: op('Continue revert', 'Continuing revert…', RevertIcon, 'revert'),
+  revertAbort: op('Abort revert', 'Aborting revert…', RevertIcon, 'revert'),
+  resetSoft: op('Soft reset', 'Resetting…', ResetIcon, 'reset'),
+  resetMixed: op('Mixed reset', 'Resetting…', ResetIcon, 'reset'),
+  resetHard: op('Hard reset', 'Resetting…', ResetIcon, 'reset'),
+  stashCreate: op('Stash changes', 'Stashing…', StashIcon, 'stash'),
+  stashApply: op('Apply stash', 'Applying stash…', StashIcon, 'stash'),
+  stashPop: op('Pop stash', 'Popping stash…', StashIcon, 'stash'),
+  stashDrop: op('Drop stash', 'Dropping stash…', StashIcon, 'stash'),
+  createTag: op('Create tag', 'Creating tag…', TagIcon, TAG),
+  deleteTag: op('Delete tag', 'Deleting tag…', TagIcon, TAG),
+  pushTag: op('Push tag', 'Pushing tag…', TagIcon, TAG, { networkLabel: 'Sending objects…' }),
+  deleteRemoteTag: op('Delete remote tag', 'Deleting remote tag…', TagIcon, TAG, {
+    networkLabel: 'Deleting remote tag…',
+  }),
+  forceRefreshTag: op('Update tag', 'Updating tag…', TagIcon, TAG, { networkLabel: 'Fetching…' }),
+  submoduleAdd: op('Add submodule', 'Adding submodule…', SubmoduleIcon, SUBMODULE, {
+    networkLabel: 'Cloning…',
+  }),
+  submoduleInit: op('Initialize submodule', 'Initializing submodule…', SubmoduleIcon, SUBMODULE),
+  submoduleUpdate: op('Update submodule', 'Updating submodule…', SubmoduleIcon, SUBMODULE, {
+    networkLabel: 'Fetching…',
+  }),
+  submoduleSync: op('Sync submodule', 'Syncing submodule…', SubmoduleIcon, SUBMODULE),
+  submoduleDeinit: op('Deinitialize submodule', 'Deinitializing submodule…', SubmoduleIcon, SUBMODULE),
+  submoduleRemove: op('Remove submodule', 'Removing submodule…', SubmoduleIcon, SUBMODULE),
+  worktreeAdd: op('Add worktree', 'Adding worktree…', WorktreeIcon, WORKTREE),
+  worktreeRemove: op('Remove worktree', 'Removing worktree…', WorktreeIcon, WORKTREE),
+  worktreeLock: op('Lock worktree', 'Locking worktree…', WorktreeIcon, WORKTREE),
+  worktreeUnlock: op('Unlock worktree', 'Unlocking worktree…', WorktreeIcon, WORKTREE),
+  discard: op('Discard changes', 'Discarding changes…', RevertIcon, 'change', {
+    countNoun: (n) => `Discard changes in ${n.toLocaleString()} files`,
+  }),
+  bisectStart: op('Start bisect', 'Starting bisect…', BisectIcon, 'bisect'),
+  bisectGood: op('Mark good', 'Marking…', BisectIcon, 'bisect'),
+  bisectBad: op('Mark bad', 'Marking…', BisectIcon, 'bisect'),
+  bisectSkip: op('Skip commit', 'Skipping…', BisectIcon, 'bisect'),
+  bisectReset: op('End bisect', 'Ending bisect…', BisectIcon, 'bisect'),
+  composeCommits: op('Apply composed commits', 'Applying commits…', RefDotIcon, 'commit'),
+  cloneRepo: op('Clone', 'Cloning…', CloneIcon, 'clone', { networkLabel: 'Receiving objects…' }),
+  initRepo: op('Create repository', 'Creating repository…', InitRepoIcon, 'repository creation'),
+  addRemote: op('Add remote', 'Adding remote…', CloudIcon, REMOTE),
+  removeRemote: op('Remove remote', 'Removing remote…', CloudIcon, REMOTE),
+  renameRemote: op('Rename remote', 'Renaming remote…', CloudIcon, REMOTE),
+  setRemoteUrl: op('Change remote URL', 'Changing remote URL…', CloudIcon, REMOTE),
 };
 
+/** The accessible-name joiner (P119-ui §4.2-3); `null` = direct object. */
+export type TargetPreposition =
+  | 'to'
+  | 'from'
+  | 'on'
+  | 'onto'
+  | 'into'
+  | 'in'
+  | 'at'
+  | 'for'
+  | null;
+
 /** §3.7 — the preposition that joins the noun to the target in the ACCESSIBLE
- *  name only (`to` / `from` / `on`, or `null` = noun and target side by side).
- *  Keyed exhaustively by category so a new category cannot silently miss one.
- *  The visible row stays preposition-free (§3.2). P119 placeholders: `on` for
- *  the HEAD-branch rows, `null` for the rest. */
-export const TARGET_PREPOSITION: Record<GitActivityCategory, 'to' | 'from' | 'on' | null> = {
+ *  name only, or `null` = direct object (`Merge feature/x`). Keyed exhaustively
+ *  by category so a new category cannot silently miss one. The visible row
+ *  stays preposition-free (§3.2). Values = the P119-ui §4.3 `Prep` column. */
+export const TARGET_PREPOSITION: Record<GitActivityCategory, TargetPreposition> = {
   push: 'to',
   forcePush: 'to',
   fetch: 'from',
@@ -143,12 +193,12 @@ export const TARGET_PREPOSITION: Record<GitActivityCategory, 'to' | 'from' | 'on
   createBranch: null,
   deleteBranch: null,
   deleteBranches: null,
-  renameBranch: null,
+  renameBranch: 'to',
   deleteRemoteTracking: null,
   merge: null,
   abortMerge: 'on',
-  rebase: null,
-  interactiveRebase: null,
+  rebase: 'onto',
+  interactiveRebase: 'onto',
   rebaseContinue: 'on',
   rebaseSkip: 'on',
   rebaseAbort: 'on',
@@ -158,9 +208,9 @@ export const TARGET_PREPOSITION: Record<GitActivityCategory, 'to' | 'from' | 'on
   revert: null,
   revertContinue: 'on',
   revertAbort: 'on',
-  resetSoft: null,
-  resetMixed: null,
-  resetHard: null,
+  resetSoft: 'to',
+  resetMixed: 'to',
+  resetHard: 'to',
   stashCreate: 'on',
   stashApply: null,
   stashPop: null,
@@ -181,18 +231,18 @@ export const TARGET_PREPOSITION: Record<GitActivityCategory, 'to' | 'from' | 'on
   worktreeLock: null,
   worktreeUnlock: null,
   discard: null,
-  bisectStart: null,
+  bisectStart: 'at',
   bisectGood: null,
   bisectBad: null,
   bisectSkip: null,
   bisectReset: null,
   composeCommits: 'on',
-  cloneRepo: null,
-  initRepo: null,
+  cloneRepo: 'into',
+  initRepo: 'in',
   addRemote: null,
   removeRemote: null,
-  renameRemote: null,
-  setRemoteUrl: null,
+  renameRemote: 'to',
+  setRemoteUrl: 'for',
 };
 
 /** Every category, in the Rust enum's declaration order (`GitActivityCategory::ALL`). */

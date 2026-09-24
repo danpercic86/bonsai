@@ -18,6 +18,8 @@ import {
   hookPill,
   objectsReadout,
   phaseLabel,
+  runNoun,
+  runOutcomeDetail,
   runRowName,
   runTarget,
   statusPill,
@@ -25,20 +27,12 @@ import {
   timeTitle,
 } from './gitActivityFormat';
 import { RefLabel } from './RefLabel';
-import type { GitActivityCategory } from '../ipc';
 import type { GitActivityRun } from './repoWorkspace/useGitActivity';
 
 export interface GitActivityRowProps {
   run: GitActivityRun;
   /** Live clock for the running row's elapsed. */
   tick: number;
-}
-
-/** The op word for the blocking-hook dialog note (§3.5-4 / §8). */
-function opNoun(category: GitActivityCategory): string {
-  if (category === 'push' || category === 'forcePush') return 'push';
-  if (category === 'mergeCommit') return 'merge';
-  return 'commit';
 }
 
 export function GitActivityRow({ run, tick }: GitActivityRowProps) {
@@ -57,8 +51,12 @@ export function GitActivityRow({ run, tick }: GitActivityRowProps) {
   const running = run.status === 'running';
   // FU-1 §3.3: null = this run has no target; nothing is rendered in its place.
   const target = runTarget(run);
-  // §3.4 sub-line (running only): the live phase / transfer readout.
-  const subLabel = running ? (objectsReadout(run) ?? phaseLabel(run.category, run.phase)) : null;
+  // §3.4 sub-line: running → the live phase / transfer readout; a terminal
+  // success → its P119-ui §4.7 outcome detail (`Fast-forwarded`), else nothing.
+  const subLabel = running
+    ? (objectsReadout(run) ?? phaseLabel(run.category, run.phase))
+    : runOutcomeDetail(run);
+  const subTitle = running ? phaseLabel(run.category, run.phase) : undefined;
 
   // §3.5-4: a failed run whose failure was a blocking hook (a failed hook record).
   const blockingHook =
@@ -114,10 +112,10 @@ export function GitActivityRow({ run, tick }: GitActivityRowProps) {
         <span className="git-run-glyph" aria-hidden="true">
           <Glyph />
         </span>
-        <span className="git-run-noun">{meta.noun}</span>
+        <span className="git-run-noun">{runNoun(run)}</span>
         {target !== null && <RefLabel value={target} className="git-run-target" withTitle />}
         {subLabel !== null && (
-          <span className="git-run-subphase" title={phaseLabel(run.category, run.phase)}>
+          <span className="git-run-subphase" title={subTitle}>
             {subLabel}
           </span>
         )}
@@ -210,7 +208,7 @@ export function GitActivityRow({ run, tick }: GitActivityRowProps) {
 
           {blockingHook && (
             <p className="git-run-note">
-              {`This hook blocked the ${opNoun(run.category)}. The full output opened in a dialog.`}
+              {`This hook blocked the ${meta.blockedNoun}. The full output opened in a dialog.`}
             </p>
           )}
         </div>

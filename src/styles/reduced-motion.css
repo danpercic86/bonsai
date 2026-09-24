@@ -3,16 +3,10 @@
    import list in src/styles.css — do not reorder these rules or files. */
 
 /* §7 — the app's FIRST prefers-reduced-motion block. All four dock animations are
-   opacity/colour only, so switching them off costs nothing. P73 §6.3 added
-   `header-progress`; `skeleton-pulse` is still out of scope (§12-F3). */
+   opacity/colour only, so switching them off costs nothing. P119 removed
+   header-progress; the dock bar carries its role. `skeleton-pulse` is still out
+   of scope (§12-F3). */
 @media (prefers-reduced-motion: reduce) {
-  /* P73 §6.3: the sweep now covers multi-second submodule fetches (P68e §12-F3). */
-  .header-progress::after {
-    animation: none;
-    width: 100%;
-    opacity: 0.6;
-  }
-
   .ai-dock-progress::after {
     animation: none;
     width: 100%;
@@ -27,8 +21,17 @@
     opacity: 0.6;
   }
 
-  .header-progress[data-determinate]::after {
+  /* P119: the determinate fill snaps to each new fraction, and reads at full
+     strength so a partial fill is distinguishable from the static sweep. */
+  .git-dock-progress[data-determinate]::after {
     transition: none;
+    opacity: 1;
+  }
+
+  /* P119 §3.3: the Refresh glyph stops rotating; the --accent colour and the
+     `Refreshing…` title still carry the busy state. */
+  .toolbar-refresh[aria-busy='true'] svg {
+    animation: none;
   }
 
   .ai-dock-ask,

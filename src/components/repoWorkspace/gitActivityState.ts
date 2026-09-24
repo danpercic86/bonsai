@@ -9,10 +9,13 @@ import type { GitActivityLine } from './gitActivityLog';
 import type {
   GitActivityCategory,
   GitPhase,
+  GitRunOutcome,
   GitTransferProgress,
 } from '../../ipc';
 
-export type GitRunStatus = 'running' | 'success' | 'failed';
+/** P119 §4.5: `conflicts` = the op stopped with conflicts to resolve — neither a
+ *  success nor a failure, but terminal (prunable, clearable). */
+export type GitRunStatus = 'running' | 'success' | 'failed' | 'conflicts';
 
 /** One `hookDone` record — per-hook pass/fail for the row's sub-rows (§3.5-1). */
 export interface GitHookRecord {
@@ -47,13 +50,19 @@ export interface GitActivityRun {
    *  identifier (`origin/main`, `main`) or null; all copy is derived from the
    *  category by `runTarget()` (P87b FU-1 §3.3). */
   target: string | null;
+  /** P119 §4.4: set once from `started` iff the run acted on ≥2 items (then
+   *  `target` is null); the frontend owns the words (`Delete 3 branches`). */
+  targetCount: number | null;
+  /** P119 §4.7: the `finished` outcome (`fastForwarded` / `merged` / `upToDate`,
+   *  or `conflicts`, which also drives `status`). Null until finished / absent. */
+  outcome: GitRunOutcome | null;
 }
 
 /** Session-scoped run cap; newest-first, oldest TERMINAL evicted on overflow. */
 export const GIT_ACTIVITY_RUNS_MAX = 200;
 
 export function isTerminalGitStatus(status: GitRunStatus): boolean {
-  return status === 'success' || status === 'failed';
+  return status === 'success' || status === 'failed' || status === 'conflicts';
 }
 
 /** A fresh `running` run from a `started` event. */
@@ -64,6 +73,7 @@ export function newGitRun(
   seq: number,
   now: number,
   target: string | null,
+  targetCount: number | null = null,
 ): GitActivityRun {
   return {
     id,
@@ -79,6 +89,8 @@ export function newGitRun(
     linesDropped: 0,
     seq,
     target,
+    targetCount,
+    outcome: null,
   };
 }
 

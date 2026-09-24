@@ -271,6 +271,25 @@
   height: 16px;
 }
 
+/* P119 §3 — manual refresh in flight: the glyph rotates and takes the accent.
+   The button is disabled for the same span, so the colour must override
+   .btn-icon:disabled's --text-3 (which is a sanctioned-role grey, not a state cue).
+   Same specificity (0,2,0) as .btn-icon:disabled — it wins ONLY by coming later
+   in this file; do not move it to tabs.css. */
+.toolbar-refresh[aria-busy='true'] {
+  color: var(--accent);
+}
+
+.toolbar-refresh[aria-busy='true'] svg {
+  animation: toolbar-refresh-spin 600ms linear infinite;
+}
+
+@keyframes toolbar-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .toolbar-btn {
   height: 32px;
   padding: 0 10px;

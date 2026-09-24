@@ -34,6 +34,8 @@ function run(over: Partial<GitActivityRun> = {}): GitActivityRun {
     linesDropped: 0,
     seq: 4,
     target: null,
+    targetCount: null,
+    outcome: null,
     ...over,
   };
 }

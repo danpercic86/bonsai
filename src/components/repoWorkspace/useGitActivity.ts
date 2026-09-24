@@ -119,7 +119,15 @@ export function useGitActivity(): GitActivityApi {
         // reducer — no later branch may write it.
         runsRef.current.set(
           ev.id,
-          newGitRun(ev.id, category, phase, ev.seq, now, ev.target ?? null),
+          newGitRun(
+            ev.id,
+            category,
+            phase,
+            ev.seq,
+            now,
+            ev.target ?? null,
+            ev.targetCount ?? null,
+          ),
         );
         // Enforce the 200-run cap; running runs are never evicted (§8).
         const pruned = pruneGitRuns([...runsRef.current.keys()], runsRef.current);
@@ -175,8 +183,16 @@ export function useGitActivity(): GitActivityApi {
           return;
         }
         case 'finished': {
+          // P119 §4.5: `success: true` + `outcome: 'conflicts'` = stopped on
+          // conflicts — its own terminal status, never a false `Failed`.
           patch(ev.id, {
-            status: ev.success === false ? 'failed' : 'success',
+            status:
+              ev.success === false
+                ? 'failed'
+                : ev.outcome === 'conflicts'
+                  ? 'conflicts'
+                  : 'success',
+            outcome: ev.outcome ?? null,
             code: ev.code ?? null,
             endedAt: now,
             seq: ev.seq,

@@ -42,15 +42,6 @@
   border-radius: 4px;
 }
 
-/* §2.3: determinate mode — a full-width fill scaled by transform (no layout). */
-.header-progress[data-determinate]::after {
-  animation: none;
-  width: 100%;
-  transform-origin: left center;
-  transform: scaleX(var(--progress, 0));
-  transition: transform 150ms ease-out;
-}
-
 /* ---------- View D: the git activity dock ---------- */
 
 .git-activity-dock {
@@ -111,6 +102,29 @@
   width: 40%;
   background: var(--accent);
   animation: header-progress-sweep 1.1s ease-in-out infinite;
+}
+
+/* P119 §2.3 — determinate mode: a full-width fill scaled by transform (no layout). */
+.git-dock-progress[data-determinate]::after {
+  animation: none;
+  width: 100%;
+  transform-origin: left center;
+  transform: scaleX(var(--progress, 0));
+  transition: transform 150ms ease-out;
+}
+
+/* P119 §6 — sub-perceptual ops get a row, never a one-frame flash of bar. */
+.git-dock-progress {
+  animation: git-dock-progress-reveal 0s linear 150ms both;
+}
+
+@keyframes git-dock-progress-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* §3.1: horizontal resizer on the top edge, 4px visual / 8px pointer band. */
@@ -269,6 +283,12 @@
 .git-run-pill[data-status='failed'],
 .git-run-hook-pill[data-status='failed'] {
   --h: var(--danger);
+}
+
+/* P119 §4.5: stopped on conflicts — `! Conflicts`, the AI dock's `? Needs you` hue. */
+.git-dock-status[data-status='conflicts'],
+.git-run-pill[data-status='conflicts'] {
+  --h: var(--warning);
 }
 
 .git-run-pill-glyph {

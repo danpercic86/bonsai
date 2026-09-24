@@ -1173,7 +1173,15 @@ aligned (593 lines). P119-1 (core model) reviewer-approved, committed `27c6160`.
 P119-2 (57 src-tauri wraps) + P119-3 (58 mock wraps) reviewed together; the 1 MUST-FIX
 (failure reason line leaked clone/submodule-add URL credentials via `map_remote_err(e, url)`)
 fixed by `activity_redact.rs` in `ActivityEmitter::finish` + tests; committed.
-**Next: P119-4 (UI: remove toolbar bar, determinate dock bar, refresh spin, final copy).**
+`baae031`. P119-4 (UI: toolbar bar removed, determinate dock bar, refresh spin, final copy)
+approved by reviewer + ui-designer (no MUST-FIX), harness-verified 2026-09-24 (fetch fill,
+checkout row, `! Conflicts`, failed + reason line, refresh spin, no `.header-progress`),
+committed. **Next: full `pnpm gate`, then USER CHECKPOINT** (`pnpm tauri dev`: checkout /
+merge / fast-forward show a dock row; refresh spin feel; 150ms bar delay; real fetch fill).
+P119-4 NITs (not blocking): `GitDockApi.activeRun` unread outside the hook; `gitActivityState.ts:76`
+defaulted `targetCount` param; `useMinimumBusy` would stick if `minMs` changed mid-hold; merge the
+two `.git-dock-progress` blocks in `git-dock.css` (87/117) and refresh its comment; single-item
+`deleteBranches` running label reads "Deleting branches…".
 P119-2/3 follow-ups (SHOULD-FIX/NIT, not blocking): coverage tests missing for submodules,
 compose, interactive rebase/continue/skip, checkoutRemote, deleteRemoteTracking, network tag
 ops, bisect skip, command-level HookRejected; contract §6 T-R2 `r.git` line stale (now None);

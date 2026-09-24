@@ -14,7 +14,6 @@ import {
   GIT_DOCK_HEIGHT_DEFAULT,
   objectsReadout,
   phaseLabel,
-  progressFraction,
 } from '../gitActivityFormat';
 import type { GitActivityDockHandle, GitActivityDockProps } from '../GitActivityDock';
 import type { GitActivityCategory, PanelDensity } from '../../ipc';
@@ -24,7 +23,6 @@ import type { GitActivityRun } from './useGitActivity';
 export interface GitToolbarProps {
   gitCategory: GitActivityCategory | null;
   gitPhase: string | null;
-  gitProgress: number | null;
   onShowGitActivity: () => void;
 }
 
@@ -37,10 +35,10 @@ export interface GitDockApi {
   focusDock: () => void;
   /** `Ctrl/Cmd+Shift+L`: toggle collapsed (expand+focus, or collapse). */
   toggleDock: () => void;
-  /** The active run for View C (drives the determinate progress bar). */
+  /** The newest running run (View C readouts). */
   activeRun: GitActivityRun | null;
   /** View C toolbar props (participle category + phase/transfer readout +
-   *  determinate fraction + reveal). Spread onto `<WorkspaceToolbar>`. Populated
+   *  reveal). Spread onto `<WorkspaceToolbar>`. Populated
    *  only while a REMOTE op runs (commit-family runs feed `commitPhase`). */
   toolbarProps: GitToolbarProps;
   /** The commit-box phase readout (active commit/amend/mergeCommit run only). */
@@ -97,7 +95,6 @@ export function useGitDock(deps: { density: PanelDensity }): GitDockApi {
       remoteRun !== null
         ? (objectsReadout(remoteRun) ?? phaseLabel(remoteRun.category, remoteRun.phase))
         : null,
-    gitProgress: remoteRun !== null ? progressFraction(remoteRun) : null,
     onShowGitActivity: focusDock,
   };
 

@@ -3,7 +3,7 @@
  *  labels, push-title upstream logic, the force-push caret menu, AI gating, and
  *  the auto-fetch readout. Presentational only. */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { WorkspaceToolbar } from './WorkspaceToolbar';
 import type { WorkspaceToolbarProps } from './WorkspaceToolbar';
 import type { BranchInfo, JobStatus } from '../ipc';
@@ -77,10 +77,46 @@ describe('WorkspaceToolbar', () => {
     expect(btn('Open externally')).toBeEnabled();
   });
 
-  it('refreshing disables the remote ops and shows the progress bar', () => {
+  it('refreshing disables the remote ops and spins the Refresh glyph (P119-ui §3)', () => {
     const { container } = renderBar({ refreshing: true });
     expect(btn('Fetch')).toBeDisabled();
-    expect(container.querySelector('.header-progress')).toBeInTheDocument();
+    const refresh = btn('Refresh');
+    expect(refresh).toHaveAttribute('aria-busy', 'true');
+    expect(refresh).toHaveAttribute('title', 'Refreshing…');
+    // P119 §1: the toolbar bar is gone in every state.
+    expect(container.querySelector('.header-progress')).toBeNull();
+  });
+
+  it('idle Refresh carries no busy marker and the shortcut title', () => {
+    renderBar();
+    const refresh = btn('Refresh');
+    expect(refresh).not.toHaveAttribute('aria-busy');
+    expect(refresh).toHaveAttribute('title', `Refresh (${shortcutLabel('Mod+R')})`);
+  });
+
+  it('no .header-progress during a remote op either (P119 §1)', () => {
+    const { container } = renderBar({ remoteOp: 'fetch', gitCategory: 'fetch', gitPhase: 'Fetching…' });
+    expect(container.querySelector('.header-progress')).toBeNull();
+    // A remote op is not a refresh: the Refresh glyph does not spin.
+    expect(btn('Refresh')).not.toHaveAttribute('aria-busy');
+  });
+
+  it('a fast refresh still spins for the 600 ms minimum; disabled follows the raw flag', () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender, props } = renderBar({ refreshing: true });
+      rerender(<WorkspaceToolbar {...props} refreshing={false} />);
+      const refresh = btn('Refresh');
+      expect(refresh).toBeEnabled();
+      expect(refresh).toHaveAttribute('aria-busy', 'true');
+      expect(refresh).toHaveAccessibleName('Refresh');
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(btn('Refresh')).not.toHaveAttribute('aria-busy');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('canPullPush=false disables pull/push but not fetch', () => {

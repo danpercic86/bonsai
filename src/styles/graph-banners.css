@@ -1,4 +1,4 @@
-/* Bonsai — Graph truncated banner and the header progress bar.
+/* Bonsai — Graph truncated banner and the shared 2px sweep keyframes.
    Extracted verbatim from src/styles.css. Cascade order is fixed by the
    import list in src/styles.css — do not reorder these rules or files. */
 
@@ -18,24 +18,7 @@
   color: var(--text-1);
 }
 
-/* ---------- Header progress bar (P1 §7: remote op / refresh feedback) ---------- */
-
-.header-progress {
-  position: relative;
-  height: 2px;
-  flex: none;
-  background: transparent;
-  overflow: hidden;
-}
-
-.header-progress::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  width: 40%;
-  background: var(--accent);
-  animation: header-progress-sweep 1.1s ease-in-out infinite;
-}
+/* Shared 2px sweep keyframes — used by .ai-dock-progress and .git-dock-progress. */
 
 @keyframes header-progress-sweep {
   0% {
