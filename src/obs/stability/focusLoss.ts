@@ -43,7 +43,7 @@ export function attachFocusLoss(emit: StabilitySink): () => void {
       });
     }
     // The element lost focus either way; forget it so nothing double-reports.
-    if (a && tracked === t) tracked = null;
+    if ((a || !t.el.isConnected) && tracked === t) tracked = null;
     checking.delete(t.el);
   };
 

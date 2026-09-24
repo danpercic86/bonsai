@@ -69,7 +69,7 @@ architect has ratified it; it is not listed here.
     `fullyParallel: false`; the existing project gets `testIgnore: 'perf/**'`
   - `e2e/perf/perfHelpers.ts`: `resetPerf`, `snapshotPerf`, `withCdpMetrics` (CDP
     `Performance.getMetrics` deltas of `RecalcStyleCount` / `LayoutCount`), `writeCounts` →
-    `test-results/perf-counts.json`, keyed by browser channel
+    `test-results/perf/perf-counts.json`, keyed by browser channel
   - `e2e/perf/interactions.spec.ts`: the seven interactions from spec.md resolved decision 2. Each
     runs three times in fresh pages, after `waitForGraphSettled` and Refresh-enabled; a metric
     that disagrees across the runs becomes `"nondeterministic"`. Reuse the `e2e/helpers.ts`

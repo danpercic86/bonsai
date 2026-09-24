@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StrictMode } from 'react';
 import { act, renderHook } from '@testing-library/react';
 import { ipc } from '../ipc';
+import { phaseAt, resetPhaseForTests } from '../obs/stability/phase';
 import { useRepoTabs } from './useRepoTabs';
 
 beforeEach(() => vi.useFakeTimers());
@@ -52,3 +53,29 @@ describe('useRepoTabs session persistence', () => {
     expect(setSession).toHaveBeenCalledWith({ openRepos: ['/r'], activeRepo: null });
   });
 });
+
+describe('useRepoTabs stability phase (P120 §3.3)', () => {
+  it('marks the empty state interactive only once the launch restore settles', () => {
+    resetPhaseForTests();
+    const { result } = renderHook(() => useRepoTabs(() => {}));
+    // EmptyState is on screen (tabs=[]) while the reopen loop runs: still boot.
+    expect(currentPhase()).toBe('boot');
+    act(() => result.current.markSessionReady());
+    expect(result.current.sessionReadyRef.current).toBe(true);
+    expect(currentPhase()).toBe('interactive');
+  });
+
+  it('a restore that reopens a tab does not mark the empty state interactive', () => {
+    resetPhaseForTests();
+    const { result } = renderHook(() => useRepoTabs(() => {}));
+    act(() => {
+      result.current.setTabs([{ repoId: '/r', name: 'r', path: '/r' } as never]);
+      result.current.markSessionReady();
+    });
+    expect(currentPhase()).toBe('boot');
+  });
+});
+
+function currentPhase(): string {
+  return phaseAt(performance.now());
+}

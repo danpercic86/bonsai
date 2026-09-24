@@ -12,6 +12,7 @@ import type { RecentRepo } from '../ipc';
 import type { PushToast } from '../ToastContext';
 import { errorMessage, isAppError } from '../utils/errors';
 import { isUsableRepo, unusableRepoMessage } from '../appHelpers';
+import { markInteractive } from '../obs/stability/phase';
 import { beginRepoBoot } from '../obs/stability/readiness';
 
 export interface UseRepoTabs {
@@ -28,6 +29,9 @@ export interface UseRepoTabs {
   /** Flipped true by App's launch-reopen effect once the restore has settled;
    *  until then the persist effect must not write over the stored session. */
   sessionReadyRef: MutableRefObject<boolean>;
+  /** App's launch-reopen effect calls this once the restore has settled: flips
+   *  `sessionReadyRef` and (P120 §3.3) lets a restore-less launch go interactive. */
+  markSessionReady: () => void;
   openTab: (path: string) => Promise<void>;
   closeTab: (repoId: string) => void;
   reorderTabs: (from: number, to: number) => void;
@@ -51,6 +55,11 @@ export function useRepoTabs(pushToast: PushToast): UseRepoTabs {
   // ----- Session persistence (§6): debounced whole-session write -----
   const sessionSaveTimer = useRef<number | null>(null);
   const sessionReadyRef = useRef(false);
+  const [sessionSettled, setSessionSettled] = useState(false);
+  const markSessionReady = useCallback(() => {
+    sessionReadyRef.current = true;
+    setSessionSettled(true);
+  }, []);
   const persistSession = useCallback((openRepos: string[], active: string | null) => {
     if (sessionSaveTimer.current !== null) window.clearTimeout(sessionSaveTimer.current);
     sessionSaveTimer.current = window.setTimeout(() => {
@@ -80,6 +89,13 @@ export function useRepoTabs(pushToast: PushToast): UseRepoTabs {
   // P120 §3.3: open/switch re-arms the stability boot phase — a LAYOUT effect so
   // it lands before the new workspace paints (its shifts are boot, not interactive).
   useLayoutEffect(() => beginRepoBoot(activeRepo), [activeRepo]);
+
+  // P120 §3.3: the no-repo empty state is interactive — but only once the launch
+  // restore has settled. App renders EmptyState (tabs=[]) WHILE the reopen loop
+  // runs, so marking on its mount would label restore-time shifts interactive.
+  useEffect(() => {
+    if (sessionSettled && tabs.length === 0) markInteractive();
+  }, [sessionSettled, tabs.length]);
 
   // Tell the backend the focused-tab repoId (P16 §5) so new embedded-MCP
   // sessions seed from it. Fires on tab activation, open, close, and once on
@@ -217,6 +233,7 @@ export function useRepoTabs(pushToast: PushToast): UseRepoTabs {
     setActiveRepo,
     tabsRef,
     sessionReadyRef,
+    markSessionReady,
     openTab,
     closeTab,
     reorderTabs,

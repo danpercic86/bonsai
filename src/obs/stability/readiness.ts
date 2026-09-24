@@ -24,8 +24,8 @@ function nextFrame(cb: () => void): void {
   else setTimeout(cb, 16);
 }
 
-/** Repo open / tab switch begins (`null` = no repo; the empty state marks
- *  interactive itself when it mounts). Re-running with the same id is a no-op. */
+/** Repo open / tab switch begins (`null` = no repo; useRepoTabs marks the
+ *  empty state interactive once the launch restore has settled). Re-running with the same id is a no-op. */
 export function beginRepoBoot(repoId: string | null): void {
   if (repoId === current) return;
   current = repoId;

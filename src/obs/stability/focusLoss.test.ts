@@ -184,6 +184,23 @@ describe('focus-loss truth table (T-F6, §3.6)', () => {
     expect(got[0]).toMatchObject({ via: 'detached' }); // isConnected wins over via0
   });
 
+  it('a detached element is forgotten even when focus sits on a non-body element', async () => {
+    const r = region('details');
+    const el = focusable(r);
+    const other = focusable(r);
+    focusIn(el);
+    active = other; // focus elsewhere, but no focusin re-tracked it
+    el.remove();
+    await settle();
+    expect(got).toEqual([]);
+    // Later, focus drops to body and an unrelated mutation fires: the stale,
+    // detached element must not be re-classified into a phantom loss.
+    active = null;
+    focusable(region('graph')).remove();
+    await settle();
+    expect(got).toEqual([]);
+  });
+
   it('boot-time losses are labelled boot by loss time', async () => {
     resetPhaseForTests();
     const el = focusable(region('sidebar'));

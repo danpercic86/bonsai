@@ -1,0 +1,60 @@
+{
+  "_comment": "Ceilings for scripts/check-perf-baseline.mjs (P120 lab counts, keyed by browser channel). They may only drop: `pnpm lint:perf -- --update-baseline` lowers them and seeds missing ones; raising one is a deliberate hand-edit.",
+  "interactions": {
+    "msedge": {
+      "cold-open": {
+        "reactCommits": 22,
+        "ipcCalls": 39,
+        "layoutShiftsUnprompted": 0,
+        "focusLosses": 0
+      },
+      "select-commit": {
+        "reactCommits": 3,
+        "ipcCalls": 1,
+        "recalcStyle": 4,
+        "layout": 3,
+        "layoutShiftsUnprompted": 0,
+        "focusLosses": 0
+      },
+      "stage-unstage": {
+        "reactCommits": 8,
+        "ipcCalls": 8,
+        "recalcStyle": 10,
+        "layout": 8,
+        "layoutShiftsUnprompted": 0,
+        "focusLosses": 0
+      },
+      "switch-branch": {
+        "reactCommits": 9,
+        "ipcCalls": 10,
+        "recalcStyle": 8,
+        "layout": 5,
+        "focusLosses": 0
+      },
+      "background-refresh": {
+        "reactCommits": 3,
+        "ipcCalls": 10,
+        "recalcStyle": 2,
+        "layout": 2,
+        "layoutShiftsUnprompted": 1,
+        "focusLosses": 0
+      },
+      "scroll-20k": {
+        "reactCommits": 5,
+        "ipcCalls": 5,
+        "recalcStyle": 0,
+        "layout": 0,
+        "layoutShiftsUnprompted": 0,
+        "focusLosses": 0
+      },
+      "palette-open-close": {
+        "reactCommits": 3,
+        "ipcCalls": 0,
+        "recalcStyle": 5,
+        "layout": 2,
+        "layoutShiftsUnprompted": 0,
+        "focusLosses": 0
+      }
+    }
+  }
+}

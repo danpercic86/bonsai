@@ -136,7 +136,7 @@ export default function App() {
     activeRepo,
     setActiveRepo,
     tabsRef,
-    sessionReadyRef,
+    markSessionReady,
     openTab,
     closeTab,
     reorderTabs,
@@ -329,7 +329,7 @@ export default function App() {
           // Non-fatal.
         }
       }
-      sessionReadyRef.current = true;
+      markSessionReady();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

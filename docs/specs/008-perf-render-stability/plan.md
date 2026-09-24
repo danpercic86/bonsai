@@ -146,7 +146,8 @@
   - `resetPerf(page)` and `snapshotPerf(page)`
   - `withCdpMetrics(page, fn)`, which reads CDP `Performance.getMetrics` before and after and
     returns the deltas of `RecalcStyleCount` and `LayoutCount`
-  - `writeCounts(results)` → `test-results/perf-counts.json` (already gitignored).
+  - `writeCounts(results)` → `test-results/perf/perf-counts.json` (already gitignored; the perf
+    project has its own `outputDir`).
 
   About 120 lines.
 - `e2e/perf/interactions.spec.ts`: the seven scripted interactions from resolved decision 2, one
@@ -165,7 +166,7 @@
   post-interactive shift. The test repeats the check 20 times with the flag (all 20 must detect the
   shift) and 20 times without (none may). The same pattern with `?perfInjectFocusSteal` covers AC 3.
 - `scripts/check-perf-baseline.mjs`: modelled on `check-file-size.mjs`.
-  - It reads `test-results/perf-counts.json` and `scripts/perf-baseline.json`.
+  - It reads `test-results/perf/perf-counts.json` and `scripts/perf-baseline.json`.
   - It fails (exit 1) if any `interaction.metric` count exceeds its ceiling, printing the
     interaction, metric, baseline and new value.
   - It passes when counts drop, and prints a hint that the baseline can be lowered.
@@ -295,7 +296,7 @@ export interface FocusLostPayload { fromRegion: StabilityRegion; to: 'body' | 'n
 - `focus-steal` records carry `traces` from the refresh's `contributing_traces`.
 - Both rules key only on kinds, regions and timing, never on ordinals (P91 §5 invariant).
 
-**Lab counts file (`test-results/perf-counts.json`) and baseline (`scripts/perf-baseline.json`):**
+**Lab counts file (`test-results/perf/perf-counts.json`) and baseline (`scripts/perf-baseline.json`):**
 ```json
 { "_comment": "...", "interactions": {
     "select-commit": { "reactCommits": 7, "ipcCalls": 3, "recalcStyle": 12, "layout": 4,

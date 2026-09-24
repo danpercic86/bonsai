@@ -203,6 +203,15 @@ const steps = [
     group: 'e2e',
     env: has('--e2e-bundle') ? { E2E_BUNDLE: '1' } : {},
   },
+  // P120 (spec 008): the serial lab-count project, then the ceiling ratchet over
+  // the counts it wrote. e2e tier only (resolved decision 3) — never --quick.
+  // Deliberately NOT forwarded `--e2e-bundle`: the baseline is recorded on the
+  // DEV server, and a production bundle has no <Profiler> callbacks (React
+  // commits would read 0) and no StrictMode — different counts entirely.
+  // Interactions only: the 20x detector proof (AC 2/3) is one-time evidence,
+  // run manually with `pnpm test:perf` (plan.md Risks: gate time).
+  { name: 'perf counts', cmd: 'pnpm', args: ['test:perf:counts'], group: 'e2e' },
+  { name: 'perf ratchet', cmd: 'pnpm', args: ['lint:perf'], group: 'e2e' },
   { name: 'cargo-deny', cmd: 'cargo', args: ['deny', '--all-features', 'check'], group: 'audit' },
   { name: 'pnpm audit', cmd: 'pnpm', args: ['audit', '--audit-level', 'high'], group: 'audit' },
 ].filter(Boolean);

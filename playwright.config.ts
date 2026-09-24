@@ -39,6 +39,12 @@ const BUNDLE = process.env.E2E_BUNDLE === '1';
 const BUNDLE_PORT = Number(process.env.E2E_BUNDLE_PORT) || 1440;
 const PORT = BUNDLE ? BUNDLE_PORT : DEV_PORT;
 
+/** Browser display name for the suite project (the perf project reuses its
+ *  channel so both drive the same browser). */
+const BROWSER_NAME = USE_EDGE_CHANNEL ? 'msedge' : 'chromium';
+// installed Edge — no download, ASR-safe; else bundled chromium (CI + local macOS/Linux)
+const CHANNEL = USE_EDGE_CHANNEL ? { channel: 'msedge' } : {};
+
 export default defineConfig({
   testDir: 'e2e',
   fullyParallel: true,
@@ -83,9 +89,21 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   projects: [
-    USE_EDGE_CHANNEL
-      ? { name: 'msedge', use: { browserName: 'chromium', channel: 'msedge' } } // installed Edge — no download, ASR-safe
-      : { name: 'chromium', use: { browserName: 'chromium' } }, // bundled chromium (CI + local macOS/Linux)
+    { name: BROWSER_NAME, use: { browserName: 'chromium', ...CHANNEL }, testIgnore: 'perf/**' },
+    // P120 lab counts (spec 008): serial, same browser channel as the suite.
+    // `pnpm test:e2e` excludes it via `--grep-invert @perf` (every perf test is
+    // tagged), so bare e2e runs never pay for it; `pnpm test:perf` selects it.
+    // EVERY perf test must carry the `@perf` tag, or it leaks into `test:e2e`.
+    // Own outputDir: a perf run cleans only test-results/perf, so it never
+    // wipes the traces of a failed e2e step (the counts file lives there too).
+    {
+      name: 'perf',
+      testDir: 'e2e/perf',
+      outputDir: 'test-results/perf',
+      use: { browserName: 'chromium', ...CHANNEL },
+      workers: 1,
+      fullyParallel: false,
+    },
   ],
   webServer: {
     // Both modes are hosted IN-PROCESS by this script via Vite's JS API. The

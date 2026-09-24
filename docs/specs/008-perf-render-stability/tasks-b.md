@@ -29,12 +29,13 @@ they differ)
   - tests T-F7–T-F11 and T-F13.
 
   — owner: senior-dev ([P] with B2; disjoint files)
-- [ ] B4. Disclosure copy, contract §6: ui-designer writes the one-sentence wording and the
+- [x] B4. Disclosure copy, contract §6: ui-designer writes the one-sentence wording and the
   static-vs-runtime choice (`layoutShiftSupported()`) to `docs/contracts/P120-ui.md`. Then
   senior-dev applies it to `src/components/settings/catalog/dev.ts:100` and
   `SettingsDevCaptureSection.tsx`. The `dev.capture-react` help text is unchanged. — owner:
   ui-designer, then senior-dev (fold the apply step into B3 if it's ready in time)
-- [ ] B5. Review the B1–B4 diff. Check:
+- [x] B5. (B1–B3 reviewer APPROVE → `daee25f`; B4 copy verbatim from ui-designer's
+  `P120-ui.md` plus SHOULD-FIXes → `a2eb30c`.) Review the B1–B4 diff. Check:
   - redaction independence (AC 13)
   - no `OBS_SCHEMA_VERSION` change
   - the bounds on `focus-steal`'s pending and causes buffers

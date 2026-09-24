@@ -1,6 +1,4 @@
-import { useEffect } from 'react';
 import type { RecentRepo } from '../ipc';
-import { markInteractive } from '../obs/stability/phase';
 
 export interface EmptyStateProps {
   loading: boolean;
@@ -36,8 +34,6 @@ export function EmptyState({
   onInitRepository,
   onOpenRecent,
 }: EmptyStateProps) {
-  // P120 §3.3: the no-repo prompt is interactive — the phase must not stay boot.
-  useEffect(() => markInteractive(), []);
   return (
     <div className="empty-state">
       <div className="empty-hero">
