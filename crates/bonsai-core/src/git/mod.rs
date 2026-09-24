@@ -4,6 +4,8 @@ pub mod activity;
 pub mod activity_category;
 /// P119: pure result → `finished.outcome` classifiers.
 pub mod activity_outcome;
+/// P119: strips URL credentials from a failed run's reason line.
+pub(crate) mod activity_redact;
 /// P87b FU-1: the read-only, infallible resolver for a run's `target` ref.
 pub mod activity_target;
 pub mod ai_branch_name;

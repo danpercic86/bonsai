@@ -50,8 +50,16 @@ fn target_arg_table() {
         (TargetArg::PathLeaf("single"), Some("single")),
         (TargetArg::PathLeaf(""), None),
         (TargetArg::PathLeaf("///"), None),
-        // A URL-shaped path yields only its last component — never the token.
-        (TargetArg::PathLeaf("https://tok@host/r.git"), Some("r.git")),
+        // URL-shaped input is refused outright — a clone URL can carry
+        // `user:token@`, and a bare-host URL's "leaf" would be exactly that.
+        (TargetArg::PathLeaf("https://tok@host/r.git"), None),
+        (TargetArg::PathLeaf("https://user:tok@host"), None),
+        (TargetArg::PathLeaf("https://user:tok@host/"), None),
+        (TargetArg::PathLeaf("ssh://git@host/r.git"), None),
+        (TargetArg::PathLeaf("file:///C:/a/repo"), None),
+        // scp-like `user@host:path` has no `://` but its leaf carries `@`.
+        (TargetArg::PathLeaf("git@host"), None),
+        (TargetArg::PathLeaf("/a/user:tok@host"), None),
         // Bidi / controls are stripped by the one funnel.
         (TargetArg::Branch("ma\u{202e}in"), Some("main")),
         (TargetArg::Name("a\u{200b}b\nc"), Some("abc")),

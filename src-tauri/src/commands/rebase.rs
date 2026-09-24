@@ -21,10 +21,17 @@ pub(crate) async fn rebase_branch_inner(
     repo_id: &str,
     onto: String,
 ) -> Result<RebaseOutcome, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || rebase::rebase_branch(&path, &onto))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Ref(&onto));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::Rebase,
+        subject,
+        LoggedPhase::Local,
+        rebase_outcome,
+        move |path| rebase::rebase_branch(&path, &onto),
+    )
+    .await
 }
 
 /// Resumes a paused rebase — commits the resolved op, then replays on (P3d
@@ -43,10 +50,17 @@ pub(crate) async fn rebase_continue_inner(
     state: &AppState,
     repo_id: &str,
 ) -> Result<RebaseOutcome, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || rebase::rebase_continue(&path))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = activity_target(state, repo_id, GitActivityCategory::RebaseContinue).await;
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::RebaseContinue,
+        subject,
+        LoggedPhase::Local,
+        rebase_outcome,
+        move |path| rebase::rebase_continue(&path),
+    )
+    .await
 }
 
 /// Skips the current operation and resumes (P3d contract §3.8). Errors:
@@ -64,10 +78,17 @@ pub(crate) async fn rebase_skip_inner(
     state: &AppState,
     repo_id: &str,
 ) -> Result<RebaseOutcome, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || rebase::rebase_skip(&path))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = activity_target(state, repo_id, GitActivityCategory::RebaseSkip).await;
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::RebaseSkip,
+        subject,
+        LoggedPhase::Local,
+        rebase_outcome,
+        move |path| rebase::rebase_skip(&path),
+    )
+    .await
 }
 
 /// Aborts a paused rebase (worktree-destructive — the UI confirms first; P3d
@@ -82,10 +103,17 @@ pub async fn rebase_abort(
 
 /// Runtime-free core of `rebase_abort` (unit-testable without a Tauri app).
 pub(crate) async fn rebase_abort_inner(state: &AppState, repo_id: &str) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || rebase::rebase_abort(&path))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = activity_target(state, repo_id, GitActivityCategory::RebaseAbort).await;
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::RebaseAbort,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| rebase::rebase_abort(&path),
+    )
+    .await
 }
 
 /// Returns the DEFAULT interactive-rebase plan (every commit `pick`, oldest-
@@ -136,10 +164,15 @@ pub(crate) async fn start_interactive_rebase_inner(
     onto_oid: String,
     todos: Vec<RebaseTodoOp>,
 ) -> Result<RebaseOutcome, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        rebase_interactive::start_interactive_rebase(&path, &onto_oid, todos)
-    })
+    let subject = arg_target(state, TargetArg::Commit(&onto_oid));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::InteractiveRebase,
+        subject,
+        LoggedPhase::Local,
+        rebase_outcome,
+        move |path| rebase_interactive::start_interactive_rebase(&path, &onto_oid, todos),
+    )
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

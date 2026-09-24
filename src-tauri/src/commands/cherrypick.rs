@@ -23,12 +23,17 @@ pub(crate) async fn cherrypick_commit_inner(
     oid: String,
     message: Option<String>,
 ) -> Result<CherrypickOutcome, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        cherrypick::cherrypick_commit(&path, &oid, message.as_deref())
-    })
+    let subject = arg_target(state, TargetArg::Commit(&oid));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::CherryPick,
+        subject,
+        LoggedPhase::Local,
+        cherrypick_outcome,
+        move |path| cherrypick::cherrypick_commit(&path, &oid, message.as_deref()),
+    )
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Finalizes a paused (resolved) cherry-pick (P20 contract §5). Errors:
@@ -47,10 +52,17 @@ pub(crate) async fn cherrypick_continue_inner(
     state: &AppState,
     repo_id: &str,
 ) -> Result<CherrypickOutcome, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || cherrypick::cherrypick_continue(&path))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = activity_target(state, repo_id, GitActivityCategory::CherryPickContinue).await;
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::CherryPickContinue,
+        subject,
+        LoggedPhase::Local,
+        cherrypick_outcome,
+        move |path| cherrypick::cherrypick_continue(&path),
+    )
+    .await
 }
 
 /// Aborts a paused cherry-pick (reset --hard to HEAD; destructive — the UI
@@ -69,8 +81,15 @@ pub(crate) async fn cherrypick_abort_inner(
     state: &AppState,
     repo_id: &str,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || cherrypick::cherrypick_abort(&path))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = activity_target(state, repo_id, GitActivityCategory::CherryPickAbort).await;
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::CherryPickAbort,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| cherrypick::cherrypick_abort(&path),
+    )
+    .await
 }

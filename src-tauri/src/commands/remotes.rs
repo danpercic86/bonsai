@@ -281,10 +281,18 @@ pub(crate) async fn add_remote_inner(
     name: String,
     url: String,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || add_remote_core(&path, &name, &url))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    // The remote NAME labels the row, never `url` (it can carry a token).
+    let subject = arg_target(state, TargetArg::Remote(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::AddRemote,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| add_remote_core(&path, &name, &url),
+    )
+    .await
 }
 
 /// Removes a remote and its remote-tracking refs (P22 contract §3.2). Errors:
@@ -304,10 +312,17 @@ pub(crate) async fn remove_remote_inner(
     repo_id: &str,
     name: String,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || remove_remote_core(&path, &name))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Remote(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::RemoveRemote,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| remove_remote_core(&path, &name),
+    )
+    .await
 }
 
 /// Renames a remote (P22 contract §3.2). Errors:
@@ -329,10 +344,17 @@ pub(crate) async fn rename_remote_inner(
     name: String,
     new_name: String,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || rename_remote_core(&path, &name, &new_name))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Remote(&new_name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::RenameRemote,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| rename_remote_core(&path, &name, &new_name),
+    )
+    .await
 }
 
 /// Sets a remote's fetch URL (P22 contract §3.2). Errors:
@@ -354,8 +376,16 @@ pub(crate) async fn set_remote_url_inner(
     name: String,
     url: String,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || set_remote_url_core(&path, &name, &url))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    // The remote NAME labels the row, never `url` (it can carry a token).
+    let subject = arg_target(state, TargetArg::Remote(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::SetRemoteUrl,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| set_remote_url_core(&path, &name, &url),
+    )
+    .await
 }

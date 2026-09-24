@@ -397,8 +397,8 @@ fn reason_line_is_delivered_after_the_cap_just_before_finished() {
     assert_eq!(events[n - 2].kind, GitActivityKind::StderrLine);
     assert_eq!(
         events[n - 2].line.as_deref(),
-        Some("branch 'x' not foundforged row"),
-        "control-stripped into one line"
+        Some("branch 'x' not found forged row"),
+        "line breaks become spaces, then control-stripped into one line"
     );
     assert_eq!(events[n - 1].kind, GitActivityKind::Finished);
     assert_eq!(events[n - 1].success, Some(false));

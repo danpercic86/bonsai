@@ -1169,7 +1169,20 @@ the observed session and could not be attributed from static reading.
 
 **Current step:** P119 — contracts written (`docs/contracts/P119-activity-for-all-actions.md`,
 `docs/contracts/P119-ui.md`); architect contract at rev 2 (610 lines); P119-ui.md
-aligned (593 lines). **P119-1 (core model) implemented, awaiting reviewer round 1.**
+aligned (593 lines). P119-1 (core model) reviewer-approved, committed `27c6160`.
+P119-2 (57 src-tauri wraps) + P119-3 (58 mock wraps) reviewed together; the 1 MUST-FIX
+(failure reason line leaked clone/submodule-add URL credentials via `map_remote_err(e, url)`)
+fixed by `activity_redact.rs` in `ActivityEmitter::finish` + tests; committed.
+**Next: P119-4 (UI: remove toolbar bar, determinate dock bar, refresh spin, final copy).**
+P119-2/3 follow-ups (SHOULD-FIX/NIT, not blocking): coverage tests missing for submodules,
+compose, interactive rebase/continue/skip, checkoutRemote, deleteRemoteTracking, network tag
+ops, bisect skip, command-level HookRejected; contract §6 T-R2 `r.git` line stale (now None);
+`path_leaf` also refuses `repo@2` folder names (intended, record it); mock FF merge can move
+HEAD to a phantom oid when the incoming branch isn't in the fixture; stray trailing blank lines
+in mock `stash.ts`/`status.ts`/`tagSync.ts`/`rebase.ts`.
+P119-1 review SHOULD-FIX folded into P119-2/3: reason line must turn `\n`/`\r` into spaces
+before `activity_line`; `path_leaf` must refuse URL-shaped input before clone is wired; mock
+reason line should mirror `activity_line` (strip + 2000-char cap).
 **Second rulings (2026-09-24):** stage/unstage + conflict-resolution writes are **NOT** logged;
 a run that pauses on conflicts ends in a distinct **`! Conflicts`** outcome; fast-forward = one
 **Merge** row whose finished detail says fast-forwarded vs merged; clone/init logged only when a

@@ -1,6 +1,8 @@
 //! `repo` commands — split from the former monolithic `commands.rs`.
 
 use super::shared::*;
+use bonsai_core::git::activity::GitPhaseKind;
+use bonsai_core::git::clone_activity::CloneActivityForwarder;
 
 /// Payload of the `"repo-changed"` event. `repo_id` identifies which open
 /// repo's watcher fired so the frontend can route it to the right tab (P3e
@@ -367,31 +369,90 @@ pub(crate) async fn close_repo_inner(state: &AppState, repo_id: &str) -> Result<
 /// Returns the absolute workdir path of the clone (frontend then calls
 /// `open_repo`/openTab). NOT repo-scoped — it CREATES a repo (P21 §OPEN-2).
 /// Rejects io | authFailed | networkError | git.
+///
+/// P119 row 51: logged as `cloneRepo` while a workspace is subscribed (the
+/// empty state has no subscriber, so no row). `state` is Tauri-injected — the
+/// TS call is unchanged.
 #[tauri::command]
 pub async fn clone_repo(
+    state: tauri::State<'_, AppState>,
     url: String,
     dest: String,
     on_progress: tauri::ipc::Channel<CloneProgress>,
 ) -> Result<String, AppError> {
-    tauri::async_runtime::spawn_blocking(move || {
-        clone_repo_core(&url, std::path::Path::new(&dest), move |p| {
-            // Channel is Clone+Send+Sync+'static; a send failure means the
-            // frontend dropped the channel — ignore it, the clone completes.
-            let _ = on_progress.send(p);
-        })
+    clone_repo_inner(state.inner(), url, dest, move |p| {
+        // Channel is Clone+Send+Sync+'static; a send failure means the
+        // frontend dropped the channel — ignore it, the clone completes.
+        let _ = on_progress.send(p);
     })
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+}
+
+/// Runtime-free core of `clone_repo` (unit-testable without a Tauri app).
+///
+/// SECURITY: the row is labelled by the DESTINATION folder's leaf, never by
+/// `url` — a clone URL can carry `user:token@`. Transfer ticks feed both the
+/// caller's sink and (throttled) the activity row's determinate bar.
+pub(crate) async fn clone_repo_inner(
+    state: &AppState,
+    url: String,
+    dest: String,
+    mut on_progress: impl FnMut(CloneProgress) + Send + 'static,
+) -> Result<String, AppError> {
+    let subject = arg_target(state, TargetArg::PathLeaf(&dest));
+    with_activity_ex(
+        state.git_activity_hub(),
+        GitActivityCategory::CloneRepo,
+        subject.into(),
+        no_outcome,
+        |em| async move {
+            if let Some(em) = &em {
+                em.phase(GitPhaseKind::Network, None);
+            }
+            tauri::async_runtime::spawn_blocking(move || {
+                let rec = em.as_deref().map(|e| e as &dyn GitActivityRecorder);
+                let mut fwd = CloneActivityForwarder::new(rec);
+                clone_repo_core(&url, std::path::Path::new(&dest), move |p| {
+                    fwd.tick(&p);
+                    on_progress(p);
+                })
+            })
+            .await
+            .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+        },
+    )
+    .await
 }
 
 /// Initializes (or opens, if already a repo) a repository at `path`. Returns
 /// the absolute workdir path. NOT repo-scoped (P21 §OPEN-2/§OPEN-3).
-/// Rejects io | git.
+/// Rejects io | git. P119 row 52: logged as `initRepo` while a workspace is
+/// subscribed; `state` is Tauri-injected — the TS call is unchanged.
 #[tauri::command]
-pub async fn init_repo(path: String) -> Result<String, AppError> {
-    tauri::async_runtime::spawn_blocking(move || init_repo_core(std::path::Path::new(&path)))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+pub async fn init_repo(
+    state: tauri::State<'_, AppState>,
+    path: String,
+) -> Result<String, AppError> {
+    init_repo_inner(state.inner(), path).await
+}
+
+/// Runtime-free core of `init_repo` (unit-testable without a Tauri app).
+pub(crate) async fn init_repo_inner(state: &AppState, path: String) -> Result<String, AppError> {
+    let subject = arg_target(state, TargetArg::PathLeaf(&path));
+    with_activity_ex(
+        state.git_activity_hub(),
+        GitActivityCategory::InitRepo,
+        subject.into(),
+        no_outcome,
+        |_em| async move {
+            tauri::async_runtime::spawn_blocking(move || {
+                init_repo_core(std::path::Path::new(&path))
+            })
+            .await
+            .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+        },
+    )
+    .await
 }
 
 /// Same-directory test for the open-repo dedupe scan and recents removal

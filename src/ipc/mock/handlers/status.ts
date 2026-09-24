@@ -3,15 +3,21 @@ import type { IpcApi } from '../../types';
 import { hasIdentity } from '../../fixtures/config';
 import { lineDiff, reconstructLines } from '../../fixtures/diffs';
 import { randomOid } from '../../fixtures/oids';
-import { buildHead, delay, requireRepo } from '../repoState';
+import { buildHead, delay, query, requireRepo } from '../repoState';
 import { hookRejectionFor } from '../hooksGate';
 import { runMockActivity } from '../gitActivity';
 import { MAIN_RS_PATH, collectSelection, linesEqual, sortByPath, takeMatching, upsert } from '../statusHelpers';
 import type { AppError, CommitResult, LineSelection, StatusSnapshot } from '../../types';
 
-export const statusHandlers = {
+/** P119-ui §8 `?refreshSlow` — every status read (so every refresh round) takes
+ *  2 s, so the Refresh icon's busy state is observable in the harness. Refresh
+ *  itself is not an activity row (user ruling). */
+const REFRESH_SLOW = query('refreshSlow') !== null;
+
+/** The handler BODIES; the public `statusHandlers` below wraps the §1 rows. */
+const statusBodies = {
   async getStatus(repoId: string): Promise<StatusSnapshot> {
-    await delay(150);
+    await delay(REFRESH_SLOW ? 2000 : 150);
     const state = requireRepo(repoId);
     // Fresh copy so callers can't mutate the fixture between fetches.
     const snapshot = structuredClone(state.status);
@@ -145,6 +151,16 @@ export const statusHandlers = {
     return runMockActivity('commit', 'main', () => commitInner(repoId, message, skipHooks));
   },
 } satisfies Partial<IpcApi>;
+
+/** P119 §5.2 — ONLY the partial discard is a §1 row here: stage/unstage (and
+ *  their partial forms) are deliberately not logged (user ruling 2026-09-24);
+ *  `commit` was already bracketed (P87). */
+export const statusHandlers = {
+  ...statusBodies,
+  discardPartial: (repoId: string, path: string, origPath: string | null, selection: LineSelection[]) =>
+    runMockActivity('discard', path, () => statusBodies.discardPartial(repoId, path, origPath, selection)),
+} satisfies Partial<IpcApi>;
+
 
 async function commitInner(
   repoId: string,

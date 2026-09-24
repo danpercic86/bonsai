@@ -19,6 +19,7 @@ use std::time::Instant;
 pub use crate::git::activity_category::{GitActivityCategory, GitRunOutcome};
 pub use target_type::{ActivityTarget, MAX_ACTIVITY_TARGET_CHARS};
 
+use crate::git::activity_redact::redact_url_userinfo;
 use crate::git::activity_target::RunSubject;
 
 #[path = "activity_target_type.rs"]
@@ -290,7 +291,13 @@ impl ActivityEmitter {
         self.flush_line_truncation();
         if let Some(reason) = reason {
             let mut ev = self.base(GitActivityKind::StderrLine);
-            ev.line = Some(activity_line(reason));
+            // A multi-line message would have its words glued together by the
+            // control strip; turn line breaks into spaces first. SECURITY: some
+            // messages quote the remote URL, which can carry `user:token@`, so
+            // URL/scp userinfo is stripped before it reaches the wire.
+            let one_line =
+                redact_url_userinfo(&reason.replace("\r\n", " ").replace(['\n', '\r'], " "));
+            ev.line = Some(activity_line(&one_line));
             (self.emit)(ev);
         }
         let mut ev = self.base(GitActivityKind::Finished);

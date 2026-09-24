@@ -52,12 +52,17 @@ pub(crate) async fn create_stash_inner(
     message: Option<String>,
     scope: StashScope,
 ) -> Result<CreateStashResult, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        stash::create_stash(&path, message.as_deref(), scope)
-    })
+    let subject = activity_target(state, repo_id, GitActivityCategory::StashCreate).await;
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::StashCreate,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| stash::create_stash(&path, message.as_deref(), scope),
+    )
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Applies stash `index` WITHOUT dropping it (P9 contract §3). Conflicts →
@@ -87,12 +92,17 @@ pub(crate) async fn apply_stash_inner(
     skip_reserved: bool,
     expected_oid: Option<String>,
 ) -> Result<ApplyStashOutcome, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        stash::apply_stash(&path, index, skip_reserved, expected_oid.as_deref())
-    })
+    let subject = arg_target(state, TargetArg::Stash(index));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::StashApply,
+        subject,
+        LoggedPhase::Local,
+        stash_apply_outcome,
+        move |path| stash::apply_stash(&path, index, skip_reserved, expected_oid.as_deref()),
+    )
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Applies stash `index` and drops it on clean success only (P9 contract §3).
@@ -119,12 +129,17 @@ pub(crate) async fn pop_stash_inner(
     skip_reserved: bool,
     expected_oid: Option<String>,
 ) -> Result<ApplyStashOutcome, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        stash::pop_stash(&path, index, skip_reserved, expected_oid.as_deref())
-    })
+    let subject = arg_target(state, TargetArg::Stash(index));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::StashPop,
+        subject,
+        LoggedPhase::Local,
+        stash_apply_outcome,
+        move |path| stash::pop_stash(&path, index, skip_reserved, expected_oid.as_deref()),
+    )
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Permanently discards stash `index` (P9 contract §3). Allowed in any repo
@@ -149,10 +164,15 @@ pub(crate) async fn drop_stash_inner(
     index: usize,
     expected_oid: Option<String>,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        stash::drop_stash(&path, index, expected_oid.as_deref())
-    })
+    let subject = arg_target(state, TargetArg::Stash(index));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::StashDrop,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| stash::drop_stash(&path, index, expected_oid.as_deref()),
+    )
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

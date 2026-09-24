@@ -3,8 +3,11 @@ import type { IpcApi } from '../../types';
 import { recordRecent } from '../persistence';
 import { MOCK_REPO_PATH, buildInfo, createRepoState, delay, mockCanonical, repos, resolveRepoId, throwAuthFailed, throwNetworkError } from '../repoState';
 import type { AppError, CloneProgress, OpenRepoResult } from '../../types';
+import { runMockActivity } from '../gitActivity';
+import { mockPathLeaf } from '../gitActivityTargetArg';
 
-export const repoHandlers = {
+/** The handler BODIES; the public `repoHandlers` below wraps the §1 rows. */
+const repoBodies = {
   async openRepo(path: string): Promise<OpenRepoResult> {
     await delay(150);
 
@@ -103,3 +106,15 @@ export const repoHandlers = {
   },
 
 } satisfies Partial<IpcApi>;
+
+/** P119 §5.2 — clone/init are §1 rows (they log only while a workspace is
+ *  mounted: no subscriber means passthrough, mirroring the hub). The target is
+ *  the destination folder's LEAF, never the clone URL (it can carry `user:token@`). */
+export const repoHandlers = {
+  ...repoBodies,
+  cloneRepo: (url: string, dest: string, onProgress: (p: CloneProgress) => void) =>
+    runMockActivity('cloneRepo', mockPathLeaf(dest), () => repoBodies.cloneRepo(url, dest, onProgress)),
+  initRepo: (path: string) =>
+    runMockActivity('initRepo', mockPathLeaf(path), () => repoBodies.initRepo(path)),
+} satisfies Partial<IpcApi>;
+

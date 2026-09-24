@@ -15,10 +15,12 @@ use std::sync::Arc;
 use bonsai_core::error::AppError;
 use bonsai_core::git::activity::{
     new_activity_id, ActivityEmitter, ActivityTarget, GitActivityCategory, GitActivityEvent,
-    GitPhaseKind, GitRunOutcome,
+    GitActivityRecorder, GitPhaseKind, GitRunOutcome,
 };
 use bonsai_core::git::activity_outcome::no_outcome;
-use bonsai_core::git::activity_target::{resolve_activity_target, RunSubject};
+use bonsai_core::git::activity_target::{
+    arg_activity_target, resolve_activity_target, RunSubject, TargetArg,
+};
 
 use crate::commands::shared::repo_path;
 use crate::state::{AppState, GitActivityHub};
@@ -122,6 +124,73 @@ pub(crate) async fn activity_target(
         .await
         .ok()
         .flatten()
+}
+
+/// P119 §3.1: the target of an arg-carried run (§1 "A" rows), mapped through
+/// core's one sanitize+cap funnel. `None` when nobody is subscribed (no work is
+/// paid on the hot path) or when the argument does not map (e.g. a revspec for
+/// a `Commit`). Pure — no repo open, no I/O.
+pub(crate) fn arg_target(state: &AppState, arg: TargetArg<'_>) -> Option<ActivityTarget> {
+    if !state.git_activity.is_active() {
+        return None;
+    }
+    arg_activity_target(arg)
+}
+
+/// P119 §3.1: the subject of a multi-item run (§1 "N" rows) — one target for a
+/// single item, a `targetCount` for ≥2, never a phrase. Empty when nobody is
+/// subscribed.
+pub(crate) fn arg_subject_many<'a>(
+    state: &AppState,
+    items: impl ExactSizeIterator<Item = TargetArg<'a>>,
+) -> RunSubject {
+    if !state.git_activity.is_active() {
+        return RunSubject::default();
+    }
+    RunSubject::many(items)
+}
+
+/// Which phase a [`logged_blocking`] run reports after `started`. `Network`
+/// rows (§1 "Net") emit one `phase(Network)` so the dock shows the op talking
+/// to a remote; `Local` rows stay in `Preparing` until `finished`.
+#[derive(Clone, Copy)]
+pub(crate) enum LoggedPhase {
+    Local,
+    Network,
+}
+
+/// P119 §3.1: the bracket for a command with no recorder-aware core fn.
+///
+/// `repo_path` resolves INSIDE the bracket, so an unknown repo id still yields
+/// a failed row (`noRepo`) — exactly the error the op returned before. `job`
+/// runs on the blocking pool (git2 is blocking); a join error maps to the same
+/// `AppError::Other("task join error: …")` every command used before P119. The
+/// op's result/error is returned unchanged; with nobody subscribed this is the
+/// old `repo_path?` + `spawn_blocking` pair with no events.
+pub(crate) async fn logged_blocking<T, F>(
+    state: &AppState,
+    repo_id: &str,
+    category: GitActivityCategory,
+    subject: impl Into<RunSubject>,
+    phase: LoggedPhase,
+    classify: fn(&T) -> Option<GitRunOutcome>,
+    job: F,
+) -> Result<T, AppError>
+where
+    T: Send + 'static,
+    F: FnOnce(std::path::PathBuf) -> Result<T, AppError> + Send + 'static,
+{
+    let hub = state.git_activity_hub();
+    with_activity_ex(hub, category, subject.into(), classify, |em| async move {
+        let path = repo_path(state, repo_id)?;
+        if let (Some(em), LoggedPhase::Network) = (&em, phase) {
+            em.phase(GitPhaseKind::Network, None);
+        }
+        tauri::async_runtime::spawn_blocking(move || job(path))
+            .await
+            .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    })
+    .await
 }
 
 /// Best-effort `AppError` → terminal exit code. A `HookRejected` has no single

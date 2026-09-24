@@ -55,10 +55,17 @@ pub(crate) async fn add_worktree_inner(
     branch: String,
     name: String,
 ) -> Result<WorktreeInfo, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || worktree::add_worktree(&path, &branch, &name))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Name(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::WorktreeAdd,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| worktree::add_worktree(&path, &branch, &name),
+    )
+    .await
 }
 
 /// Removes linked worktree `name` — refuses main/current/locked/dirty, then
@@ -79,10 +86,17 @@ pub(crate) async fn remove_worktree_inner(
     repo_id: &str,
     name: String,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || worktree::remove_worktree(&path, &name))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Name(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::WorktreeRemove,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| worktree::remove_worktree(&path, &name),
+    )
+    .await
 }
 
 /// Locks linked worktree `name` with an optional reason (P27 contract §3).
@@ -104,12 +118,17 @@ pub(crate) async fn lock_worktree_inner(
     name: String,
     reason: Option<String>,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        worktree::lock_worktree(&path, &name, reason.as_deref())
-    })
+    let subject = arg_target(state, TargetArg::Name(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::WorktreeLock,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| worktree::lock_worktree(&path, &name, reason.as_deref()),
+    )
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Unlocks linked worktree `name` (P27 contract §3). Errors: `noRepo` |
@@ -129,10 +148,17 @@ pub(crate) async fn unlock_worktree_inner(
     repo_id: &str,
     name: String,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || worktree::unlock_worktree(&path, &name))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Name(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::WorktreeUnlock,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| worktree::unlock_worktree(&path, &name),
+    )
+    .await
 }
 
 /// Lists uncommitted + gitignored files eligible to copy into a new worktree
@@ -211,10 +237,15 @@ pub(crate) async fn add_worktree_with_changes_inner(
     name: String,
     selections: Vec<CopySelection>,
 ) -> Result<WorktreeInfo, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        worktree_copy::add_worktree_with_changes(&path, &branch, &name, &selections)
-    })
+    let subject = arg_target(state, TargetArg::Name(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::WorktreeAdd,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| worktree_copy::add_worktree_with_changes(&path, &branch, &name, &selections),
+    )
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

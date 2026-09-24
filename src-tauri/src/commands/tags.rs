@@ -42,14 +42,19 @@ pub(crate) async fn create_tag_inner(
     force: bool,
     sign: Option<bool>,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    // Absent `sign` ⇒ config-driven (false): core still honours `tag.gpgSign`.
+    // Absent `sign` means config-driven (false): core still honours `tag.gpgSign`.
     let sign = sign.unwrap_or(false);
-    tauri::async_runtime::spawn_blocking(move || {
-        tags::create_tag(&path, &name, &target_oid, message, force, sign)
-    })
+    let subject = arg_target(state, TargetArg::Tag(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::CreateTag,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| tags::create_tag(&path, &name, &target_oid, message, force, sign),
+    )
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Deletes a LOCAL tag (P22 contract §2.3). Does NOT contact any remote.
@@ -69,10 +74,17 @@ pub(crate) async fn delete_tag_inner(
     repo_id: &str,
     name: String,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || tags::delete_tag(&path, &name))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Tag(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::DeleteTag,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| tags::delete_tag(&path, &name),
+    )
+    .await
 }
 
 /// Pushes `refs/tags/<tag_name>` to `remote` over the M6 credential path
@@ -98,10 +110,17 @@ pub(crate) async fn push_tag_inner(
     tag_name: String,
     force: bool,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || tags::push_tag(&path, &remote, &tag_name, force))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Tag(&tag_name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::PushTag,
+        subject,
+        LoggedPhase::Network,
+        no_outcome,
+        move |path| tags::push_tag(&path, &remote, &tag_name, force),
+    )
+    .await
 }
 
 // ================================================================= P77 tag sync
@@ -178,12 +197,17 @@ pub(crate) async fn force_refresh_tag_inner(
     remote: String,
     tag_name: String,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        tag_sync::force_refresh_tag(&path, &remote, &tag_name)
-    })
+    let subject = arg_target(state, TargetArg::Tag(&tag_name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::ForceRefreshTag,
+        subject,
+        LoggedPhase::Network,
+        no_outcome,
+        move |path| tag_sync::force_refresh_tag(&path, &remote, &tag_name),
+    )
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Delete a tag ON `remote` (refspec `:refs/tags/<n>`). NET-NEW. Destructive —
@@ -207,12 +231,17 @@ pub(crate) async fn delete_remote_tag_inner(
     remote: String,
     tag_name: String,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        tag_sync::delete_remote_tag(&path, &remote, &tag_name)
-    })
+    let subject = arg_target(state, TargetArg::Tag(&tag_name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::DeleteRemoteTag,
+        subject,
+        LoggedPhase::Network,
+        no_outcome,
+        move |path| tag_sync::delete_remote_tag(&path, &remote, &tag_name),
+    )
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 // ============================================================ P22 §3 remotes

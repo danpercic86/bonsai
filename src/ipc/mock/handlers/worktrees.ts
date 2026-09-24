@@ -3,13 +3,15 @@ import type { IpcApi } from '../../types';
 import { randomOid } from '../../fixtures/oids';
 import { delay, query, requireRepo } from '../repoState';
 import { worktreesFor } from '../worktreeState';
+import { runMockActivity } from '../gitActivity';
 import type { AppError, CopyCandidate, CopyPlanEntry, CopySelection, WorktreeInfo } from '../../types';
 
 /** P107 F2 §5 harness knob: make the conflict preview fail (module-init read,
  *  matching the house `query()` convention). */
 const COPY_PREVIEW_FAIL = query('wtCopyPreviewFail') === '1';
 
-export const worktreeHandlers = {
+/** The handler BODIES; the public `worktreeHandlers` below wraps the §1 rows. */
+const worktreeBodies = {
   // Stateful worktree mock (P27 §5): list + add/remove/lock/unlock over the
   // shared module-level list (all default-kind tabs view one repository, so
   // mutations show up everywhere). Refusal errors mirror the backend's
@@ -206,7 +208,8 @@ export const worktreeHandlers = {
     // Same guards + row-push as addWorktree; the byte copy is a no-op in the
     // browser mock. `selections` length is observable for the success toast.
     void selections;
-    return worktreeHandlers.addWorktree(repoId, branch, name);
+    // The BODY, not the public wrap: one run per command, never nested.
+    return worktreeBodies.addWorktree(repoId, branch, name);
   },
 
   // P29: repo health. Static warn-heavy fixture (§7) with a fresh generatedAt
@@ -214,3 +217,22 @@ export const worktreeHandlers = {
   // error envelope so the harness renders one errored section alongside three
   // healthy ones.
 } satisfies Partial<IpcApi>;
+
+/** P119 §5.2 — the repo-changing ops run inside the git-activity bracket with
+ *  the §1 category + target (and the §2.6 classifier where one exists). */
+export const worktreeHandlers = {
+  ...worktreeBodies,
+  addWorktree: (repoId: string, branch: string, name: string) =>
+    runMockActivity('worktreeAdd', name, () => worktreeBodies.addWorktree(repoId, branch, name)),
+  addWorktreeWithChanges: (repoId: string, branch: string, name: string, selections: CopySelection[]) =>
+    runMockActivity('worktreeAdd', name, () =>
+      worktreeBodies.addWorktreeWithChanges(repoId, branch, name, selections),
+    ),
+  removeWorktree: (repoId: string, name: string) =>
+    runMockActivity('worktreeRemove', name, () => worktreeBodies.removeWorktree(repoId, name)),
+  lockWorktree: (repoId: string, name: string, reason?: string) =>
+    runMockActivity('worktreeLock', name, () => worktreeBodies.lockWorktree(repoId, name, reason)),
+  unlockWorktree: (repoId: string, name: string) =>
+    runMockActivity('worktreeUnlock', name, () => worktreeBodies.unlockWorktree(repoId, name)),
+} satisfies Partial<IpcApi>;
+

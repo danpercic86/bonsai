@@ -65,9 +65,17 @@ pub fn arg_activity_target(arg: TargetArg<'_>) -> Option<ActivityTarget> {
 }
 
 /// Platform-independent last path component; `None` when nothing is left.
+///
+/// SECURITY: `None` for URL-shaped input (`://` anywhere, or an `@` in the
+/// leaf). A clone URL can carry `user:token@host`, and the "leaf" of
+/// `https://user:tok@host` is exactly the credential — callers must pass a
+/// filesystem path, and anything that looks like a URL is refused, not trimmed.
 fn path_leaf(p: &str) -> Option<&str> {
+    if p.contains("://") {
+        return None;
+    }
     let leaf = p.trim_end_matches(['/', '\\']).rsplit(['/', '\\']).next()?;
-    (!leaf.is_empty()).then_some(leaf)
+    (!leaf.is_empty() && !leaf.contains('@')).then_some(leaf)
 }
 
 /// What a run is about: at most one target, OR a count of ≥2 items — never both

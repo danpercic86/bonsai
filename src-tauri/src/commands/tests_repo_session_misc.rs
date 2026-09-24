@@ -98,20 +98,20 @@ fn close_repo_is_idempotent() {
 
 // ============================================================ init_repo
 
-/// init_repo (direct command call — not repo-scoped) creates a usable repo at a
+/// init_repo (via its inner — not repo-scoped) creates a usable repo at a
 /// fresh path and is idempotent (re-init opens the existing repo).
 #[test]
 fn init_repo_creates_and_is_idempotent() {
     let dir = tempfile::TempDir::new().expect("dir");
     let path = path_string(dir.path());
-
-    let workdir = block_on(init_repo(path.clone())).expect("init");
+    let st = AppState::default();
+    let workdir = block_on(init_repo_inner(&st, path.clone())).expect("init");
     assert!(
         git2::Repository::open(&workdir).is_ok(),
         "init produced a real repo"
     );
 
-    let again = block_on(init_repo(path)).expect("re-init opens the existing repo");
+    let again = block_on(init_repo_inner(&st, path)).expect("re-init opens the existing repo");
     assert_eq!(
         std::fs::canonicalize(&again).unwrap(),
         std::fs::canonicalize(&workdir).unwrap(),

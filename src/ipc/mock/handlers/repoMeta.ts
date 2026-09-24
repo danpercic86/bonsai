@@ -3,9 +3,12 @@ import type { IpcApi } from '../../types';
 import { mockRepoHealth } from '../../fixtures/repoHealth';
 import { delay, requireRepo, throwAuthFailed, throwNetworkError } from '../repoState';
 import type { AppError, RemoteInfo, RepoHealth } from '../../types';
+import { runMockActivity } from '../gitActivity';
+import { mockTagTarget } from '../gitActivityTargetArg';
 import { applyTagDeleteLocalToSync, applyTagPushToSync } from './tagSync';
 
-export const repoMetaHandlers = {
+/** The handler BODIES; the public `repoMetaHandlers` below wraps the §1 rows. */
+const repoMetaBodies = {
   async getRepoHealth(repoId: string): Promise<RepoHealth> {
     await delay(300);
     requireRepo(repoId);
@@ -133,3 +136,29 @@ export const repoMetaHandlers = {
   },
 
 } satisfies Partial<IpcApi>;
+
+/** P119 §5.2 — the repo-changing ops run inside the git-activity bracket with
+ *  the §1 category + target (and the §2.6 classifier where one exists). */
+export const repoMetaHandlers = {
+  ...repoMetaBodies,
+  createTag: (repoId: string, name: string, targetOid: string, message: string | null, force: boolean) =>
+    runMockActivity('createTag', mockTagTarget(name), () =>
+      repoMetaBodies.createTag(repoId, name, targetOid, message, force),
+    ),
+  deleteTag: (repoId: string, name: string) =>
+    runMockActivity('deleteTag', mockTagTarget(name), () => repoMetaBodies.deleteTag(repoId, name)),
+  pushTag: (repoId: string, remote: string, tagName: string, force: boolean) =>
+    runMockActivity('pushTag', mockTagTarget(tagName), () =>
+      repoMetaBodies.pushTag(repoId, remote, tagName, force),
+    ),
+  // The remote's NAME only: a URL can carry `user:token@` and never goes on the wire.
+  addRemote: (repoId: string, name: string, url: string) =>
+    runMockActivity('addRemote', name, () => repoMetaBodies.addRemote(repoId, name, url)),
+  removeRemote: (repoId: string, name: string) =>
+    runMockActivity('removeRemote', name, () => repoMetaBodies.removeRemote(repoId, name)),
+  renameRemote: (repoId: string, name: string, newName: string) =>
+    runMockActivity('renameRemote', newName, () => repoMetaBodies.renameRemote(repoId, name, newName)),
+  setRemoteUrl: (repoId: string, name: string, url: string) =>
+    runMockActivity('setRemoteUrl', name, () => repoMetaBodies.setRemoteUrl(repoId, name, url)),
+} satisfies Partial<IpcApi>;
+

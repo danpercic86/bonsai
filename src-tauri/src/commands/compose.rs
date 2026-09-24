@@ -28,10 +28,15 @@ pub(crate) async fn apply_composed_commits_inner(
     repo_id: &str,
     plan: ComposePlan,
 ) -> Result<ComposeApplyResult, AppError> {
-    let workdir = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        compose_apply::apply_composed_commits(&workdir, &plan)
-    })
+    let subject = activity_target(state, repo_id, GitActivityCategory::ComposeCommits).await;
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::ComposeCommits,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |workdir| compose_apply::apply_composed_commits(&workdir, &plan),
+    )
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

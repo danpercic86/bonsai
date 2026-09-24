@@ -26,12 +26,17 @@ pub(crate) async fn discard_partial_inner(
     orig_path: Option<String>,
     selection: Vec<LineSelection>,
 ) -> Result<(), AppError> {
-    let workdir = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        discard_partial_core(&workdir, &path, orig_path.as_deref(), &selection)
-    })
+    let subject = arg_target(state, TargetArg::Name(&path));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::Discard,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |workdir| discard_partial_core(&workdir, &path, orig_path.as_deref(), &selection),
+    )
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Restores each tracked path's worktree content to the index version,
@@ -53,10 +58,17 @@ pub(crate) async fn discard_paths_inner(
     repo_id: &str,
     paths: Vec<String>,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || discard_paths_core(&path, &paths))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_subject_many(state, paths.iter().map(|p| TargetArg::Name(p)));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::Discard,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| discard_paths_core(&path, &paths),
+    )
+    .await
 }
 
 /// Force-discards a mixed set: tracked paths restored to index, untracked paths
@@ -77,8 +89,15 @@ pub(crate) async fn discard_paths_force_inner(
     repo_id: &str,
     paths: Vec<String>,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || discard_paths_force_core(&path, &paths))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_subject_many(state, paths.iter().map(|p| TargetArg::Name(p)));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::Discard,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| discard_paths_force_core(&path, &paths),
+    )
+    .await
 }

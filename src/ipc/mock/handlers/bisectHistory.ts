@@ -5,9 +5,12 @@ import { MOCK_BRANCH_REFLOGS, MOCK_HEAD_REFLOG } from '../../fixtures/reflog';
 import { driveMockBisect } from '../rebaseBisectHelpers';
 import { delay, requireRepo } from '../repoState';
 import type { MockBisect } from '../repoState';
+import { runMockActivity } from '../gitActivity';
+import { mockCommitTarget, mockHeadCommitTarget } from '../gitActivityTargetArg';
 import type { AppError, BisectOutcome, BlameLine, FileHistoryEntry, ReflogEntry } from '../../types';
 
-export const bisectHistoryHandlers = {
+/** The handler BODIES; the public `bisectHistoryHandlers` below wraps the §1 rows. */
+const bisectHistoryBodies = {
   async startBisect(repoId: string, bad: string, good: string[]): Promise<BisectOutcome> {
     await delay(150);
     const state = requireRepo(repoId);
@@ -119,3 +122,21 @@ export const bisectHistoryHandlers = {
   // the Rust §4.5 shape checks so the harness exercises client + server-shaped
   // `invalidName` errors identically.
 } satisfies Partial<IpcApi>;
+
+/** P119 §5.2 — the repo-changing ops run inside the git-activity bracket with
+ *  the §1 category + target (and the §2.6 classifier where one exists). */
+export const bisectHistoryHandlers = {
+  ...bisectHistoryBodies,
+  startBisect: (repoId: string, bad: string, good: string[]) =>
+    runMockActivity('bisectStart', mockCommitTarget(bad), () => bisectHistoryBodies.startBisect(repoId, bad, good)),
+  // C rows: the commit being judged is HEAD's (the midpoint) at `started`.
+  bisectMark: (repoId: string, isGood: boolean) =>
+    runMockActivity(isGood ? 'bisectGood' : 'bisectBad', mockHeadCommitTarget(repoId), () =>
+      bisectHistoryBodies.bisectMark(repoId, isGood),
+    ),
+  bisectSkip: (repoId: string) =>
+    runMockActivity('bisectSkip', mockHeadCommitTarget(repoId), () => bisectHistoryBodies.bisectSkip(repoId)),
+  bisectReset: (repoId: string) =>
+    runMockActivity('bisectReset', null, () => bisectHistoryBodies.bisectReset(repoId)),
+} satisfies Partial<IpcApi>;
+

@@ -3,9 +3,19 @@ import type { IpcApi } from '../../types';
 import { randomOid } from '../../fixtures/oids';
 import { buildHead, buildStaleReport, delay, isInvalidBranchName, query, requireRepo, setDetached } from '../repoState';
 import { upsert } from '../statusHelpers';
+import { runMockActivity } from '../gitActivity';
+import { mockCheckoutOutcome, mockCreateHereOutcome } from '../gitActivityOutcome';
+import { mockCommitTarget, mockRefTarget } from '../gitActivityTargetArg';
 import type { AppError, BranchDeleteResult, BranchDeleteStatus, BranchesSnapshot, CheckoutResult, CreateBranchHereResult, RenameBranchResult, StaleReport } from '../../types';
 
-export const branchHandlers = {
+/** P119 `?gitOpFail` — checkoutBranch refuses with the real worktree-collision
+ *  message (`checkout.rs`), so the harness shows a failed row + reason + toast.
+ *  In the body, not the activity script, so it fires with no subscriber too. */
+const GIT_OP_FAIL = query('gitOpFail') !== null;
+
+/** The handler BODIES. The public `branchHandlers` below wraps every §1 row in
+ *  the git-activity bracket (P119 §5.2). */
+const branchBodies = {
   async listBranches(repoId: string): Promise<BranchesSnapshot> {
     await delay(150);
     const state = requireRepo(repoId);
@@ -109,7 +119,7 @@ export const branchHandlers = {
     const state = requireRepo(repoId);
     // P36: deterministic worktree-collision refusal — a reserved fixture branch
     // name simulates the branch being checked out in another worktree.
-    if (name === '__wt_locked__') {
+    if (name === '__wt_locked__' || GIT_OP_FAIL) {
       const err: AppError = {
         kind: 'branchCheckedOutElsewhere',
         message: `branch '${name}' is already checked out at '/repo/.worktrees/${name}'`,
@@ -350,4 +360,39 @@ export const branchHandlers = {
 
   // Stateful remote mock (M6 contract §5). Failure triggers via `?remote=`
   // (authfail | network | rejected | conflict), composable with `?fixture=`.
+} satisfies Partial<IpcApi>;
+
+/** P119 §5.2 — every repo-changing branch op runs inside `runMockActivity` with
+ *  the §1 category + target (and the §2.6 classifier where one exists). */
+export const branchHandlers = {
+  ...branchBodies,
+  createBranch: (repoId: string, name: string) =>
+    runMockActivity('createBranch', name, () => branchBodies.createBranch(repoId, name)),
+  createBranchHere: (repoId: string, name: string, oid: string) =>
+    runMockActivity('createBranch', name, () => branchBodies.createBranchHere(repoId, name, oid), {
+      classify: mockCreateHereOutcome,
+    }),
+  checkoutBranch: (repoId: string, name: string) =>
+    runMockActivity('checkoutBranch', name, () => branchBodies.checkoutBranch(repoId, name), {
+      classify: mockCheckoutOutcome,
+    }),
+  checkoutCommit: (repoId: string, oid: string) =>
+    runMockActivity('checkoutCommit', mockCommitTarget(oid), () => branchBodies.checkoutCommit(repoId, oid), {
+      classify: mockCheckoutOutcome,
+    }),
+  deleteBranch: (repoId: string, name: string) =>
+    runMockActivity('deleteBranch', name, () => branchBodies.deleteBranch(repoId, name)),
+  renameBranch: (repoId: string, oldName: string, newName: string) =>
+    runMockActivity('renameBranch', newName, () => branchBodies.renameBranch(repoId, oldName, newName)),
+  checkoutRemoteBranch: (repoId: string, name: string) =>
+    runMockActivity('checkoutRemote', mockRefTarget(name), () => branchBodies.checkoutRemoteBranch(repoId, name)),
+  deleteRemoteBranch: (repoId: string, name: string) =>
+    runMockActivity('deleteRemoteTracking', mockRefTarget(name), () =>
+      branchBodies.deleteRemoteBranch(repoId, name),
+    ),
+  // `RunSubject::many`: one name → that target; ≥2 → a count, no target.
+  deleteBranches: (repoId: string, names: string[], base?: string) =>
+    runMockActivity('deleteBranches', names.length === 1 ? (names[0] ?? null) : null, () =>
+      branchBodies.deleteBranches(repoId, names, base), { count: names.length },
+    ),
 } satisfies Partial<IpcApi>;

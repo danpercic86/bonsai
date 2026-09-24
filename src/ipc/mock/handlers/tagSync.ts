@@ -10,6 +10,8 @@ import type { AppError, IpcApi, TagAutoSyncReport, TagSyncReport } from '../../t
 import { AUTO_SYNC_FF_TAGS, buildTagSyncReport } from '../../fixtures/tagSync';
 import { delay, requireRepo, throwAuthFailed, throwNetworkError } from '../repoState';
 import type { MockRepoState } from '../repoState';
+import { runMockActivity } from '../gitActivity';
+import { mockTagTarget } from '../gitActivityTargetArg';
 
 // Live per-repo reports, seeded lazily from the fixture and mutated by resolve ops.
 const reports = new Map<string /* repoId */, TagSyncReport>();
@@ -40,7 +42,8 @@ function reportFor(repoId: string, remote: string): TagSyncReport {
   return report;
 }
 
-export const tagSyncHandlers = {
+/** The handler BODIES; the public `tagSyncHandlers` below wraps the §1 rows. */
+const tagSyncBodies = {
   async listTagSync(repoId: string, remote: string | null): Promise<TagSyncReport> {
     // A live ls-remote round-trip — the slowest of the three.
     await delay(400);
@@ -139,6 +142,22 @@ export const tagSyncHandlers = {
     }
   },
 } satisfies Partial<IpcApi>;
+
+/** P119 §5.2 — the two single-tag remote ops are §1 rows. `autoSyncTags` is
+ *  deliberately NOT wrapped: in production it runs inside `fetch`, whose row
+ *  covers it (and the mock fetch calls it, `remotesSync.ts`). */
+export const tagSyncHandlers = {
+  ...tagSyncBodies,
+  forceRefreshTag: (repoId: string, remote: string, tagName: string) =>
+    runMockActivity('forceRefreshTag', mockTagTarget(tagName), () =>
+      tagSyncBodies.forceRefreshTag(repoId, remote, tagName),
+    ),
+  deleteRemoteTag: (repoId: string, remote: string, tagName: string) =>
+    runMockActivity('deleteRemoteTag', mockTagTarget(tagName), () =>
+      tagSyncBodies.deleteRemoteTag(repoId, remote, tagName),
+    ),
+} satisfies Partial<IpcApi>;
+
 
 /** Mock-only: reflect a successful tag push into the live sync report so the
  *  harness's next `listTagSync` flips the row to `in-sync` — mirroring real IPC.

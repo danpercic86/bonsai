@@ -12,6 +12,7 @@ import type {
 } from '../../types';
 import { randomOid } from '../../fixtures/oids';
 import { delay, query, requireRepo } from '../repoState';
+import { runMockActivity } from '../gitActivity';
 
 /** P73 §8.3 harness seams: `#fail` in the id or `?submodule=<seam>` drives the
  *  error/slow paths of every submodule op without a real repo. `notEmpty` and
@@ -80,7 +81,8 @@ async function submoduleSeam(name: string, sub?: SubmoduleInfo): Promise<void> {
   if (seam === 'slow') await delay(4000);
 }
 
-export const submoduleHandlers = {
+/** The handler BODIES; the public `submoduleHandlers` below wraps the §1 rows. */
+const submoduleBodies = {
   async listSubmodules(repoId: string): Promise<SubmoduleInfo[]> {
     await delay(150);
     const state = requireRepo(repoId);
@@ -186,3 +188,23 @@ export const submoduleHandlers = {
     return { kind: 'removed' };
   },
 } satisfies Partial<IpcApi>;
+
+/** P119 §5.2 — the repo-changing ops run inside the git-activity bracket with
+ *  the §1 category + target (and the §2.6 classifier where one exists). */
+export const submoduleHandlers = {
+  ...submoduleBodies,
+  initSubmodule: (repoId: string, name: string) =>
+    runMockActivity('submoduleInit', name, () => submoduleBodies.initSubmodule(repoId, name)),
+  updateSubmodule: (repoId: string, name: string) =>
+    runMockActivity('submoduleUpdate', name, () => submoduleBodies.updateSubmodule(repoId, name)),
+  syncSubmodule: (repoId: string, name: string) =>
+    runMockActivity('submoduleSync', name, () => submoduleBodies.syncSubmodule(repoId, name)),
+  // The submodule PATH, never the URL (it can carry credentials).
+  addSubmodule: (repoId: string, url: string, path: string) =>
+    runMockActivity('submoduleAdd', path, () => submoduleBodies.addSubmodule(repoId, url, path)),
+  deinitSubmodule: (repoId: string, name: string, force: boolean) =>
+    runMockActivity('submoduleDeinit', name, () => submoduleBodies.deinitSubmodule(repoId, name, force)),
+  removeSubmodule: (repoId: string, name: string, force: boolean) =>
+    runMockActivity('submoduleRemove', name, () => submoduleBodies.removeSubmodule(repoId, name, force)),
+} satisfies Partial<IpcApi>;
+

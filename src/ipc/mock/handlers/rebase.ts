@@ -7,8 +7,12 @@ import { randomOid } from '../../fixtures/oids';
 import { applyInteractivePlan, finishInteractiveRebase, finishRebase } from '../rebaseBisectHelpers';
 import { INTERACTIVE_REBASE_CONFLICT_OID_SUFFIX, delay, requireRepo } from '../repoState';
 import type { AppError, RebaseOutcome, RebaseTodoOp } from '../../types';
+import { runMockActivity } from '../gitActivity';
+import { mockRebaseOutcome } from '../gitActivityOutcome';
+import { mockCommitTarget, mockRebaseTarget, mockRefTarget } from '../gitActivityTargetArg';
 
-export const rebaseHandlers = {
+/** The handler BODIES; the public `rebaseHandlers` below wraps the §1 rows. */
+const rebaseBodies = {
   async rebaseBranch(repoId: string, onto: string): Promise<RebaseOutcome> {
     await delay(150);
     const state = requireRepo(repoId);
@@ -273,3 +277,31 @@ export const rebaseHandlers = {
   // chain seeded between the bad and good commits. Progress rides on getOpState
   // (RepoOpState.bisect); mark/skip narrow the window to a `found` result.
 } satisfies Partial<IpcApi>;
+
+/** P119 §5.2 — the repo-changing ops run inside the git-activity bracket with
+ *  the §1 category + target (and the §2.6 classifier where one exists). */
+export const rebaseHandlers = {
+  ...rebaseBodies,
+  rebaseBranch: (repoId: string, onto: string) =>
+    runMockActivity('rebase', mockRefTarget(onto), () => rebaseBodies.rebaseBranch(repoId, onto), {
+      classify: mockRebaseOutcome,
+    }),
+  startInteractiveRebase: (repoId: string, ontoOid: string, todos: RebaseTodoOp[]) =>
+    runMockActivity(
+      'interactiveRebase',
+      mockCommitTarget(ontoOid),
+      () => rebaseBodies.startInteractiveRebase(repoId, ontoOid, todos),
+      { classify: mockRebaseOutcome },
+    ),
+  rebaseContinue: (repoId: string) =>
+    runMockActivity('rebaseContinue', mockRebaseTarget(repoId), () => rebaseBodies.rebaseContinue(repoId), {
+      classify: mockRebaseOutcome,
+    }),
+  rebaseSkip: (repoId: string) =>
+    runMockActivity('rebaseSkip', mockRebaseTarget(repoId), () => rebaseBodies.rebaseSkip(repoId), {
+      classify: mockRebaseOutcome,
+    }),
+  rebaseAbort: (repoId: string) =>
+    runMockActivity('rebaseAbort', mockRebaseTarget(repoId), () => rebaseBodies.rebaseAbort(repoId)),
+} satisfies Partial<IpcApi>;
+

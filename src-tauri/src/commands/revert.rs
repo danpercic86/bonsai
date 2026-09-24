@@ -21,10 +21,17 @@ pub(crate) async fn revert_commit_inner(
     repo_id: &str,
     oid: String,
 ) -> Result<RevertOutcome, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || revert::revert_commit(&path, &oid))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Commit(&oid));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::Revert,
+        subject,
+        LoggedPhase::Local,
+        revert_outcome,
+        move |path| revert::revert_commit(&path, &oid),
+    )
+    .await
 }
 
 /// Finalizes a paused (resolved) revert (P20 contract §6). Errors:
@@ -43,10 +50,17 @@ pub(crate) async fn revert_continue_inner(
     state: &AppState,
     repo_id: &str,
 ) -> Result<RevertOutcome, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || revert::revert_continue(&path))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = activity_target(state, repo_id, GitActivityCategory::RevertContinue).await;
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::RevertContinue,
+        subject,
+        LoggedPhase::Local,
+        revert_outcome,
+        move |path| revert::revert_continue(&path),
+    )
+    .await
 }
 
 /// Aborts a paused revert (reset --hard to HEAD; destructive — the UI confirms
@@ -62,8 +76,15 @@ pub async fn revert_abort(
 
 /// Runtime-free core of `revert_abort`.
 pub(crate) async fn revert_abort_inner(state: &AppState, repo_id: &str) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || revert::revert_abort(&path))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = activity_target(state, repo_id, GitActivityCategory::RevertAbort).await;
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::RevertAbort,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| revert::revert_abort(&path),
+    )
+    .await
 }

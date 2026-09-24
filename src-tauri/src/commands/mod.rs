@@ -132,6 +132,15 @@ mod tests_repo_session_misc;
 mod tests_remotes;
 
 #[cfg(test)]
+mod tests_activity_support;
+
+#[cfg(test)]
+mod tests_activity_coverage;
+
+#[cfg(test)]
+mod tests_activity_coverage_misc;
+
+#[cfg(test)]
 mod tests_ai;
 
 #[cfg(test)]

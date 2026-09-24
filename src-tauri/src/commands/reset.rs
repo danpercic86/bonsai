@@ -22,8 +22,21 @@ pub(crate) async fn reset_branch_command_inner(
     oid: String,
     mode: ResetMode,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || reset_branch_core(&path, &oid, mode))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    // P119 §1 rows 22-24: the mode picks the category (Undo executes here too).
+    let category = match mode {
+        ResetMode::Soft => GitActivityCategory::ResetSoft,
+        ResetMode::Mixed => GitActivityCategory::ResetMixed,
+        ResetMode::Hard => GitActivityCategory::ResetHard,
+    };
+    let subject = arg_target(state, TargetArg::Commit(&oid));
+    logged_blocking(
+        state,
+        repo_id,
+        category,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| reset_branch_core(&path, &oid, mode),
+    )
+    .await
 }

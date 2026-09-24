@@ -41,10 +41,17 @@ pub(crate) async fn init_submodule_inner(
     repo_id: &str,
     name: String,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || submodule::init_submodule(&path, &name))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Name(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::SubmoduleInit,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| submodule::init_submodule(&path, &name),
+    )
+    .await
 }
 
 /// Init-if-needed + fetch + checkout the pinned commit for submodule `name`
@@ -65,10 +72,17 @@ pub(crate) async fn update_submodule_inner(
     repo_id: &str,
     name: String,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || submodule::update_submodule(&path, &name))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Name(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::SubmoduleUpdate,
+        subject,
+        LoggedPhase::Network,
+        no_outcome,
+        move |path| submodule::update_submodule(&path, &name),
+    )
+    .await
 }
 
 /// Propagates the .gitmodules URL into config + the submodule remote for
@@ -89,10 +103,17 @@ pub(crate) async fn sync_submodule_inner(
     repo_id: &str,
     name: String,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || submodule::sync_submodule(&path, &name))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Name(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::SubmoduleSync,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| submodule::sync_submodule(&path, &name),
+    )
+    .await
 }
 
 /// Adds a submodule at repo-relative `path` from `url` (P60d §D4): git2 clone
@@ -116,10 +137,18 @@ pub(crate) async fn add_submodule_inner(
     url: String,
     path: String,
 ) -> Result<SubmoduleInfo, AppError> {
-    let repo = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || submodule::add_submodule(&repo, &url, &path))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    // The submodule PATH labels the row, never `url` (it can carry a token).
+    let subject = arg_target(state, TargetArg::Name(&path));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::SubmoduleAdd,
+        subject,
+        LoggedPhase::Network,
+        no_outcome,
+        move |repo| submodule::add_submodule(&repo, &url, &path),
+    )
+    .await
 }
 
 /// Deinits submodule `name` (P60d §D4, shell-out): `git submodule deinit [-f] --
@@ -144,12 +173,17 @@ pub(crate) async fn deinit_submodule_inner(
     name: String,
     force: bool,
 ) -> Result<SubmoduleDeinitOutcome, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        submodule::deinit_submodule(&path, &SpawnGitRunner, &name, force)
-    })
+    let subject = arg_target(state, TargetArg::Name(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::SubmoduleDeinit,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| submodule::deinit_submodule(&path, &SpawnGitRunner, &name, force),
+    )
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// Removes submodule `name` entirely (P60d §D4, shell-out): deinit → `git rm
@@ -174,10 +208,15 @@ pub(crate) async fn remove_submodule_inner(
     name: String,
     force: bool,
 ) -> Result<SubmoduleRemoveOutcome, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        submodule::remove_submodule(&path, &SpawnGitRunner, &name, force)
-    })
+    let subject = arg_target(state, TargetArg::Name(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::SubmoduleRemove,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| submodule::remove_submodule(&path, &SpawnGitRunner, &name, force),
+    )
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

@@ -23,10 +23,17 @@ pub(crate) async fn start_bisect_inner(
     bad: String,
     good: Vec<String>,
 ) -> Result<BisectOutcome, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || bisect::start_bisect(&path, &bad, &good))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Commit(&bad));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::BisectStart,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| bisect::start_bisect(&path, &bad, &good),
+    )
+    .await
 }
 
 /// Marks the current bisect midpoint good (`is_good = true`) or bad, then checks
@@ -47,10 +54,22 @@ pub(crate) async fn bisect_mark_inner(
     repo_id: &str,
     is_good: bool,
 ) -> Result<BisectOutcome, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || bisect::bisect_mark(&path, is_good))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let category = if is_good {
+        GitActivityCategory::BisectGood
+    } else {
+        GitActivityCategory::BisectBad
+    };
+    let subject = activity_target(state, repo_id, category).await;
+    logged_blocking(
+        state,
+        repo_id,
+        category,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| bisect::bisect_mark(&path, is_good),
+    )
+    .await
 }
 
 /// Skips the current (untestable) bisect midpoint (P39 contract §5). Errors:
@@ -68,10 +87,17 @@ pub(crate) async fn bisect_skip_inner(
     state: &AppState,
     repo_id: &str,
 ) -> Result<BisectOutcome, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || bisect::bisect_skip(&path))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = activity_target(state, repo_id, GitActivityCategory::BisectSkip).await;
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::BisectSkip,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| bisect::bisect_skip(&path),
+    )
+    .await
 }
 
 /// Aborts/finishes a bisect: force-restore the original HEAD/branch + worktree
@@ -87,8 +113,15 @@ pub async fn bisect_reset(
 
 /// Runtime-free core of `bisect_reset` (unit-testable without a Tauri app).
 pub(crate) async fn bisect_reset_inner(state: &AppState, repo_id: &str) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || bisect::bisect_reset(&path))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = RunSubject::default();
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::BisectReset,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| bisect::bisect_reset(&path),
+    )
+    .await
 }

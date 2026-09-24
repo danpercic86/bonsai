@@ -7,6 +7,8 @@ import { RESERVED_STASH_PATHS, stashHasReserved } from '../../fixtures/stashes';
 import { delay, requireRepo } from '../repoState';
 import { hookRejectionFor } from '../hooksGate';
 import { runMockActivity } from '../gitActivity';
+import { mockStashApplyOutcome } from '../gitActivityOutcome';
+import { mockHeadTarget, mockStashTarget } from '../gitActivityTargetArg';
 import type { AppError, ApplyStashOutcome, CommitResult, CreateStashResult, StashEntry, StashScope } from '../../types';
 
 /** F-A6-B wrong-target guard (mirrors the Rust core + Tauri command). When the
@@ -22,7 +24,8 @@ function guardExpectedOid(entry: StashEntry | undefined, expectedOid: string | u
   }
 }
 
-export const stashHandlers = {
+/** The handler BODIES; the public `stashHandlers` below wraps the §1 rows. */
+const stashBodies = {
   async listStashes(repoId: string): Promise<StashEntry[]> {
     await delay(150);
     const state = requireRepo(repoId);
@@ -148,6 +151,29 @@ export const stashHandlers = {
     return runMockActivity('amend', 'main', () => commitAmendInner(repoId, message, skipHooks));
   },
 } satisfies Partial<IpcApi>;
+
+/** P119 §5.2 — the repo-changing ops run inside the git-activity bracket with
+ *  the §1 category + target (and the §2.6 classifier where one exists). */
+export const stashHandlers = {
+  ...stashBodies,
+  createStash: (repoId: string, message: string | null, scope: StashScope) =>
+    runMockActivity('stashCreate', mockHeadTarget(repoId), () =>
+      stashBodies.createStash(repoId, message, scope),
+    ),
+  applyStash: (repoId: string, index: number, skipReserved: boolean, expectedOid?: string) =>
+    runMockActivity('stashApply', mockStashTarget(index), () =>
+      stashBodies.applyStash(repoId, index, skipReserved, expectedOid), { classify: mockStashApplyOutcome },
+    ),
+  popStash: (repoId: string, index: number, skipReserved: boolean, expectedOid?: string) =>
+    runMockActivity('stashPop', mockStashTarget(index), () =>
+      stashBodies.popStash(repoId, index, skipReserved, expectedOid), { classify: mockStashApplyOutcome },
+    ),
+  dropStash: (repoId: string, index: number, expectedOid?: string) =>
+    runMockActivity('stashDrop', mockStashTarget(index), () =>
+      stashBodies.dropStash(repoId, index, expectedOid),
+    ),
+} satisfies Partial<IpcApi>;
+
 
 async function commitAmendInner(
   repoId: string,

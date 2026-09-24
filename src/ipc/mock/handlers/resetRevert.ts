@@ -3,9 +3,20 @@ import type { IpcApi } from '../../types';
 import { randomOid } from '../../fixtures/oids';
 import { seedPickRevertConflict } from '../opStateSeed';
 import { PICK_REVERT_CONFLICT_OID_SUFFIX, STASH_POP_CONFLICT_OID_SUFFIX, delay, requireRepo } from '../repoState';
-import type { AppError, CherrypickOutcome, ResetMode, RevertOutcome } from '../../types';
+import type { AppError, CherrypickOutcome, GitActivityCategory, ResetMode, RevertOutcome } from '../../types';
+import { runMockActivity } from '../gitActivity';
+import { mockPickOutcome } from '../gitActivityOutcome';
+import { mockCommitTarget, mockHeadTarget } from '../gitActivityTargetArg';
 
-export const resetRevertHandlers = {
+/** §1 rows 22-24: the reset MODE picks one of three categories. */
+const RESET_CATEGORY: Record<ResetMode, GitActivityCategory> = {
+  soft: 'resetSoft',
+  mixed: 'resetMixed',
+  hard: 'resetHard',
+};
+
+/** The handler BODIES; the public `resetRevertHandlers` below wraps the §1 rows. */
+const resetRevertBodies = {
   async resetBranch(repoId: string, oid: string, _mode: ResetMode): Promise<void> {
     await delay(150);
     const state = requireRepo(repoId);
@@ -184,3 +195,45 @@ export const resetRevertHandlers = {
   // Stateful submodule mock (P19 §5). init flips uninitialized→upToDate;
   // update brings uninitialized/outOfSync→upToDate; sync is a config no-op.
 } satisfies Partial<IpcApi>;
+
+/** P119 §5.2 — the repo-changing ops run inside the git-activity bracket with
+ *  the §1 category + target (and the §2.6 classifier where one exists). */
+export const resetRevertHandlers = {
+  ...resetRevertBodies,
+  resetBranch: (repoId: string, oid: string, mode: ResetMode) =>
+    runMockActivity(RESET_CATEGORY[mode], mockCommitTarget(oid), () =>
+      resetRevertBodies.resetBranch(repoId, oid, mode),
+    ),
+  // `RunSubject::many`: one path → that path; ≥2 → a count, no target.
+  discardPaths: (repoId: string, paths: string[]) =>
+    runMockActivity('discard', paths.length === 1 ? (paths[0] ?? null) : null, () =>
+      resetRevertBodies.discardPaths(repoId, paths), { count: paths.length },
+    ),
+  discardPathsForce: (repoId: string, paths: string[]) =>
+    runMockActivity('discard', paths.length === 1 ? (paths[0] ?? null) : null, () =>
+      resetRevertBodies.discardPathsForce(repoId, paths), { count: paths.length },
+    ),
+  cherrypickCommit: (repoId: string, oid: string, message?: string | null) =>
+    runMockActivity('cherryPick', mockCommitTarget(oid), () =>
+      resetRevertBodies.cherrypickCommit(repoId, oid, message), { classify: mockPickOutcome },
+    ),
+  cherrypickContinue: (repoId: string) =>
+    runMockActivity('cherryPickContinue', mockHeadTarget(repoId), () =>
+      resetRevertBodies.cherrypickContinue(repoId), { classify: mockPickOutcome },
+    ),
+  cherrypickAbort: (repoId: string) =>
+    runMockActivity('cherryPickAbort', mockHeadTarget(repoId), () =>
+      resetRevertBodies.cherrypickAbort(repoId),
+    ),
+  revertCommit: (repoId: string, oid: string) =>
+    runMockActivity('revert', mockCommitTarget(oid), () => resetRevertBodies.revertCommit(repoId, oid), {
+      classify: mockPickOutcome,
+    }),
+  revertContinue: (repoId: string) =>
+    runMockActivity('revertContinue', mockHeadTarget(repoId), () =>
+      resetRevertBodies.revertContinue(repoId), { classify: mockPickOutcome },
+    ),
+  revertAbort: (repoId: string) =>
+    runMockActivity('revertAbort', mockHeadTarget(repoId), () => resetRevertBodies.revertAbort(repoId)),
+} satisfies Partial<IpcApi>;
+

@@ -19,7 +19,17 @@ pub(crate) use bonsai_core::error::AppError;
 // `ActivityTarget` is only NAMED by `with_activity`'s signature (the command
 // layer cannot construct one — FU-1 §6 guarantee 1).
 pub(crate) use super::activity::{activity_target, with_activity};
+// P119 §3.1: the arg funnel + the bracket for commands with no recorder-aware
+// core fn, and the §2.6 outcome classifiers the call sites pass to it.
+pub(crate) use super::activity::{
+    arg_subject_many, arg_target, logged_blocking, with_activity_ex, LoggedPhase,
+};
 pub(crate) use bonsai_core::git::activity::{GitActivityCategory, GitActivityRecorder};
+pub(crate) use bonsai_core::git::activity_outcome::{
+    checkout_outcome, cherrypick_outcome, create_here_outcome, merge_outcome, no_outcome,
+    rebase_outcome, revert_outcome, stash_apply_outcome,
+};
+pub(crate) use bonsai_core::git::activity_target::{RunSubject, TargetArg};
 // P62b/P63 forge command layer. Only the DTOs the command signatures NAME are
 // re-exported (mirrors the `compose_apply` / `ai_operation` convention below —
 // avoids an unused-import warning under -D warnings); the still-nested DTOs

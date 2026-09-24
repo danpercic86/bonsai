@@ -49,10 +49,17 @@ pub(crate) async fn create_branch_inner(
     repo_id: &str,
     name: String,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || branches::create_branch(&path, &name))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Branch(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::CreateBranch,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| branches::create_branch(&path, &name),
+    )
+    .await
 }
 
 /// Creates local branch `name` at commit `oid`, auto-stashing/re-applying
@@ -76,10 +83,17 @@ pub(crate) async fn create_branch_here_inner(
     name: String,
     oid: String,
 ) -> Result<CreateBranchHereResult, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || branches::create_branch_here(&path, &name, &oid))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Branch(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::CreateBranch,
+        subject,
+        LoggedPhase::Local,
+        create_here_outcome,
+        move |path| branches::create_branch_here(&path, &name, &oid),
+    )
+    .await
 }
 
 /// Dirty-safe checkout of a LOCAL branch (P33): auto-stash -> switch -> auto FF
@@ -102,10 +116,17 @@ pub(crate) async fn checkout_branch_inner(
     repo_id: &str,
     name: String,
 ) -> Result<CheckoutResult, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || branches::checkout_branch_autostash(&path, &name))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Branch(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::CheckoutBranch,
+        subject,
+        LoggedPhase::Local,
+        checkout_outcome,
+        move |path| branches::checkout_branch_autostash(&path, &name),
+    )
+    .await
 }
 
 /// Dirty-safe checkout of an arbitrary commit → DETACHED HEAD: auto-stash ->
@@ -129,10 +150,17 @@ pub(crate) async fn checkout_commit_inner(
     repo_id: &str,
     oid: String,
 ) -> Result<CheckoutResult, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || branches::checkout_commit_detached(&path, &oid))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Commit(&oid));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::CheckoutCommit,
+        subject,
+        LoggedPhase::Local,
+        checkout_outcome,
+        move |path| branches::checkout_commit_detached(&path, &oid),
+    )
+    .await
 }
 
 /// Deletes a LOCAL, fully merged, non-current branch (M5 contract §2.6 —
@@ -153,10 +181,17 @@ pub(crate) async fn delete_branch_inner(
     repo_id: &str,
     name: String,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || branches::delete_branch(&path, &name))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Branch(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::DeleteBranch,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| branches::delete_branch(&path, &name),
+    )
+    .await
 }
 
 /// Renames LOCAL branch `old_name` → `new_name` (git `branch -m`, non-force,
@@ -180,12 +215,17 @@ pub(crate) async fn rename_branch_inner(
     old_name: String,
     new_name: String,
 ) -> Result<RenameBranchResult, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        branches::rename_branch(&path, &old_name, &new_name)
-    })
+    let subject = arg_target(state, TargetArg::Branch(&new_name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::RenameBranch,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| branches::rename_branch(&path, &old_name, &new_name),
+    )
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }
 
 /// GitKraken-style remote checkout: create/reuse a local tracking branch for
@@ -206,10 +246,17 @@ pub(crate) async fn checkout_remote_inner(
     repo_id: &str,
     name: String,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || branches::checkout_remote(&path, &name))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Ref(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::CheckoutRemote,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| branches::checkout_remote(&path, &name),
+    )
+    .await
 }
 
 /// Deletes the LOCAL remote-tracking ref `name` — does NOT touch the server
@@ -229,10 +276,17 @@ pub(crate) async fn delete_remote_tracking_inner(
     repo_id: &str,
     name: String,
 ) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || branches::delete_remote_tracking(&path, &name))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Ref(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::DeleteRemoteTracking,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| branches::delete_remote_tracking(&path, &name),
+    )
+    .await
 }
 
 /// Classifies local branches safe to delete (merged into `base` OR
@@ -282,10 +336,15 @@ pub(crate) async fn delete_branches_inner(
     names: Vec<String>,
     base: Option<String>,
 ) -> Result<Vec<BranchDeleteResult>, AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        stale::delete_branches(&path, &names, base.as_deref())
-    })
+    let subject = arg_subject_many(state, names.iter().map(|n| TargetArg::Branch(n)));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::DeleteBranches,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| stale::delete_branches(&path, &names, base.as_deref()),
+    )
     .await
-    .map_err(|e| AppError::Other(format!("task join error: {e}")))?
 }

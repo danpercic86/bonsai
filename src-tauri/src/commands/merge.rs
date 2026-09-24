@@ -48,11 +48,18 @@ pub(crate) async fn merge_branch_inner(
     name: String,
     skip_hooks: Option<bool>,
 ) -> Result<MergeOutcome, AppError> {
-    let path = repo_path(state, repo_id)?;
     let skip = skip_hooks.unwrap_or(false);
-    tauri::async_runtime::spawn_blocking(move || merge::merge_branch(&path, &name, skip))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = arg_target(state, TargetArg::Ref(&name));
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::Merge,
+        subject,
+        LoggedPhase::Local,
+        merge_outcome,
+        move |path| merge::merge_branch(&path, &name, skip),
+    )
+    .await
 }
 
 /// Finalizes a paused merge as a 2(+)-parent commit (P3c contract §4.4).
@@ -115,10 +122,17 @@ pub async fn abort_merge(
 
 /// Runtime-free core of `abort_merge` (unit-testable without a Tauri app).
 pub(crate) async fn abort_merge_inner(state: &AppState, repo_id: &str) -> Result<(), AppError> {
-    let path = repo_path(state, repo_id)?;
-    tauri::async_runtime::spawn_blocking(move || merge::abort_merge(&path))
-        .await
-        .map_err(|e| AppError::Other(format!("task join error: {e}")))?
+    let subject = activity_target(state, repo_id, GitActivityCategory::AbortMerge).await;
+    logged_blocking(
+        state,
+        repo_id,
+        GitActivityCategory::AbortMerge,
+        subject,
+        LoggedPhase::Local,
+        no_outcome,
+        move |path| merge::abort_merge(&path),
+    )
+    .await
 }
 
 /// All current index conflicts, path-ascending (P3c contract §3).

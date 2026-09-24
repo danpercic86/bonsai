@@ -5,11 +5,14 @@ import { delay, requireRepo } from '../repoState';
 import { seedOpState } from '../opStateSeed';
 import { hookRejectionFor } from '../hooksGate';
 import { runMockActivity } from '../gitActivity';
+import { mockMergeOutcome } from '../gitActivityOutcome';
+import { mockHeadTarget, mockRefTarget } from '../gitActivityTargetArg';
 import { sortByPath, upsert } from '../statusHelpers';
 import { resolutionIsNovel } from '../aiNovel';
 import type { AppError, CommitResult, ConflictEntry, ConflictFile, ConflictResolution, MergeOutcome, RepoHooksDisclosure, RepoOpState } from '../../types';
 
-export const mergeHandlers = {
+/** The handler BODIES; the public `mergeHandlers` below wraps the §1 rows. */
+const mergeBodies = {
   // Hook disclosure: `?hooks=present` seeds `hasHooks:true`; ack persists for the
   // session (`state.hooksAcked`), so the disclosure fires once then stays quiet —
   // exactly the backend's once-per-repo behavior.
@@ -46,6 +49,10 @@ export const mergeHandlers = {
     //   "stash-conflict" -> stashPopConflicts (repo stays clean, no graph mutation)
     //   "conflict"       -> paused merge with an autostash retained on the stack
     //   "autostash"      -> clean merge that stashed and restored local changes
+    //   "clean"          -> a true merge commit (the e2e `demo-clean` flow)
+    //   "uptodate", HEAD itself, or a tip already AT HEAD -> upToDate
+    //   anything else    -> fast-forward (P119-ui §8: the default merge row
+    //                       shows `Fast-forwarded` with no flag)
     if (name.includes('stash-conflict')) {
       return { kind: 'stashPopConflicts', head: randomOid(), paths: ['src/app.ts'] };
     }
@@ -63,6 +70,20 @@ export const mergeHandlers = {
       return { kind: 'conflicts', paths: state.conflicts.map((c) => c.path), stashed: true };
     }
     const stashed = name.includes('autostash');
+    const incomingTip =
+      state.branches.local.find((b) => b.name === name)?.tip ??
+      state.branches.remote.find((r) => r.name === name)?.tip;
+    if (name.includes('uptodate') || name === state.headBranch || incomingTip === state.headOid) {
+      return { kind: 'upToDate' };
+    }
+    if (!stashed && !name.includes('clean')) {
+      // Fast-forward: HEAD (and its branch) simply move to the incoming tip — no
+      // new node, so the graph gains nothing.
+      state.headOid = incomingTip ?? randomOid();
+      const head = state.branches.local.find((b) => b.name === state.headBranch);
+      if (head !== undefined) head.tip = state.headOid;
+      return { kind: 'fastForwarded', branch: state.headBranch, to: state.headOid, stashed: false };
+    }
     // Clean-merge demo: auto-committed 2-parent node on top of the graph.
     state.headOid = randomOid();
     state.commits.unshift({
@@ -185,6 +206,18 @@ export const mergeHandlers = {
 
   // P13: cheap CLI health probe. `?ai=off` simulates no claude on PATH; never
   // rejects for CLI state (matches the backend's never-Err check_availability).
+} satisfies Partial<IpcApi>;
+
+/** P119 §5.2 — merge + abort run inside the git-activity bracket. The
+ *  conflict-resolution writes are deliberately NOT wrapped (user ruling). */
+export const mergeHandlers = {
+  ...mergeBodies,
+  mergeBranch: (repoId: string, name: string) =>
+    runMockActivity('merge', mockRefTarget(name), () => mergeBodies.mergeBranch(repoId, name), {
+      classify: mockMergeOutcome,
+    }),
+  abortMerge: (repoId: string) =>
+    runMockActivity('abortMerge', mockHeadTarget(repoId), () => mergeBodies.abortMerge(repoId)),
 } satisfies Partial<IpcApi>;
 
 async function commitMergeInner(

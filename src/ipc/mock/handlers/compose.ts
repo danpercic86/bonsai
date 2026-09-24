@@ -8,9 +8,12 @@
 import { randomOid } from '../../fixtures/oids';
 import { delay, requireRepo } from '../repoState';
 import { MAIN_RS_PATH, takeMatching } from '../statusHelpers';
+import { runMockActivity } from '../gitActivity';
+import { mockHeadTarget } from '../gitActivityTargetArg';
 import type { AppError, ComposeApplyResult, ComposeCommit, ComposePlan, IpcApi } from '../../types';
 
-export const composeHandlers = {
+/** The handler BODIES; the public `composeHandlers` below wraps the §1 rows. */
+const composeBodies = {
   async applyComposedCommits(repoId: string, plan: ComposePlan): Promise<ComposeApplyResult> {
     await delay(200 * Math.max(1, plan.groups.length));
     const state = requireRepo(repoId);
@@ -58,3 +61,14 @@ export const composeHandlers = {
     return { commits };
   },
 } satisfies Partial<IpcApi>;
+
+/** P119 §5.2 — the repo-changing ops run inside the git-activity bracket with
+ *  the §1 category + target (and the §2.6 classifier where one exists). */
+export const composeHandlers = {
+  ...composeBodies,
+  applyComposedCommits: (repoId: string, plan: ComposePlan) =>
+    runMockActivity('composeCommits', mockHeadTarget(repoId), () =>
+      composeBodies.applyComposedCommits(repoId, plan),
+    ),
+} satisfies Partial<IpcApi>;
+
