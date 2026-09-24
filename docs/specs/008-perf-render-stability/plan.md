@@ -1,7 +1,7 @@
 # Plan: P120 — Performance & render-stability measurement loop
 
 **Spec:** ./spec.md
-**Status:** draft
+**Status:** implemented — awaiting USER CHECKPOINT
 
 ## Approach
 - **One capture module, used in two places.** A single frontend "stability" module does the

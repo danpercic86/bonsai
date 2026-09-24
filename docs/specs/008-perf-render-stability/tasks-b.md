@@ -2,7 +2,7 @@
 
 **Contract:** `docs/contracts/P120-stability-signals.md` (binding; it supersedes plan.md where
 they differ)
-**Status:** ready — starts once part a's task 3 (`src/obs/stability/*`) is reviewed
+**Status:** done — B1–B7 complete; USER CHECKPOINT pending
 
 - [x] B1. `record.rs` split, contract §2.3. Behaviour-preserving move of the six small enums into
   `src-tauri/src/obs/record_enums.rs`, with `pub use` re-exports so no public path breaks. Delete
@@ -43,10 +43,13 @@ they differ)
   - size discipline.
 
   Run ui-designer on B4 at the same time. — owner: reviewer + ui-designer
-- [ ] B6. Tests: run T-R1–T-R12 and T-F1–T-F13, then a mock-harness run in which the part-a inject
+- [x] B6. (Mock smoke: inject → `layout.shift` + `unprompted-shift`, and `focus.lost` +
+  `focus-steal` 3/3. One focus-steal run also showed a stray sidebar shift, filed as a follow-up.)
+  Tests: run T-R1–T-R12 and T-F1–T-F13, then a mock-harness run in which the part-a inject
   flags produce `unprompted-shift` / `focus-steal` anomalies in the mock ring. Report numbers only.
   — owner: tester
-- [ ] B7. Integrate:
+- [x] B7. (Gate green, same run as tasks.md task 12. USER CHECKPOINT requested 2026-09-24.)
+  Integrate:
   - bare `pnpm gate`, with the output pasted
   - harness proof
   - commit `wip(spec-008): part b …`

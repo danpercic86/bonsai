@@ -1,6 +1,6 @@
 # P120 — Performance & render-stability measurement loop
 
-**Status:** draft
+**Status:** implemented — awaiting USER CHECKPOINT (gate green 2026-09-24)
 **Created:** 2026-09-24
 
 ## Problem

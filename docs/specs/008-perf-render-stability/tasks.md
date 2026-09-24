@@ -1,7 +1,7 @@
 # Tasks: P120 — Performance & render-stability measurement loop (parts a + c)
 
 **Plan:** ./plan.md
-**Status:** ready
+**Status:** done — all 12 tasks complete; USER CHECKPOINT pending
 
 Scope: part a (lab detection and ratchets) and part c (reviewer). Part b (dev-mode field records
 and anomaly rules) gets its tasks from `docs/contracts/P120-stability-signals.md` once the
@@ -64,7 +64,7 @@ architect has ratified it; it is not listed here.
   `src/graph/useMockDevHooks.ts`, `src/ipc/mock.ts`, the app root — owner: senior-dev (after 3)
 
 ## Track E: Playwright perf project and ratchet
-- [ ] 5. Perf project:
+- [x] 5. Perf project:
   - `playwright.config.ts`: a `perf` project with `testDir: 'e2e/perf'`, `workers: 1` and
     `fullyParallel: false`; the existing project gets `testIgnore: 'perf/**'`
   - `e2e/perf/perfHelpers.ts`: `resetPerf`, `snapshotPerf`, `withCdpMetrics` (CDP
@@ -79,7 +79,7 @@ architect has ratified it; it is not listed here.
   - `package.json`: `test:perf`.
 
   Measure and report the project's runtime. — owner: senior-dev (after 4)
-- [ ] 6. Ratchet checker and gate:
+- [x] 6. Ratchet checker and gate:
   - `scripts/check-perf-baseline.mjs`, modelled on `scripts/check-file-size.mjs`:
     - fail on any count above its ceiling, naming the interaction, metric, baseline and new
       value
@@ -115,10 +115,13 @@ architect has ratified it; it is not listed here.
 - [x] 8. (Approved together with Track F in `1e2b538`; the Track E review is still owed under
   task 9.) Review the Track R diff (tasks 1–2): behaviour preserved, counter placement, no
   per-commit overhead worth measuring on the uncounted path. — owner: reviewer
-- [ ] 9. Review the Track F + E diff (tasks 3–6): production builds unaffected (mock-only guards),
+- [x] 9. (Track F APPROVE → `1e2b538`. Track E CHANGES REQUIRED, then both MUST-FIXes fixed and
+  verified → `4e7f584`.) Review the Track F + E diff (tasks 3–6): production builds unaffected (mock-only guards),
   no size-baseline growth, the sink interface matches plan.md §Data model, the checker's
   lower-only guarantee, gate tier placement. — owner: reviewer (run concurrently with 8)
-- [ ] 10. Tests and determinism evidence:
+- [x] 10. (Tester results: AC 4 two runs IDENTICAL; detector 20/20 ×3; checker regression
+  detection proven; `graph_layout_counts` 2/2; part b 21/21 Rust and 528/528 vitest.) Tests and
+  determinism evidence:
   - `pnpm test:perf` twice in a row → identical `perf-counts.json` (AC 4); report which metrics
     were marked nondeterministic
   - detector 20/20 both ways (AC 2, AC 3)
@@ -127,11 +130,15 @@ architect has ratified it; it is not listed here.
   - a hand-raised count in a temp baseline copy fails the checker (AC 5).
 
   Report the numbers only. — owner: tester
-- [ ] 11. AC 8 evidence (count tracks clock): try one safe reduction of `lane_scans` in
+- [x] 11. (Outcome: no qualifying reduction on the 31k fixture, so AC 8 is explicitly deferred.
+  The details are on the P120 `TODO.md` entry.) AC 8 evidence (count tracks clock): try one safe reduction of `lane_scans` in
   `LaneWalker::step`, then show the counter drop plus the Criterion `compute_graph_31k` result
   before and after. If there's no safe reduction, record the explicit deferral on the P120 board
   entry, per spec AC 8. — owner: senior-dev, then reviewer
-- [ ] 12. Integrate:
+- [x] 12. (Bare `pnpm gate` 2026-09-24: 11/11 green in 828.5 s. nextest 2763 passed / 11 skipped;
+  vitest 3293/3293; e2e 185 passed, 1 skipped; perf counts 7/7; perf ratchet 42 checked, OK.
+  In the browser harness, the pane stays hidden and unpainted, so the layout-shift chain is
+  proven by the tester's headless smoke instead.) Integrate:
   - `pnpm gate` (bare, the default tier, which now includes perf); paste the output
   - browser harness check: `pnpm dev:mock`, then `__bonsai.perf.snapshot()` after one interaction
   - commit `wip(spec-008): …` per approved track
