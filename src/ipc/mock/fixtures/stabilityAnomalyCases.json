@@ -1,0 +1,117 @@
+{
+  "$comment": "P120 T-F10: the Rust tests_anomaly_stability.rs T-R1..T-R6 scenarios as wire records (seq/ts/kind + payload; loaders add mono/src/lvl). `expect` is the FULL output of a dump, i.e. after session-end drain.",
+  "cases": [
+    {
+      "name": "t_r1 interactive unprompted shift warns once with its seq",
+      "records": [
+        { "seq": 1, "ts": 1000, "kind": "layout.shift", "region": "graph", "phase": "interactive", "hadRecentInput": false, "resizing": false, "shifts": 3, "value": 0.0412, "firstAt": 500, "spanMs": 412 }
+      ],
+      "expect": [
+        { "rule": "unprompted-shift", "severity": "warn", "refs": [1], "traces": [], "ts": 1000, "detail": "graph: 3 shift(s), score 0.0412, over 412 ms" }
+      ]
+    },
+    {
+      "name": "t_r2 prompted, resizing or boot shifts do not warn",
+      "records": [
+        { "seq": 1, "ts": 1000, "kind": "layout.shift", "region": "graph", "phase": "interactive", "hadRecentInput": true, "resizing": false, "shifts": 3, "value": 0.0412, "firstAt": 500, "spanMs": 412 },
+        { "seq": 2, "ts": 2000, "kind": "layout.shift", "region": "graph", "phase": "interactive", "hadRecentInput": false, "resizing": true, "shifts": 3, "value": 0.0412, "firstAt": 1500, "spanMs": 412 },
+        { "seq": 3, "ts": 3000, "kind": "layout.shift", "region": "graph", "phase": "boot", "hadRecentInput": false, "resizing": false, "shifts": 3, "value": 0.0412, "firstAt": 2500, "spanMs": 412 }
+      ],
+      "expect": []
+    },
+    {
+      "name": "t_r3 loss before its settling refresh warns, anchored at the loss",
+      "records": [
+        { "seq": 1, "ts": 10050, "kind": "focus.lost", "fromRegion": "details", "phase": "interactive", "via": "detached", "lostAt": 10000 },
+        { "seq": 2, "ts": 10300, "kind": "refresh", "round": 1, "scope": "all", "origins": [], "contributingTraces": ["t-a", "t-b"], "collapsed": 0, "ms": 400 }
+      ],
+      "expect": [
+        { "rule": "focus-steal", "severity": "warn", "refs": [1, 2], "traces": ["t-a", "t-b"], "ts": 10050, "detail": "focus lost from details (detached, interactive); causes: 1 refresh, 0 watcher" }
+      ]
+    },
+    {
+      "name": "t_r3 a refresh outside the window still matches on a shared trace",
+      "records": [
+        { "seq": 1, "ts": 10050, "trace": "t-x", "kind": "focus.lost", "fromRegion": "details", "phase": "interactive", "via": "detached", "lostAt": 10000 },
+        { "seq": 2, "ts": 14000, "kind": "refresh", "round": 1, "scope": "all", "origins": [], "contributingTraces": ["t-x"], "collapsed": 0, "ms": 10 }
+      ],
+      "expect": [
+        { "rule": "focus-steal", "severity": "warn", "refs": [1, 2], "traces": ["t-x"], "ts": 10050, "detail": "focus lost from details (detached, interactive); causes: 1 refresh, 0 watcher" }
+      ]
+    },
+    {
+      "name": "t_r4 fired watcher 400 ms before the loss is a cause",
+      "records": [
+        { "seq": 1, "ts": 9600, "kind": "watcher", "paths": 1, "relevant": 1, "debounceMs": 300, "fired": true, "suppressed": false },
+        { "seq": 2, "ts": 10050, "kind": "focus.lost", "fromRegion": "details", "phase": "interactive", "via": "detached", "lostAt": 10000 }
+      ],
+      "expect": [
+        { "rule": "focus-steal", "severity": "warn", "refs": [2, 1], "traces": [], "ts": 10050, "detail": "focus lost from details (detached, interactive); causes: 0 refresh, 1 watcher" }
+      ]
+    },
+    {
+      "name": "t_r4 a suppressed watcher is not a cause",
+      "records": [
+        { "seq": 1, "ts": 9600, "kind": "watcher", "paths": 1, "relevant": 1, "debounceMs": 300, "fired": true, "suppressed": true },
+        { "seq": 2, "ts": 10050, "kind": "focus.lost", "fromRegion": "details", "phase": "interactive", "via": "detached", "lostAt": 10000 }
+      ],
+      "expect": [
+        { "rule": "focus-steal", "severity": "info", "refs": [2], "traces": [], "ts": 10050, "detail": "focus lost from details (detached, interactive); no refresh or watcher round found" }
+      ]
+    },
+    {
+      "name": "t_r4 a settling refresh does not credit a non-matching watcher",
+      "records": [
+        { "seq": 1, "ts": 9600, "kind": "watcher", "paths": 1, "relevant": 1, "debounceMs": 300, "fired": true, "suppressed": false },
+        { "seq": 2, "ts": 10750, "kind": "focus.lost", "fromRegion": "details", "phase": "interactive", "via": "detached", "lostAt": 10700 },
+        { "seq": 3, "ts": 10800, "kind": "refresh", "round": 1, "scope": "all", "origins": [], "contributingTraces": [], "collapsed": 0, "ms": 300 }
+      ],
+      "expect": [
+        { "rule": "focus-steal", "severity": "warn", "refs": [2, 3], "traces": [], "ts": 10750, "detail": "focus lost from details (detached, interactive); causes: 1 refresh, 0 watcher" }
+      ]
+    },
+    {
+      "name": "t_r5 loss just after the refresh settled is found by look-back",
+      "records": [
+        { "seq": 1, "ts": 10000, "kind": "refresh", "round": 1, "scope": "all", "origins": [], "contributingTraces": ["t-r"], "collapsed": 0, "ms": 100 },
+        { "seq": 2, "ts": 10250, "kind": "focus.lost", "fromRegion": "details", "phase": "interactive", "via": "detached", "lostAt": 10200 }
+      ],
+      "expect": [
+        { "rule": "focus-steal", "severity": "warn", "refs": [2, 1], "traces": ["t-r"], "ts": 10250, "detail": "focus lost from details (detached, interactive); causes: 1 refresh, 0 watcher" }
+      ]
+    },
+    {
+      "name": "t_r5 loss past the post window is not matched",
+      "records": [
+        { "seq": 1, "ts": 10000, "kind": "refresh", "round": 1, "scope": "all", "origins": [], "contributingTraces": [], "collapsed": 0, "ms": 100 },
+        { "seq": 2, "ts": 10301, "kind": "focus.lost", "fromRegion": "details", "phase": "interactive", "via": "detached", "lostAt": 10251 }
+      ],
+      "expect": [
+        { "rule": "focus-steal", "severity": "info", "refs": [2], "traces": [], "ts": 10301, "detail": "focus lost from details (detached, interactive); no refresh or watcher round found" }
+      ]
+    },
+    {
+      "name": "t_r6 uncaused loss is info after the hold expires, not drained twice",
+      "records": [
+        { "seq": 1, "ts": 10050, "kind": "focus.lost", "fromRegion": "details", "phase": "interactive", "via": "detached", "lostAt": 10000 },
+        { "seq": 2, "ts": 15000, "kind": "gesture", "origin": "sidebar", "gesture": "click" },
+        { "seq": 3, "ts": 15001, "kind": "gesture", "origin": "sidebar", "gesture": "click" },
+        { "seq": 4, "ts": 15100, "kind": "refresh", "round": 1, "scope": "all", "origins": [], "contributingTraces": [], "collapsed": 0, "ms": 5200 }
+      ],
+      "expect": [
+        { "rule": "focus-steal", "severity": "info", "refs": [1], "traces": [], "ts": 10050, "detail": "focus lost from details (detached, interactive); no refresh or watcher round found" }
+      ]
+    },
+    {
+      "name": "t_r6 session end drains held losses as info",
+      "records": [
+        { "seq": 1, "ts": 10050, "kind": "focus.lost", "fromRegion": "details", "phase": "interactive", "via": "detached", "lostAt": 10000 },
+        { "seq": 2, "ts": 11050, "kind": "focus.lost", "fromRegion": "details", "phase": "interactive", "via": "detached", "lostAt": 11000 }
+      ],
+      "expect": [
+        { "rule": "focus-steal", "severity": "info", "refs": [1], "traces": [], "ts": 10050, "detail": "focus lost from details (detached, interactive); no refresh or watcher round found" },
+        { "rule": "focus-steal", "severity": "info", "refs": [2], "traces": [], "ts": 11050, "detail": "focus lost from details (detached, interactive); no refresh or watcher round found" }
+      ]
+    }
+  ]
+}

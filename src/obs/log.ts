@@ -24,6 +24,8 @@ const DEFAULT_LEVEL: Record<string, LogLevel> = {
   'render.tally': 'debug',
   effect: 'debug',
   state: 'debug',
+  'layout.shift': 'debug',
+  'focus.lost': 'info',
 };
 
 /**

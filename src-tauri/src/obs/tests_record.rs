@@ -16,7 +16,7 @@
 
 use serde_json::json;
 
-use super::record::{LogPayload, LogRecord};
+use super::record::{LogPayload, LogRecord, StabilityRegion};
 
 /// A `render.tally` wire object, with `changedProps` set only when `changed` is
 /// `Some` — so the "key absent" case is genuinely absent, not `null`.
@@ -89,5 +89,71 @@ fn named_changed_props_round_trip() {
     assert_eq!(
         changed_props(&rec),
         Some(vec!["refs".to_string(), "head".to_string()])
+    );
+}
+
+// ---- P120 T-R11 — the two stability payloads ------------------------------
+
+const REGIONS: &[&str] = &["sidebar", "graph", "details", "diff", "dock", "other"];
+
+fn shift_wire(region: &str) -> serde_json::Value {
+    json!({
+        "seq": 3, "ts": 1_700_000_000_500_i64, "mono": 40, "src": "ui", "lvl": "info",
+        "kind": "layout.shift", "region": region, "phase": "interactive",
+        "hadRecentInput": false, "resizing": false, "shifts": 3, "value": 0.0412,
+        "firstAt": 1_700_000_000_000_i64, "spanMs": 412,
+    })
+}
+
+fn focus_wire(region: &str) -> serde_json::Value {
+    json!({
+        "seq": 4, "ts": 1_700_000_000_550_i64, "mono": 41, "src": "ui", "lvl": "info",
+        "kind": "focus.lost", "fromRegion": region, "phase": "interactive",
+        "via": "detached", "lostAt": 1_700_000_000_500_i64,
+    })
+}
+
+/// §2.2 wire JSON round-trips exactly, for every valid region (which also pins
+/// the `From<String>` match to the same strings as `as_str()`).
+#[test]
+fn stability_payloads_round_trip_the_wire_shape_for_every_region() {
+    for region in REGIONS {
+        for wire in [shift_wire(region), focus_wire(region)] {
+            let rec: LogRecord = serde_json::from_value(wire.clone()).expect("deserialize");
+            let out = serde_json::to_value(&rec).expect("serialize");
+            assert_eq!(
+                out, wire,
+                "round trip must be lossless for region {region:?}"
+            );
+        }
+    }
+}
+
+/// A forged region (a path, an unknown word) becomes `other` — and does not
+/// reject a batch that also holds valid records (A14 / AC 13).
+#[test]
+fn an_unknown_region_deserialises_to_other_without_rejecting_the_batch() {
+    let batch = json!([shift_wire(r"C:\x"), focus_wire("foo"), shift_wire("graph")]);
+    let recs: Vec<LogRecord> = serde_json::from_value(batch).expect("batch must not be rejected");
+    let regions: Vec<StabilityRegion> = recs
+        .iter()
+        .map(|r| match &r.payload {
+            LogPayload::LayoutShift(p) => p.region,
+            LogPayload::FocusLost(p) => p.from_region,
+            other => panic!("unexpected kind {}", other.kind()),
+        })
+        .collect();
+    assert_eq!(
+        regions,
+        vec![
+            StabilityRegion::Other,
+            StabilityRegion::Other,
+            StabilityRegion::Graph
+        ]
+    );
+    let out = serde_json::to_string(&recs[0]).expect("serialize");
+    assert!(
+        !out.contains("C:"),
+        "a forged region must never reach disk: {out}"
     );
 }

@@ -3,7 +3,8 @@
 
 use super::AnomalyDetector;
 use crate::obs::record::{
-    AnomalySeverity, FrameDim, IpcOutcome, LogLevel, LogPayload, LogRecord, LogSource, PhaseTiming,
+    AnomalySeverity, FocusLostPayload, FocusVia, FrameDim, IpcOutcome, LayoutShiftPayload,
+    LogLevel, LogPayload, LogRecord, LogSource, PhaseTiming, StabilityPhase, StabilityRegion,
 };
 
 /// A test harness: assigns monotone `seq`s (as the writer does) and accumulates
@@ -265,5 +266,64 @@ pub(super) fn span(
             items: None,
             outcome: outcome.map(str::to_string),
         },
+    )
+}
+
+// ---- P120 stability builders -----------------------------------------------
+
+/// A settled `refresh` round: `ts` = settle time, `ms` = round duration.
+pub(super) fn refresh_round(ts: i64, ms: f64, traces: &[&str]) -> LogRecord {
+    base(
+        ts,
+        LogPayload::Refresh {
+            round: 1,
+            scope: "all".to_string(),
+            origins: vec![],
+            contributing_traces: traces.iter().map(|t| t.to_string()).collect(),
+            collapsed: 0,
+            ms,
+        },
+    )
+}
+
+pub(super) fn watcher_sup(ts: i64, fired: bool, suppressed: bool) -> LogRecord {
+    let mut r = watcher(ts, fired);
+    if let LogPayload::Watcher { suppressed: s, .. } = &mut r.payload {
+        *s = suppressed;
+    }
+    r
+}
+
+pub(super) fn layout_shift(
+    ts: i64,
+    phase: StabilityPhase,
+    had_recent_input: bool,
+    resizing: bool,
+) -> LogRecord {
+    base(
+        ts,
+        LogPayload::LayoutShift(LayoutShiftPayload {
+            region: StabilityRegion::Graph,
+            phase,
+            had_recent_input,
+            resizing,
+            shifts: 3,
+            value: 0.0412,
+            first_at: ts - 500,
+            span_ms: 412,
+        }),
+    )
+}
+
+/// A `focus.lost` classified 50 ms after the loss (the record `ts`).
+pub(super) fn focus_lost(lost_at: i64) -> LogRecord {
+    base(
+        lost_at + 50,
+        LogPayload::FocusLost(FocusLostPayload {
+            from_region: StabilityRegion::Details,
+            phase: StabilityPhase::Interactive,
+            via: FocusVia::Detached,
+            lost_at,
+        }),
     )
 }

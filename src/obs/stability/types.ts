@@ -2,14 +2,13 @@
  * P120 §3.1 — the shared stability-detector events. Part a (lab counters) and
  * part b (dev-mode `logRecord` sink) both attach to `StabilitySink`.
  *
- * The three vocabulary types are declared here for now; part b adds the same
- * literals to `src/obs/types.ts` (the log-record payloads) and may re-export
- * them from there. They are closed unions: never a path or user string.
+ * The three vocabulary types live with the log-record payloads in
+ * `src/obs/types.ts` (one definition) and are re-exported here. They are
+ * closed unions: never a path or user string.
  */
+import type { FocusVia, StabilityPhase, StabilityRegion } from '../types';
 
-export type StabilityRegion = 'sidebar' | 'graph' | 'details' | 'diff' | 'dock' | 'other';
-export type StabilityPhase = 'boot' | 'interactive';
-export type FocusVia = 'focusout' | 'detached';
+export type { FocusVia, StabilityPhase, StabilityRegion };
 
 export interface ShiftEvent {
   type: 'shift';

@@ -218,6 +218,36 @@ export interface AnomalyPayload {
   traces: TraceId[];
 }
 
+/** P120 §3.1 — closed stability vocabulary (never a path or user string).
+ *  Mirrors `src-tauri/src/obs/record_stability.rs`. */
+export type StabilityRegion = 'sidebar' | 'graph' | 'details' | 'diff' | 'dock' | 'other';
+export type StabilityPhase = 'boot' | 'interactive';
+export type FocusVia = 'focusout' | 'detached';
+
+/** P120 — one coalesced dev-sink bucket (≤1 per region+phase+flags per 1 s). */
+export interface LayoutShiftPayload {
+  region: StabilityRegion;
+  phase: StabilityPhase;
+  hadRecentInput: boolean;
+  resizing: boolean;
+  /** Entries coalesced (≥1). */
+  shifts: number;
+  /** Sum of whole-entry scores (A9), 4 dp. Never sum across regions. */
+  value: number;
+  /** Epoch ms of the first entry; the record `ts` is the flush time. */
+  firstAt: number;
+  spanMs: number;
+}
+
+/** P120 — an unprompted focus loss to `<body>`. */
+export interface FocusLostPayload {
+  fromRegion: StabilityRegion;
+  phase: StabilityPhase;
+  via: FocusVia;
+  /** Epoch ms the loss was observed (record `ts` ≈ +50 ms). */
+  lostAt: number;
+}
+
 /** The subset of payloads increment 2 emits. Later increments extend the union
  *  additively (`render`, `refresh`, `span`, `anomaly`, ...). */
 export type UiPayload =
@@ -235,6 +265,8 @@ export type UiPayload =
   | ({ kind: 'error' } & ErrorPayload)
   | ({ kind: 'anomaly' } & AnomalyPayload)
   | ({ kind: 'drop' } & DropPayload)
+  | ({ kind: 'layout.shift' } & LayoutShiftPayload)
+  | ({ kind: 'focus.lost' } & FocusLostPayload)
   | ({
       kind: Exclude<
         LogKind,
@@ -252,6 +284,8 @@ export type UiPayload =
         | 'error'
         | 'anomaly'
         | 'drop'
+        | 'layout.shift'
+        | 'focus.lost'
       >;
     } & Record<string, unknown>);
 

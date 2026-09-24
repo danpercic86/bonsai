@@ -13,6 +13,34 @@
 use super::record::LogPayload;
 
 impl LogPayload {
+    /// Every wire `kind`, in declaration order. Drift-guarded against TS
+    /// `LogKind` (`tests_kind_parity`). Nothing at compile time forces this list
+    /// to change when a variant is added; T-R10's sample-per-variant list and
+    /// review cover that direction.
+    pub const ALL_KINDS: &'static [&'static str] = &[
+        "session",
+        "gesture",
+        "ipc.call",
+        "ipc.result",
+        "ipc.recv",
+        "event",
+        "channel",
+        "watcher",
+        "refresh",
+        "render",
+        "render.tally",
+        "effect",
+        "state",
+        "frame",
+        "error",
+        "anomaly",
+        "span",
+        "drop",
+        "truncate",
+        "layout.shift",
+        "focus.lost",
+    ];
+
     /// The wire `kind` string of this payload — used by the capture filters
     /// without re-serialising.
     pub fn kind(&self) -> &'static str {
@@ -36,6 +64,8 @@ impl LogPayload {
             LogPayload::Span { .. } => "span",
             LogPayload::Drop { .. } => "drop",
             LogPayload::Truncate { .. } => "truncate",
+            LogPayload::LayoutShift(_) => "layout.shift",
+            LogPayload::FocusLost(_) => "focus.lost",
         }
     }
 }

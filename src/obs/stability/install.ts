@@ -1,15 +1,16 @@
 /**
- * P120 §3.2 — stability lifecycle. `startStability()` is idempotent and is
- * called once at boot (main.tsx).
+ * P120 §3.2 — stability lifecycle; `startStability()` is idempotent, called once
+ * from main.tsx at MODULE level (a React effect would take the sink count
+ * 1→0→1 under StrictMode and lose the buffered boot replay, A7).
  *
- * Part a: in mock mode (`VITE_MOCK_IPC=1`) it registers the lab counter sink
- * (behind `window.__bonsai.perf`) and the `?perfInject*` triggers. It registers
- * at MODULE level rather than from a React effect: StrictMode's
- * mount→unmount→mount would otherwise take the sink count 1→0→1 and the second
- * attach would lose the buffered boot replay (A7). Part b adds the dev-mode sink
- * here, gated on `onObsConfigChange`. Outside mock mode part a registers
- * nothing, so no observer or listener is attached.
+ * Mock mode: the lab counter sink + `?perfInject*` triggers (part a). Both
+ * modes: the dev sink (`devSink.ts`) is registered iff `obsEnabled()`, tracked
+ * via `onObsConfigChange`; its buckets are flushed before it unregisters and on
+ * `pagehide`, a listener that exists only while it is registered (§1, AC 12).
  */
+import { obsEnabled, onObsConfigChange } from '../enabled';
+import { createDevSink } from './devSink';
+import type { DevSink } from './devSink';
 import { installPerfInject } from './mockInject';
 import { perfCounterSink } from './perfCounters';
 import { addStabilitySink } from './sinks';
@@ -17,6 +18,28 @@ import { addStabilitySink } from './sinks';
 const MOCK_MODE = import.meta.env.VITE_MOCK_IPC === '1';
 
 let stop: (() => void) | null = null;
+let dev: DevSink | null = null;
+let unregisterDev: (() => void) | null = null;
+
+function onPageHide(): void {
+  dev?.flushAll();
+}
+
+function syncDevSink(): void {
+  if (obsEnabled() && unregisterDev === null) {
+    dev ??= createDevSink();
+    const removeSink = addStabilitySink(dev.sink);
+    window.addEventListener('pagehide', onPageHide);
+    unregisterDev = () => {
+      window.removeEventListener('pagehide', onPageHide);
+      dev?.flushAll();
+      removeSink();
+    };
+  } else if (!obsEnabled() && unregisterDev !== null) {
+    unregisterDev();
+    unregisterDev = null;
+  }
+}
 
 export function startStability(): void {
   if (stop !== null) return;
@@ -25,6 +48,12 @@ export function startStability(): void {
     parts.push(addStabilitySink(perfCounterSink));
     parts.push(installPerfInject(window.location.search));
   }
+  parts.push(onObsConfigChange(syncDevSink));
+  syncDevSink();
+  parts.push(() => {
+    unregisterDev?.();
+    unregisterDev = null;
+  });
   stop = () => {
     for (const p of parts.reverse()) p();
   };

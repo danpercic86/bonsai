@@ -25,7 +25,6 @@
     "src-tauri/src/commands/tests_repo_session_misc.rs": 560,
     "src-tauri/src/graph_cache.rs": 511,
     "src-tauri/src/graph_cache/tests.rs": 568,
-    "src-tauri/src/obs/record.rs": 503,
     "src-tauri/src/obs/tests_metrics.rs": 522,
     "src-tauri/src/obs/tests_writer.rs": 507,
     "src-tauri/src/settings_ui_tests.rs": 555,

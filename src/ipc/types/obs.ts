@@ -48,7 +48,9 @@ export type LogKind =
   | 'anomaly'
   | 'span'
   | 'drop'
-  | 'truncate';
+  | 'truncate'
+  | 'layout.shift'
+  | 'focus.lost';
 
 /** §3.1 — one phase of a backend operation span. `name` is allow-listed on the
  *  Rust producer side, so it is never user-derived. */

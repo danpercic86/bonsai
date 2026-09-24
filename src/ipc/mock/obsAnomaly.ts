@@ -10,9 +10,10 @@
  * anomalies with no Tauri (§6 "so the browser harness can assert schema + anomalies
  * with no Tauri"; §12 gate row 5).
  *
- * SCOPE: exactly the three rules the gate names — `dup-ipc`, `slow-command`,
- * `slow-phase`. The other §5 rules are deliberately NOT implemented here; the Rust
- * detector owns the full set.
+ * SCOPE: the three rules the gate names — `dup-ipc`, `slow-command`,
+ * `slow-phase` — plus P120's `unprompted-shift` / `focus-steal`, mirrored in
+ * `obsAnomalyStability.ts`. The other §5 rules are deliberately NOT implemented
+ * here; the Rust detector owns the full set.
  *
  * Design: a retrospective, dump-time BATCH pass over the ring (no streaming state
  * to maintain). Windows key off each record's own `ts` (wall-clock ms), exactly as
@@ -21,6 +22,7 @@
 import type { LogRecord } from '../types';
 import type { PhaseTiming, SpanPayload } from '../types/obs';
 import type { AnomalySeverity } from '../../obs/types';
+import { analyzeStability } from './obsAnomalyStability';
 
 /** §5 `dup-ipc` window. Mirrors `anomaly/window.rs:W_DUP_IPC_MS`. */
 const W_DUP_IPC_MS = 300;
@@ -214,6 +216,7 @@ export function analyzeAnomalies(records: readonly LogRecord[]): LogRecord[] {
     }
   }
 
+  for (const a of analyzeStability(records)) emit(String(a.rule), a.severity as AnomalySeverity, String(a.detail), a.refs as number[], a.traces as string[], a.ts);
   return out;
 }
 

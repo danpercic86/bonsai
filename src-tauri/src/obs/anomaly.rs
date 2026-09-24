@@ -39,6 +39,7 @@ use super::record::{AnomalySeverity, LogPayload, LogRecord, LogSource};
 
 mod cache;
 mod slow;
+mod stability;
 mod window;
 
 use window::Sliding;
@@ -87,6 +88,9 @@ pub struct AnomalyDetector {
     /// §5.1 state (baseline histograms, saturation windows, recent spans).
     slow: slow::SlowState,
 
+    /// P120 §2.5 `unprompted-shift` / `focus-steal` (≤256 causes, ≤64 held losses).
+    stability: stability::StabilityState,
+
     /// Count of anomalies emitted this session, surfaced by `log_session_info`.
     anomalies: Option<Arc<AtomicU64>>,
 }
@@ -127,6 +131,7 @@ impl AnomalyDetector {
             }
             LogPayload::Refresh { scope, .. } => {
                 self.detect_redundant_refresh(ts, seq, rec.repo.as_deref(), scope, &mut out);
+                self.stability.on_refresh(ts, seq, rec, &mut out);
             }
             LogPayload::Effect {
                 component, effect, ..
@@ -140,6 +145,7 @@ impl AnomalyDetector {
                 if *fired {
                     self.detect_watcher_storm(ts, seq, &mut out);
                 }
+                self.stability.on_watcher(ts, seq, rec, &mut out);
             }
             LogPayload::RenderTally {
                 component,
@@ -170,13 +176,15 @@ impl AnomalyDetector {
             LogPayload::Span { .. } => {
                 self.slow.on_span(ts, seq, rec, &self.mutations, &mut out);
             }
+            LogPayload::LayoutShift(p) => self.stability.on_shift(ts, seq, rec, p, &mut out),
+            LogPayload::FocusLost(p) => self.stability.on_focus_lost(ts, seq, rec, p, &mut out),
             // session / gesture / ipc.recv / render / state / error / channel /
             // anomaly / drop / (future) truncate — not consumed (§6.3).
             _ => {}
         }
 
         // Post-emit bookkeeping shared by several rules.
-        self.prune(ts);
+        self.prune(ts, &mut out);
         self.bump_anomaly_count(out.len());
         out
     }
@@ -200,7 +208,8 @@ impl AnomalyDetector {
         self.refreshes.last_fire_len()
     }
 
-    /// Session-end pass (§5): every unanswered `ipc.call` is an `orphan-trace`.
+    /// Session-end pass (§5): every unanswered `ipc.call` is an `orphan-trace`,
+    /// and every still-held `focus.lost` an uncaused `focus-steal` (P120).
     pub fn on_session_end(&mut self) -> Vec<LogRecord> {
         let now = super::writer::now_ms();
         let mut out = Vec::new();
@@ -215,6 +224,7 @@ impl AnomalyDetector {
                 now,
             ));
         }
+        out.extend(self.stability.drain_pending());
         self.bump_anomaly_count(out.len());
         out
     }
@@ -244,10 +254,11 @@ impl AnomalyDetector {
         }
     }
 
-    fn prune(&mut self, now: i64) {
+    fn prune(&mut self, now: i64, out: &mut Vec<LogRecord>) {
         let cutoff = now - MAX_HISTORY_MS;
         self.mutations.retain(|(m, _)| *m >= cutoff);
         self.slow.prune(now);
+        self.stability.prune(now, out);
     }
 
     fn anomaly(
@@ -393,6 +404,10 @@ mod tests_anomaly_slow;
 #[cfg(test)]
 #[path = "tests_anomaly_repo.rs"]
 mod tests_anomaly_repo;
+
+#[cfg(test)]
+#[path = "tests_anomaly_stability.rs"]
+mod tests_anomaly_stability;
 
 #[cfg(test)]
 #[path = "tests_histogram.rs"]
