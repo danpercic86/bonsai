@@ -129,6 +129,12 @@ function props(over: Partial<SidebarProps> = {}): SidebarProps {
 }
 
 beforeEach(() => {
+  // The render-tally window is a REAL 500 ms `setTimeout` (renderTally.ts). Under
+  // full-suite load one StrictMode round over 25 rows can outlast it, so the
+  // window flushed MID-round and `talliesByComponent` (last record wins) saw
+  // only the tail — the CONTROL then read as "no storm". Faking the timer means
+  // a window closes only at `drain()`, i.e. exactly one window per round.
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   sunk = [];
   resetObsConfigForTests();
   resetBatcherForTests();
@@ -155,6 +161,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   resetObsConfigForTests();
   resetBatcherForTests();
   __resetRenderTally();

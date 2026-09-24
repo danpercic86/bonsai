@@ -12,6 +12,7 @@ import {
   graphScrollHeight,
   openBranchContextMenu,
   openRepo,
+  sidebar,
   waitForGraphSettled,
 } from './helpers';
 import type { Page } from '@playwright/test';
@@ -142,7 +143,7 @@ test.describe('06 merge & conflicts @destructive', () => {
     const input = page.getByPlaceholder('new-branch-name');
     await input.fill('demo-clean');
     await input.press('Enter');
-    await expect(page.getByTitle('demo-clean', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByTitle('demo-clean', { exact: true })).toBeVisible();
     const menu = await openBranchContextMenu(page, 'demo-clean');
     await menu.getByRole('menuitem', { name: 'Merge demo-clean into main' }).click();
     await expect(page.locator('.toast-stack').getByText(/Merged demo-clean/)).toBeVisible();
@@ -163,7 +164,7 @@ test.describe('06 merge & conflicts @destructive', () => {
     const input = page.getByPlaceholder('new-branch-name');
     await input.fill('demo-conflict');
     await input.press('Enter');
-    await expect(page.getByTitle('demo-conflict', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByTitle('demo-conflict', { exact: true })).toBeVisible();
     const menu = await openBranchContextMenu(page, 'demo-conflict');
     await menu.getByRole('menuitem', { name: 'Merge demo-conflict into main' }).click();
     await expect(

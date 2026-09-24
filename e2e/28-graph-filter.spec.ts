@@ -35,6 +35,7 @@ import {
   openBranchContextMenu,
   openRepo,
   settledGraph,
+  sidebar,
 } from './helpers';
 
 const FULL_ROWS = 33; // 3 stash offshoots + 30 base rows
@@ -143,7 +144,7 @@ test.describe('28 graph declutter filters @smoke', () => {
     await openRepo(page, { uiSettings: FLAT });
 
     // Select HEAD's commit via sidebar reveal (deterministic vs row math).
-    await page
+    await sidebar(page)
       .locator('li')
       .filter({ has: page.getByTitle('main', { exact: true }) })
       .first()
@@ -161,7 +162,7 @@ test.describe('28 graph declutter filters @smoke', () => {
     // gh-pages component is filtered out → selection clears.
     await clearButton(page).click();
     await expect(filterFab(page)).toBeVisible();
-    await page
+    await sidebar(page)
       .locator('li')
       .filter({ has: page.getByTitle('gh-pages', { exact: true }) })
       .first()

@@ -11,13 +11,26 @@
  *  once at module init — the `gitActivitySeams.test.tsx` pattern), and its own
  *  file because the activity subscriber is process-wide and never removed.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MOCK_OID } from '../../fixtures/branches';
 import { freshRepoPath } from '../../../test/mockIpcKit';
 import type { MockRepoState } from '../repoState';
 import type { GitActivityCategory, GitActivityEvent, IpcApi } from '../../types';
 
+// Warm the mock IPC module graph once, outside any test. `load()` resets the
+// registry per case, but the TRANSFORM of `../../mock` (the whole handler
+// graph) is paid only by the first import in this worker — ~0.8 s alone, >5 s
+// under a saturated full-suite transform queue, which timed out whichever row
+// ran first. Here it lands in a hook with its own budget; every row keeps the
+// default 5 s timeout and still evaluates a FRESH module graph.
+beforeAll(async () => {
+  await import('../../mock');
+  await import('../gitActivity');
+  await import('../repoState');
+  await import('../opStateSeed');
+  vi.resetModules();
+}, 60_000);
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => {
   vi.useRealTimers();

@@ -15,6 +15,7 @@ import {
   graphCanvas,
   openRepo,
   scrollGraphTo,
+  sidebar,
   waitForGraphSettled,
 } from './helpers';
 import type { Page } from '@playwright/test';
@@ -63,7 +64,7 @@ test.describe('02 graph interaction @smoke', () => {
     // §5.02.3 [RENDER] downgrade: the canvas is opaque to DOM queries — assert
     // via sidebar head glyph + details instead of pixel-inspecting pills.
     await openWithStatus(page);
-    const mainRow = page
+    const mainRow = sidebar(page)
       .locator('li')
       .filter({ has: page.getByTitle('main', { exact: true }) })
       .first();

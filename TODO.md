@@ -1176,7 +1176,13 @@ fixed by `activity_redact.rs` in `ActivityEmitter::finish` + tests; committed.
 `baae031`. P119-4 (UI: toolbar bar removed, determinate dock bar, refresh spin, final copy)
 approved by reviewer + ui-designer (no MUST-FIX), harness-verified 2026-09-24 (fetch fill,
 checkout row, `! Conflicts`, failed + reason line, refresh spin, no `.header-progress`),
-committed. **Next: full `pnpm gate`, then USER CHECKPOINT** (`pnpm tauri dev`: checkout /
+committed `105ffc2`. **Full `pnpm gate` 2026-09-24: RED** (606.7s) — rust 4/4 ✓, eslint ✓,
+size ✓, tsc+build ✓; vitest 2 failed / 3194 passed (both pass in isolation: load-sensitive
+`Sidebar.busyChurn` CONTROL + `activityCoverage` createBranch timeout); e2e 6 failed / 179
+passed (page-wide `getByTitle`/`getByText` on ref names now also match dock-row targets).
+tester fixed the tests (e2e `sidebar(page)` scoping; fake timers in busyChurn; warm-up in
+activityCoverage). **Re-run `pnpm gate` 2026-09-24: all 9 steps passed (468.9s; vitest 3196/3196,
+e2e 185 passed).** **AI gate done — awaiting USER CHECKPOINT** (`pnpm tauri dev`: checkout /
 merge / fast-forward show a dock row; refresh spin feel; 150ms bar delay; real fetch fill).
 P119-4 NITs (not blocking): `GitDockApi.activeRun` unread outside the hook; `gitActivityState.ts:76`
 defaulted `targetCount` param; `useMinimumBusy` would stick if `minMs` changed mid-hold; merge the

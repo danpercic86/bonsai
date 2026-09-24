@@ -4,14 +4,14 @@
  * branch names render as single rows (the default tree view collapses folders).
  */
 import { test, expect } from './fixtures';
-import { confirm, openBranchContextMenu, openRepo } from './helpers';
+import { confirm, openBranchContextMenu, openRepo, sidebar } from './helpers';
 import type { Locator, Page } from '@playwright/test';
 
 const FLAT = { uiSettings: { onboardingSeen: true, listView: 'flat' } };
 
 /** Sidebar row containing the exactly-titled name span. */
 function row(page: Page, name: string): Locator {
-  return page
+  return sidebar(page)
     .locator('li')
     .filter({ has: page.getByTitle(name, { exact: true }) })
     .first();
@@ -22,7 +22,7 @@ async function createBranch(page: Page, name: string): Promise<void> {
   const input = page.getByPlaceholder('new-branch-name');
   await input.fill(name);
   await input.press('Enter');
-  await expect(page.getByTitle(name, { exact: true })).toBeVisible();
+  await expect(sidebar(page).getByTitle(name, { exact: true })).toBeVisible();
 }
 
 test.describe('05 branches @destructive', () => {
@@ -76,8 +76,8 @@ test.describe('05 branches @destructive', () => {
     await expect(dialog).toBeVisible();
     await dialog.getByLabel('New branch name').fill('e2e/topic2');
     await dialog.getByRole('button', { name: 'Rename' }).click();
-    await expect(page.getByTitle('e2e/topic2', { exact: true })).toBeVisible();
-    await expect(page.getByTitle('e2e/topic', { exact: true })).toHaveCount(0);
+    await expect(sidebar(page).getByTitle('e2e/topic2', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByTitle('e2e/topic', { exact: true })).toHaveCount(0);
   });
 
   test('delete with confirm; unmerged branch delete is refused', async ({ page }) => {
@@ -86,7 +86,9 @@ test.describe('05 branches @destructive', () => {
     let menu = await openBranchContextMenu(page, 'e2e/doomed');
     await menu.getByRole('menuitem', { name: 'Delete' }).click();
     await confirm(page, 'Delete branch', 'Delete branch');
-    await expect(page.getByTitle('e2e/doomed', { exact: true })).toHaveCount(0);
+    await expect(sidebar(page).getByTitle('e2e/doomed', { exact: true })).toHaveCount(0);
+    // P119: the delete is logged — the dock header now names its target.
+    await expect(page.locator('.git-dock-target')).toHaveAttribute('title', 'e2e/doomed');
 
     // experiment-unmerged → unmergedBranch error toast, branch remains.
     menu = await openBranchContextMenu(page, 'experiment-unmerged');
@@ -98,7 +100,7 @@ test.describe('05 branches @destructive', () => {
     await expect(
       page.getByRole('complementary').getByRole('alert').filter({ hasText: /not fully merged/ }),
     ).toBeVisible();
-    await expect(page.getByTitle('experiment-unmerged', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByTitle('experiment-unmerged', { exact: true })).toBeVisible();
   });
 
   test('checkout a remote-only branch creates and switches to a local', async ({ page }) => {

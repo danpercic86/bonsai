@@ -143,6 +143,14 @@ export async function openRepo(page: Page, opts?: HarnessOptions): Promise<void>
   await expect(graphCanvas(page)).toBeVisible({ timeout: FIRST_PAINT_TIMEOUT });
 }
 
+/** The sidebar tree root (branches / remotes / tags / stashes / submodules /
+ *  worktrees). Scope ref-name locators to it: since P119 the git activity dock
+ *  renders every op target as a titled `.ref-label` too, so a page-wide
+ *  `getByTitle(ref)` / `getByText(ref)` also matches the dock row. */
+export function sidebar(page: Page): Locator {
+  return page.getByRole('tree', { name: 'Repository sidebar' });
+}
+
 /** Graph scroll container + canvas locators (data-testid, contract §4). */
 export function graphScroller(page: Page): Locator {
   return page.getByTestId('graph-scroller');
@@ -385,7 +393,7 @@ export function errorToast(page: Page, text?: string | RegExp): Locator {
  *  Callers seed uiSettings { listView: 'flat' } so slashed names render as
  *  single rows (the tree view collapses folders). */
 export async function openBranchContextMenu(page: Page, name: string): Promise<Locator> {
-  const row = page
+  const row = sidebar(page)
     .locator('li')
     .filter({ has: page.getByTitle(name, { exact: true }) })
     .first();

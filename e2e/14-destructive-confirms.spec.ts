@@ -6,13 +6,13 @@
  * rebase abort (06/07), discard single file (04), stash drop (08).
  */
 import { test, expect } from './fixtures';
-import { confirm, openBranchContextMenu, openRepo, rightClickGraphRow } from './helpers';
+import { confirm, openBranchContextMenu, openRepo, rightClickGraphRow, sidebar } from './helpers';
 import type { Locator, Page } from '@playwright/test';
 
 const FLAT = { uiSettings: { onboardingSeen: true, listView: 'flat' } };
 
 function row(page: Page, title: string): Locator {
-  return page
+  return sidebar(page)
     .locator('li')
     .filter({ has: page.getByTitle(title, { exact: true }) })
     .first();
@@ -22,10 +22,10 @@ function row(page: Page, title: string): Locator {
  *  worktrees each shift the layout as they land) — wait for the bottom-most
  *  rows before right-clicking, or the pointer can miss the moving row. */
 async function sidebarSettled(page: Page): Promise<void> {
-  await expect(page.getByText('stash@{0}', { exact: true })).toBeVisible();
-  await expect(page.getByTitle('vendor/theme', { exact: true })).toBeVisible();
+  await expect(sidebar(page).getByText('stash@{0}', { exact: true })).toBeVisible();
+  await expect(sidebar(page).getByTitle('vendor/theme', { exact: true })).toBeVisible();
   await expect(
-    page.getByTitle('/mock/.worktrees/repo/release-1.2', { exact: true }),
+    sidebar(page).getByTitle('/mock/.worktrees/repo/release-1.2', { exact: true }),
   ).toBeVisible();
 }
 
@@ -141,13 +141,13 @@ test.describe('14 destructive confirms @destructive', () => {
     const dialog = page.getByRole('dialog', { name: 'Delete tag' });
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByTitle('v1.1.0', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByTitle('v1.1.0', { exact: true })).toBeVisible();
     menu = await openBranchContextMenu(page, 'v1.1.0');
     // Exact match: P77 adds a sibling "Delete tag on origin…" remote item that a
     // substring 'Delete tag' would also match (strict-mode violation).
     await menu.getByRole('menuitem', { name: 'Delete tag', exact: true }).click();
     await confirm(page, 'Delete tag', 'Delete tag');
-    await expect(page.getByTitle('v1.1.0', { exact: true })).toHaveCount(0);
+    await expect(sidebar(page).getByTitle('v1.1.0', { exact: true })).toHaveCount(0);
   });
 
   test('remote remove requires confirm', async ({ page }) => {
@@ -157,11 +157,11 @@ test.describe('14 destructive confirms @destructive', () => {
     const dialog = page.getByRole('dialog', { name: 'Remove remote' });
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByTitle('origin', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByTitle('origin', { exact: true })).toBeVisible();
     menu = await openBranchContextMenu(page, 'origin');
     await menu.getByRole('menuitem', { name: 'Remove…' }).click();
     await confirm(page, 'Remove remote', 'Remove remote');
-    await expect(page.getByTitle('origin', { exact: true })).toHaveCount(0);
+    await expect(sidebar(page).getByTitle('origin', { exact: true })).toHaveCount(0);
   });
 
   test('worktree remove requires confirm', async ({ page }) => {
@@ -173,11 +173,11 @@ test.describe('14 destructive confirms @destructive', () => {
     const dialog = page.getByRole('dialog', { name: 'Remove worktree' });
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByTitle(wt, { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByTitle(wt, { exact: true })).toBeVisible();
     menu = await openBranchContextMenu(page, wt);
     await menu.getByRole('menuitem', { name: 'Remove…' }).click();
     await confirm(page, 'Remove worktree', 'Remove worktree');
-    await expect(page.getByTitle(wt, { exact: true })).toHaveCount(0);
+    await expect(sidebar(page).getByTitle(wt, { exact: true })).toHaveCount(0);
   });
 
   test('submodule deinitialize requires confirm', async ({ page }) => {

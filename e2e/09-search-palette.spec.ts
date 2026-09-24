@@ -5,7 +5,7 @@
  * (options run on click / Enter on the highlighted row).
  */
 import { test, expect } from './fixtures';
-import { expectedShortcutLabel, graphScrollHeight, openPalette, openRepo } from './helpers';
+import { expectedShortcutLabel, graphScrollHeight, openPalette, openRepo, sidebar } from './helpers';
 import type { Page } from '@playwright/test';
 
 /** CommitSearchBar's match counter. Asserting 'N/M' with a bare
@@ -124,11 +124,11 @@ test.describe('09 search & palette @smoke', () => {
     const filter = page.getByLabel('Filter tags');
     await expect(filter).toBeVisible();
     await filter.fill('v1');
-    await expect(page.getByTitle('v1.0', { exact: true })).toBeVisible();
-    await expect(page.getByTitle('v1.1.0', { exact: true })).toBeVisible();
-    await expect(page.getByTitle('v0.2.0', { exact: true })).toHaveCount(0);
+    await expect(sidebar(page).getByTitle('v1.0', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByTitle('v1.1.0', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByTitle('v0.2.0', { exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Clear filter' }).click();
-    await expect(page.getByTitle('v0.2.0', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByTitle('v0.2.0', { exact: true })).toBeVisible();
   });
 
   test('search error path: #fail surfaces a toast, app stays usable', async ({ page }) => {

@@ -6,7 +6,7 @@
  * AI-gated behind consent, so it is not reachable in this consent-off sweep).
  */
 import { test, expect } from './fixtures';
-import { errorToast, graphCanvas, openBranchContextMenu, openPalette, openRepo } from './helpers';
+import { errorToast, graphCanvas, openBranchContextMenu, openPalette, openRepo, sidebar } from './helpers';
 import type { Page } from '@playwright/test';
 
 async function openWithStatus(page: Page, flags: Record<string, string>): Promise<void> {
@@ -82,9 +82,9 @@ test.describe('15 error injection', () => {
     await openWithStatus(page, { submodule: 'fail' });
     // Sidebar sections stream in async — wait for the submodule + worktree rows
     // so the layout is stable before right-clicking (mirrors spec 14).
-    await expect(page.getByText('stash@{0}', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByText('stash@{0}', { exact: true })).toBeVisible();
     await expect(
-      page.getByTitle('/mock/.worktrees/repo/release-1.2', { exact: true }),
+      sidebar(page).getByTitle('/mock/.worktrees/repo/release-1.2', { exact: true }),
     ).toBeVisible();
     const menu = await openBranchContextMenu(page, 'vendor/theme');
     await menu.getByRole('menuitem', { name: 'Deinitialize…' }).click();
@@ -92,7 +92,7 @@ test.describe('15 error injection', () => {
     await dialog.getByRole('button', { name: 'Deinitialize' }).click();
     await expect(errorToast(page, /Mock: submodule operation failed/)).toBeVisible();
     // The submodule is untouched (still listed, still initialized).
-    await expect(page.getByTitle('vendor/theme', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByTitle('vendor/theme', { exact: true })).toBeVisible();
     await expect(graphCanvas(page)).toBeVisible();
   });
 

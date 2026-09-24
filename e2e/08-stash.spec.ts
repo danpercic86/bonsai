@@ -6,7 +6,7 @@
  * status panel.
  */
 import { test, expect } from './fixtures';
-import { confirm, openBranchContextMenu, openRepo } from './helpers';
+import { confirm, openBranchContextMenu, openRepo, sidebar } from './helpers';
 import type { Page } from '@playwright/test';
 
 async function openWithStatus(page: Page): Promise<void> {
@@ -17,13 +17,13 @@ async function openWithStatus(page: Page): Promise<void> {
 test.describe('08 stash @destructive', () => {
   test('seeded stack renders all three entries', async ({ page }) => {
     await openWithStatus(page);
-    await expect(page.getByText('stash@{0}', { exact: true })).toBeVisible();
-    await expect(page.getByTitle('WIP on main: polish sidebar', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByText('stash@{0}', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByTitle('WIP on main: polish sidebar', { exact: true })).toBeVisible();
     await expect(
-      page.getByTitle('WIP on main: extract graph layout helpers', { exact: true }),
+      sidebar(page).getByTitle('WIP on main: extract graph layout helpers', { exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByTitle('WIP on main: aspire host scaffolding (reserved-name files)', {
+      sidebar(page).getByTitle('WIP on main: aspire host scaffolding (reserved-name files)', {
         exact: true,
       }),
     ).toBeVisible();
@@ -39,9 +39,9 @@ test.describe('08 stash @destructive', () => {
     await expect(page.locator('.toast-stack').getByText('Changes stashed')).toBeVisible();
     // New entry pushed on top; old entries re-indexed (+1) → stash@{3} exists.
     await expect(
-      page.getByTitle('WIP on main: mock stashed changes', { exact: true }),
+      sidebar(page).getByTitle('WIP on main: mock stashed changes', { exact: true }),
     ).toBeVisible();
-    await expect(page.getByText('stash@{3}', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByText('stash@{3}', { exact: true })).toBeVisible();
     // "Stash" is the WHOLE working directory: tracked changes AND brand-new
     // files leave the panel together (no silently-left-behind untracked rows).
     await expect(page.getByRole('button', { name: 'Stage README.md' })).toHaveCount(0);
@@ -55,7 +55,7 @@ test.describe('08 stash @destructive', () => {
     await expect(page.locator('.toast-stack').getByText('Stashed staged changes')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Unstage src/app.rs' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Stage README.md' })).toBeVisible();
-    await expect(page.getByText('stash@{3}', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByText('stash@{3}', { exact: true })).toBeVisible();
   });
 
   test('apply leaves the stack unchanged', async ({ page }) => {
@@ -63,8 +63,8 @@ test.describe('08 stash @destructive', () => {
     const menu = await openBranchContextMenu(page, 'stash@{0}');
     await menu.getByRole('menuitem', { name: 'Apply' }).click();
     await expect(page.locator('.toast-stack').getByText('Applied stash@{0}')).toBeVisible();
-    await expect(page.getByTitle('WIP on main: polish sidebar', { exact: true })).toBeVisible();
-    await expect(page.getByText('stash@{2}', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByTitle('WIP on main: polish sidebar', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByText('stash@{2}', { exact: true })).toBeVisible();
   });
 
   test('pop removes the entry and re-indexes survivors', async ({ page }) => {
@@ -72,13 +72,13 @@ test.describe('08 stash @destructive', () => {
     const menu = await openBranchContextMenu(page, 'stash@{0}');
     await menu.getByRole('menuitem', { name: 'Pop' }).click();
     await expect(page.locator('.toast-stack').getByText('Popped stash@{0}')).toBeVisible();
-    await expect(page.getByTitle('WIP on main: polish sidebar', { exact: true })).toHaveCount(0);
+    await expect(sidebar(page).getByTitle('WIP on main: polish sidebar', { exact: true })).toHaveCount(0);
     // Two survivors re-indexed to 0/1 — stash@{2} no longer exists.
-    await expect(page.getByText('stash@{2}', { exact: true })).toHaveCount(0);
+    await expect(sidebar(page).getByText('stash@{2}', { exact: true })).toHaveCount(0);
     await expect(
-      page.getByTitle('WIP on main: extract graph layout helpers', { exact: true }),
+      sidebar(page).getByTitle('WIP on main: extract graph layout helpers', { exact: true }),
     ).toBeVisible();
-    await expect(page.getByText('stash@{0}', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByText('stash@{0}', { exact: true })).toBeVisible();
   });
 
   test('drop requires confirm; cancel keeps the entry', async ({ page }) => {
@@ -91,7 +91,7 @@ test.describe('08 stash @destructive', () => {
     await dialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(dialog).toBeHidden();
     await expect(
-      page.getByTitle('WIP on main: extract graph layout helpers', { exact: true }),
+      sidebar(page).getByTitle('WIP on main: extract graph layout helpers', { exact: true }),
     ).toBeVisible();
     // Confirm path.
     menu = await openBranchContextMenu(page, 'stash@{1}');
@@ -99,7 +99,7 @@ test.describe('08 stash @destructive', () => {
     await confirm(page, 'Drop stash', 'Drop stash');
     await expect(page.locator('.toast-stack').getByText('Dropped stash@{1}')).toBeVisible();
     await expect(
-      page.getByTitle('WIP on main: extract graph layout helpers', { exact: true }),
+      sidebar(page).getByTitle('WIP on main: extract graph layout helpers', { exact: true }),
     ).toHaveCount(0);
   });
 
@@ -118,7 +118,7 @@ test.describe('08 stash @destructive', () => {
       page.locator('.toast-stack').getByText(/Applied stash@\{2\} — skipped 1 file\(s\)/),
     ).toBeVisible();
     // Apply never drops: the entry is still on the stack.
-    await expect(page.getByText('stash@{2}', { exact: true })).toBeVisible();
+    await expect(sidebar(page).getByText('stash@{2}', { exact: true })).toBeVisible();
   });
 
   // §5.08 downgrade: the conflicted-apply trigger is a stash whose MESSAGE
