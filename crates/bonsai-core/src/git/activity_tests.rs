@@ -297,3 +297,130 @@ fn target_none_omits_the_field() {
     let json = serde_json::to_value(&events[0]).expect("json");
     assert_eq!(json.get("target").and_then(|v| v.as_str()), Some("main"));
 }
+
+// ---------------------------------------------------------------- P119 T-R6
+
+fn recording_with_subject(
+    subject: RunSubject,
+) -> (Arc<ActivityEmitter>, Arc<Mutex<Vec<GitActivityEvent>>>) {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&log);
+    let emitter = Arc::new(ActivityEmitter::with_subject(
+        "git-test-0".to_string(),
+        subject,
+        Box::new(move |ev| sink.lock().expect("lock").push(ev)),
+    ));
+    (emitter, log)
+}
+
+fn json_keys(ev: &GitActivityEvent) -> Vec<String> {
+    let v = serde_json::to_value(ev).expect("json");
+    let mut keys: Vec<String> = v.as_object().expect("object").keys().cloned().collect();
+    keys.sort_unstable();
+    keys
+}
+
+/// `targetCount` rides on `started` ONLY, and a counted run has no `target`.
+#[test]
+fn target_count_only_on_started() {
+    use crate::git::activity_target::TargetArg;
+    let subject = RunSubject::many(
+        [
+            TargetArg::Branch("a"),
+            TargetArg::Branch("b"),
+            TargetArg::Branch("c"),
+        ]
+        .into_iter(),
+    );
+    let (em, log) = recording_with_subject(subject);
+    em.started(GitActivityCategory::DeleteBranches, GitPhaseKind::Preparing);
+    em.phase(GitPhaseKind::Network, None);
+    em.line(GitStream::Stdout, "x");
+    em.finish(Some(0), true, None, None);
+    let events = log.lock().expect("lock");
+    assert_eq!(events[0].target_count, Some(3));
+    assert_eq!(events[0].target, None);
+    let json = serde_json::to_value(&events[0]).expect("json");
+    assert_eq!(json.get("targetCount"), Some(&serde_json::json!(3)));
+    assert!(json.get("target").is_none());
+    for ev in &events[1..] {
+        assert_eq!(ev.target_count, None, "{:?}", ev.kind);
+    }
+}
+
+/// `outcome` rides on `finished` ONLY, and only for a successful run.
+#[test]
+fn outcome_only_on_successful_finished() {
+    let (em, log) = recording();
+    em.started(GitActivityCategory::Merge, GitPhaseKind::Preparing);
+    em.finish(Some(0), true, Some(GitRunOutcome::FastForwarded), None);
+    let events = log.lock().expect("lock");
+    assert_eq!(events[0].outcome, None);
+    let last = events.last().expect("finished");
+    assert_eq!(last.kind, GitActivityKind::Finished);
+    assert_eq!(last.outcome, Some(GitRunOutcome::FastForwarded));
+    let json = serde_json::to_value(last).expect("json");
+    assert_eq!(
+        json.get("outcome"),
+        Some(&serde_json::json!("fastForwarded"))
+    );
+
+    let (em, log) = recording();
+    em.finish(Some(1), false, Some(GitRunOutcome::Conflicts), None);
+    let events = log.lock().expect("lock");
+    assert_eq!(events[0].outcome, None, "a failed run carries no outcome");
+}
+
+/// The reason line survives the line-event cap and lands just before
+/// `finished` (after the truncation marker), sanitized like any line.
+#[test]
+fn reason_line_is_delivered_after_the_cap_just_before_finished() {
+    let (em, log) = recording();
+    em.started(GitActivityCategory::DeleteBranch, GitPhaseKind::Preparing);
+    for i in 0..(MAX_ACTIVITY_LINE_EVENTS + 10) {
+        em.line(GitStream::Stdout, &format!("l{i}"));
+    }
+    em.finish(
+        Some(1),
+        false,
+        None,
+        Some("branch 'x' not found\nforged row"),
+    );
+    let events = log.lock().expect("lock");
+    let n = events.len();
+    // started + 5000 lines + marker + reason + finished.
+    assert_eq!(n, 1 + MAX_ACTIVITY_LINE_EVENTS + 3);
+    assert!(events[n - 3]
+        .line
+        .as_deref()
+        .is_some_and(|l| l.contains("10 more lines suppressed")));
+    assert_eq!(events[n - 2].kind, GitActivityKind::StderrLine);
+    assert_eq!(
+        events[n - 2].line.as_deref(),
+        Some("branch 'x' not foundforged row"),
+        "control-stripped into one line"
+    );
+    assert_eq!(events[n - 1].kind, GitActivityKind::Finished);
+    assert_eq!(events[n - 1].success, Some(false));
+}
+
+/// `finished(code, success)` is byte-identical to `finish(.., None, None)` and
+/// adds no P119 keys to the wire.
+#[test]
+fn finish_with_nothing_matches_finished() {
+    let (a, log_a) = recording();
+    a.finished(Some(0), true);
+    let (b, log_b) = recording();
+    b.finish(Some(0), true, None, None);
+    let ea = log_a.lock().expect("lock");
+    let eb = log_b.lock().expect("lock");
+    assert_eq!(ea.len(), 1);
+    assert_eq!(eb.len(), 1);
+    let (mut x, mut y) = (ea[0].clone(), eb[0].clone());
+    (x.elapsed_ms, y.elapsed_ms) = (0, 0);
+    assert_eq!(x, y);
+    assert_eq!(
+        json_keys(&ea[0]),
+        ["code", "elapsedMs", "id", "kind", "seq", "success"]
+    );
+}

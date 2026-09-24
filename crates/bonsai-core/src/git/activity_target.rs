@@ -21,25 +21,136 @@
 use std::path::Path;
 
 use crate::git::activity::{ActivityTarget, GitActivityCategory};
+use crate::git::opstate::{read_op_state, RepoOpState};
 use crate::git::remote::open_repo_at;
 use crate::git::repo::read_head_info;
 
-/// Best-effort target for a run that is ABOUT to start (FU-1 §4).
+/// P119 §2.3: the ONLY cross-crate input for an arg-carried target. Core maps
+/// the raw command argument through the one sanitize+cap funnel
+/// ([`ActivityTarget`]'s private `new`); src-tauri still cannot build an
+/// [`ActivityTarget`] itself.
+#[derive(Debug, Clone, Copy)]
+pub enum TargetArg<'a> {
+    /// A local branch (`refs/heads/` stripped).
+    Branch(&'a str),
+    /// Any ref (ONE of `refs/heads/`, `refs/remotes/`, `refs/tags/` stripped).
+    Ref(&'a str),
+    /// A remote NAME — never its URL.
+    Remote(&'a str),
+    /// A tag (`refs/tags/` stripped).
+    Tag(&'a str),
+    /// A full or abbreviated hex oid → its 7-char short form; a revspec → `None`.
+    Commit(&'a str),
+    /// A stash index → `stash@{N}`.
+    Stash(usize),
+    /// A raw name/path identifier; may contain spaces (§2.4).
+    Name(&'a str),
+    /// The last component of a filesystem path (either separator; trailing
+    /// separators ignored).
+    PathLeaf(&'a str),
+}
+
+/// PURE, infallible, no repo open, no I/O: the target for an arg-carried run.
+pub fn arg_activity_target(arg: TargetArg<'_>) -> Option<ActivityTarget> {
+    match arg {
+        TargetArg::Branch(b) => ActivityTarget::branch(b),
+        TargetArg::Ref(r) => ActivityTarget::any_ref(r),
+        TargetArg::Remote(r) => ActivityTarget::remote(r),
+        TargetArg::Tag(t) => ActivityTarget::tag(t),
+        TargetArg::Commit(oid) => ActivityTarget::commit(oid),
+        TargetArg::Stash(i) => ActivityTarget::stash(i),
+        TargetArg::Name(n) => ActivityTarget::name(n),
+        TargetArg::PathLeaf(p) => ActivityTarget::name(path_leaf(p)?),
+    }
+}
+
+/// Platform-independent last path component; `None` when nothing is left.
+fn path_leaf(p: &str) -> Option<&str> {
+    let leaf = p.trim_end_matches(['/', '\\']).rsplit(['/', '\\']).next()?;
+    (!leaf.is_empty()).then_some(leaf)
+}
+
+/// What a run is about: at most one target, OR a count of ≥2 items — never both
+/// (P119 §2.7). Fields are crate-private, so only this module's constructors
+/// can produce one.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RunSubject {
+    pub(crate) target: Option<ActivityTarget>,
+    pub(crate) count: Option<u32>,
+}
+
+impl From<Option<ActivityTarget>> for RunSubject {
+    fn from(target: Option<ActivityTarget>) -> Self {
+        RunSubject {
+            target,
+            count: None,
+        }
+    }
+}
+
+impl RunSubject {
+    /// 0 items → empty; 1 → that item's target; ≥2 → `count = n` (saturating
+    /// u32) with NO target, so a multi-item run never carries a phrase.
+    pub fn many<'a>(mut items: impl ExactSizeIterator<Item = TargetArg<'a>>) -> RunSubject {
+        match items.len() {
+            0 => RunSubject::default(),
+            1 => RunSubject::from(items.next().and_then(arg_activity_target)),
+            n => RunSubject {
+                target: None,
+                count: Some(u32::try_from(n).unwrap_or(u32::MAX)),
+            },
+        }
+    }
+
+    /// The single target, if any (read-only view for tests/callers).
+    pub fn target(&self) -> Option<&ActivityTarget> {
+        self.target.as_ref()
+    }
+
+    /// The item count of a multi-item run (≥2), if any.
+    pub fn count(&self) -> Option<u32> {
+        self.count
+    }
+}
+
+/// Best-effort target for a run that is ABOUT to start (FU-1 §4, P119 §2.3).
 ///
 /// `None` — meaning "this run has no target", rendered as the bare category noun
-/// — for: `Fetch` (fetch-all touches *every* remote, so no single ref), an
-/// unborn or detached HEAD, a missing/unreadable upstream, or any git2 failure.
+/// — for: `Fetch` (fetch-all touches *every* remote, so no single ref), every
+/// arg-carried / multi-item category (their target comes from
+/// [`arg_activity_target`], not HEAD), `BisectReset`, an unborn or detached HEAD,
+/// a missing/unreadable upstream, or any git2 failure.
 pub fn resolve_activity_target(
     workdir: &Path,
     category: GitActivityCategory,
 ) -> Option<ActivityTarget> {
-    // Cheapest exit first, and before any repo open: `fetch_all_with_activity`
-    // fetches every configured remote, so there is no one target (FU-1 §4).
-    if category == GitActivityCategory::Fetch {
+    use GitActivityCategory as C;
+
+    // 1. Cheapest exit first, before any repo open. Fetch-all has no one target;
+    // the A/N rows never call this (the guard keeps it free if one does).
+    if is_arg_or_untargeted(category) {
         return None;
     }
 
+    // 2. Rebase in progress. MUST precede the detached check below: HEAD is
+    // detached mid-rebase, but the run is about the branch being rebased.
+    if matches!(category, C::RebaseContinue | C::RebaseSkip | C::RebaseAbort) {
+        return match read_op_state(workdir).ok()? {
+            RepoOpState::Rebase {
+                head_name: Some(h), ..
+            } => ActivityTarget::branch(&h),
+            _ => None,
+        };
+    }
+
     let repo = open_repo_at(workdir).ok()?;
+
+    // 3. Bisect midpoint: HEAD is detached on the commit being judged.
+    if matches!(category, C::BisectGood | C::BisectBad | C::BisectSkip) {
+        let oid = repo.head().ok()?.peel_to_commit().ok()?.id();
+        return ActivityTarget::commit(&oid.to_string());
+    }
+
     let head = read_head_info(&repo).ok()?;
     // Load-bearing: `read_head_info` DOES report a branch name for an unborn
     // HEAD (the symbolic target names the branch-to-be), and FU-1 §3.6-1 wants
@@ -50,21 +161,79 @@ pub fn resolve_activity_target(
     }
     let branch = head.branch_name?;
 
+    // 4. HEAD branch. Every variant is named — no `_` arm — so a new category
+    // fails to compile until someone decides where its target comes from.
     match category {
-        // Unreachable: the early return above already took Fetch. Kept as `None`
-        // rather than `unreachable!()` because this resolver must never panic —
-        // it runs for observability only, on a caller's op path (module docs).
-        GitActivityCategory::Fetch => None,
-        GitActivityCategory::Commit
-        | GitActivityCategory::Amend
-        | GitActivityCategory::MergeCommit => ActivityTarget::branch(&branch),
+        C::Commit
+        | C::Amend
+        | C::MergeCommit
+        | C::AbortMerge
+        | C::CherryPickContinue
+        | C::CherryPickAbort
+        | C::RevertContinue
+        | C::RevertAbort
+        | C::StashCreate
+        | C::ComposeCommits => ActivityTarget::branch(&branch),
         // No upstream ⇒ the op itself returns `NoUpstream`; the row reads the
         // bare noun rather than naming a ref that does not exist.
-        GitActivityCategory::Pull | GitActivityCategory::ForcePush => {
+        C::Pull | C::ForcePush => {
             let (remote, remote_branch) = configured_upstream(&repo, &branch)?;
             ActivityTarget::remote_branch(&remote, &remote_branch)
         }
-        GitActivityCategory::Push => {
+        // Unreachable: steps 1–3 already returned for all of these. Kept as
+        // `None` rather than `unreachable!()` because this resolver must never
+        // panic — it runs for observability only, on a caller's op path.
+        C::Fetch
+        | C::CheckoutBranch
+        | C::CheckoutCommit
+        | C::CheckoutRemote
+        | C::CreateBranch
+        | C::DeleteBranch
+        | C::DeleteBranches
+        | C::RenameBranch
+        | C::DeleteRemoteTracking
+        | C::Merge
+        | C::Rebase
+        | C::InteractiveRebase
+        | C::RebaseContinue
+        | C::RebaseSkip
+        | C::RebaseAbort
+        | C::CherryPick
+        | C::Revert
+        | C::ResetSoft
+        | C::ResetMixed
+        | C::ResetHard
+        | C::StashApply
+        | C::StashPop
+        | C::StashDrop
+        | C::CreateTag
+        | C::DeleteTag
+        | C::PushTag
+        | C::DeleteRemoteTag
+        | C::ForceRefreshTag
+        | C::SubmoduleAdd
+        | C::SubmoduleInit
+        | C::SubmoduleUpdate
+        | C::SubmoduleSync
+        | C::SubmoduleDeinit
+        | C::SubmoduleRemove
+        | C::WorktreeAdd
+        | C::WorktreeRemove
+        | C::WorktreeLock
+        | C::WorktreeUnlock
+        | C::Discard
+        | C::BisectStart
+        | C::BisectGood
+        | C::BisectBad
+        | C::BisectSkip
+        | C::BisectReset
+        | C::CloneRepo
+        | C::InitRepo
+        | C::AddRemote
+        | C::RemoveRemote
+        | C::RenameRemote
+        | C::SetRemoteUrl => None,
+        C::Push => {
             if let Some((remote, remote_branch)) = configured_upstream(&repo, &branch) {
                 return ActivityTarget::remote_branch(&remote, &remote_branch);
             }
@@ -76,6 +245,79 @@ pub fn resolve_activity_target(
             }
             None
         }
+    }
+}
+
+/// Step 1 of the resolver: `true` for the categories whose target never comes
+/// from the repo (`Fetch`, `BisectReset`, and every §1 A/N row). Exhaustive —
+/// no `_` arm — so a new category must be classified here explicitly.
+fn is_arg_or_untargeted(category: GitActivityCategory) -> bool {
+    use GitActivityCategory as C;
+    match category {
+        C::Fetch
+        | C::BisectReset
+        | C::CheckoutBranch
+        | C::CheckoutCommit
+        | C::CheckoutRemote
+        | C::CreateBranch
+        | C::DeleteBranch
+        | C::DeleteBranches
+        | C::RenameBranch
+        | C::DeleteRemoteTracking
+        | C::Merge
+        | C::Rebase
+        | C::InteractiveRebase
+        | C::CherryPick
+        | C::Revert
+        | C::ResetSoft
+        | C::ResetMixed
+        | C::ResetHard
+        | C::StashApply
+        | C::StashPop
+        | C::StashDrop
+        | C::CreateTag
+        | C::DeleteTag
+        | C::PushTag
+        | C::DeleteRemoteTag
+        | C::ForceRefreshTag
+        | C::SubmoduleAdd
+        | C::SubmoduleInit
+        | C::SubmoduleUpdate
+        | C::SubmoduleSync
+        | C::SubmoduleDeinit
+        | C::SubmoduleRemove
+        | C::WorktreeAdd
+        | C::WorktreeRemove
+        | C::WorktreeLock
+        | C::WorktreeUnlock
+        | C::Discard
+        | C::BisectStart
+        | C::CloneRepo
+        | C::InitRepo
+        | C::AddRemote
+        | C::RemoveRemote
+        | C::RenameRemote
+        | C::SetRemoteUrl => true,
+        // H (HEAD branch), R (rebase branch), C (bisect midpoint) rows.
+        C::Commit
+        | C::Amend
+        | C::MergeCommit
+        | C::Push
+        | C::ForcePush
+        | C::Pull
+        | C::AbortMerge
+        | C::CherryPickContinue
+        | C::CherryPickAbort
+        | C::RevertContinue
+        | C::RevertAbort
+        | C::StashCreate
+        | C::ComposeCommits
+        | C::RebaseContinue
+        | C::RebaseSkip
+        | C::RebaseAbort
+        | C::BisectGood
+        | C::BisectBad
+        | C::BisectSkip => false,
     }
 }
 
@@ -106,3 +348,7 @@ fn configured_upstream(repo: &git2::Repository, branch: &str) -> Option<(String,
 #[cfg(test)]
 #[path = "activity_target_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "activity_target_arg_tests.rs"]
+mod arg_tests;

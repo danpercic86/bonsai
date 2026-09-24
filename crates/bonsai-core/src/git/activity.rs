@@ -16,6 +16,14 @@
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
+pub use crate::git::activity_category::{GitActivityCategory, GitRunOutcome};
+pub use target_type::{ActivityTarget, MAX_ACTIVITY_TARGET_CHARS};
+
+use crate::git::activity_target::RunSubject;
+
+#[path = "activity_target_type.rs"]
+mod target_type;
+
 /// Per-event line-length cap, in CHARS (never split a char boundary). One hook
 /// line can never forge extra log rows: [`activity_line`] strips C0/C1 + bidi
 /// controls AND bounds the length. The TOTAL output is still capped by exec's
@@ -74,6 +82,13 @@ pub struct GitActivityEvent {
     /// has no target (the UI then renders the bare category noun — FU-1 §3.3).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
+    /// `Started` ONLY; present iff the run acts on ≥2 items (then `target` is
+    /// absent). A count, not copy — the frontend owns "Delete 3 branches". P119.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_count: Option<u32>,
+    /// `Finished` ONLY, and only when `success == true`. P119 §2.6.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<GitRunOutcome>,
     /// Since the `Started` event.
     pub elapsed_ms: u64,
 }
@@ -89,19 +104,6 @@ pub enum GitActivityKind {
     HookDone,
     Finished,
     Progress,
-}
-
-/// Which operation an activity is (set once, on `Started`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum GitActivityCategory {
-    Commit,
-    Amend,
-    MergeCommit,
-    Push,
-    ForcePush,
-    Fetch,
-    Pull,
 }
 
 /// The current phase of an activity (drives the live "Running pre-push hook…" vs
@@ -174,6 +176,9 @@ pub struct ActivityEmitter {
     /// change is not representable (FU-1 §3.6-2); [`GitActivityRecorder`] gains
     /// no method, so core cannot touch it either.
     target: Option<String>,
+    /// P119 §2.7: the item count of a multi-item run (≥2), same rules as
+    /// `target` — set once here, read only by [`Self::started`].
+    target_count: Option<u32>,
     start: Instant,
     seq: AtomicU64,
     /// Count of `line` calls this activity — the per-activity line-event cap
@@ -191,9 +196,20 @@ impl ActivityEmitter {
         target: Option<ActivityTarget>,
         emit: Box<dyn Fn(GitActivityEvent) + Send + Sync>,
     ) -> Self {
+        Self::with_subject(id, RunSubject::from(target), emit)
+    }
+
+    /// P119 §2.7: the full constructor — a run is about at most one target OR
+    /// a count of ≥2 items ([`RunSubject`] guarantees never both).
+    pub fn with_subject(
+        id: String,
+        subject: RunSubject,
+        emit: Box<dyn Fn(GitActivityEvent) + Send + Sync>,
+    ) -> Self {
         ActivityEmitter {
             id,
-            target: target.map(ActivityTarget::into_string),
+            target: subject.target.map(ActivityTarget::into_string),
+            target_count: subject.count,
             start: Instant::now(),
             seq: AtomicU64::new(0),
             line_events: AtomicUsize::new(0),
@@ -225,6 +241,10 @@ impl ActivityEmitter {
             progress: None,
             // Hard-coded: ONLY `started` ever carries a target (FU-1 §3.6-2).
             target: None,
+            // Same rule: `targetCount` only on `started`, `outcome` only on
+            // `finished` (P119 §2.6/§2.7).
+            target_count: None,
+            outcome: None,
             elapsed_ms: self.elapsed_ms(),
         }
     }
@@ -238,25 +258,51 @@ impl ActivityEmitter {
             kind: phase,
             hook: None,
         });
-        // The ONLY read of `self.target`, and the only event that carries one.
+        // The ONLY read of `self.target`/`self.target_count`, and the only
+        // event that carries either.
         ev.target = self.target.clone();
+        ev.target_count = self.target_count;
         (self.emit)(ev);
     }
 
     /// The terminal event. `code`/`success` mirror the op's outcome (best-effort;
     /// `None` code = killed / no single exit code — e.g. a hook rejection).
-    /// First flushes the truncation marker if the line-event cap was hit.
+    /// Shorthand for [`Self::finish`] with no outcome and no reason line.
     pub fn finished(&self, code: Option<i32>, success: bool) {
+        self.finish(code, success, None, None);
+    }
+
+    /// Terminal event, P119 form. Order: flush the truncation marker → if
+    /// `reason` is `Some`, ONE `StderrLine` carrying `activity_line(reason)` →
+    /// `Finished{code, success, outcome}`.
+    ///
+    /// The reason line is emitted directly, NOT through [`GitActivityRecorder::line`],
+    /// so it is exempt from [`MAX_ACTIVITY_LINE_EVENTS`] and always delivered
+    /// (P119 §2.8). `outcome` is dropped on a failed run: it describes how a
+    /// SUCCESSFUL run ended (§2.6).
+    pub fn finish(
+        &self,
+        code: Option<i32>,
+        success: bool,
+        outcome: Option<GitRunOutcome>,
+        reason: Option<&str>,
+    ) {
         self.flush_line_truncation();
+        if let Some(reason) = reason {
+            let mut ev = self.base(GitActivityKind::StderrLine);
+            ev.line = Some(activity_line(reason));
+            (self.emit)(ev);
+        }
         let mut ev = self.base(GitActivityKind::Finished);
         ev.code = code;
         ev.success = Some(success);
+        ev.outcome = outcome.filter(|_| success);
         (self.emit)(ev);
     }
 
     /// If [`Self::line`] hit [`MAX_ACTIVITY_LINE_EVENTS`], emit exactly ONE final
     /// marker line naming how many further lines were suppressed. It is a normal
-    /// (sanitized) line event — no new kind. Called once, from [`Self::finished`],
+    /// (sanitized) line event — no new kind. Called once, from [`Self::finish`],
     /// so the suppressed total is exact by the time it fires.
     fn flush_line_truncation(&self) {
         let total = self.line_events.load(Ordering::Relaxed);
@@ -368,68 +414,6 @@ fn truncate_chars(text: &str, cap: usize) -> String {
     let mut out: String = text.chars().take(cap.saturating_sub(1)).collect();
     out.push('…');
     out
-}
-
-/// Cap on a run target, in CHARS. Git's practical ref bound is far under this,
-/// so 255 never truncates a real name; it exists so a hostile ref cannot park a
-/// megabyte string in the frontend's 200-run store (FU-1 §3.6-4).
-pub const MAX_ACTIVITY_TARGET_CHARS: usize = 255;
-
-/// A run's target ref: a RAW git identifier, sanitized and capped. NEVER a human
-/// phrase — the frontend derives all copy (`all remotes`, prepositions) from the
-/// category (FU-1 §3.3).
-///
-/// The inner `String` is private and there is NO public constructor: outside this
-/// crate the only way to obtain one is
-/// [`crate::git::activity_target::resolve_activity_target`], so the command layer
-/// cannot invent a target at all (FU-1 §6, guarantee 1 — structural at the crate
-/// boundary).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ActivityTarget(String);
-
-impl ActivityTarget {
-    /// THE funnel: the same [`strip_control_chars`] + [`truncate_chars`] rule
-    /// [`activity_line`] applies, one implementation (FU-1 §6.1). `None` when
-    /// nothing survives sanitation.
-    fn new(raw: &str) -> Option<Self> {
-        let clean = strip_control_chars(raw).trim().to_string();
-        if clean.is_empty() {
-            return None;
-        }
-        Some(ActivityTarget(truncate_chars(
-            &clean,
-            MAX_ACTIVITY_TARGET_CHARS,
-        )))
-    }
-
-    /// A remote name (`origin`). Spec'd for a future per-remote fetch (FU-1 F-3);
-    /// today reached through [`Self::remote_branch`].
-    pub(crate) fn remote(remote: &str) -> Option<Self> {
-        Self::new(remote)
-    }
-
-    /// `remote/branch` (`origin/main`). `branch` may be a short name or
-    /// `refs/heads/<x>`; the prefix is stripped. Each part is validated
-    /// SEPARATELY, so a blank part yields `None` rather than `"/main"`.
-    pub(crate) fn remote_branch(remote: &str, branch: &str) -> Option<Self> {
-        let rp = Self::remote(remote)?;
-        let bp = Self::branch(branch)?;
-        Self::new(&format!("{}/{}", rp.as_str(), bp.as_str()))
-    }
-
-    /// A branch SHORT name; a `refs/heads/` prefix is stripped here so no call
-    /// site can leak a full refname.
-    pub(crate) fn branch(branch: &str) -> Option<Self> {
-        Self::new(branch.strip_prefix("refs/heads/").unwrap_or(branch))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn into_string(self) -> String {
-        self.0
-    }
 }
 
 #[cfg(test)]

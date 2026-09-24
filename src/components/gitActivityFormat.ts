@@ -6,36 +6,12 @@
  * The backend emits structured `category × phase{kind,hook}` only; every human
  * string is derived HERE (P87-ui §1 is the canonical table).
  */
-import type { ComponentType } from 'react';
-
-import { FetchIcon, PullIcon, PushIcon, RefDotIcon } from './appIcons';
-import { MergeIcon } from './menuIcons';
+import { CATEGORY_META, TARGET_PREPOSITION } from './gitActivityCategories';
+import type { CategoryMeta } from './gitActivityCategories';
 import type { GitActivityRun } from './repoWorkspace/useGitActivity';
 import type { GitActivityCategory, GitPhase } from '../ipc';
 
-type IconComponent = ComponentType;
-
-export interface CategoryMeta {
-  /** Idle button + palette verb ("Push"). */
-  verb: string;
-  /** Layout-stable busy button participle ("Pushing…"). */
-  participle: string;
-  /** Terminal row noun ("Push", "Merge commit"). */
-  noun: string;
-  /** The category glyph icon (reused graph/menu icon). */
-  glyph: IconComponent;
-}
-
-const CATEGORY_META: Record<GitActivityCategory, CategoryMeta> = {
-  push: { verb: 'Push', participle: 'Pushing…', noun: 'Push', glyph: PushIcon },
-  forcePush: { verb: 'Force-push', participle: 'Force-pushing…', noun: 'Force-push', glyph: PushIcon },
-  fetch: { verb: 'Fetch', participle: 'Fetching…', noun: 'Fetch', glyph: FetchIcon },
-  pull: { verb: 'Pull', participle: 'Pulling…', noun: 'Pull', glyph: PullIcon },
-  commit: { verb: 'Commit', participle: 'Committing…', noun: 'Commit', glyph: RefDotIcon },
-  amend: { verb: 'Amend', participle: 'Amending…', noun: 'Amend', glyph: RefDotIcon },
-  mergeCommit: { verb: 'Merge', participle: 'Merging…', noun: 'Merge commit', glyph: MergeIcon },
-};
-
+/** The category's copy + glyph (table in `gitActivityCategories.ts`). */
 export function categoryMeta(category: GitActivityCategory): CategoryMeta {
   return CATEGORY_META[category];
 }
@@ -201,36 +177,24 @@ export function runTarget(run: GitActivityRun): string | null {
   return run.category === 'fetch' ? 'all remotes' : null;
 }
 
-/** §3.7 — the preposition that joins the noun to the target in the ACCESSIBLE
- *  name only. Three values (`to` / `from` / `on`); keyed exhaustively by category
- *  so a new category cannot silently miss one. Used by `runRowName` and
- *  `sentenceFor` — nowhere else. The visible row stays preposition-free (§3.2). */
-const TARGET_PREPOSITION: Record<GitActivityCategory, 'to' | 'from' | 'on'> = {
-  push: 'to',
-  forcePush: 'to',
-  fetch: 'from',
-  pull: 'from',
-  commit: 'on',
-  amend: 'on',
-  mergeCommit: 'on',
-};
+/** Join a noun/verb to the run's target with the category's preposition
+ *  (`Push to origin/main`), or side by side when it has none (`Delete branch
+ *  topic`). No target → the bare word. */
+function withTarget(run: GitActivityRun, word: string): string {
+  const target = runTarget(run);
+  if (target === null) return word;
+  const prep = TARGET_PREPOSITION[run.category];
+  return prep === null ? `${word} ${target}` : `${word} ${prep} ${target}`;
+}
 
 /** `Push` / `Push to origin/main` — the noun with its target, in words. */
 function nounWithTarget(run: GitActivityRun): string {
-  const meta = categoryMeta(run.category);
-  const target = runTarget(run);
-  return target === null
-    ? meta.noun
-    : `${meta.noun} ${TARGET_PREPOSITION[run.category]} ${target}`;
+  return withTarget(run, categoryMeta(run.category).noun);
 }
 
 /** `Push` / `Push to origin/main` using the VERB (the announcer's phrasing). */
 function verbWithTarget(run: GitActivityRun): string {
-  const meta = categoryMeta(run.category);
-  const target = runTarget(run);
-  return target === null
-    ? meta.verb
-    : `${meta.verb} ${TARGET_PREPOSITION[run.category]} ${target}`;
+  return withTarget(run, categoryMeta(run.category).verb);
 }
 
 /** Elapsed spelled out for a screen reader — `1.2 seconds`, `2 minutes 5 seconds`.

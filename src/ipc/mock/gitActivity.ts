@@ -33,6 +33,11 @@
  *   ?gitBidiTarget — a ref carrying U+202E on push/force-push, fed through
  *                    `mockActivityTarget` → the emitted string must be exactly
  *                    `origin/main`.
+ *
+ * P119: every other category runs the plain script (`runPlain`), which also
+ * carries `outcome` / `targetCount` and, on failure, the error-message line
+ * before `finished` (every script does, except for `hookRejected`).
+ *   ?gitSlowLocal  — an 800 ms pause inside every plain run (a visible row).
  */
 import { MOCK_PRE_PUSH_OUTPUT } from './hooksGate';
 import { delay, query } from './repoState';
@@ -42,6 +47,7 @@ import type {
   GitActivityEvent,
   GitActivityKind,
   GitPhaseKind,
+  GitRunOutcome,
   GitTransferProgress,
 } from '../types';
 
@@ -77,6 +83,7 @@ const FETCH_ALL = query('fetchAll') !== null;
 const GIT_NO_TARGET = query('gitNoTarget') !== null;
 const GIT_LONG_TARGET = query('gitLongTarget') !== null;
 const GIT_BIDI_TARGET = query('gitBidiTarget') !== null;
+const GIT_SLOW_LOCAL = query('gitSlowLocal') !== null;
 
 /** MIRRORS `bonsai_core::git::activity::MAX_ACTIVITY_LINE_CHARS`. */
 const MAX_ACTIVITY_LINE_CHARS = 2000;
@@ -174,7 +181,12 @@ class GitSequencer {
   /** `target` rides on `started` ONLY, through the sanitizer mirror, and the key
    *  is DROPPED when null so the wire shape matches serde's
    *  `skip_serializing_if = "Option::is_none"`. */
-  start(category: GitActivityCategory, target: string | null): void {
+  start(category: GitActivityCategory, target: string | null, count?: number): void {
+    // P119 §2.7 mirror of `RunSubject::many`: ≥2 items → a count and NO target.
+    if (count !== undefined && count >= 2) {
+      this.emit('started', { category, phase: { kind: 'preparing' }, targetCount: count });
+      return;
+    }
     const clean = mockActivityTarget(target);
     this.emit('started', {
       category,
@@ -197,8 +209,21 @@ class GitSequencer {
   progress(p: GitTransferProgress): void {
     this.emit('progress', { progress: p });
   }
-  finished(code: number | undefined, success: boolean): void {
-    this.emit('finished', code !== undefined ? { code, success } : { success });
+  /** `outcome` rides on a SUCCESSFUL `finished` only; the key is dropped when
+   *  null (mirror of `ActivityEmitter::finish`, P119 §2.6). */
+  finished(code: number | undefined, success: boolean, outcome: GitRunOutcome | null = null): void {
+    this.emit('finished', {
+      ...(code !== undefined ? { code } : {}),
+      success,
+      ...(success && outcome !== null ? { outcome } : {}),
+    });
+  }
+  /** P119 §2.8 mirror: a failed run's last line is the user-facing error
+   *  message, then `finished`. Skipped for `hookRejected` (its hook output is
+   *  already on the stream). */
+  failed(e: unknown): void {
+    if (isAppError(e) && e.kind !== 'hookRejected') this.stderr(e.message);
+    this.finished(activityExitCode(), false);
   }
 }
 
@@ -248,7 +273,7 @@ async function runPush<T>(
     s.finished(0, true);
     return result;
   } catch (e) {
-    s.finished(activityExitCode(), false);
+    s.failed(e);
     throw e;
   }
 }
@@ -273,7 +298,7 @@ async function runFetch<T>(
     s.finished(0, true);
     return result;
   } catch (e) {
-    s.finished(activityExitCode(), false);
+    s.failed(e);
     throw e;
   }
 }
@@ -301,7 +326,7 @@ async function runCommit<T>(
       for (const line of e.message.split('\n')) s.stderr(line);
       s.hookDone('pre-commit', 1, false);
     }
-    s.finished(activityExitCode(), false);
+    s.failed(e);
     throw e;
   }
 }
@@ -333,19 +358,80 @@ function isAppError(e: unknown): e is AppError {
   return typeof e === 'object' && e !== null && 'kind' in e && 'message' in e;
 }
 
+/** P119 §5.1 — the categories whose real command emits `phase(Network)` right
+ *  after `started` (§1 `Net` column). */
+const MOCK_NETWORK_CATEGORIES: ReadonlySet<GitActivityCategory> = new Set<GitActivityCategory>([
+  'pushTag',
+  'deleteRemoteTag',
+  'forceRefreshTag',
+  'submoduleAdd',
+  'submoduleUpdate',
+  'cloneRepo',
+]);
+
+/** Per-run options for `runMockActivity` (P119 §5.1). */
+export interface MockActivityOpts<T> {
+  /** Mirror of the command's §2.6 classifier: the SUCCESS result → `outcome`. */
+  classify?: (result: T) => GitRunOutcome | null;
+  /** Item count of a multi-item op; `>= 2` → `targetCount` and no `target`. */
+  count?: number;
+}
+
+/** P119 — every category without a hook/transfer script of its own:
+ *  `started` → `phase(network)` for the network rows (+ the determinate clone
+ *  ramp under `?fetchSlow`) → `?gitSlowLocal` pause → `fn` → `finished` with
+ *  the classified outcome, or the failure line + a failed `finished`. */
+async function runPlain<T>(
+  s: GitSequencer,
+  category: GitActivityCategory,
+  target: string | null,
+  fn: () => Promise<T>,
+  opts: MockActivityOpts<T>,
+): Promise<T> {
+  s.start(category, target, opts.count);
+  try {
+    if (MOCK_NETWORK_CATEGORIES.has(category)) {
+      s.phase('network');
+      if (category === 'cloneRepo' && FETCH_SLOW) await emitProgressRamp(s);
+    }
+    if (GIT_SLOW_LOCAL) await delay(800);
+    const result = await fn();
+    s.finished(0, true, opts.classify?.(result) ?? null);
+    return result;
+  } catch (e) {
+    s.failed(e);
+    throw e;
+  }
+}
+
 /**
  * Wrap a handler body in the git-activity stream. A no-op passthrough when nobody
- * is listening (mirrors the hub). Branches on the category family.
+ * is listening (mirrors the hub). Dispatch: the push family → `runPush`,
+ * fetch/pull → `runFetch`, EXPLICITLY commit/amend/mergeCommit → `runCommit`
+ * (their hook script), and every other category → `runPlain` — so a new
+ * category can never be dressed up as a commit.
  */
 export function runMockActivity<T>(
   category: GitActivityCategory,
   target: string | null,
   fn: () => Promise<T>,
+  opts: MockActivityOpts<T> = {},
 ): Promise<T> {
   if (!gitActivityActive()) return fn();
   const s = new GitSequencer(nextId());
   const seamed = seamTarget(category, target);
-  if (category === 'push' || category === 'forcePush') return runPush(s, category, seamed, fn);
-  if (category === 'fetch' || category === 'pull') return runFetch(s, category, seamed, fn);
-  return runCommit(s, category, seamed, fn);
+  switch (category) {
+    case 'push':
+    case 'forcePush':
+      return runPush(s, category, seamed, fn);
+    case 'fetch':
+    case 'pull':
+      return runFetch(s, category, seamed, fn);
+    case 'commit':
+    case 'amend':
+    case 'mergeCommit':
+      return runCommit(s, category, seamed, fn);
+    default:
+      return runPlain(s, category, seamed, fn, opts);
+  }
 }

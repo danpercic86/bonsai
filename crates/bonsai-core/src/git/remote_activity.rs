@@ -25,7 +25,7 @@ pub const PROGRESS_MIN_INTERVAL: Duration = Duration::from_millis(50);
 /// a network fetch): fire at most once per [`PROGRESS_MIN_INTERVAL`], but ALWAYS
 /// fire the FIRST terminal (`received == total`) tick so the bar reaches 100%
 /// even if the last callback lands inside the window.
-fn progress_should_fire(
+pub(crate) fn progress_should_fire(
     last: Option<Instant>,
     now: Instant,
     done: bool,

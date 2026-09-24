@@ -175,7 +175,9 @@ impl AppError {
         }
     }
 
-    fn message(&self) -> &str {
+    /// The user-facing message (the `message` field of the serialized error;
+    /// also the P119 failure reason line on the git-activity stream).
+    pub fn message(&self) -> &str {
         match self {
             AppError::Git(m)
             | AppError::Io(m)

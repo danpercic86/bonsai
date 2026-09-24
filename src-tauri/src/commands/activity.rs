@@ -15,9 +15,10 @@ use std::sync::Arc;
 use bonsai_core::error::AppError;
 use bonsai_core::git::activity::{
     new_activity_id, ActivityEmitter, ActivityTarget, GitActivityCategory, GitActivityEvent,
-    GitPhaseKind,
+    GitPhaseKind, GitRunOutcome,
 };
-use bonsai_core::git::activity_target::resolve_activity_target;
+use bonsai_core::git::activity_outcome::no_outcome;
+use bonsai_core::git::activity_target::{resolve_activity_target, RunSubject};
 
 use crate::commands::shared::repo_path;
 use crate::state::{AppState, GitActivityHub};
@@ -35,17 +36,13 @@ pub fn git_activity_subscribe(
 }
 
 /// The command bracket every activity-emitting op inner runs its core call
-/// inside. When someone is listening it mints an [`ActivityEmitter`], emits
-/// `started` (seq 0) then `finished` around `run`, and hands the emitter to
-/// `run` as `Some(..)`. When NObody is listening it is a straight passthrough
-/// (`run(None)`) — the buffered path, no emitter, no events (contract §10).
+/// inside — the P87 form. Delegates to [`with_activity_ex`] with
+/// `RunSubject::from(target)` and [`no_outcome`], so the P87 call sites compile
+/// untouched and gain the P119 §2.8 failure line.
 ///
 /// `target` (FU-1 §5.2) is the run's ref, resolved by [`activity_target`] BEFORE
 /// the bracket; it rides on the `started` event only. A target computed under a
-/// race with the last unsubscribe is simply dropped by the passthrough below.
-///
-/// `run` threads the emitter into the core call inside its own `spawn_blocking`
-/// (deriving a `&dyn GitActivityRecorder` from the `Arc`).
+/// race with the last unsubscribe is simply dropped by the passthrough.
 pub(crate) async fn with_activity<T, F, Fut>(
     hub: GitActivityHub,
     category: GitActivityCategory,
@@ -56,20 +53,48 @@ where
     F: FnOnce(Option<Arc<ActivityEmitter>>) -> Fut,
     Fut: Future<Output = Result<T, AppError>>,
 {
+    with_activity_ex(hub, category, RunSubject::from(target), no_outcome, run).await
+}
+
+/// P119 full bracket. When someone is listening it mints an
+/// [`ActivityEmitter`] carrying `subject` (a target OR a ≥2 item count), emits
+/// `started` (seq 0), runs `run` with the emitter as `Some(..)`, then `finished`:
+/// - `Ok(v)` → `finished{code:0, success:true, outcome: classify(&v)}`;
+/// - `Err(e)` → one `stderrLine` carrying `e.message()` (skipped for
+///   `HookRejected`, whose hook output is already on the stream and whose
+///   message is the whole hook body), then `finished{success:false}`.
+///
+/// When NObody is listening it is a straight passthrough (`run(None)`) — the
+/// buffered path, no emitter, no events (contract §10). The op's own result is
+/// returned unchanged either way.
+///
+/// `run` threads the emitter into the core call inside its own `spawn_blocking`
+/// (deriving a `&dyn GitActivityRecorder` from the `Arc`).
+pub(crate) async fn with_activity_ex<T, F, Fut>(
+    hub: GitActivityHub,
+    category: GitActivityCategory,
+    subject: RunSubject,
+    classify: fn(&T) -> Option<GitRunOutcome>,
+    run: F,
+) -> Result<T, AppError>
+where
+    F: FnOnce(Option<Arc<ActivityEmitter>>) -> Fut,
+    Fut: Future<Output = Result<T, AppError>>,
+{
     if !hub.is_active() {
         return run(None).await;
     }
     let hub2 = hub.clone();
-    let emitter = Arc::new(ActivityEmitter::new(
+    let emitter = Arc::new(ActivityEmitter::with_subject(
         new_activity_id(),
-        target,
+        subject,
         Box::new(move |ev| hub2.emit(ev)),
     ));
     emitter.started(category, GitPhaseKind::Preparing);
     let res = run(Some(Arc::clone(&emitter))).await;
     match &res {
-        Ok(_) => emitter.finished(Some(0), true),
-        Err(e) => emitter.finished(activity_exit_code(e), false),
+        Ok(v) => emitter.finish(Some(0), true, classify(v), None),
+        Err(e) => emitter.finish(activity_exit_code(e), false, None, failure_reason(e)),
     }
     res
 }
@@ -106,6 +131,16 @@ fn activity_exit_code(e: &AppError) -> Option<i32> {
     match e {
         AppError::HookRejected(_) => None,
         _ => Some(1),
+    }
+}
+
+/// P119 §2.8: the reason line for a failed run — the same user-facing message
+/// the toast shows. `None` for `HookRejected`: its hook output already streamed
+/// as lines, and its message is that whole multi-line body again.
+fn failure_reason(e: &AppError) -> Option<&str> {
+    match e {
+        AppError::HookRejected(_) => None,
+        _ => Some(e.message()),
     }
 }
 
@@ -200,5 +235,40 @@ mod tests {
         );
         assert_eq!(activity_exit_code(&AppError::Git("x".into())), Some(1));
         assert_eq!(activity_exit_code(&AppError::NoRepo), Some(1));
+    }
+
+    /// P119 §2.8: the failure line is the toast's message, except for a hook
+    /// rejection (its output is already on the stream).
+    #[test]
+    fn failure_reason_map() {
+        assert_eq!(
+            failure_reason(&AppError::HookRejected("hook body".into())),
+            None
+        );
+        assert_eq!(
+            failure_reason(&AppError::BranchNotFound("branch 'x' not found".into())),
+            Some("branch 'x' not found")
+        );
+        assert_eq!(
+            failure_reason(&AppError::NoRepo),
+            Some("no repository is open")
+        );
+    }
+
+    /// The P119 bracket is a passthrough with nobody subscribed too: `run`
+    /// sees `None`, `classify` is irrelevant, and the error comes back unchanged.
+    #[test]
+    fn inactive_ex_is_passthrough_and_keeps_the_error() {
+        let out: Result<u32, AppError> = tauri::async_runtime::block_on(with_activity_ex(
+            GitActivityHub::default(),
+            GitActivityCategory::DeleteBranch,
+            RunSubject::default(),
+            |_| Some(GitRunOutcome::Merged),
+            |em| async move {
+                assert!(em.is_none(), "no subscriber ⇒ None recorder");
+                Err(AppError::BranchNotFound("gone".into()))
+            },
+        ));
+        assert!(matches!(out, Err(AppError::BranchNotFound(m)) if m == "gone"));
     }
 }

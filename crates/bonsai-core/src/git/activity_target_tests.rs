@@ -155,15 +155,9 @@ fn no_target_contains_prose() {
     repo.remote("origin", "https://example.invalid/r.git")
         .expect("remote");
     set_upstream_config(&repo, "main", "origin", "main");
-    for cat in [
-        Cat::Push,
-        Cat::ForcePush,
-        Cat::Pull,
-        Cat::Fetch,
-        Cat::Commit,
-        Cat::Amend,
-        Cat::MergeCommit,
-    ] {
+    // P119 T-R4: every category. The resolver only ever yields ref-typed
+    // outputs (branch / remote-branch / short oid), so "no space" holds for all.
+    for cat in Cat::ALL {
         let Some(t) = target(dir.path(), cat) else {
             continue;
         };
@@ -243,13 +237,9 @@ fn push_target_agrees_with_push_result_remote() {
 /// not exist all yield `None` for every category, with no panic.
 #[test]
 fn resolver_never_panics_on_broken_repo() {
-    let cats = [
-        Cat::Push,
-        Cat::Pull,
-        Cat::ForcePush,
-        Cat::Commit,
-        Cat::Amend,
-    ];
+    // P119 T-R4: every category, including the R/C rows that read op state /
+    // HEAD before the branch check.
+    let cats = Cat::ALL;
 
     let plain = crate::testutil::scratch_dir();
     for cat in cats {
@@ -269,5 +259,105 @@ fn resolver_never_panics_on_broken_repo() {
     let missing = plain.path().join("no-such-dir").join("nested");
     for cat in cats {
         assert_eq!(target(&missing, cat), None, "missing path, {cat:?}");
+    }
+}
+
+/// P119 T-R3 — the new resolver rows: R (rebase branch) mid-rebase, C (bisect
+/// midpoint), H (HEAD branch) on a branch, and every row `None` when unborn.
+#[test]
+fn resolves_p119_rows() {
+    use crate::git::activity::GitActivityCategory as C;
+    const H_ROWS: [Cat; 7] = [
+        C::AbortMerge,
+        C::CherryPickContinue,
+        C::CherryPickAbort,
+        C::RevertContinue,
+        C::RevertAbort,
+        C::StashCreate,
+        C::ComposeCommits,
+    ];
+    const R_ROWS: [Cat; 3] = [C::RebaseContinue, C::RebaseSkip, C::RebaseAbort];
+    const C_ROWS: [Cat; 3] = [C::BisectGood, C::BisectBad, C::BisectSkip];
+
+    // ---- on a branch: every H row names it; R rows (no rebase) are None.
+    let on_branch = crate::testutil::scratch_dir();
+    let repo = init_main(on_branch.path());
+    let tip = commit_file(&repo, "a.txt", "1");
+    let p = on_branch.path();
+    for cat in H_ROWS {
+        assert_eq!(target(p, cat).as_deref(), Some("main"), "{cat:?}");
+    }
+    for cat in R_ROWS {
+        assert_eq!(target(p, cat), None, "no rebase in progress, {cat:?}");
+    }
+    // C rows read HEAD's commit even when attached (the op is what refuses).
+    let short = tip.to_string()[..7].to_string();
+    for cat in C_ROWS {
+        assert_eq!(target(p, cat), Some(short.clone()), "{cat:?}");
+    }
+    assert_eq!(target(p, C::BisectReset), None);
+
+    // ---- mid-rebase: HEAD detached, `rebase-merge/head-name` = topic.
+    let mid = crate::testutil::scratch_dir();
+    let repo = init_main(mid.path());
+    let base = commit_file(&repo, "a.txt", "1");
+    let rebase_dir = repo.path().join("rebase-merge");
+    std::fs::create_dir_all(&rebase_dir).expect("rebase-merge dir");
+    std::fs::write(rebase_dir.join("head-name"), "refs/heads/topic\n").expect("head-name");
+    std::fs::write(rebase_dir.join("onto"), format!("{base}\n")).expect("onto");
+    std::fs::write(rebase_dir.join("msgnum"), "1\n").expect("msgnum");
+    std::fs::write(rebase_dir.join("end"), "2\n").expect("end");
+    repo.set_head_detached(base).expect("detach");
+    let p = mid.path();
+    for cat in R_ROWS {
+        assert_eq!(target(p, cat).as_deref(), Some("topic"), "{cat:?}");
+    }
+    // HEAD is detached mid-rebase ⇒ an H row has no branch to name.
+    assert_eq!(target(p, C::AbortMerge), None);
+
+    // ---- bisect: HEAD detached on the midpoint ⇒ C rows = its short oid.
+    let bis = crate::testutil::scratch_dir();
+    let repo = init_main(bis.path());
+    let good = commit_file(&repo, "a.txt", "1");
+    commit_file(&repo, "a.txt", "2");
+    commit_file(&repo, "a.txt", "3");
+    let bad = commit_file(&repo, "a.txt", "4");
+    crate::git::bisect::start_bisect(bis.path(), &bad.to_string(), &[good.to_string()])
+        .expect("start bisect");
+    let head = repo
+        .head()
+        .expect("head")
+        .peel_to_commit()
+        .expect("commit")
+        .id();
+    assert_ne!(head, bad, "bisect must have moved HEAD to a midpoint");
+    for cat in C_ROWS {
+        assert_eq!(
+            target(bis.path(), cat),
+            Some(head.to_string()[..7].to_string()),
+            "{cat:?}"
+        );
+    }
+    assert_eq!(target(bis.path(), C::BisectReset), None);
+
+    // ---- unborn: nothing to name for any category.
+    let unborn = crate::testutil::scratch_dir();
+    init_main(unborn.path());
+    for cat in Cat::ALL {
+        assert_eq!(target(unborn.path(), cat), None, "unborn, {cat:?}");
+    }
+}
+
+/// P119 §1: every arg-carried / multi-item row resolves to `None` from the repo
+/// (its target comes from `arg_activity_target`), with no repo open needed.
+#[test]
+fn arg_rows_never_resolve_from_the_repo() {
+    let dir = crate::testutil::scratch_dir();
+    let repo = init_main(dir.path());
+    commit_file(&repo, "a.txt", "1");
+    for cat in Cat::ALL {
+        if is_arg_or_untargeted(cat) {
+            assert_eq!(target(dir.path(), cat), None, "{cat:?}");
+        }
     }
 }

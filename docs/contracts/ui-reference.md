@@ -1447,12 +1447,19 @@ Recipe and the three rejected alternatives: **§11, last bullet** (P109).
   to see details").
 - Unborn repo: empty graph pane message "No commits yet"; status panel remains usable.
 - Loading: skeleton rows (bg-2 rounded bars, 1.2s pulse) for lists; graph shows nothing until
-  layout arrives (no spinners over the canvas). Any operation > 300ms shows an indeterminate 2px
-  accent bar under the header (`.header-progress`, `styles.css:1320`).
+  layout arrives (no spinners over the canvas). **There is no bar under the toolbar (removed in
+  P119).** A git operation's 2px accent bar lives on the git dock's top edge only
+  (`.git-dock-progress`, §12.10) — every repo-changing action is a dock run, so the dock bar covers
+  them all; it appears after a 150ms reveal delay so sub-perceptual ops never flash it.
 - **In-flight, non-blocking operations are announced with words, never spinners.** The house pattern
   is a present-participle label on the control that started the op — `Fetching…` / `Pulling…` /
   `Pushing…` (`WorkspaceToolbar.tsx:142-166`), `Checking…` (`GitMissingBanner`,
-  `SettingsUpdatesSection`), `Committing & Pushing…` (`CommitBox`) — plus `.header-progress`.
+  `SettingsUpdatesSection`), `Committing & Pushing…` (`CommitBox`) — plus the dock bar.
+  **One user-ruled exception (P119, 2026-09-24): the toolbar Refresh glyph rotates** while a manual
+  refresh runs (Refresh is not a git run and is never logged). `.toolbar-refresh[aria-busy='true']`:
+  glyph `--accent` (5.07:1 dark / 4.34:1 light on `--bg-1`), `rotate` 600ms linear infinite on the
+  SVG only, minimum one full turn, `aria-label` stays `Refresh`, `title` → `Refreshing…`; reduced
+  motion drops the rotation and keeps the accent. No other control may spin — see `P119-ui.md` §3.
   Where the trigger is a context-menu item with no persistent control, the participle goes on the
   affected **row's status pill** instead and the row carries `aria-busy="true"`
   (P73 §6.1, submodule rows). Lowercase inside a pill, sentence-case on a button; always a trailing
@@ -1520,9 +1527,12 @@ Full contract: `docs/contracts/P68e-ai-activity-dock.md`. Canonical geometry:
 - Motion: the dock never animates its height (a height transition would force repeated
   20k-row canvas relayouts). Only opacity/colour, ≤150ms, ease-out; the app's first
   `prefers-reduced-motion` block lives in this section. P70 adds `.file-chevron` (the app-wide
-  120ms disclosure-caret transform) to that same block; P73 adds `.header-progress::after`
+  120ms disclosure-caret transform) to that same block; P73 added `.header-progress::after`
   (`animation: none; width: 100%; opacity: 0.6` — the same treatment as `.ai-dock-progress`), which
-  closes P68e §12-F3 for the header sweep. P69 adds `.settings-switch-*` and `.settings-segment`.
+  closed P68e §12-F3 for the header sweep; **P119 deleted `.header-progress` entirely** and adds
+  `.git-dock-progress[data-determinate]::after { transition: none; opacity: 1 }` and
+  `.toolbar-refresh[aria-busy='true'] svg { animation: none }`. `@keyframes header-progress-sweep`
+  survives as the shared sweep for both dock bars. P69 adds `.settings-switch-*` and `.settings-segment`.
   `skeleton-pulse` remains outstanding.
 
 ## 10. App notice bar (P70)
@@ -2168,13 +2178,25 @@ dock** (View D, a twin of the §9 AI dock). Reuses §9 geometry, §11 pills, the
   reflows mid-op; the granular phase/progress rides an adjacent `.toolbar-phase` span reusing the
   `.toolbar-job-status` treatment (11px `--text-2`). Applies on the workspace toolbar remote buttons
   and the `CommitBox` commit button. The phase string is NOT put in the button label.
-- **Progress bar — indeterminate ↔ determinate.** `.header-progress` stays the indeterminate 2px
-  `header-progress-sweep` by default (preparing, hooks, push network, refresh). During a **fetch/pull
-  `network`** phase *with a derivable fraction* it gains `data-determinate` + `--progress: <0..1>`;
-  the `::after` fill scales by `transform: scaleX(var(--progress))` (transform, not width — no layout),
-  `transition: transform 150ms ease-out`. Determinacy + an object/byte count readout both require the
-  backend to surface `transfer_progress` as structured counts (flagged to the architect); text-only →
-  best-effort parse, else stays indeterminate. Never colour-only: the bar is backed by the readout.
+- **Progress bar — indeterminate ↔ determinate (revised P119: the dock bar is the only bar).**
+  `.git-dock-progress` (2px `--accent`, dock top edge, both collapsed and expanded) is the
+  indeterminate `header-progress-sweep` by default. When `progressFraction(activeRun) !== null`
+  (fetch/pull/clone `network` with `totalObjects > 0`) it gains `data-determinate` + `--progress: <0..1>`
+  (clamped); the `::after` fill scales by `transform: scaleX(var(--progress))` (transform, not width —
+  no layout), `transition: transform 150ms ease-out`. `activeRun` = the newest running run, so an
+  overlapping checkout makes the bar sweep while the fetch's counts stay in its own row. 150ms reveal
+  delay (`git-dock-progress-reveal`, a 0s step — not motion). `aria-hidden`; never colour-only — the
+  header `.git-dock-detail` and the toolbar readout carry the counts in words. The toolbar
+  `.header-progress` bar was deleted in P119 (`P119-ui.md` §1–§2).
+- **Every repo-changing action is a run (P119).** Checkout, branch/tag/stash/submodule/worktree/
+  remote ops, merge (a fast-forward is a `merge` row with outcome detail `Fast-forwarded` /
+  `Merge commit created` / `Already up to date`), rebase/cherry-pick/revert (+ continue/skip/abort),
+  `resetSoft`/`resetMixed`/`resetHard` (Undo shows as its reset row), discard, bisect,
+  compose-commits, and clone/init while a workspace is open. **Not runs** (user ruling): stage/unstage,
+  conflict-resolution writes, Refresh. Copy table keyed by wire id, preposition set
+  (`to|from|on|onto|into|in|at|for|null`), `countNoun` for `targetCount` runs (`Delete 3 branches`),
+  the `! Conflicts` status and the failure-reason stderr line: `P119-ui.md` §4. The category table
+  lives in `gitActivityCategories.ts`, not `gitActivityFormat.ts`.
 - **View D dock geometry** = §9 exactly: child of `.workspace-host` **after `.ai-dock`** (git dock is
   the outermost/bottom; both collapse independently); `flex: none; overflow: hidden`; collapsed bar
   30px cozy / 28px compact; expanded 120–600px (default 180, capped 60% viewport); `PaneDivider`
@@ -2188,7 +2210,10 @@ dock** (View D, a twin of the §9 AI dock). Reuses §9 geometry, §11 pills, the
   `--git-dock-border: var(--border)`), swapped by `.git-activity-dock[data-density='compact']`.
   Status hue via local `--h`. Same alias discipline as `--ai-dock-*`.
 - **Run row anatomy.** Summary line: `.file-chevron` disclosure → category glyph (`aria-hidden`,
-  reuse `PushIcon`/`FetchIcon`/`PullIcon`/`MergeIcon`/`RefDotIcon`) → noun `--text-1` → target
+  one glyph per operation family, reusing the menu glyph the user clicked — `PushIcon`/`FetchIcon`/
+  `PullIcon`/`MergeIcon`/`RefDotIcon`, and from P119 `CheckoutIcon`/`RefBranchIcon`/`RebaseIcon`/
+  `CherryPickIcon`/`RevertIcon`/`ResetIcon`/`StashIcon`/`TagIcon`/`WorktreeIcon`/`BisectIcon`/
+  `CloudIcon` + new `SubmoduleIcon`/`CloneIcon`/`InitRepoIcon`) → noun `--text-1` → target
   (**revised 2026-09-03, FU-1: `origin/main`, no arrow** — the noun already carries direction; 11px
   mono `--text-2`, `max-width: 22ch`, `RefLabel` leaf-preserving truncation per §3.0 + `title`;
   absent target renders nothing, never a placeholder; `fetch` with no target reads `all remotes`.
@@ -2202,7 +2227,8 @@ dock** (View D, a twin of the §9 AI dock). Reuses §9 geometry, §11 pills, the
   `AiOutputPanel`'s Copy→Copied) → for a blocking-hook failure, a `--text-2` note tying to
   `HookOutputDialog`.
 - **Status vocabulary** (§11 recipe, word + glyph): run `● Running` (`--h: --accent`) / `✓ Success` /
-  `⚠ Failed`; hook `✓ exit 0` / `⚠ exit N` / `⊘ killed`. `●` (not `✨`, which is AI; not `⚠`, which is
+  `⚠ Failed` / `! Conflicts` (`--h: --warning`, P119 — a merge/rebase/pick/revert/stash-apply that
+  stopped for the user; never shown as Failed); hook `✓ exit 0` / `⚠ exit N` / `⊘ killed`. `●` (not `✨`, which is AI; not `⚠`, which is
   "failed") matches the toast info glyph (§10.2).
 - **Relationship to `HookOutputDialog` (unchanged).** The dialog stays the point-in-time **blocking**
   modal (verbatim output + skip-hooks retry); the dock is the always-on record that *also* keeps
@@ -2225,7 +2251,9 @@ dock** (View D, a twin of the §9 AI dock). Reuses §9 geometry, §11 pills, the
   (3) the clickable in-flight `.toolbar-phase` readout → expand + reveal the active run.
 - **Motion.** No dock height animation (§9 canvas-relayout prohibition — snap). `.file-chevron` 120ms;
   determinate fill 150ms `scaleX`. Add the git-dock/bar selectors to the §9 `prefers-reduced-motion`
-  block (sweep → static 100% @ .6 opacity; chevron/fill snap).
+  block (sweep → static 100% @ .6 opacity; chevron/fill snap; determinate fill at opacity 1 so a
+  partial fill reads distinct from the static sweep). The 150ms bar reveal delay is kept under reduced
+  motion (it is not motion).
 
 ### 12.11 Developer settings, the sensitive row, and the logging indicator (P91)
 

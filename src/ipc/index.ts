@@ -111,6 +111,7 @@ export type {
   GitActivityKind,
   GitPhase,
   GitPhaseKind,
+  GitRunOutcome,
   GitTransferProgress,
   FoldSpan,
   GraphChunk,

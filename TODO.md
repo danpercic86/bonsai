@@ -1165,6 +1165,34 @@ fix 1 lands. **Open question, do not fix blind:** day-wide `perf.graph_walks` (1
 by exactly the hit count (6) versus the 97 spans that actually ran a `revwalk`; the offset predates
 the observed session and could not be attributed from static reading.
 
+## P119 — every repo-changing action is logged in the git activity dock — `in-progress`
+
+**Current step:** P119 — contracts written (`docs/contracts/P119-activity-for-all-actions.md`,
+`docs/contracts/P119-ui.md`); architect contract at rev 2 (610 lines); P119-ui.md
+aligned (593 lines). **P119-1 (core model) implemented, awaiting reviewer round 1.**
+**Second rulings (2026-09-24):** stage/unstage + conflict-resolution writes are **NOT** logged;
+a run that pauses on conflicts ends in a distinct **`! Conflicts`** outcome; fast-forward = one
+**Merge** row whose finished detail says fast-forwarded vs merged; clone/init logged only when a
+repo is already open (empty-screen clone keeps the dialog's own bar).
+
+User request 2026-09-24: (1) the toolbar `header-progress` bar duplicates the dock's progress
+bar — remove it, keep only the dock's; (2) checkout / merge / fast-forward / rebase / etc. give
+no feedback — every action must appear in the bottom activity log with a loading bar.
+**User rulings (2026-09-24):** log **every repo-changing action** (instant ones included, a short
+row is fine); **Refresh** is NOT logged — its icon spins while refreshing instead.
+
+Acceptance criteria:
+- No `header-progress` element under the toolbar in any state; `ToolbarPhaseReadout` text stays.
+- The determinate fetch/pull fraction (formerly only on the toolbar bar) is shown on the dock's
+  progress bar.
+- Every mutating command (checkout branch/commit/remote, merge/abort, fast-forward, rebase*,
+  cherry-pick*, revert*, reset, stash ops, branch create/delete/rename, tag ops, submodule ops,
+  worktree ops, discard, clone, undo…) emits `started`/`finished` on the git-activity stream
+  with a category + target; the dock shows a row, running bar, and success/failure.
+- Refresh icon spins while refreshing; submodule ops (formerly `netBusy`) show in the dock.
+- Mock IPC emits the same events so the browser harness shows the rows.
+- `@keyframes header-progress-sweep` is kept (the AI panel reuses it).
+
 ## Follow-ups, ranked, none blocking
 
 - **✅ SPLIT 2026-09-16 (`934a280`) — both zero-slack files now have room, and the baseline is

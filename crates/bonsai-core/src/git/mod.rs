@@ -1,5 +1,9 @@
 /// P87 git-activity observability: the event model + recorder/emitter.
 pub mod activity;
+/// P119: which operation a run is + how a successful run ended.
+pub mod activity_category;
+/// P119: pure result → `finished.outcome` classifiers.
+pub mod activity_outcome;
 /// P87b FU-1: the read-only, infallible resolver for a run's `target` ref.
 pub mod activity_target;
 pub mod ai_branch_name;
@@ -29,6 +33,8 @@ pub mod blame;
 pub mod branches;
 pub mod cherrypick;
 pub mod clone;
+/// P119: throttled clone progress → git-activity recorder bridge.
+pub mod clone_activity;
 pub mod commit;
 /// P87 activity-recording commit/amend cores (split from `commit.rs` for size).
 pub mod commit_activity;
