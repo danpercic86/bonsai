@@ -225,6 +225,18 @@ describe('dev-mode privacy consent copy', () => {
     expect(panel).toContain('With Dev mode on it also records how long its own actions took.');
   });
 
+  // P120-ui §5: the layout clause carries the platform limit, the focus clause
+  // must not pick it up, and no engine word reaches the consent text.
+  it('discloses the stability signals, platform-scoped and area-only (P120 B4)', () => {
+    const panel = panelProse(false);
+    expect(panel).toContain('On Windows it also notes when part of the window');
+    expect(panel).toContain('never what was in it.');
+    const focus = panel.slice(panel.indexOf('on every system'), panel.indexOf('key press.') + 'key press.'.length);
+    expect(focus).toContain('keyboard focus is lost');
+    expect(focus).not.toMatch(/Windows/);
+    expect(panel).not.toMatch(/layout shift|region|WebView|Chromium/i);
+  });
+
   it('is poll-independent: only the "Right now:" note varies (§8.4 stickiness)', () => {
     const strict = panelProse(false);
     expect(panelProse(false)).toBe(strict);

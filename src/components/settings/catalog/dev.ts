@@ -98,7 +98,7 @@ export const DEV_ENTRIES: readonly SettingsIndexEntry[] = [
     category: 'dev',
     group: 'What Bonsai records',
     label: 'What Bonsai records',
-    keywords: 'privacy contents redact anonymous network upload usage counts metrics retention 90 days',
+    keywords: 'privacy contents redact anonymous network upload usage counts metrics retention 90 days layout shift jump move window area focus lost stability',
     control: 'group',
   },
   {

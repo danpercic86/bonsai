@@ -331,7 +331,7 @@ export type StabilitySink = (e: StabilityEvent) => void;
 | `focusLoss.ts` | ≤130 | `attachFocusLoss(emit: StabilitySink): () => void` |
 | `sinks.ts` | ≤60 | `addStabilitySink(fn: StabilitySink): () => void`. The **0→1 transition attaches** all observers/trackers and **1→0 detaches** them. `emit` fans out to every sink |
 | `devSink.ts` | ≤120 | `createDevSink(): { sink: StabilitySink; flushAll(): void }` (coalescing, §3.5) |
-| `install.ts` | ≤50 | `startStability(): void`, idempotent. Registers or unregisters the dev sink on `onObsConfigChange` according to `obsEnabled()`. On disable it calls `flushAll()` **before** unregistering. Also adds a `pagehide` listener that calls `flushAll()` |
+| `install.ts` | ≤50 | `startStability(): void`, idempotent. Registers or unregisters the dev sink on `onObsConfigChange` according to `obsEnabled()`. On disable it calls `flushAll()` **before** unregistering. That leaves the sink clean for re-enable. The flushed records are **dropped by design** by the `logRecord` obs gate, which is already off, and Rust closes its session on disable (`mod.rs:209-214`). *Amended 2026-09-24, reviewer ruling.* While registered it also listens for `pagehide` and `visibilitychange`→hidden, and runs `flushAll(); flushNow()` so the buckets ship in the same tick. |
 
 Wiring: call `startStability()` once, next to the first `configureObs` call (senior-dev locates it via
 `enabled.ts` consumers). Part a's mock counter sink registers through `addStabilitySink` from
@@ -355,6 +355,19 @@ forever. **`markBoot()`** fires when a repo open or switch begins. Senior-dev pi
 must not grow `RepoWorkspace.tsx` (2262, baselined). A one-line call in an existing hook is fine.
 Note: `e2e`'s `waitForGraphSettled` waits for the *full* graph height plus the status heading, which
 is later than "first meta". The lab (part a) keeps using it, and the two don't need to coincide.
+
+**Accepted deviations (2026-09-24, part-a reviewer ruling):**
+- **Readiness is detected in the IPC layer.** It lives in `stability/readiness.ts`, via
+  `tapReadiness()` wrapping the IPC object in `src/ipc/index.ts`. The only call sites for
+  `getStatus`/`streamGraph` are in `RepoWorkspace.tsx`, which may not grow.
+  - The cost with Dev mode off: one Proxy `get` trap per IPC call, plus one `.finally` per
+    `getStatus`/`streamGraph`.
+  - That breaks the letter of P91 §11 ("zero allocations per IPC call beyond today") but stays well
+    within its frame budget. Accepted.
+- **Where the mock counter sink registers.** It registers in `install.ts` at module level, not from
+  `useMockDevHooks.ts`. StrictMode's 1→0→1 remount would otherwise lose the A7 buffered replay.
+- **The empty state only marks interactive after session restore has settled.** Otherwise shifts
+  during restore would be labelled interactive.
 
 ### 3.4 Layout-shift capture (`layoutShift.ts`)
 
@@ -511,7 +524,8 @@ panel reports as `diff`.
 - T-F8 dev sink with `obsEnabled()` false → zero `logRecord` output. With no sinks registered, no
   observers or listeners are attached (spy on `PerformanceObserver`, `addEventListener`,
   `MutationObserver`) (AC 12).
-- T-F9 turning dev mode off flushes the open buckets once, then detaches.
+- T-F9 turning dev mode off flushes the open buckets once, then detaches. It asserts that nothing is
+  enqueued, because the obs gate drops them (amended 2026-09-24).
 - T-F10 `analyzeStability` mirrors T-R1–T-R6 on the same fixtures (the shared fixture JSON lives in
   `src/ipc/mock/fixtures/`).
 - T-F11 the `UiPayload` type test: `logRecord({kind:'layout.shift', …})` type-checks, and a payload

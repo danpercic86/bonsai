@@ -8,7 +8,7 @@ they differ)
   `src-tauri/src/obs/record_enums.rs`, with `pub use` re-exports so no public path breaks. Delete
   `record.rs`'s entry from `scripts/file-size-baseline.json`. Test counts must be identical before
   and after (T-R12). — owner: refactorer
-- [ ] B2. Rust, contract §2.1 / §2.2 / §2.4 / §2.5:
+- [x] B2. Rust, contract §2.1 / §2.2 / §2.4 / §2.5:
   - `record_stability.rs`
   - the two `LogPayload` newtype variants
   - `record_kind.rs`: the arms plus `ALL_KINDS`
@@ -17,7 +17,7 @@ they differ)
   - tests T-R1–T-R11, including `tests_kind_parity.rs` and `tests_anomaly_stability.rs`.
 
   — owner: senior-dev (after B1)
-- [ ] B3. Frontend, contract §3.1–§3.5 / §5:
+- [x] B3. Frontend, contract §3.1–§3.5 / §5:
   - `LogKind` gets the two kinds (`src/ipc/types/obs.ts:32`)
   - `UiPayload` members plus the `Exclude` list (`src/obs/types.ts:222`)
   - `src/obs/stability/devSink.ts` (coalescing)

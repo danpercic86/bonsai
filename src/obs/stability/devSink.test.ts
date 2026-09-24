@@ -49,6 +49,16 @@ describe('dev sink coalescing (T-F7)', () => {
     });
   });
 
+  it('out-of-order entries (buffered boot replay) widen firstAt as well as the span', () => {
+    markInteractive();
+    dev.sink(shift({ at: 1200 }));
+    dev.sink(shift({ at: 1000 }));
+    dev.sink(shift({ at: 1300 }));
+    vi.advanceTimersByTime(SHIFT_BUCKET_MS);
+    expect(logged).toHaveBeenCalledTimes(1);
+    expect(logged.mock.calls[0]?.[0]).toMatchObject({ shifts: 3, firstAt: 1000, spanMs: 300 });
+  });
+
   it('prompted / resizing buckets never mix with unprompted ones and log at debug', () => {
     markInteractive();
     dev.sink(shift({ at: 1000 }));

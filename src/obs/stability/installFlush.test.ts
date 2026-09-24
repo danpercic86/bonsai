@@ -1,6 +1,11 @@
 // @vitest-environment happy-dom
 /** P120 T-F9 — turning Dev mode off flushes the open buckets ONCE, before the
- *  sink detaches. `logRecord` is mocked so the flush itself is observable. */
+ *  sink detaches, so the sink is clean for a re-enable (no stale bucket merges
+ *  into the next session). `logRecord` is mocked here so the flush itself is
+ *  observable; for real, `obsEnabled()` is already false at that point and the
+ *  obs gate drops those records BY DESIGN — Rust closes its session on disable
+ *  (`src-tauri/src/obs/mod.rs` `apply_dev_settings`). `install.test.ts` pins
+ *  that nothing is enqueued. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DevSettings } from '../../ipc/types/settings';
 import { configureObs, resetObsConfigForTests } from '../enabled';
@@ -60,6 +65,14 @@ describe('Dev mode off → flush, then detach (T-F9)', () => {
     window.dispatchEvent(new Event('pagehide'));
     configureObs(null);
     expect(logged).toHaveBeenCalledTimes(1);
+    // Re-enable starts from an empty bucket: the next flush carries only the new
+    // shift (a re-attach is unbuffered, so the entry must post-date it).
+    configureObs(DEV_ON);
+    const later = performance.now() + 1000;
+    FakePerformanceObserver.instances.at(-1)?.deliver([shiftEntry({ startTime: later })]);
+    window.dispatchEvent(new Event('pagehide'));
+    expect(logged).toHaveBeenCalledTimes(2);
+    expect(logged.mock.calls[1]?.[0]).toMatchObject({ kind: 'layout.shift', shifts: 1 });
   });
 
   it('stopStability also flushes and unregisters', () => {

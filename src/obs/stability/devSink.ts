@@ -106,6 +106,8 @@ export function createDevSink(): DevSink {
     }
     b.shifts += 1;
     b.value += e.value;
+    // Buffered boot replay can arrive out of order (A7): widen both ends.
+    b.first = Math.min(b.first, e.at);
     b.last = Math.max(b.last, e.at);
   }
 

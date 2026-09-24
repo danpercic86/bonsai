@@ -6,8 +6,10 @@
  * Mock mode: the lab counter sink + `?perfInject*` triggers (part a). Both
  * modes: the dev sink (`devSink.ts`) is registered iff `obsEnabled()`, tracked
  * via `onObsConfigChange`; its buckets are flushed before it unregisters and on
- * `pagehide`, a listener that exists only while it is registered (§1, AC 12).
+ * `pagehide` / `visibilitychange → hidden` (then the batcher is pushed with
+ * `flushNow`) — listeners that exist only while it is registered (§1, AC 12).
  */
+import { flushNow } from '../batcher';
 import { obsEnabled, onObsConfigChange } from '../enabled';
 import { createDevSink } from './devSink';
 import type { DevSink } from './devSink';
@@ -21,8 +23,17 @@ let stop: (() => void) | null = null;
 let dev: DevSink | null = null;
 let unregisterDev: (() => void) | null = null;
 
+/** Closes the open buckets, then pushes the batcher so the records are not
+ *  stranded in its 500 ms window when the page goes away. */
 function onPageHide(): void {
   dev?.flushAll();
+  void flushNow();
+}
+
+/** `visibilitychange → hidden` covers a webview that is hidden or torn down
+ *  without a `pagehide`; a repeat flush is a no-op (buckets already closed). */
+function onVisibilityChange(): void {
+  if (document.visibilityState === 'hidden') onPageHide();
 }
 
 function syncDevSink(): void {
@@ -30,8 +41,10 @@ function syncDevSink(): void {
     dev ??= createDevSink();
     const removeSink = addStabilitySink(dev.sink);
     window.addEventListener('pagehide', onPageHide);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     unregisterDev = () => {
       window.removeEventListener('pagehide', onPageHide);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       dev?.flushAll();
       removeSink();
     };

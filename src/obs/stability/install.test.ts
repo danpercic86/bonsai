@@ -1,16 +1,25 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DevSettings } from '../../ipc/types/settings';
-import { enqueue } from '../batcher';
+import { enqueue, flushNow } from '../batcher';
 import { configureObs, resetObsConfigForTests } from '../enabled';
 import { createDevSink } from './devSink';
 import { startStability, stopStability } from './install';
 import { resetPhaseForTests } from './phase';
 import { resetSinksForTests, stabilitySinkCountForTests } from './sinks';
-import { FakePerformanceObserver } from './testFakes';
+import { FakePerformanceObserver, shiftEntry } from './testFakes';
 
-vi.mock('../batcher', async (orig) => ({ ...(await orig<typeof import('../batcher')>()), enqueue: vi.fn() }));
+vi.mock('../batcher', async (orig) => ({
+  ...(await orig<typeof import('../batcher')>()),
+  enqueue: vi.fn(),
+  flushNow: vi.fn(() => Promise.resolve()),
+}));
 const enqueued = vi.mocked(enqueue);
+const flushed = vi.mocked(flushNow);
+
+function setVisibility(state: DocumentVisibilityState): void {
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue(state);
+}
 
 const DEV_ON: DevSettings = {
   enabled: true,
@@ -28,6 +37,7 @@ beforeEach(() => {
   resetSinksForTests();
   resetObsConfigForTests();
   enqueued.mockClear();
+  flushed.mockClear();
   FakePerformanceObserver.instances = [];
   FakePerformanceObserver.supportedEntryTypes = ['layout-shift'];
   vi.stubGlobal('PerformanceObserver', FakePerformanceObserver);
@@ -82,15 +92,29 @@ describe('startStability outside mock mode', () => {
     expect(stabilitySinkCountForTests()).toBe(1);
   });
 
-  it('turning Dev mode off detaches everything and removes the pagehide listener (T-F9)', () => {
+  // T-F9: the disable-flush runs (installFlush.test.ts observes it) so the sink
+  // is clean for a re-enable, but `obsEnabled()` is already false, so the obs
+  // gate in `logRecord` drops those records BY DESIGN — Rust closes its session
+  // on disable (`src-tauri/src/obs/mod.rs` `apply_dev_settings`), so there is
+  // no file for them to land in.
+  it('turning Dev mode off detaches everything, removes both listeners and enqueues nothing (T-F9)', () => {
     const remove = vi.spyOn(window, 'removeEventListener');
+    const removeDoc = vi.spyOn(document, 'removeEventListener');
     startStability();
     configureObs(DEV_ON);
     const po = FakePerformanceObserver.instances[0];
+    po?.deliver([shiftEntry({ startTime: 10 }), shiftEntry({ startTime: 20 })]);
     configureObs(null);
+    expect(enqueued).not.toHaveBeenCalled();
     expect(stabilitySinkCountForTests()).toBe(0);
     expect(po?.disconnected).toBe(true);
     expect(remove.mock.calls.filter(([t]) => t === 'pagehide')).toHaveLength(1);
+    expect(removeDoc.mock.calls.filter(([t]) => t === 'visibilitychange')).toHaveLength(1);
+    // Neither listener survives the disable.
+    setVisibility('hidden');
+    window.dispatchEvent(new Event('pagehide'));
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(flushed).not.toHaveBeenCalled();
   });
 
   it('pagehide flushes the open buckets while Dev mode is on', () => {
@@ -102,6 +126,24 @@ describe('startStability outside mock mode', () => {
     window.dispatchEvent(new Event('pagehide'));
     expect(enqueued).toHaveBeenCalledTimes(1);
     expect(enqueued.mock.calls[0]?.[0]).toMatchObject({ kind: 'layout.shift', shifts: 1, value: 0.05, phase: 'boot' });
+    expect(flushed).toHaveBeenCalledTimes(1);
+    expect(flushed.mock.invocationCallOrder[0]).toBeGreaterThan(enqueued.mock.invocationCallOrder[0] ?? Infinity);
+  });
+
+  it('visibilitychange → hidden flushes the buckets and the batcher; → visible does not', () => {
+    const addDoc = vi.spyOn(document, 'addEventListener');
+    startStability();
+    configureObs(DEV_ON);
+    expect(addDoc.mock.calls.filter(([t]) => t === 'visibilitychange')).toHaveLength(1);
+    FakePerformanceObserver.instances[0]?.deliver([shiftEntry({ startTime: 10 })]);
+    setVisibility('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(enqueued).not.toHaveBeenCalled();
+    expect(flushed).not.toHaveBeenCalled();
+    setVisibility('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(enqueued).toHaveBeenCalledTimes(1);
+    expect(flushed).toHaveBeenCalledTimes(1);
   });
 });
 

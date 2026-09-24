@@ -97,6 +97,10 @@ mod tests_repo_redaction;
 #[path = "tests_stability_redaction.rs"]
 mod tests_stability_redaction;
 
+#[cfg(test)]
+#[path = "tests_stability_fixture.rs"]
+mod tests_stability_fixture;
+
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
