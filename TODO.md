@@ -1450,7 +1450,7 @@ on the 30 s tick, and watcher records carrying `worktreePaths`/`ignoreChecked`/`
 (P121d evidence: `ignoreChecked < worktreePaths` = inconclusive, not all-ignored).
 
 **P121 follow-ups (SHOULD-FIX / NIT, not blocking):**
-- `stage-unstage` CDP recalcStyle/layout flaked 1/24 reps → decide: investigate, or add to the
+- ✅ **Resolved 2026-09-25 by `835a63a` (user ruling: exempt; see P124).** `stage-unstage` CDP recalcStyle/layout flaked 1/24 reps → decide: investigate, or add to the
   interaction's `alwaysNondeterministic` (loosens the ratchet — user call).
 - Tag-sync contract §2.2 "badge-less while checking" is stale for re-checks after the Q1 ruling
   (docs update).
@@ -1661,6 +1661,61 @@ nextest activity 28/28 + 49/49, no MUST-FIX). ui-designer APPROVE.
    (contract default (a)).
 
 Source: the P122 follow-ups above.
+
+## P124 — fixes from the P121-checkpoint /perf-review (session `s1d3f226f`, 2026-09-25) — `awaiting USER CHECKPOINT`
+
+**Current step:** P124 — code committed (`a508f41` a+d, `841566f` b+c, `835a63a` perf-ratchet
+exemption). Contract `docs/contracts/P124-perf-review-2-fixes.md` signed with user rulings
+2026-09-25 (none: 2 sightings ≥ 2 min apart; P124a2 batching deferred; ignored-only bursts dropped
+with a 5-min heartbeat; diff background reload + new lab interaction accepted). Both reviewer
+passes APPROVE, no MUST-FIX; SHOULD-FIX applied before commit (focus gate on `performance.now()`;
+tracked-file-under-directory check via `Index::find_prefix`; `useDiffSlot` pre-check limited to
+background same-key reloads). Reviewer S3 (`reactCommits: 0` flake) was a misreading — the 4 is
+`ipcCalls`; the interaction read 0 commits in all 12 reps under `PERF_RUNS=6`.
+- Bare `pnpm gate` at `835a63a`, 2026-09-25: **11/11 green, 450.5 s** — nextest 2790 passed /
+  11 skipped (0 LEAK), vitest 3365/3365 (318 files), e2e 185 passed / 1 skipped, perf counts
+  9/9, perf ratchet 48 counts OK, eslint 0 errors / 38 warnings.
+  Log: `D:\Data\Temp\bonsai-p124\gate-full-2.log`.
+- Gate history (kept deliberately): the first run at `841566f` failed the perf ratchet only on
+  `stage-unstage` recalcStyle/layout nondeterminism. Measured under `PERF_RUNS=6`: 5/12 reps
+  varied on the pre-P121 tree `618c7f0`, ~half at HEAD → pre-existing harness timing. User ruling
+  2026-09-25: exempt those two metrics (`835a63a`); reactCommits/ipcCalls stay capped. This closes
+  the P121 follow-up "stage-unstage CDP recalcStyle/layout flaked".
+
+**USER CHECKPOINT:** in `pnpm tauri dev` with dev mode on and several repos open for ≥ 35 min
+(expand the Tags section once, to also close P121e), rerun `/perf-review`. Expect:
+- `forgeCommitStatuses`: no re-request of the same `none` shas within 30 min unless forced; far
+  fewer calls and slow-command errors than `s1d3f226f` (15.6 calls/h, 9 errors).
+- watcher records with `suppressed: true, suppressReason: "ignored"` for ignored-only bursts, and
+  `redundant-refresh` well below 52/h, with no missed real change noticed in use.
+- a background refresh with a diff open no longer re-rendering GraphCanvas/Sidebar.
+- focus: one full refresh round per window focus; focus-pair `dup-ipc` ≈ 0.
+
+**P124 follow-ups (NIT, not blocking):** rename `useForgeSignals.test.ts` → `forgeCiCache.test.ts`;
+`burst.rs` doc overstates the `.git`-noise storm proxy; tidy `#[cfg(test)]` re-imports in
+`watcher/mod.rs`; drop the `count()` test helper in `ignore.rs` and assert exact `ignored`;
+`IgnoreStats.worktree_paths` reads like a list. P124a2 (Azure `commitsbatch`) — revisit only if the
+checkpoint session still shows `forgeCommitStatuses` as the top cost; needs a live PAT probe by
+the user.
+
+Source: user request 2026-09-25 ("work on your findings") after `/perf-review` of
+`bonsai-2026-09-25T12-32-18-s1d3f226f.jsonl` (115 min, 6 repos, build incl. P121–P123). Report:
+`D:\Data\Temp\bonsai-perf-review\s1d3f226f.md`. P121 checkpoint result from that log: b, c, d
+PASS; a duplicates PASS but volume only partly fixed (72% of IPC time, max 23.5 s, 9 slow-command
+errors); e INCONCLUSIVE (Tags never expanded). The P121 checkpoint is NOT declared passed here.
+
+- **P124a — `none` CI verdicts never settle (error).** Tips with no CI roll up to `none`
+  (`crates/bonsai-forge/src/rollup.rs:72`), which P121a gave the 60 s TTL
+  (`useForgeSignals.ts:67`), so 69–100 shas are re-requested non-forced within 30 min. `none` is
+  not terminal right after a push (CI not started yet) — needs an age- or streak-based rule.
+  GraphQL batching (contract P121 Q4) is now due by its own condition — decide in this contract.
+- **P124b — all-gitignored watcher bursts drive refreshes (warn).** 338/444 worktree bursts
+  touched only ignored paths; 336 rounds, 0 status changes, 18.6 s. Must address the Windows
+  lost-event caveat from P121d before dropping any burst.
+- **P124c — open diff doubles each background refresh (warn).** Diff slot set loading→ready with
+  no `keepIfUnchanged` (`RepoWorkspace.tsx:567/571`); ~36% of GraphCanvas renders.
+- **P124d — double window-focus event → two full refresh rounds (warn, cheap).** Two focus fires
+  ~50 ms apart (`src/ipc/tauri/app.ts:26`, no coalescing); 20/22 dup-ipc anomalies.
 
 ## Follow-ups, ranked, none blocking
 
