@@ -521,7 +521,7 @@ export interface IpcApi extends IpcApiForge, IpcApiObs, IpcApiTools {
   onRepoChanged(cb: (p: RepoChangedPayload) => void): Promise<Unsubscribe>;
   /** P85 A3: fires when the fetch tag auto-sync changed local tags (adopted/moved). */
   onTagAutoSync(cb: (e: TagAutoSyncEvent) => void): Promise<Unsubscribe>;
-  /** Fires when the app window regains focus. */
+  /** Fires when the app window regains focus — at most once per `FOCUS_COALESCE_MS` (P124d). */
   onWindowFocus(cb: () => void): Promise<Unsubscribe>;
   /** P30. Background-job status for one open repo — exactly 2 entries
    *  (autoFetch, healthRefresh). Rejects noRepo. */

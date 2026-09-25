@@ -1,6 +1,7 @@
 import { invoke } from './invoke';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { createFocusGate } from '../focusGate';
 import type { JobKind, JobStatus, JobStatusChangedPayload, RecentRepo, RepoChangedPayload, SessionState, TagAutoSyncEvent, UiSettings, UiSettingsPatch, Unsubscribe } from '../types';
 
 export const appCommands = {
@@ -22,9 +23,12 @@ export const appCommands = {
     return listen<TagAutoSyncEvent>('tag-auto-sync', (e) => cb(e.payload));
   },
 
+  // P124d: WebView2 delivers focused=true twice within ~50 ms — gate per
+  // subscription so one focus episode runs one refresh round.
   onWindowFocus(cb: () => void): Promise<Unsubscribe> {
+    const accept = createFocusGate();
     return getCurrentWindow().onFocusChanged(({ payload: focused }) => {
-      if (focused) cb();
+      if (accept(focused)) cb();
     });
   },
 

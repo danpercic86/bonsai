@@ -5,10 +5,12 @@ import {
   ciTtlFor,
   collectCiShas,
   isFresh,
+  NONE_SETTLE_MS,
   rebuildCiCache,
   TTL_MS,
   TTL_TERMINAL_MS,
-} from './useForgeSignals';
+} from './forgeCiCache';
+import type { CiEntry } from './forgeCiCache';
 import type { CiBadge } from '../../graph/forgeBadges';
 import type { CheckRollup, CommitStatus, GraphLayout, GraphNode, RefLabel } from '../../ipc';
 
@@ -62,8 +64,8 @@ describe('collectCiShas', () => {
   const ttlOf = (): number => 60_000; // uniform TTL — these cases pin the skip rule, not the tiers
   const badge: CiBadge = { rollup: 'success', passed: 0, failed: 0, pending: 0, total: 0 };
   const cached = new Map([
-    ['a', { badge, tsMs: now - 1_000 }], // fresh
-    ['b', { badge, tsMs: now - 70_000 }], // stale
+    ['a', { badge, tsMs: now - 1_000, noneSinceMs: null }], // fresh
+    ['b', { badge, tsMs: now - 70_000, noneSinceMs: null }], // stale
   ]);
 
   it('skips cached-fresh shas, keeps stale + uncached, and dedups tips ∪ PR heads', () => {
@@ -93,8 +95,8 @@ describe('collectCiShas', () => {
 
   it('returns nothing when everything is cached-fresh and not forced', () => {
     const allFresh = new Map([
-      ['a', { badge, tsMs: now }],
-      ['b', { badge, tsMs: now }],
+      ['a', { badge, tsMs: now, noneSinceMs: null }],
+      ['b', { badge, tsMs: now, noneSinceMs: null }],
     ]);
     expect(collectCiShas(['a', 'b'], [], allFresh, now, ttlOf, false, 10)).toEqual([]);
   });
@@ -105,17 +107,17 @@ describe('ciTtlFor + collectCiShas (P121a tiered TTL)', () => {
   const entry = (rollup: CheckRollup, ageMs: number) => ({
     badge: { rollup, passed: 0, failed: 0, pending: 0, total: 0 } satisfies CiBadge,
     tsMs: now - ageMs,
+    noneSinceMs: null,
   });
   const pick = (rollup: CheckRollup, ageMs: number, force: boolean) =>
     collectCiShas(['s'], [], new Map([['s', entry(rollup, ageMs)]]), now, ciTtlFor, force, 10);
 
-  it('terminal verdicts get the long TTL; pending/none the short one', () => {
+  it('terminal verdicts get the long TTL; pending the short one', () => {
     expect(TTL_TERMINAL_MS).toBe(30 * 60_000);
     for (const r of ['success', 'failure', 'error', 'neutral'] as const) {
-      expect(ciTtlFor(r)).toBe(TTL_TERMINAL_MS);
+      expect(ciTtlFor(entry(r, 0))).toBe(TTL_TERMINAL_MS);
     }
-    expect(ciTtlFor('pending')).toBe(TTL_MS);
-    expect(ciTtlFor('none')).toBe(TTL_MS);
+    expect(ciTtlFor(entry('pending', 0))).toBe(TTL_MS);
   });
 
   it('a success aged 61 s is NOT refetched (the old uniform 60 s TTL refetched it)', () => {
@@ -154,7 +156,7 @@ describe('rebuildCiCache (replace-not-merge — bounds the cache)', () => {
   });
 
   it('carries over cached-fresh in-set shas NOT refetched, and adds fetched ones', () => {
-    const prev = new Map([['keep', { badge: ci('success'), tsMs: 5 }]]);
+    const prev = new Map([['keep', { badge: ci('success'), tsMs: 5, noneSinceMs: null }]]);
     const out = rebuildCiCache(
       prev,
       new Set(['keep', 'new']),
@@ -170,8 +172,8 @@ describe('rebuildCiCache (replace-not-merge — bounds the cache)', () => {
 
   it('drops shas no longer in the current set (branch deleted / PR closed)', () => {
     const prev = new Map([
-      ['gone', { badge: ci('success'), tsMs: 5 }],
-      ['stay', { badge: ci('success'), tsMs: 5 }],
+      ['gone', { badge: ci('success'), tsMs: 5, noneSinceMs: null }],
+      ['stay', { badge: ci('success'), tsMs: 5, noneSinceMs: null }],
     ]);
     const out = rebuildCiCache(prev, new Set(['stay']), new Set(), [], 99);
     expect(out.has('gone')).toBe(false);
@@ -179,16 +181,60 @@ describe('rebuildCiCache (replace-not-merge — bounds the cache)', () => {
   });
 
   it('drops a requested-but-OMITTED (404) sha even if in-set and previously cached', () => {
-    const prev = new Map([['t', { badge: ci('failure'), tsMs: 5 }]]);
+    const prev = new Map([['t', { badge: ci('failure'), tsMs: 5, noneSinceMs: null }]]);
     // t was requested this cycle but the batch omitted it (force-pushed/gone tip).
     const out = rebuildCiCache(prev, new Set(['t']), new Set(['t']), [], 99);
     expect(out.has('t')).toBe(false);
   });
 
   it('overwrites an old value + timestamp with the freshly fetched status', () => {
-    const prev = new Map([['t', { badge: ci('pending'), tsMs: 5 }]]);
+    const prev = new Map([['t', { badge: ci('pending'), tsMs: 5, noneSinceMs: null }]]);
     const out = rebuildCiCache(prev, new Set(['t']), new Set(['t']), [status('t', 'failure')], 99);
     expect(out.get('t')?.badge.rollup).toBe('failure');
     expect(out.get('t')?.tsMs).toBe(99);
+  });
+});
+
+describe('`none` streak (P124a)', () => {
+  const T = 10 * TTL_TERMINAL_MS;
+  const ci = (rollup: CheckRollup): CiBadge => ({ rollup, passed: 0, failed: 0, pending: 0, total: 0 });
+  const status = (sha: string, state: CheckRollup): CommitStatus => ({
+    sha,
+    state,
+    total: 0,
+    passed: 0,
+    failed: 0,
+    pending: 0,
+    contexts: [],
+  });
+  const rebuildOne = (prev: Map<string, CiEntry>, state: CheckRollup) =>
+    rebuildCiCache(prev, new Set(['t']), new Set(['t']), [status('t', state)], 99).get('t');
+
+  it('none → none keeps the run start; none → success clears it', () => {
+    const prev = new Map([['t', { badge: ci('none'), tsMs: 50, noneSinceMs: 7 }]]);
+    expect(rebuildOne(prev, 'none')?.noneSinceMs).toBe(7);
+    expect(rebuildOne(prev, 'success')?.noneSinceMs).toBeNull();
+  });
+
+  it('success → none and absent → none start a run at the stamp', () => {
+    const prev = new Map([['t', { badge: ci('success'), tsMs: 50, noneSinceMs: null }]]);
+    expect(rebuildOne(prev, 'none')?.noneSinceMs).toBe(99);
+    expect(rebuildOne(new Map(), 'none')?.noneSinceMs).toBe(99);
+  });
+
+  it('a carried-over (not refetched) entry keeps its streak', () => {
+    const prev = new Map([['t', { badge: ci('none'), tsMs: 50, noneSinceMs: 7 }]]);
+    const out = rebuildCiCache(prev, new Set(['t']), new Set(), [], 99);
+    expect(out.get('t')).toEqual({ badge: ci('none'), tsMs: 50, noneSinceMs: 7 });
+  });
+
+  it('ciTtlFor stretches an unsettled `none` to NONE_SETTLE_MS, then settles', () => {
+    expect(NONE_SETTLE_MS).toBe(2 * 60_000);
+    const e = (noneSinceMs: number | null): CiEntry => ({ badge: ci('none'), tsMs: T, noneSinceMs });
+    expect(ciTtlFor(e(T))).toBe(NONE_SETTLE_MS);
+    expect(ciTtlFor(e(null))).toBe(NONE_SETTLE_MS);
+    expect(ciTtlFor(e(T - 90_000))).toBe(TTL_MS); // max(TTL_MS, 30 s)
+    expect(ciTtlFor(e(T - 30_000))).toBe(NONE_SETTLE_MS - 30_000);
+    expect(ciTtlFor(e(T - NONE_SETTLE_MS))).toBe(TTL_TERMINAL_MS);
   });
 });

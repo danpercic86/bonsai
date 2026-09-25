@@ -1,29 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ipc } from '../../ipc';
 import { isForgeSuppressed, noteForgeRateLimit } from './forgeBackoff';
-import type { CheckRollup, CommitStatus, GraphLayout } from '../../ipc';
+import { branchTipShas, ciTtlFor, collectCiShas, isFresh, rebuildCiCache, TTL_MS } from './forgeCiCache';
+import type { CiEntry } from './forgeCiCache';
+import type { CommitStatus, GraphLayout } from '../../ipc';
 import type { CiBadge, PrBadge } from '../../graph/forgeBadges';
 
-/** Short cache lifetime for forge signals — a fetch/pull or manual Refresh
- *  FORCES a refetch; focus + graph-change are TTL-guarded so returning to the
- *  window doesn't hammer the API. Applies to the PR list and to `pending` /
- *  `none` CI verdicts (a fresh push gains checks soon). */
-export const TTL_MS = 60_000;
-/** P121a: lifetime of a TERMINAL CI verdict (success | failure | error |
- *  neutral). The sha is immutable, so its verdict rarely changes — a CI re-run
- *  can flip one, hence finite. `force` still bypasses it. */
-export const TTL_TERMINAL_MS = 30 * 60_000;
 /** Coalesce focus + graph-change (+ enable) bursts into ONE fetch. */
 const DEBOUNCE_MS = 300;
 /** Mirror of the Rust `MAX_STATUS_BATCH` — chunk defensively so a huge branch
  *  count can never exceed the backend cap. */
 const MAX = 100;
-
-/** One cached CI verdict + when it was fetched (for the TTL freshness check). */
-interface CiEntry {
-  badge: CiBadge;
-  tsMs: number;
-}
 
 export interface UseForgeSignals {
   /** branch SHORT-name → PR badge (open PRs only). New identity on each fetch. */
@@ -33,107 +20,6 @@ export interface UseForgeSignals {
   /** Kick a (debounced) refetch. `force` bypasses the TTL (fetch/pull/manual);
    *  otherwise stale-only (focus/graph-change). Disabled ⇒ clears the maps. */
   refresh(reason: string, force?: boolean): void;
-}
-
-/** Distinct branch-tip shas in a layout: the id of every node carrying a local
- *  or remote branch ref. PURE (unit-tested) — the CI sha set seeds from here. */
-export function branchTipShas(layout: GraphLayout): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const node of layout.nodes) {
-    const isBranchTip = node.refs?.some((r) => r.kind === 'localBranch' || r.kind === 'remoteBranch');
-    if (isBranchTip === true && !seen.has(node.id)) {
-      seen.add(node.id);
-      out.push(node.id);
-    }
-  }
-  return out;
-}
-
-/** A cache entry is fresh when younger than `ttlMs`. PURE. */
-export function isFresh(tsMs: number, now: number, ttlMs: number): boolean {
-  return now - tsMs < ttlMs;
-}
-
-/** P121a: the freshness TTL for a cached CI verdict. PURE. Terminal verdicts
- *  for an immutable sha rarely change; `pending` / `none` may gain checks soon. */
-export function ciTtlFor(rollup: CheckRollup): number {
-  switch (rollup) {
-    case 'success':
-    case 'failure':
-    case 'error':
-    case 'neutral':
-      return TTL_TERMINAL_MS;
-    case 'pending':
-    case 'none':
-      return TTL_MS;
-  }
-}
-
-/** The CI shas to actually request: the union of branch tips + open-PR head
- *  shas, minus those already cached-fresh (unless `force`), deduped, capped at
- *  `max`. PURE (unit-tested) — the batching/freshness decision lives here so
- *  the effect body stays thin. */
-export function collectCiShas(
-  tips: readonly string[],
-  prHeadShas: readonly string[],
-  cached: ReadonlyMap<string, CiEntry>,
-  now: number,
-  ttlOf: (rollup: CheckRollup) => number,
-  force: boolean,
-  max: number,
-): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const sha of [...tips, ...prHeadShas]) {
-    if (seen.has(sha)) continue;
-    seen.add(sha);
-    const entry = cached.get(sha);
-    if (!force && entry !== undefined && isFresh(entry.tsMs, now, ttlOf(entry.badge.rollup))) continue;
-    out.push(sha);
-    if (out.length >= max) break;
-  }
-  return out;
-}
-
-/** Rebuild the CI cache after a successful fetch — REPLACE, not merge, so it
- *  stays bounded to the current requested set (branch tips ∪ open-PR heads).
- *  PURE (unit-tested). The result is:
- *   - cached-fresh entries STILL in `currentSet` that we did NOT refetch this
- *     cycle (carried over so a partial, non-forced fetch keeps fresh CI), PLUS
- *   - the statuses `fetched` this cycle (fresh values).
- *  A sha that left `currentSet` (branch deleted / PR closed) is dropped, and a
- *  sha we `requested` but the batch OMITTED (404 — force-pushed/gone tip) is
- *  dropped too (showing its stale CI would be wrong).
- *
- *  P113a: `requested` therefore means "asked for AND actually attempted". When a
- *  batch comes back CUT SHORT, the caller passes only the resolved shas — the
- *  ones after the stop were never attempted, and dropping them here would blank
- *  perfectly good badges on a rate limit. */
-export function rebuildCiCache(
-  prev: ReadonlyMap<string, CiEntry>,
-  currentSet: ReadonlySet<string>,
-  requested: ReadonlySet<string>,
-  fetched: readonly CommitStatus[],
-  stamp: number,
-): Map<string, CiEntry> {
-  const next = new Map<string, CiEntry>();
-  for (const [sha, entry] of prev) {
-    if (currentSet.has(sha) && !requested.has(sha)) next.set(sha, entry);
-  }
-  for (const s of fetched) {
-    next.set(s.sha, {
-      tsMs: stamp,
-      badge: {
-        rollup: s.state,
-        passed: s.passed,
-        failed: s.failed,
-        pending: s.pending,
-        total: s.total,
-      },
-    });
-  }
-  return next;
 }
 
 /** P63: per-branch forge-signal cache feeding the graph's PR + CI badges.

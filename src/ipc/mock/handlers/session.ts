@@ -5,6 +5,7 @@ import { jobStatusListeners, mockMcp, repoChangedListeners, tagAutoSyncListeners
 import { clampAutoFetch, clampGraphPrefs, clampHealthRefresh, clampPaneWidths, readRecents, readSession, readUiSettings, writeRecents, writeSession, writeUiSettings } from '../persistence';
 import { delay, query as urlParam, requireRepo } from '../repoState';
 import { applyToolSeam } from './tools';
+import { createFocusGate } from '../../focusGate';
 import { applyMockJobTimers, completeMockJobRun, seedJobStatuses } from '../scheduler';
 import type { AppError, JobKind, JobStatus, JobStatusChangedPayload, RecentRepo, RepoChangedPayload, SessionState, TagAutoSyncEvent, UiSettings, UiSettingsPatch, Unsubscribe } from '../../types';
 
@@ -67,9 +68,14 @@ export const sessionHandlers = {
   },
 
   // Real browser focus event so the harness exercises the refocus-refetch path.
+  // P124d: behind the same leading-edge gate as the Tauri adapter.
   async onWindowFocus(cb: () => void): Promise<Unsubscribe> {
-    window.addEventListener('focus', cb);
-    return () => window.removeEventListener('focus', cb);
+    const accept = createFocusGate();
+    const onFocus = () => {
+      if (accept(true)) cb();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   },
 
   async getUiSettings(): Promise<UiSettings> {
