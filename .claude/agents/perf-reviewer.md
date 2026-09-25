@@ -21,6 +21,15 @@ The record schema is `docs/contracts/P91-observability.md` §3; the anomaly rule
 and `focus-steal`. That file is 2000+ lines, so Grep it for a rule id or kind and read a bounded
 window; never read it whole.
 
+Since P121 (`docs/contracts/P121-perf-review-fixes.md`, P121d), a fired `watcher` record written in
+dev mode can carry three extra counts: `worktreePaths` (worktree paths in the burst),
+`ignoreChecked` (paths tested against `.gitignore`, at most the first 512 of them) and `ignored`
+(how many of those are ignored). Use them on `redundant-refresh` pairs. If `ignored ==
+ignoreChecked == worktreePaths`, the burst touched only gitignored files, which points at tooling
+writing into ignored paths. If `ignoreChecked < worktreePaths`, the sample was capped, so treat it
+as **inconclusive**, not as all-ignored. Records without these fields come from logs written before
+P121 or with dev mode off.
+
 ## Procedure
 1. **Completeness first.** Read the `session` record (first line of part 0). Note `level`,
    `redaction`, `truncated` and `droppedParts`, and count any `drop` and `truncate` records. If the
