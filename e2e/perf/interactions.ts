@@ -1,5 +1,6 @@
 /**
- * P120 part a — the seven scripted interactions (spec 008, resolved decision 2).
+ * P120 part a — the scripted interactions (spec 008, resolved decision 2;
+ * the eighth, `background-refresh-diff-open`, is P124c).
  *
  * Each `run` does its boot and every locator lookup (plus any pointer move)
  * OUTSIDE the measured window, then hands `measure` an in-window `act` +
@@ -227,6 +228,51 @@ const backgroundRefresh: Interaction = {
   },
 };
 
+/** In-page predicate: the center-pane diff overlay shows a loaded diff that is
+ *  not stale (`DiffSlotView` dims a same-key refetch with `.diff-stale`). */
+function diffReady(): boolean {
+  return document.querySelector('.diff-overlay-body .diff-scroll:not(.diff-stale)') !== null;
+}
+
+/** P124c: `background-refresh` with the unstaged README.md diff OPEN. The
+ *  worktree round refetches the open diff; an identical result must commit
+ *  nothing beyond the status round itself. */
+const backgroundRefreshDiffOpen: Interaction = {
+  name: 'background-refresh-diff-open',
+  async run(page) {
+    await openSettled(page);
+    // Outside the window, on the real clock (like every other pre-window step).
+    await page
+      .locator('li.file-row', { has: page.locator('[aria-label="Stage README.md"]') })
+      .locator('button.file-row-main')
+      .click();
+    await page.waitForFunction(diffReady, undefined, { polling: 50, timeout: SETTLE_TIMEOUT });
+    await waitAppSettled(page, SMALL_EXTENT);
+    return measure(
+      page,
+      async () => {
+        await page.evaluate(() => {
+          const emit = (window as unknown as { __bonsaiEmitWatcher?: (r: string) => number }).__bonsaiEmitWatcher;
+          if (emit === undefined || emit('fsWorktree') === 0) throw new Error('no mock watcher listener');
+        });
+      },
+      async () => {
+        await stepUntil(
+          page,
+          () => {
+            const w = window as unknown as { __bonsai?: { perf?: { snapshot(): { ipcByCmd: Record<string, number> } } } };
+            return (w.__bonsai?.perf?.snapshot().ipcByCmd.getWorkdirFileDiff ?? 0) >= 1;
+          },
+          undefined,
+        );
+        // The diff refetch is fire-and-forget from the status round; its mock
+        // 150 ms delay lands inside `measure`'s trailing 800 ms quiet window.
+        await stepUntil(page, appSettled, { min: SMALL_EXTENT, status: true });
+      },
+    );
+  },
+};
+
 const scroll20k: Interaction = {
   name: 'scroll-20k',
   async run(page) {
@@ -286,6 +332,7 @@ export const INTERACTIONS: readonly Interaction[] = [
   stageUnstage,
   switchBranch,
   backgroundRefresh,
+  backgroundRefreshDiffOpen,
   scroll20k,
   palette,
 ];

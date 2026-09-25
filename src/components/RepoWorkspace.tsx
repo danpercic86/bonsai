@@ -13,7 +13,7 @@ import type { DiffOverlayMeta } from './DiffOverlay';
 import type { DiffScope } from './DiffFileTree';
 import { PaneDivider } from './PaneDivider';
 import { Sidebar } from './Sidebar';
-import type { DiffSlot, WorkdirSection } from './StatusPanel';
+import type { WorkdirSection } from './StatusPanel';
 import type { GraphCanvasHandle, WipSummary } from '../graph/GraphCanvas';
 import { useChecksTab } from './repoWorkspace/useChecksTab';
 import { useAiPanel } from './repoWorkspace/useAiPanel';
@@ -24,6 +24,7 @@ import type { GraphDisplayOptions } from '../graph/rightColumns';
 import { createGraphStream } from '../graph/streamAssembler';
 import { createGraphStreamApplier } from './repoWorkspace/graphStreamApply';
 import { composerPreviewFileDiff } from './repoWorkspace/composerPreview';
+import { useDiffSlot } from './repoWorkspace/useDiffSlot';
 import { useRailInput } from './repoWorkspace/railProps';
 import { useReplayController } from './repoWorkspace/replayProps';
 import { usePaletteCallbacks } from './repoWorkspace/paletteCallbacks';
@@ -384,7 +385,9 @@ export function RepoWorkspace({
   const [commitDiff, setCommitDiff] = useState<CommitDiff | null>(null);
   const [commitDiffLoading, setCommitDiffLoading] = useState(false);
   const [commitDiffError, setCommitDiffError] = useState<string | null>(null);
-  const [diffSlot, setDiffSlot] = useState<DiffSlot | null>(null);
+  // P124c: the diff slot's state + fetch mechanics (background refetches of an
+  // unchanged diff commit nothing).
+  const { diffSlot, setDiffSlot, diffSlotRef, fileDiffReqId, fetchDiffSlot } = useDiffSlot();
   // How the center-pane diff overlay is DISPLAYED — File/Diff/Split mode, the
   // intraline "Highlight changes" flag and the PR-file context, each mirrored
   // into a ref for the stable refetch callbacks (extracted to
@@ -421,10 +424,7 @@ export function RepoWorkspace({
   const graphReqId = useRef(0);
   const branchesReqId = useRef(0);
   const commitDiffReqId = useRef(0);
-  const fileDiffReqId = useRef(0);
   const opStateReqId = useRef(0);
-  const diffSlotRef = useRef<DiffSlot | null>(null);
-  diffSlotRef.current = diffSlot;
   // Latest status snapshot, read by handleStage AFTER `await refetchStatus()` to
   // confirm the auto-advance target still exists (the closure `status` is the
   // pre-stage value; P46 WS3).
@@ -560,26 +560,11 @@ export function RepoWorkspace({
     setStatusError({ id: ++statusErrorId.current, message });
   }, []);
 
-  const fetchDiffSlot = useCallback(async (key: string, fetcher: () => Promise<FileDiff>) => {
-    const id = ++fileDiffReqId.current;
-    const prev = diffSlotRef.current;
-    const stale = prev !== null && prev.key === key ? prev.diff : null;
-    setDiffSlot({ key, state: 'loading', diff: stale, error: null });
-    try {
-      const diff = await fetcher();
-      if (id !== fileDiffReqId.current) return;
-      setDiffSlot({ key, state: 'ready', diff, error: null });
-    } catch (e) {
-      if (id !== fileDiffReqId.current) return;
-      setDiffSlot({ key, state: 'error', diff: null, error: errorMessage(e) });
-    }
-  }, []);
-
   const collapseDiffSlot = useCallback(() => {
     fileDiffReqId.current += 1;
     setDiffSlot(null);
     setPrOverlayCtx(null); // P93: only meaningful while a `pr:` slot is open
-  }, [setPrOverlayCtx]);
+  }, [setPrOverlayCtx, fileDiffReqId, setDiffSlot]);
 
   // P5 §5.3: Compare mode (HEAD → a right-clicked commit) — target, data,
   // loading/error, teardown, refetch and the enter handler (extracted to
@@ -619,7 +604,7 @@ export function RepoWorkspace({
         setDiffSlot({ key, state: 'error', diff: null, conflict: null, error: errorMessage(e) });
       }
     },
-    [repoId],
+    [repoId, diffSlotRef, fileDiffReqId, setDiffSlot],
   );
 
   const refetchOpState = useCallback(async () => {
@@ -657,7 +642,7 @@ export function RepoWorkspace({
       if (id !== opStateReqId.current) return;
       pushToast('error', `Could not read operation state: ${errorMessage(e)}`);
     }
-  }, [repoId, fetchConflictSlot, collapseDiffSlot, pushToast]);
+  }, [repoId, fetchConflictSlot, collapseDiffSlot, pushToast, diffSlotRef]);
 
   // Auto-open the first conflicted file once per conflict episode. Fires only on
   // the 0 -> >0 transition (a fresh conflict from merge/rebase/cherry-pick/revert/
@@ -675,7 +660,7 @@ export function RepoWorkspace({
       }
     }
     prevConflictCountRef.current = conflicts.length;
-  }, [conflicts, fetchConflictSlot]);
+  }, [conflicts, fetchConflictSlot, diffSlotRef]);
 
   const clearOpState = useCallback(() => {
     opStateReqId.current += 1;
@@ -707,15 +692,19 @@ export function RepoWorkspace({
         if (entry === undefined) {
           collapseDiffSlot();
         } else {
-          void fetchDiffSlot(slot.key, () =>
-            ipc.getWorkdirFileDiff(
-              repoId,
-              entry.path,
-              entry.origPath,
-              section === 'staged',
-              diffViewModeRef.current === 'file',
-              intralineRef.current,
-            ),
+          void fetchDiffSlot(
+            slot.key,
+            () =>
+              ipc.getWorkdirFileDiff(
+                repoId,
+                entry.path,
+                entry.origPath,
+                section === 'staged',
+                diffViewModeRef.current === 'file',
+                intralineRef.current,
+              ),
+            // P124c: a non-user round keeps the shown diff (no loading flash).
+            { background: opts?.silent === true },
           );
         }
       }
@@ -725,7 +714,7 @@ export function RepoWorkspace({
     } finally {
       if (opts?.silent !== true && id === statusReqId.current) setStatusLoading(false);
     }
-  }, [repoId, fetchDiffSlot, collapseDiffSlot, reportStatusError, diffViewModeRef, intralineRef]);
+  }, [repoId, fetchDiffSlot, collapseDiffSlot, reportStatusError, diffSlotRef, diffViewModeRef, intralineRef]);
 
   const clearStatus = useCallback(() => {
     statusReqId.current += 1;
@@ -990,7 +979,7 @@ export function RepoWorkspace({
       setCommitDiffLoading(false);
       setCommitDiffError(null);
     }
-  }, [selectedOid, repoId]);
+  }, [selectedOid, repoId, fileDiffReqId, setDiffSlot]);
 
   // P11g-rev §4.2: reset scope + close the commit browser whenever the active
   // source changes (new compare target, or a DIFFERENT commit selected). Keyed

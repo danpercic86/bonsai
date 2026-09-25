@@ -39,6 +39,14 @@
         "layoutShiftsUnprompted": 0,
         "focusLosses": 0
       },
+      "background-refresh-diff-open": {
+        "reactCommits": 0,
+        "ipcCalls": 4,
+        "recalcStyle": 0,
+        "layout": 0,
+        "layoutShiftsUnprompted": 0,
+        "focusLosses": 0
+      },
       "scroll-20k": {
         "reactCommits": 5,
         "ipcCalls": 5,

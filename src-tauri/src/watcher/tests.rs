@@ -207,10 +207,10 @@ fn watcher_record_shape() {
         .unwrap(),
     );
     crate::obs::trace::set_active_sink(Some(std::sync::Arc::clone(&sink)));
-    log_watcher(5, 3, true, Some(BurstClass::Refs), None);
+    log_watcher(5, 3, true, Some(BurstClass::Refs), None, false);
     // P110: a non-fired (raw-batch) record carries NO class — the proof that
     // the pre-P110 record shape is byte-identical when the field is absent.
-    log_watcher(2, 0, false, None, None);
+    log_watcher(2, 0, false, None, None, false);
     crate::obs::trace::set_active_sink(None);
     sink.shutdown();
 
@@ -354,4 +354,38 @@ fn mixed_burst_classifies_as_refs() {
         saw_refs,
         "a burst containing .git/HEAD must classify as Refs"
     );
+}
+
+/// P124b: a small burst whose every path is gitignored AND untracked is
+/// dropped (no `on_change`); a non-ignored write still fires, and so does an
+/// edit of `.gitignore` itself (it is not ignored).
+#[test]
+fn all_ignored_untracked_burst_is_dropped() {
+    let _serial = serialize_watcher_test();
+    let (_dir, workdir) = fixture_repo();
+    // Set up BEFORE the watch: the sentinel sync drains these events.
+    std::fs::write(workdir.join(".gitignore"), "dist/\n").unwrap();
+    std::fs::create_dir_all(workdir.join("dist")).unwrap();
+    std::fs::create_dir_all(workdir.join("src")).unwrap();
+    let (_handle, rx) = watch_into_channel(&workdir);
+
+    for i in 0..3 {
+        std::fs::write(workdir.join("dist").join("a.js"), format!("v{i}")).unwrap();
+    }
+    assert_eq!(
+        rx.recv_timeout(Duration::from_millis(1500)).unwrap_err(),
+        RecvTimeoutError::Timeout,
+        "an all-ignored, untracked burst must not fire"
+    );
+
+    std::fs::write(workdir.join("src").join("a.ts"), "x").unwrap();
+    let (_, class) = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("a non-ignored write must fire");
+    assert_eq!(class, BurstClass::Worktree);
+    while rx.recv_timeout(Duration::from_millis(800)).is_ok() {}
+
+    std::fs::write(workdir.join(".gitignore"), "dist/\n*.tmp\n").unwrap();
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("editing .gitignore must fire");
 }

@@ -223,24 +223,26 @@ pub enum LogPayload {
         relevant: u32,
         debounce_ms: u32,
         fired: bool,
-        /// §2.4 — set ONLY by the FRONTEND echo-suppression path
-        /// (`src/components/repoWorkspace/useCoalescedRefresh.ts`), which mints a
-        /// `suppressed: true, suppressReason: "echo"` record for a self-caused fs
-        /// echo it dropped inside an armed window. The renderer is a second
-        /// producer of this variant, and it is the only one that ever sets these.
+        /// §2.4 — `true` on a firing that did NOT run a refresh round. Two
+        /// producers set it, each with its own `suppressReason`:
         ///
-        /// The Rust watcher emit site (`src-tauri/src/watcher/mod.rs`) is
-        /// LEGITIMATELY a constant `false`/`None`: echo suppression is a renderer
-        /// concern (the arming gesture and the TTL registry both live there), so
-        /// the backend has nothing to attribute a suppression to. A log whose
-        /// watcher records are ALL `suppressed: false` is therefore the EXPECTED
-        /// shape for a session that armed no UI echo window — it is NOT evidence
-        /// that these fields are dead. (A log parse read it exactly that way and
-        /// ordered a deletion; the fields are asserted by
-        /// `useCoalescedRefresh.causality.test.tsx`.)
+        /// - the FRONTEND echo-suppression path
+        ///   (`src/components/repoWorkspace/useCoalescedRefresh.ts`) mints a
+        ///   `suppressed: true, suppressReason: "echo"` record for a self-caused
+        ///   fs echo it dropped inside an armed window (asserted by
+        ///   `useCoalescedRefresh.causality.test.tsx`);
+        /// - the RUST watcher (`src-tauri/src/watcher/mod.rs`, P124b) logs a
+        ///   `fired: true, suppressed: true, suppressReason: "ignored"` record
+        ///   for a small debounced burst whose every worktree path is gitignored
+        ///   and untracked — it emits no `repo-changed` for it.
+        ///
+        /// Every other watcher record is `suppressed: false`. A log whose watcher
+        /// records are ALL `suppressed: false` is the EXPECTED shape for a session
+        /// that armed no UI echo window and saw no all-ignored burst — it is NOT
+        /// evidence that these fields are dead.
         suppressed: bool,
-        /// `"echo"` on a frontend-suppressed record; omitted otherwise. See the
-        /// `suppressed` field above for why the Rust emit site never sets it.
+        /// `"echo"` (frontend) or `"ignored"` (Rust watcher) on a suppressed
+        /// record; omitted otherwise. See `suppressed` above.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         suppress_reason: Option<String>,
         /// P110: the debounced burst's path class — `"worktree"` (status-only)

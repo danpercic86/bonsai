@@ -1,5 +1,6 @@
 /**
- * P120 part a — lab counts for the seven scripted interactions (spec 008 AC 4).
+ * P120 part a — lab counts for the scripted interactions (spec 008 AC 4; eight since
+ * P124c added `background-refresh-diff-open`).
  * Each interaction runs RUNS times, each in a fresh browser context; a metric
  * the runs disagree on is written as "nondeterministic" and never ratcheted.
  * Results land in test-results/perf/perf-counts.json (afterAll, and only when

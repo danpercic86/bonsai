@@ -16,6 +16,7 @@ fn burst_samples_worktree_paths_with_a_cap() {
         worktree_paths: (0..n)
             .map(|i| std::path::PathBuf::from(format!("f{i}")))
             .collect(),
+        worktree_count: n as u32,
     };
     let mut acc = BurstAcc::new(tick(100));
     for _ in 0..5 {
@@ -101,12 +102,16 @@ fn ignore_stats_counts_relative_paths() {
             workdir.join("src").join("a.ts"),
             std::path::PathBuf::from("elsewhere").join("b.js"),
         ],
+        worktree_count: 3,
     });
     acc.absorb(WatchTick::default());
     let s = ignore_stats(&workdir, &acc).expect("stats for a worktree burst");
     assert_eq!(s.worktree_paths, 3);
     assert_eq!(s.ignore_checked, Some(2));
     assert_eq!(s.ignored, Some(1));
+    assert_eq!(s.ignored_untracked, Some(1));
+    // The `elsewhere` path has no relative form → never droppable.
+    assert!(!s.all_relative);
 
     // No worktree paths → nothing to measure.
     let refs = BurstAcc::new(WatchTick {
@@ -149,9 +154,12 @@ fn fired_record_counts_ignored_worktree_paths() {
     for i in 0..5 {
         std::fs::write(workdir.join("dist").join(format!("o{i}.js")), "x").unwrap();
     }
-    rx.recv_timeout(Duration::from_secs(10))
-        .expect("ignored writes should still fire (behaviour unchanged)");
-    while rx.recv_timeout(Duration::from_millis(800)).is_ok() {}
+    // P124b: the burst is all-ignored and untracked → DROPPED (no callback),
+    // but still observable as a suppressed `fired` record.
+    assert!(
+        rx.recv_timeout(Duration::from_millis(1500)).is_err(),
+        "an all-ignored, untracked burst must not fire"
+    );
     crate::obs::trace::set_active_sink(None);
     drop(handle);
     sink.shutdown();
@@ -177,5 +185,158 @@ fn fired_record_counts_ignored_worktree_paths() {
     for v in &measured {
         assert_eq!(v["ignoreChecked"], v["worktreePaths"], "strip failed: {v}");
         assert_eq!(v["ignored"], v["ignoreChecked"], "not all ignored: {v}");
+        assert_eq!(
+            v["suppressed"], true,
+            "a dropped burst must log suppressed: {v}"
+        );
+        assert_eq!(v["suppressReason"], "ignored", "{v}");
     }
+}
+
+/// A worktree-only window of `n` sampled paths and `raw` notify paths.
+fn wt_acc(n: usize, raw: u32) -> BurstAcc {
+    BurstAcc::new(WatchTick {
+        paths: raw,
+        relevant: n as u32,
+        refs: false,
+        worktree_paths: (0..n)
+            .map(|i| std::path::PathBuf::from(format!("dist/f{i}.js")))
+            .collect(),
+        worktree_count: n as u32,
+    })
+}
+
+/// Stats for `n` sampled paths of which `untracked_ignored` are droppable.
+fn stats(n: u32, ignored: u32, untracked_ignored: u32) -> IgnoreStats {
+    IgnoreStats {
+        worktree_paths: n,
+        ignore_checked: Some(n),
+        ignored: Some(ignored),
+        ignored_untracked: Some(untracked_ignored),
+        all_relative: true,
+    }
+}
+
+/// P124b: the pure drop rule. Only a small, uncapped, refs-free, fully
+/// relative, all-ignored-untracked burst inside the heartbeat is dropped;
+/// every other shape fires as today.
+#[test]
+fn burst_verdict_drops_only_small_all_ignored_untracked_bursts() {
+    use BurstVerdict::{DropIgnored, Fire};
+    let fresh = Duration::from_secs(1);
+    let acc = wt_acc(3, 3);
+    assert_eq!(
+        burst_verdict(&acc, Some(&stats(3, 3, 3)), fresh),
+        DropIgnored
+    );
+
+    // One non-ignored path.
+    assert_eq!(burst_verdict(&acc, Some(&stats(3, 2, 2)), fresh), Fire);
+    // One ignored-but-tracked path.
+    assert_eq!(burst_verdict(&acc, Some(&stats(3, 3, 2)), fresh), Fire);
+    // A Refs path anywhere in the window.
+    let mut refs = wt_acc(3, 3);
+    refs.absorb(WatchTick {
+        paths: 1,
+        relevant: 1,
+        refs: true,
+        ..WatchTick::default()
+    });
+    assert_eq!(burst_verdict(&refs, Some(&stats(3, 3, 3)), fresh), Fire);
+    // A notify error tick (built exactly as the callback builds it).
+    let mut err = wt_acc(3, 3);
+    err.absorb(WatchTick {
+        paths: 1,
+        relevant: 1,
+        refs: true,
+        ..WatchTick::default()
+    });
+    assert_eq!(burst_verdict(&err, Some(&stats(3, 3, 3)), fresh), Fire);
+    // More raw paths than the storm proxy allows.
+    let storm = wt_acc(3, DROP_MAX_PATHS + 1);
+    assert_eq!(burst_verdict(&storm, Some(&stats(3, 3, 3)), fresh), Fire);
+    assert_eq!(
+        burst_verdict(&wt_acc(3, DROP_MAX_PATHS), Some(&stats(3, 3, 3)), fresh),
+        DropIgnored
+    );
+    // A capped sample: one 600-path tick keeps 512, counts 600.
+    let capped = wt_acc(600, 100);
+    assert_eq!(capped.worktree_paths.len(), IGNORE_SAMPLE_CAP);
+    assert_eq!(
+        burst_verdict(&capped, Some(&stats(600, 600, 600)), fresh),
+        Fire
+    );
+    // No stats at all, or counting failed.
+    assert_eq!(burst_verdict(&acc, None, fresh), Fire);
+    let mut failed = stats(3, 3, 3);
+    failed.ignored_untracked = None;
+    assert_eq!(burst_verdict(&acc, Some(&failed), fresh), Fire);
+    // The heartbeat: exactly 5 min since the last firing fires.
+    assert_eq!(
+        burst_verdict(&acc, Some(&stats(3, 3, 3)), IGNORED_HEARTBEAT),
+        Fire
+    );
+    assert_eq!(IGNORED_HEARTBEAT, Duration::from_secs(300));
+}
+
+/// P124b: a path equal to the workdir root has an EMPTY relative form, so the
+/// burst is not fully relative and fires (computed through the real
+/// `ignore_stats`, not a hand-built stats value).
+#[test]
+fn workdir_root_path_is_never_droppable() {
+    let (_dir, workdir) = fixture_repo();
+    let workdir = std::fs::canonicalize(&workdir).unwrap();
+    std::fs::write(workdir.join(".gitignore"), "dist/\n").unwrap();
+    std::fs::create_dir_all(workdir.join("dist")).unwrap();
+    let only_ignored = BurstAcc::new(WatchTick {
+        paths: 1,
+        relevant: 1,
+        refs: false,
+        worktree_paths: vec![workdir.join("dist").join("a.js")],
+        worktree_count: 1,
+    });
+    let s = ignore_stats(&workdir, &only_ignored).expect("stats");
+    let fresh = Duration::from_secs(1);
+    assert_eq!(
+        burst_verdict(&only_ignored, Some(&s), fresh),
+        BurstVerdict::DropIgnored
+    );
+
+    let with_root = BurstAcc::new(WatchTick {
+        paths: 2,
+        relevant: 2,
+        refs: false,
+        worktree_paths: vec![workdir.join("dist").join("a.js"), workdir.clone()],
+        worktree_count: 2,
+    });
+    let s = ignore_stats(&workdir, &with_root).expect("stats");
+    assert!(!s.all_relative);
+    assert_eq!(
+        burst_verdict(&with_root, Some(&s), fresh),
+        BurstVerdict::Fire
+    );
+}
+
+/// P124b: a dropped firing serializes as a suppressed `fired` record with the
+/// `"ignored"` reason — the dev-mode evidence that a burst was dropped.
+#[test]
+fn dropped_firing_serde() {
+    use crate::obs::record::LogPayload;
+    let dropped = LogPayload::Watcher {
+        paths: 3,
+        relevant: 3,
+        debounce_ms: 300,
+        fired: true,
+        suppressed: true,
+        suppress_reason: Some("ignored".into()),
+        burst_class: Some("worktree".into()),
+        worktree_paths: Some(3),
+        ignore_checked: Some(3),
+        ignored: Some(3),
+    };
+    let json = serde_json::to_string(&dropped).unwrap();
+    assert!(
+        json.contains(r#""fired":true,"suppressed":true,"suppressReason":"ignored""#),
+        "{json}"
+    );
 }

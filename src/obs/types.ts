@@ -103,7 +103,12 @@ export interface WatcherPayload {
   relevant: number;
   debounceMs: number;
   fired: boolean;
+  /** True on a firing that ran NO refresh round. Set by the frontend echo
+   *  path (`suppressReason: 'echo'`) AND by the Rust watcher for a dropped
+   *  all-gitignored, untracked burst (P124b, `fired: true`,
+   *  `suppressReason: 'ignored'`). */
   suppressed: boolean;
+  /** `'echo'` (frontend) or `'ignored'` (Rust watcher); absent otherwise. */
   suppressReason?: string;
   /** P110 — the debounced burst's path class. Rust sets it on `fired`
    *  records only; absent everywhere else. */
