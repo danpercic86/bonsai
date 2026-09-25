@@ -1220,6 +1220,61 @@ Acceptance criteria:
 - Mock IPC emits the same events so the browser harness shows the rows.
 - `@keyframes header-progress-sweep` is kept (the AI panel reuses it).
 
+## P121 — fixes from the first /perf-review (session `s229d042a`, 2026-09-24) — `awaiting USER CHECKPOINT`
+
+**Current step:** P121 — code committed (`9bfb8c1` a+b, `5992673` c+e+d, `8bd346f` useNow
+read-phased tick). Contract `docs/contracts/P121-perf-review-fixes.md` signed with user rulings
+2026-09-25 (badges persist on re-check; health → worktree; terminal CI TTL 30 min; GraphQL
+deferred; P121d measurement only). Both reviewer passes APPROVE, no MUST-FIX.
+- Bare `pnpm gate` at `8bd346f`, 2026-09-25: **11/11 green, 493.3 s** — nextest 2770 passed /
+  11 skipped (1 LEAK: `bonsai-core external_spawn::detached_spawn_ignores_nonzero_exit`, not
+  P121 surface, absent in the two prior runs), vitest 3317/3317 (309 files), e2e 185 passed /
+  1 skipped, perf counts 7/7, perf ratchet 42 counts OK, eslint 0 errors / 38 warnings.
+  Log: `D:\Data\Temp\bonsai-p121\gate-full-3.log`.
+- Gate history this session (kept deliberately): run 1 at `5992673` failed the perf ratchet —
+  `palette-open-close` nondeterministic because `useNow` ticked on wall-clock :00/:30 boundaries
+  inside the stepped-clock lab window; fixed by `8bd346f`. Run 2 failed the ratchet on
+  `stage-unstage` recalcStyle/layout 9/7 vs 10/8 in 1 of 3 reps (reactCommits/ipcCalls unchanged
+  at 8/8); across 21 reps this session it was 1/21. Not shown to be P121-caused; see follow-up.
+- Browser harness (mock IPC): repo opens, sidebar/tags/stashes render, stash ages via
+  `RelativeAge`, zero console errors.
+
+**USER CHECKPOINT:** in `pnpm tauri dev` with dev mode on and several repos open for ≥ 35 min,
+rerun `/perf-review`: expect `forgeCommitStatuses` far below 46% of IPC time with no mid-flight
+duplicates, health ticks producing `worktree` (not `full`) refreshes, no whole-workspace renders
+on the 30 s tick, and watcher records carrying `worktreePaths`/`ignoreChecked`/`ignored` counts
+(P121d evidence: `ignoreChecked < worktreePaths` = inconclusive, not all-ignored).
+
+**P121 follow-ups (SHOULD-FIX / NIT, not blocking):**
+- `stage-unstage` CDP recalcStyle/layout flaked 1/21 reps → decide: investigate, or add to the
+  interaction's `alwaysNondeterministic` (loosens the ratchet — user call).
+- Tag-sync contract §2.2 "badge-less while checking" is stale for re-checks after the Q1 ruling
+  (docs update).
+- `src/test/renderTallyKit.ts` duplicates setup still inlined in `Sidebar.churn.test.tsx` /
+  `Sidebar.busyChurn.test.tsx` — migrate them to the kit.
+- `useTagSync.ts` refetch comment: note that the 10 s cache now also covers in-flight re-checks.
+- `ignore.rs`: doc note that a deleted dir under a `dir/`-only rule may undercount.
+- GraphQL batching for `forgeCommitStatuses` — file only if the post-P121 session still shows it
+  as a top cost.
+
+Source: user request 2026-09-25 ("work on your findings") after `/perf-review` of
+`bonsai-2026-09-24T12-38-36-s229d042a.jsonl` (60 min, 6 repos). Report:
+`D:\Data\Temp\bonsai-perf-review\s229d042a.md`. No ui-designer pass (only visible change is the
+user-ruled badge persistence).
+
+- **P121a — `forgeCommitStatuses` cost (error).** 36 calls = 216 s (46% of IPC time), max 10.6 s
+  (anomaly seq 53651); batches of 100 shas fetched one HTTP request at a time
+  (`crates/bonsai-forge/src/rollup.rs` `batch_commit_statuses`); 8 duplicate batches issued while
+  one was in flight (`useForgeSignals.ts` `runFetch` has supersede-only, no in-flight coalescing).
+- **P121b — health refresh = full refresh of every repo.** `scheduler/exec.rs` emits reason `"fs"`
+  for `JobKind::HealthRefresh`; `useRepoChangeSubscription.ts` maps unknown/`fs` → `full`. Six full
+  refreshes (graph stream + tag sync + CI fetch) per 30-min tick.
+- **P121c — 30 s job clock re-renders whole workspaces.** `useJobStatus.ts` `setJobNow` interval
+  lives in `RepoWorkspace` state; only toolbar/sidebar read it; all 6 mounted workspaces re-render.
+- **P121d — watcher double worktree refresh.** 79 pairs 0.3–1.0 s apart with identical status
+  counts (fixed 300 ms debounce, `watcher/mod.rs`). Least certain; writer unknown.
+- **P121e — tags section renders twice per check** (`useTagSync.ts` checking→ready; P118 shape).
+
 ## Follow-ups, ranked, none blocking
 
 - **✅ SPLIT 2026-09-16 (`934a280`) — both zero-slack files now have room, and the baseline is
