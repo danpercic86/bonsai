@@ -1612,10 +1612,22 @@ sync, so they are not repeated here.
 - The `details` field shift (0.0011) from `s229d042a` did not reproduce in the lab and is still
   unexplained.
 
-## P123 — activity dock per repo, unsubscribe leak, Tags re-check keeps its badge — `in-progress`
+## P123 — activity dock per repo, unsubscribe leak, Tags re-check keeps its badge — `awaiting USER CHECKPOINT`
 
-**Current step:** implemented. Reviewer APPROVE (vitest 1336/1336, nextest activity 28/28 + 49/49,
-no MUST-FIX), ui-designer APPROVE. Committing, then the bare `pnpm gate`.
+**Current step:** committed as `a4a5371`, plus `92f80bb`. Reviewer APPROVE (vitest 1336/1336,
+nextest activity 28/28 + 49/49, no MUST-FIX). ui-designer APPROVE.
+- **First gate run (2026-09-25):** 10/11. The perf ratchet caught `cold-open` ipcCalls 39 → 40,
+  identical in all 3 runs. The harness per-command counts attribute it to
+  `gitActivityUnsubscribe: 1` (`gitActivitySubscribe` still 2): StrictMode's dev-only remount now
+  releases its first channel, which is the leak fix itself. Hand-raised to 40, with the reason in
+  `92f80bb`.
+- **Second gate run:** **11/11 green, 650.0 s**.
+  - nextest 2784 passed / 11 skipped
+  - vitest 3345/3345
+  - e2e 185 passed, 1 skipped
+  - perf counts 8/8
+  - perf ratchet 42 counts checked, OK.
+  - Log: `D:\Data\Temp\bonsai-p123\gate-2.log`.
 - Contracts: `docs/contracts/P123-activity-per-repo.md` and `docs/contracts/P123-ui.md`, plus the
   new ui-reference §11 "Re-check pill".
 - **Harness proof (orchestrator, 2026-09-25):** on a Tags re-check, the rollup pill kept its
