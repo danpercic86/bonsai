@@ -54,7 +54,7 @@ pub async fn fetch(
                 "repo-changed",
                 super::repo::RepoChangedPayload {
                     repo_id: evt_repo.clone(),
-                    reason: "tags".to_string(),
+                    reason: super::repo::repo_changed_reason::TAGS.to_string(),
                 },
                 &meta,
             );

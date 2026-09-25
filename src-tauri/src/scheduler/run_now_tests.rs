@@ -104,6 +104,8 @@ fn health_refresh_signal_and_pruning() {
     assert_eq!(statuses[0].outcome, JobOutcome::Success);
     assert_eq!(statuses[0].updated_refs, None);
     assert_eq!(repo_changed_count(&events), 1);
+    // P121b: a health tick is its own reason (→ narrow worktree refresh), not "fs".
+    assert_eq!(repo_changed_reasons(&events), vec!["health".to_string()]);
     // Disabled autoFetch never baselined a run.
     {
         let jobs = sched.jobs.lock().expect("jobs lock");

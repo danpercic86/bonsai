@@ -19,11 +19,30 @@ use bonsai_core::git::clone_activity::CloneActivityForwarder;
 ///   re-stream. This is what keeps a long checkout (which storms the watcher in
 ///   several sub-300 ms-quiet bursts) from re-streaming the graph per burst.
 /// - `"fetch"` / `"tags"` — backend-confirmed remote/tag updates (not fs echoes).
+/// - `"health"` (P121b) — a scheduled `healthRefresh` tick (P30 D8): a pure
+///   self-heal signal with no git work behind it, so the frontend recomputes
+///   status/op state only (never the graph).
+///
+/// The wire values live in [`repo_changed_reason`] — use those constants at every
+/// emit site.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoChangedPayload {
     pub repo_id: String,
     pub reason: String,
+}
+
+/// Wire values of `RepoChangedPayload.reason`. Rust is authoritative; the TS mirror is
+/// `REPO_CHANGED_REASONS` in `src/ipc/types/common.ts` (parity-tested by
+/// `tests_repo_changed_reason_parity.rs`).
+pub mod repo_changed_reason {
+    pub const FS: &str = "fs";
+    pub const FS_WORKTREE: &str = "fsWorktree";
+    pub const FETCH: &str = "fetch";
+    pub const TAGS: &str = "tags";
+    /// P121b: scheduled healthRefresh tick.
+    pub const HEALTH: &str = "health";
+    pub const ALL: [&str; 5] = [FS, FS_WORKTREE, FETCH, TAGS, HEALTH];
 }
 
 /// Result of `open_repo`: the resolved `repoId` plus the repo info (P3e
@@ -74,8 +93,8 @@ pub async fn open_repo(
                 RepoChangedPayload {
                     repo_id: repo_id.clone(),
                     reason: match class {
-                        crate::watcher::PathClass::Refs => "fs",
-                        crate::watcher::PathClass::Worktree => "fsWorktree",
+                        crate::watcher::PathClass::Refs => repo_changed_reason::FS,
+                        crate::watcher::PathClass::Worktree => repo_changed_reason::FS_WORKTREE,
                     }
                     .to_string(),
                 },

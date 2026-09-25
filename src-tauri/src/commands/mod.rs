@@ -92,6 +92,10 @@ mod tests_repo_graph_cache_rearm;
 #[cfg(test)]
 mod tests_obs;
 
+// P121b: Rust ↔ TS parity on the `repo-changed` reason strings.
+#[cfg(test)]
+mod tests_repo_changed_reason_parity;
+
 #[cfg(test)]
 mod tests_ui_settings_patch;
 

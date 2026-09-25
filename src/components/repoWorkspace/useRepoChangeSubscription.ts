@@ -14,7 +14,7 @@ type Refresh = (origin: RefreshOrigin, scope: RefreshScope) => Promise<void>;
  *
  *  CI-1: the payload `reason` distinguishes the mutation's OWN filesystem echo
  *  (`"fs"`/unknown — the raw notify watcher, still echo-SUPPRESSIBLE via the
- *  `watcher` origin) from a backend-CONFIRMED genuine change (`"fetch"`/`"tags"`),
+ *  `watcher` origin) from a backend-CONFIRMED genuine change (`"fetch"`/`"tags"`/`"health"`),
  *  which is NOT our own echo and so refreshes through the echo-BYPASSING
  *  `external` origin — even inside a fetch's own armed window.
  *
@@ -73,6 +73,14 @@ export function useRepoChangeSubscription(
             // mutation's own armed window, and that mutation's refresh round has
             // already refetched the graph — there is nothing left to heal.
             void refresh('watcher', 'worktree');
+            break;
+          case 'health':
+            // P121b: scheduled self-heal tick (P30 D8), not an fs echo → `external`
+            // origin (never echo-suppressed). Narrow `worktree` scope ({status,
+            // opState, submodules}): D8's intent is "recompute status/health";
+            // RepoHealthPanel refreshes itself on any repo-changed. `worktree` has
+            // openRepo:false — sound, a tick never moves HEAD (P99 invariant).
+            void refresh('external', 'worktree');
             break;
           default:
             // Raw notify watcher (reason "fs"/unknown) = the mutation's own fs

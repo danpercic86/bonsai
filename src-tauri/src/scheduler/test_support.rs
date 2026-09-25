@@ -110,6 +110,19 @@ pub(super) fn repo_changed_count(events: &Arc<StdMutex<Vec<SchedulerEvent>>>) ->
         .count()
 }
 
+/// P121b: the `reason` of every `RepoChanged` event, in emission order.
+pub(super) fn repo_changed_reasons(events: &Arc<StdMutex<Vec<SchedulerEvent>>>) -> Vec<String> {
+    events
+        .lock()
+        .expect("events lock")
+        .iter()
+        .filter_map(|e| match e {
+            SchedulerEvent::RepoChanged(p) => Some(p.reason.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 pub(super) fn sched_with_auto_fetch(interval_minutes: u32) -> SchedulerState {
     let sched = SchedulerState::default();
     apply_config(

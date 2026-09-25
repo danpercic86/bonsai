@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ipc } from '../../ipc';
 import { isForgeSuppressed, noteForgeRateLimit } from './forgeBackoff';
-import type { CommitStatus, GraphLayout } from '../../ipc';
+import type { CheckRollup, CommitStatus, GraphLayout } from '../../ipc';
 import type { CiBadge, PrBadge } from '../../graph/forgeBadges';
 
 /** Short cache lifetime for forge signals — a fetch/pull or manual Refresh
  *  FORCES a refetch; focus + graph-change are TTL-guarded so returning to the
- *  window doesn't hammer the API. */
-const TTL_MS = 60_000;
+ *  window doesn't hammer the API. Applies to the PR list and to `pending` /
+ *  `none` CI verdicts (a fresh push gains checks soon). */
+export const TTL_MS = 60_000;
+/** P121a: lifetime of a TERMINAL CI verdict (success | failure | error |
+ *  neutral). The sha is immutable, so its verdict rarely changes — a CI re-run
+ *  can flip one, hence finite. `force` still bypasses it. */
+export const TTL_TERMINAL_MS = 30 * 60_000;
 /** Coalesce focus + graph-change (+ enable) bursts into ONE fetch. */
 const DEBOUNCE_MS = 300;
 /** Mirror of the Rust `MAX_STATUS_BATCH` — chunk defensively so a huge branch
@@ -50,6 +55,21 @@ export function isFresh(tsMs: number, now: number, ttlMs: number): boolean {
   return now - tsMs < ttlMs;
 }
 
+/** P121a: the freshness TTL for a cached CI verdict. PURE. Terminal verdicts
+ *  for an immutable sha rarely change; `pending` / `none` may gain checks soon. */
+export function ciTtlFor(rollup: CheckRollup): number {
+  switch (rollup) {
+    case 'success':
+    case 'failure':
+    case 'error':
+    case 'neutral':
+      return TTL_TERMINAL_MS;
+    case 'pending':
+    case 'none':
+      return TTL_MS;
+  }
+}
+
 /** The CI shas to actually request: the union of branch tips + open-PR head
  *  shas, minus those already cached-fresh (unless `force`), deduped, capped at
  *  `max`. PURE (unit-tested) — the batching/freshness decision lives here so
@@ -59,7 +79,7 @@ export function collectCiShas(
   prHeadShas: readonly string[],
   cached: ReadonlyMap<string, CiEntry>,
   now: number,
-  ttlMs: number,
+  ttlOf: (rollup: CheckRollup) => number,
   force: boolean,
   max: number,
 ): string[] {
@@ -69,7 +89,7 @@ export function collectCiShas(
     if (seen.has(sha)) continue;
     seen.add(sha);
     const entry = cached.get(sha);
-    if (!force && entry !== undefined && isFresh(entry.tsMs, now, ttlMs)) continue;
+    if (!force && entry !== undefined && isFresh(entry.tsMs, now, ttlOf(entry.badge.rollup))) continue;
     out.push(sha);
     if (out.length >= max) break;
   }
@@ -165,6 +185,14 @@ export function useForgeSignals(deps: {
   // window forced (fetch/pull/manual), the resulting fetch bypasses the TTL even
   // when a later focus/graph-change call did not. Reset when the fetch fires.
   const pendingForceRef = useRef(false);
+  // P121a in-flight coalescing: the reqId of the running fetch (null when idle),
+  // and a trigger that arrived while it ran. Coalesces instead of dropping (cf.
+  // useTagSync's P113b guard): at most ONE rerun, after the batch lands, reading
+  // the LATEST layout. `force` is sticky across the coalesced triggers.
+  const inFlightRef = useRef<number | null>(null);
+  const rerunRef = useRef({ pending: false, force: false });
+  // Self-reference for the rerun scheduled from runFetch's own `finally`.
+  const runFetchRef = useRef<(force: boolean) => Promise<void>>(async () => {});
 
   const clearDebounce = useCallback(() => {
     if (debounceRef.current !== null) {
@@ -185,9 +213,17 @@ export function useForgeSignals(deps: {
     async (force: boolean) => {
       clearDebounce();
       if (!enabledRef.current) return;
+      if (inFlightRef.current !== null) {
+        // A batch is on the wire: never request the identical sha set twice
+        // concurrently — fold this trigger into one rerun after it lands.
+        rerunRef.current.pending = true;
+        rerunRef.current.force ||= force;
+        return;
+      }
       const layout = graphDataRef.current;
       if (layout === null) return;
       const reqId = ++reqIdRef.current;
+      inFlightRef.current = reqId;
       const repo = repoIdRef.current;
       try {
         // Cheap, no network (P62): an unsupported / unparseable origin is inert
@@ -244,7 +280,7 @@ export function useForgeSignals(deps: {
         // atomic replace (stale-while-revalidate).
         if (showCiRef.current) {
           const tips = branchTipShas(layout);
-          const shas = collectCiShas(tips, prHeadShas, ciCacheRef.current, now, TTL_MS, force, MAX);
+          const shas = collectCiShas(tips, prHeadShas, ciCacheRef.current, now, ciTtlFor, force, MAX);
           if (shas.length > 0) {
             const collected: CommitStatus[] = [];
             // P113a: a batch can come back CUT SHORT (rate limit / auth /
@@ -291,15 +327,31 @@ export function useForgeSignals(deps: {
         // failed — nothing to key a window on then).
         if (hostRef.current !== null) noteForgeRateLimit(hostRef.current, e);
         if (import.meta.env.DEV) console.warn('[bonsai] forge signals refresh failed', e);
+      } finally {
+        // Invalidated (disable / repo switch reset inFlightRef) ⇒ no-op.
+        if (inFlightRef.current === reqId) {
+          inFlightRef.current = null;
+          if (rerunRef.current.pending && reqIdRef.current === reqId) {
+            // The rerun's clearDebounce() would swallow a pending debounced
+            // trigger — fold its sticky force in so it is not lost.
+            const f = rerunRef.current.force || (debounceRef.current !== null && pendingForceRef.current);
+            if (debounceRef.current !== null) pendingForceRef.current = false;
+            rerunRef.current = { pending: false, force: false };
+            void runFetchRef.current(f);
+          }
+        }
       }
     },
     [clearDebounce, clearAll, graphDataRef],
   );
+  runFetchRef.current = runFetch;
 
   const refresh = useCallback(
     (_reason: string, force = false) => {
       if (!enabledRef.current) {
         reqIdRef.current += 1; // drop any in-flight
+        inFlightRef.current = null;
+        rerunRef.current = { pending: false, force: false };
         pendingForceRef.current = false;
         clearDebounce();
         clearAll();
@@ -317,11 +369,26 @@ export function useForgeSignals(deps: {
     [clearDebounce, clearAll, runFetch],
   );
 
+  // Unmount-only: invalidate a held batch so its `finally` neither publishes nor
+  // fires a coalesced rerun from a dead hook (new IPC after unmount).
+  useEffect(
+    () => () => {
+      reqIdRef.current += 1;
+      inFlightRef.current = null;
+      rerunRef.current = { pending: false, force: false };
+    },
+    [],
+  );
+
   // Enable / repo transitions: disabling (or switching repo) drops the cache and
   // stops fetching; enabling fetches the current tips. A repo switch always
   // clears first so the previous repo's badges never bleed through.
   useEffect(() => {
     reqIdRef.current += 1;
+    // P121a: a held batch of the previous repo/gate must not block this fetch;
+    // its `finally` becomes a no-op.
+    inFlightRef.current = null;
+    rerunRef.current = { pending: false, force: false };
     clearDebounce();
     clearAll();
     if (enabled) refresh('enable', true);

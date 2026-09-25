@@ -11,7 +11,7 @@ use bonsai_core::git::opstate::{read_op_state, RepoOpState};
 use bonsai_core::git::remote::fetch_all;
 use tauri::Manager;
 
-use crate::commands::RepoChangedPayload;
+use crate::commands::{repo_changed_reason, RepoChangedPayload};
 use crate::state::AppState;
 
 use super::*;
@@ -242,11 +242,13 @@ async fn execute_job(
     if repo_changed {
         emit(SchedulerEvent::RepoChanged(RepoChangedPayload {
             repo_id: repo_id.clone(),
-            reason: (if matches!(job, JobKind::AutoFetch) {
-                "fetch"
-            } else {
-                "fs"
-            })
+            // Exhaustive (no wildcard): a new JobKind must pick its reason here.
+            // P121b: healthRefresh is its own reason (→ narrow worktree refresh in
+            // the frontend), not "fs" (→ full graph re-stream).
+            reason: match job {
+                JobKind::AutoFetch => repo_changed_reason::FETCH,
+                JobKind::HealthRefresh => repo_changed_reason::HEALTH,
+            }
             .to_string(),
         }));
     }

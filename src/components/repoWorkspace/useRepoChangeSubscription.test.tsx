@@ -10,6 +10,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { REPO_CHANGED_REASONS } from '../../ipc/types';
 import type { RepoChangedPayload } from '../../ipc/types';
 import { repoChangedListeners } from '../../ipc/mock/events';
 import { useRepoChangeSubscription } from './useRepoChangeSubscription';
@@ -66,6 +67,23 @@ describe('useRepoChangeSubscription — reason routing', () => {
       ['watcher', 'full'],
       ['watcher', 'full'],
     ]);
+  });
+
+  it('routes "health" (P121b scheduled tick) to external/worktree, not a full refresh', async () => {
+    const { calls } = await mountHook();
+    await dispatch({ repoId: REPO, reason: 'health' });
+    expect(calls).toEqual([['external', 'worktree']]);
+  });
+
+  it('only "fs" among the known reasons reaches watcher/full (no known reason falls into default)', async () => {
+    const { calls } = await mountHook();
+    const full: string[] = [];
+    for (const reason of REPO_CHANGED_REASONS) {
+      calls.length = 0;
+      await dispatch({ repoId: REPO, reason });
+      if (calls.some(([o, s]) => o === 'watcher' && s === 'full')) full.push(reason);
+    }
+    expect(full).toEqual(['fs']);
   });
 
   it('ignores bursts for another repo', async () => {

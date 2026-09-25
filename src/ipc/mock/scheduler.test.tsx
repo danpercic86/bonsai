@@ -101,9 +101,15 @@ describe('completeMockJobRun', () => {
 
   it('healthRefresh success emits repo-changed; unknown repoId is a no-op', () => {
     let repoChanges = 0;
-    repoChangedListeners.add(() => (repoChanges += 1));
+    const reasons: string[] = [];
+    repoChangedListeners.add((p: RepoChangedPayload) => {
+      repoChanges += 1;
+      reasons.push(p.reason);
+    });
     completeMockJobRun(REPO_ID, 'healthRefresh');
     expect(repoChanges).toBe(1);
+    // P121b: mirrors Rust `repo_changed_reason::HEALTH` (→ external/worktree scope).
+    expect(reasons).toEqual(['health']);
     completeMockJobRun('/never/opened', 'healthRefresh');
     expect(repoChanges).toBe(1); // unchanged
   });

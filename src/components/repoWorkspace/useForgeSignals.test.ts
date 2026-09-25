@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { branchTipShas, collectCiShas, isFresh, rebuildCiCache } from './useForgeSignals';
+import {
+  branchTipShas,
+  ciTtlFor,
+  collectCiShas,
+  isFresh,
+  rebuildCiCache,
+  TTL_MS,
+  TTL_TERMINAL_MS,
+} from './useForgeSignals';
 import type { CiBadge } from '../../graph/forgeBadges';
 import type { CheckRollup, CommitStatus, GraphLayout, GraphNode, RefLabel } from '../../ipc';
 
@@ -51,7 +59,7 @@ describe('isFresh', () => {
 
 describe('collectCiShas', () => {
   const now = 100_000;
-  const ttl = 60_000;
+  const ttlOf = (): number => 60_000; // uniform TTL — these cases pin the skip rule, not the tiers
   const badge: CiBadge = { rollup: 'success', passed: 0, failed: 0, pending: 0, total: 0 };
   const cached = new Map([
     ['a', { badge, tsMs: now - 1_000 }], // fresh
@@ -60,7 +68,7 @@ describe('collectCiShas', () => {
 
   it('skips cached-fresh shas, keeps stale + uncached, and dedups tips ∪ PR heads', () => {
     // a=fresh→skip, b=stale→keep, c=uncached (in both lists→once), d=uncached.
-    expect(collectCiShas(['a', 'b', 'c'], ['c', 'd'], cached, now, ttl, false, 10)).toEqual([
+    expect(collectCiShas(['a', 'b', 'c'], ['c', 'd'], cached, now, ttlOf, false, 10)).toEqual([
       'b',
       'c',
       'd',
@@ -68,7 +76,7 @@ describe('collectCiShas', () => {
   });
 
   it('force=true includes even cached-fresh shas (still deduped)', () => {
-    expect(collectCiShas(['a', 'b', 'c'], ['c', 'd'], cached, now, ttl, true, 10)).toEqual([
+    expect(collectCiShas(['a', 'b', 'c'], ['c', 'd'], cached, now, ttlOf, true, 10)).toEqual([
       'a',
       'b',
       'c',
@@ -77,7 +85,7 @@ describe('collectCiShas', () => {
   });
 
   it('caps the result at `max`', () => {
-    expect(collectCiShas(['a', 'b', 'c', 'd'], [], new Map(), now, ttl, true, 2)).toEqual([
+    expect(collectCiShas(['a', 'b', 'c', 'd'], [], new Map(), now, ttlOf, true, 2)).toEqual([
       'a',
       'b',
     ]);
@@ -88,7 +96,42 @@ describe('collectCiShas', () => {
       ['a', { badge, tsMs: now }],
       ['b', { badge, tsMs: now }],
     ]);
-    expect(collectCiShas(['a', 'b'], [], allFresh, now, ttl, false, 10)).toEqual([]);
+    expect(collectCiShas(['a', 'b'], [], allFresh, now, ttlOf, false, 10)).toEqual([]);
+  });
+});
+
+describe('ciTtlFor + collectCiShas (P121a tiered TTL)', () => {
+  const now = 10 * TTL_TERMINAL_MS;
+  const entry = (rollup: CheckRollup, ageMs: number) => ({
+    badge: { rollup, passed: 0, failed: 0, pending: 0, total: 0 } satisfies CiBadge,
+    tsMs: now - ageMs,
+  });
+  const pick = (rollup: CheckRollup, ageMs: number, force: boolean) =>
+    collectCiShas(['s'], [], new Map([['s', entry(rollup, ageMs)]]), now, ciTtlFor, force, 10);
+
+  it('terminal verdicts get the long TTL; pending/none the short one', () => {
+    expect(TTL_TERMINAL_MS).toBe(30 * 60_000);
+    for (const r of ['success', 'failure', 'error', 'neutral'] as const) {
+      expect(ciTtlFor(r)).toBe(TTL_TERMINAL_MS);
+    }
+    expect(ciTtlFor('pending')).toBe(TTL_MS);
+    expect(ciTtlFor('none')).toBe(TTL_MS);
+  });
+
+  it('a success aged 61 s is NOT refetched (the old uniform 60 s TTL refetched it)', () => {
+    expect(pick('success', 61_000, false)).toEqual([]);
+  });
+
+  it('force still bypasses the terminal TTL', () => {
+    expect(pick('success', 61_000, true)).toEqual(['s']);
+  });
+
+  it('a pending verdict aged 61 s is refetched', () => {
+    expect(pick('pending', 61_000, false)).toEqual(['s']);
+  });
+
+  it('a success older than TTL_TERMINAL_MS is refetched', () => {
+    expect(pick('success', TTL_TERMINAL_MS + 1, false)).toEqual(['s']);
   });
 });
 

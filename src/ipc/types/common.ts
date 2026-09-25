@@ -81,6 +81,11 @@ export interface RecentRepo {
   lastOpened: number;
 }
 
+/** MIRROR of Rust `commands::repo::repo_changed_reason::ALL` (parity-tested by
+ *  `tests_repo_changed_reason_parity.rs` — Rust is authoritative; edit here to match). */
+export const REPO_CHANGED_REASONS = ['fs', 'fsWorktree', 'fetch', 'tags', 'health'] as const;
+export type RepoChangedReason = (typeof REPO_CHANGED_REASONS)[number];
+
 export interface RepoChangedPayload {
   /** Which open repo the debounced filesystem change belongs to. */
   repoId: string;
@@ -93,7 +98,10 @@ export interface RepoChangedPayload {
    *  - `"fetch"` — a backend-confirmed remote update.
    *  - `"tags"` — P85 A3: the fire-and-forget fetch tag auto-sync adopted/moved a
    *    local tag.
-   *  Any unknown reason is treated as a full refresh — always safe. */
+   *  - `"health"` — P121b: a scheduled healthRefresh tick (P30 D8), a pure
+   *    self-heal signal → status/op state only, never the graph.
+   *  Known values: {@link REPO_CHANGED_REASONS}. Kept `string` on purpose:
+   *  any unknown reason is treated as a full refresh — always safe. */
   reason: string;
 }
 
