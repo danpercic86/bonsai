@@ -4,6 +4,7 @@
 // ONE fire-and-forget event stream for every repo-changing git op (P87 hooks +
 // network ops; P119 extends it to every action). The frontend log panel + toolbar phase readout + store are P87b;
 // this file is only the wire type + the `gitActivitySubscribe` IPC surface.
+// P123: one subscription per mounted tab, scoped to its repo.
 
 export type GitActivityKind =
   | 'started'
@@ -136,4 +137,10 @@ export interface GitActivityEvent {
   targetCount?: number;
   /** `finished` only, success runs only. P119. */
   outcome?: GitRunOutcome;
+  /** `started` only: the repoId this run acts on. Absent = unscoped run
+   *  (clone/init), broadcast to every tab. P123. */
+  repoId?: string;
 }
+
+/** The `gitActivitySubscribe` callback. P123. */
+export type GitActivityListener = (e: GitActivityEvent) => void;

@@ -13,14 +13,14 @@ import { freshRepoPath, run, runErr } from '../../../test/mockIpcKit';
 import { repoHandlers } from './repo';
 import { stashHandlers } from './stash';
 import { statusHandlers } from './status';
-import { subscribeGitActivity } from '../gitActivity';
+import { subscribeGitActivity } from '../gitActivityHub';
 import type { GitActivityEvent } from '../../types';
 
 beforeAll(() => vi.useFakeTimers());
 afterAll(() => vi.useRealTimers());
 
 const events: GitActivityEvent[] = [];
-subscribeGitActivity((e) => events.push(e));
+subscribeGitActivity(null, (e) => events.push(e));
 
 /** The categories of every `started` event seen so far. */
 function startedCategories(): Array<string | undefined> {

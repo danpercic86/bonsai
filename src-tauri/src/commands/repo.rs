@@ -420,7 +420,7 @@ pub(crate) async fn clone_repo_inner(
 ) -> Result<String, AppError> {
     let subject = arg_target(state, TargetArg::PathLeaf(&dest));
     with_activity_ex(
-        state.git_activity_hub(),
+        state.git_activity_unscoped(),
         GitActivityCategory::CloneRepo,
         subject.into(),
         no_outcome,
@@ -459,7 +459,7 @@ pub async fn init_repo(
 pub(crate) async fn init_repo_inner(state: &AppState, path: String) -> Result<String, AppError> {
     let subject = arg_target(state, TargetArg::PathLeaf(&path));
     with_activity_ex(
-        state.git_activity_hub(),
+        state.git_activity_unscoped(),
         GitActivityCategory::InitRepo,
         subject.into(),
         no_outcome,

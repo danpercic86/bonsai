@@ -223,16 +223,16 @@ const worktreeBodies = {
 export const worktreeHandlers = {
   ...worktreeBodies,
   addWorktree: (repoId: string, branch: string, name: string) =>
-    runMockActivity('worktreeAdd', name, () => worktreeBodies.addWorktree(repoId, branch, name)),
+    runMockActivity(repoId, 'worktreeAdd', name, () => worktreeBodies.addWorktree(repoId, branch, name)),
   addWorktreeWithChanges: (repoId: string, branch: string, name: string, selections: CopySelection[]) =>
-    runMockActivity('worktreeAdd', name, () =>
+    runMockActivity(repoId, 'worktreeAdd', name, () =>
       worktreeBodies.addWorktreeWithChanges(repoId, branch, name, selections),
     ),
   removeWorktree: (repoId: string, name: string) =>
-    runMockActivity('worktreeRemove', name, () => worktreeBodies.removeWorktree(repoId, name)),
+    runMockActivity(repoId, 'worktreeRemove', name, () => worktreeBodies.removeWorktree(repoId, name)),
   lockWorktree: (repoId: string, name: string, reason?: string) =>
-    runMockActivity('worktreeLock', name, () => worktreeBodies.lockWorktree(repoId, name, reason)),
+    runMockActivity(repoId, 'worktreeLock', name, () => worktreeBodies.lockWorktree(repoId, name, reason)),
   unlockWorktree: (repoId: string, name: string) =>
-    runMockActivity('worktreeUnlock', name, () => worktreeBodies.unlockWorktree(repoId, name)),
+    runMockActivity(repoId, 'worktreeUnlock', name, () => worktreeBodies.unlockWorktree(repoId, name)),
 } satisfies Partial<IpcApi>;
 

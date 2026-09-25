@@ -1,8 +1,8 @@
 /**
  * P87b — the git-activity stream in the mock IPC layer.
  *
- * `subscribeGitActivity` / `emitGitActivity` are the subscribe + fan-out seam
- * (mirroring the events bus / `GitActivityHub`). `runMockActivity(category, target, fn)`
+ * The subscribe + fan-out seam lives in `gitActivityHub.ts` (P123, per-repo
+ * routing mirroring `GitActivityHub`). `runMockActivity(repoId, category, target, fn)`
  * wraps a push/commit/fetch handler body: it emits `started` → the category's
  * phase/line/hookDone/progress script → runs `fn` → `finished` (success from
  * resolve, failure from throw). A shared per-run sequencer gives a monotonic `seq`
@@ -48,6 +48,7 @@
  * Target/line funnels + the H/R/C resolvers: `gitActivityTargetArg.ts`;
  * outcome classifiers: `gitActivityOutcome.ts`.
  */
+import { emitGitActivity, gitActivityActive } from './gitActivityHub';
 import { MOCK_PRE_PUSH_OUTPUT } from './hooksGate';
 import { MOCK_CONFLICT_CAPABLE } from './gitActivityOutcome';
 import {
@@ -67,26 +68,6 @@ import type {
   GitRunOutcome,
   GitTransferProgress,
 } from '../types';
-
-/** Every live `gitActivitySubscribe` callback. A reload re-subscribes; the mock
- *  keeps them all (the real backend prunes on send failure — harmless here). */
-const subscribers: Array<(e: GitActivityEvent) => void> = [];
-
-/** Register a long-lived git-activity listener (the mock's `git_activity_subscribe`). */
-export function subscribeGitActivity(onEvent: (e: GitActivityEvent) => void): void {
-  subscribers.push(onEvent);
-}
-
-/** Fan one event out to every subscriber. A no-op when nobody is listening
- *  (mirrors `GitActivityHub::emit`). */
-export function emitGitActivity(event: GitActivityEvent): void {
-  for (const cb of subscribers) cb(event);
-}
-
-/** True while ≥1 subscriber is attached (mirrors `GitActivityHub::is_active`). */
-export function gitActivityActive(): boolean {
-  return subscribers.length > 0;
-}
 
 // ---------------------------------------------------------------- seams
 
@@ -179,10 +160,14 @@ let counter = 0;
 class GitSequencer {
   private seq = 0;
   private readonly startedAt = Date.now();
-  constructor(readonly id: string) {}
+  /** `route` = the run's repoId (`null` = unscoped clone/init → broadcast). */
+  constructor(
+    readonly id: string,
+    private readonly route: string | null,
+  ) {}
 
   private emit(kind: GitActivityKind, extra: Partial<GitActivityEvent> = {}): void {
-    emitGitActivity({
+    emitGitActivity(this.route, {
       id: this.id,
       seq: this.seq++,
       kind,
@@ -195,9 +180,11 @@ class GitSequencer {
    *  is DROPPED when null so the wire shape matches serde's
    *  `skip_serializing_if = "Option::is_none"`. */
   start(category: GitActivityCategory, target: string | null, count?: number): void {
+    // P123: `repoId` rides on `started` ONLY, dropped when unscoped.
+    const repo = this.route !== null ? { repoId: this.route } : {};
     // P119 §2.7 mirror of `RunSubject::many`: ≥2 items → a count and NO target.
     if (count !== undefined && count >= 2) {
-      this.emit('started', { category, phase: { kind: 'preparing' }, targetCount: count });
+      this.emit('started', { category, phase: { kind: 'preparing' }, targetCount: count, ...repo });
       return;
     }
     const clean = mockActivityTarget(target);
@@ -205,6 +192,7 @@ class GitSequencer {
       category,
       phase: { kind: 'preparing' },
       ...(clean !== null ? { target: clean } : {}),
+      ...repo,
     });
   }
   phase(kind: GitPhaseKind, hook?: string): void {
@@ -438,20 +426,21 @@ async function runPlain<T>(
 }
 
 /**
- * Wrap a handler body in the git-activity stream. A no-op passthrough when nobody
- * is listening (mirrors the hub). Dispatch: the push family → `runPush`,
+ * Wrap a handler body in the git-activity stream. A no-op passthrough when no tab
+ * of `repoId` is listening (mirrors the scoped hub; `null` = unscoped clone/init). Dispatch: the push family → `runPush`,
  * fetch/pull → `runFetch`, EXPLICITLY commit/amend/mergeCommit → `runCommit`
  * (their hook script), and every other category → `runPlain` — so a new
  * category can never be dressed up as a commit.
  */
 export function runMockActivity<T>(
+  repoId: string | null,
   category: GitActivityCategory,
   target: string | null,
   fn: () => Promise<T>,
   opts: MockActivityOpts<T> = {},
 ): Promise<T> {
-  if (!gitActivityActive()) return fn();
-  const s = new GitSequencer(nextId());
+  if (!gitActivityActive(repoId)) return fn();
+  const s = new GitSequencer(nextId(), repoId);
   const seamed = seamTarget(category, target);
   switch (category) {
     case 'push':

@@ -52,10 +52,11 @@ async function load(search = ''): Promise<Harness> {
   window.history.replaceState({}, '', search === '' ? '/' : `/?${search}`);
   const { mockIpc } = await import('../../mock');
   const gitActivity = await import('../gitActivity');
+  const hub = await import('../gitActivityHub');
   const repoState = await import('../repoState');
   const opStateSeed = await import('../opStateSeed');
   const events: GitActivityEvent[] = [];
-  gitActivity.subscribeGitActivity((e) => events.push(e));
+  hub.subscribeGitActivity(null, (e) => events.push(e));
   return {
     ipc: mockIpc,
     events,
@@ -290,11 +291,11 @@ describe('a throwing handler ends with its message line (AC7)', () => {
   it('the reason is one line: breaks → spaces, controls stripped, capped at 2000', async () => {
     const h = await load();
     const reason = { kind: 'git', message: 'first\r\nsecond\nthird\u0007' };
-    await settle(h.gitActivity.runMockActivity('deleteTag', 'v1', () => Promise.reject(reason)));
+    await settle(h.gitActivity.runMockActivity('repo-test', 'deleteTag', 'v1', () => Promise.reject(reason)));
     expect(h.events.at(-2)?.line).toBe('first second third');
     h.events.splice(0);
     const long = { kind: 'git', message: 'x'.repeat(2500) };
-    await settle(h.gitActivity.runMockActivity('deleteTag', 'v1', () => Promise.reject(long)));
+    await settle(h.gitActivity.runMockActivity('repo-test', 'deleteTag', 'v1', () => Promise.reject(long)));
     const line = h.events.at(-2)?.line ?? '';
     expect([...line]).toHaveLength(2000);
     expect(line.endsWith('…')).toBe(true);

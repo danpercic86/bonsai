@@ -1612,6 +1612,44 @@ sync, so they are not repeated here.
 - The `details` field shift (0.0011) from `s229d042a` did not reproduce in the lab and is still
   unexplained.
 
+## P123 — activity dock per repo, unsubscribe leak, Tags re-check keeps its badge — `in-progress`
+
+**Current step:** implemented. Reviewer APPROVE (vitest 1336/1336, nextest activity 28/28 + 49/49,
+no MUST-FIX), ui-designer APPROVE. Committing, then the bare `pnpm gate`.
+- Contracts: `docs/contracts/P123-activity-per-repo.md` and `docs/contracts/P123-ui.md`, plus the
+  new ui-reference §11 "Re-check pill".
+- **Harness proof (orchestrator, 2026-09-25):** on a Tags re-check, the rollup pill kept its
+  label and its 32 px width. `aria-busy="true"` and `outline: dashed 1px`, offset −1px, were
+  present during the ~400 ms check and removed afterwards. "checking…" never appeared, and the
+  console had no errors.
+- **USER CHECKPOINT (P123-ui §2.5):** in `pnpm tauri dev` with two tabs open, push in one tab.
+  The other tab's dock, toolbar readout and commit box stay quiet. A clone or init shows in every
+  tab (Q1 ruling).
+
+**P123 follow-ups (SHOULD-FIX / NIT):**
+- **Test-kit bug (real, tests only):** `resetObsConfigForTests` (`src/obs/enabled.ts:89-92`)
+  clears every listener, including the IPC proxy's cache-clearing one (`ipcProxy.ts:304`). Later
+  `vi.spyOn(mockIpc, X)` spies then go unseen while obs is on. Fix: rewrap when the live method
+  differs from the cached original, or don't clear module-load listeners. There is a workaround in
+  `TagsSection.recheck.test.tsx:146-149`.
+- A rejected `gitActivitySubscribe` is swallowed with no retry (`useGitActivitySubscription.ts:35`),
+  so that tab's dock stays silent until it remounts. Add at least a debug log.
+- `lib.rs:1`: group `pub mod activity_hub;` with the other `mod` lines. `subscriber_count` could
+  be `pub(crate)` or `#[cfg(test)]`.
+- The tab strip has no busy indicator for background repos (ui-designer suggestion).
+
+**User rulings (2026-09-25, "yes to all three"):**
+1. Each tab's activity dock shows only its own repo's runs. `GitActivityEvent` gains a repo id.
+2. The Tags re-check keeps its "⚠ N" badge: it gets `aria-busy` and a static dashed outline, and
+   "checking…" appears only before the first settled result. This reverses the P121 test
+   `TagsSection.recheck.test.tsx` L121–129.
+3. Fix the `gitActivitySubscribe` unsubscribe leak. The channel count must equal the number of
+   mounted tabs, including under StrictMode.
+4. Q1 (2026-09-25): clone and init runs, which have no repo, appear in **every open tab's dock**
+   (contract default (a)).
+
+Source: the P122 follow-ups above.
+
 ## Follow-ups, ranked, none blocking
 
 - **✅ SPLIT 2026-09-16 (`934a280`) — both zero-slack files now have room, and the baseline is

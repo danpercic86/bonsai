@@ -6,17 +6,24 @@
 
 /** Renders (in priority order):
  *  - busy → a hueless `checking…`-style muted pill with `aria-busy` (no spinner);
- *  - count > 0 → a `⚠ {count}` warning pill named by `ariaLabel`;
- *  - otherwise → nothing (clean section: no badge). */
+ *    wins over `refreshing`;
+ *  - count > 0 → a `⚠ {count}` warning pill (`role="img"`, named by `ariaLabel`);
+ *    when `refreshing`, the SAME pill plus `aria-busy` (static dashed outline —
+ *    P123 "Re-check pill"), so a re-check never swaps the verdict away;
+ *  - otherwise → nothing (clean section: no badge), refreshing or not. */
 export function SectionRollupBadge({
   count,
   busy,
+  refreshing = false,
   label,
   ariaLabel,
   title,
 }: {
   count: number;
   busy: boolean;
+  /** A verdict exists and a re-check is in flight (P123). The caller folds the
+   *  re-check into `ariaLabel`/`title`; the badge stays status-agnostic. */
+  refreshing?: boolean;
   /** Text shown while `busy` (e.g. "checking…"). */
   label: string;
   /** Accessible name for the count pill (`⚠ {N}` alone is ambiguous to a reader). */
@@ -37,6 +44,8 @@ export function SectionRollupBadge({
     return (
       <span
         className="branch-badge submodule-badge-warn"
+        role="img"
+        aria-busy={refreshing ? 'true' : undefined}
         aria-label={ariaLabel}
         title={title ?? ariaLabel}
       >

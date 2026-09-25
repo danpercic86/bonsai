@@ -1,6 +1,6 @@
 /** P77 §2.5 — SectionRollupBadge: the collapsed-section rollup pill. Priority
- *  order is busy → count>0 → nothing; the ⚠ glyph and count are aria-hidden while
- *  the accessible name lives on the pill. Presentational: props in, DOM out. */
+ *  order is busy → count>0 (+ the P123 refreshing cue) → nothing; the ⚠ glyph
+ *  and count are aria-hidden while the accessible name lives on the pill. Presentational: props in, DOM out. */
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
@@ -44,6 +44,47 @@ describe('SectionRollupBadge', () => {
     expect(pill).toHaveAttribute('aria-busy', 'true');
     expect(container.textContent).toContain('checking…');
     // No ⚠ verdict while busy.
+    expect(container.querySelector('.submodule-badge-warn')).toBeNull();
+  });
+
+  it('the warn pill is a named image (P123 §1.5 role="img")', () => {
+    render(<SectionRollupBadge count={1} busy={false} label="checking…" ariaLabel="1 tag out of sync on origin" />);
+    const pill = screen.getByRole('img', { name: '1 tag out of sync on origin' });
+    expect(pill).not.toHaveAttribute('aria-busy');
+  });
+
+  it('refreshing + count > 0: the SAME warn pill, plus aria-busy and the re-check name/title', () => {
+    const { container } = render(
+      <SectionRollupBadge
+        count={2}
+        busy={false}
+        refreshing
+        label="checking…"
+        ariaLabel="2 tags out of sync on origin, checking again"
+        title="2 tags differ from origin — checking again…"
+      />,
+    );
+    const pill = screen.getByRole('img', { name: '2 tags out of sync on origin, checking again' });
+    expect(pill).toHaveClass('submodule-badge-warn');
+    expect(pill).toHaveAttribute('aria-busy', 'true');
+    expect(pill).toHaveAttribute('title', '2 tags differ from origin — checking again…');
+    expect(container.textContent).not.toContain('checking…');
+  });
+
+  it('refreshing + count 0 renders nothing', () => {
+    const { container } = render(
+      <SectionRollupBadge count={0} busy={false} refreshing label="checking…" ariaLabel="x" />,
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('busy wins over refreshing: the hueless label pill', () => {
+    const { container } = render(
+      <SectionRollupBadge count={4} busy refreshing label="checking…" ariaLabel="x" />,
+    );
+    const pill = container.querySelector('span.branch-badge');
+    expect(pill).toHaveClass('submodule-badge-muted');
+    expect(pill).toHaveAttribute('aria-busy', 'true');
     expect(container.querySelector('.submodule-badge-warn')).toBeNull();
   });
 

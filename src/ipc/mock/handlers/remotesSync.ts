@@ -1,5 +1,5 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
-// P87b: each op delegates to `runMockActivity(category, target, inner)` so the
+// P87b: each op delegates to `runMockActivity(repoId, category, target, inner)` so the
 // git-activity stream (View C phase readout + View D log) is exercised in the
 // browser harness.
 import type { IpcApi } from '../../types';
@@ -58,22 +58,22 @@ export const remotesSyncHandlers = {
   // FU-1 §4: fetch is ALWAYS fetch-all here (there is no per-remote entry
   // point), so the target is null and the frontend derives `all remotes`.
   async fetch(repoId: string): Promise<FetchResult> {
-    return runMockActivity('fetch', null, () => fetchInner(repoId));
+    return runMockActivity(repoId, 'fetch', null, () => fetchInner(repoId));
   },
 
   async pull(repoId: string): Promise<PullResult> {
-    return runMockActivity('pull', 'origin/main', () => pullInner(repoId));
+    return runMockActivity(repoId, 'pull', 'origin/main', () => pullInner(repoId));
   },
 
   async push(repoId: string, skipHooks?: boolean): Promise<PushResult> {
-    return runMockActivity('push', 'origin/main', () => pushInner(repoId, skipHooks));
+    return runMockActivity(repoId, 'push', 'origin/main', () => pushInner(repoId, skipHooks));
   },
 
   // P37: force-push the current branch WITH A LEASE. `?remote=leasefail` drives
   // the refusal path (the remote moved since the last fetch); otherwise the
   // lease holds and the remote-tracking tip advances to the local tip.
   async forcePush(repoId: string, skipHooks?: boolean): Promise<PushResult> {
-    return runMockActivity('forcePush', 'origin/main', () => forcePushInner(repoId, skipHooks));
+    return runMockActivity(repoId, 'forcePush', 'origin/main', () => forcePushInner(repoId, skipHooks));
   },
 } satisfies Partial<IpcApi>;
 

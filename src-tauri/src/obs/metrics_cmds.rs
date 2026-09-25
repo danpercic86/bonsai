@@ -20,7 +20,7 @@
 //! never actually arrive.
 
 /// Every `IpcApi` method name, sorted (binary search below depends on it).
-pub(super) const KNOWN_CMDS: [&str; 200] = [
+pub(super) const KNOWN_CMDS: [&str; 201] = [
     "abortMerge",
     "ackRepoHooks",
     "activateProfile",
@@ -129,6 +129,7 @@ pub(super) const KNOWN_CMDS: [&str; 200] = [
     "getUiSettings",
     "getWorkdirFileDiff",
     "gitActivitySubscribe",
+    "gitActivityUnsubscribe",
     "historyIndexBuild",
     "historyIndexStatus",
     "historySearch",

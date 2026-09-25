@@ -32,9 +32,10 @@ async function targetUnder(
   vi.resetModules();
   window.history.replaceState({}, '', search === '' ? '/' : `/?${search}`);
   const mod = await import('./gitActivity');
+  const hub = await import('./gitActivityHub');
   const events: GitActivityEvent[] = [];
-  mod.subscribeGitActivity((e) => events.push(e));
-  const done = mod.runMockActivity(category, fixture, () => Promise.resolve('ok'));
+  hub.subscribeGitActivity(null, (e) => events.push(e));
+  const done = mod.runMockActivity('repo-test', category, fixture, () => Promise.resolve('ok'));
   await vi.advanceTimersByTimeAsync(10_000);
   await done;
   return events.find((e) => e.kind === 'started')?.target;
@@ -87,10 +88,11 @@ describe('the §3.10 target seams', () => {
     vi.resetModules();
     window.history.replaceState({}, '', '/?pushSlow');
     const mod = await import('./gitActivity');
+    const hub = await import('./gitActivityHub');
     const events: GitActivityEvent[] = [];
-    mod.subscribeGitActivity((e) => events.push(e));
+    hub.subscribeGitActivity(null, (e) => events.push(e));
 
-    const done = mod.runMockActivity('push', 'origin/main', () => Promise.resolve('ok'));
+    const done = mod.runMockActivity('repo-test', 'push', 'origin/main', () => Promise.resolve('ok'));
     await vi.advanceTimersByTimeAsync(200);
     const early = events.filter((e) => e.target !== undefined);
     await vi.advanceTimersByTimeAsync(10_000);

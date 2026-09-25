@@ -281,7 +281,7 @@ fn auth_failure_reason_line_is_scrubbed_but_the_error_is_not() {
     let msg = "authentication failed for 'https://user:s3cret-tok@host.invalid/r.git': no usable credentials";
     take(&log);
     let r: Result<(), AppError> = block_on(with_activity_ex(
-        state.git_activity_hub(),
+        state.git_activity_unscoped(),
         GitActivityCategory::CloneRepo,
         RunSubject::default(),
         no_outcome,

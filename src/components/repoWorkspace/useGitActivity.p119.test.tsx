@@ -11,11 +11,12 @@ import { act, renderHook } from '@testing-library/react';
 import { useGitActivity } from './useGitActivity';
 import { isTerminalGitStatus, newGitRun, pruneGitRuns, GIT_ACTIVITY_RUNS_MAX } from './gitActivityState';
 import type { GitActivityRun } from './gitActivityState';
-import { emitGitActivity } from '../../ipc/mock/gitActivity';
+import { emitGitActivity } from '../../ipc/mock/gitActivityHub';
 import type { GitActivityEvent, GitActivityKind } from '../../ipc';
 
 let idc = 0;
 const newId = (): string => `git-p119-${(idc += 1)}`;
+const REPO = 'repo-test';
 
 function ev(
   id: string,
@@ -31,10 +32,10 @@ afterEach(() => vi.useRealTimers());
 
 describe('useGitActivity — P119 conflicts / outcome / targetCount', () => {
   it('success + outcome conflicts → status conflicts, terminal and clearable', () => {
-    const { result } = renderHook(() => useGitActivity());
+    const { result } = renderHook(() => useGitActivity(REPO));
     const id = newId();
-    act(() => emitGitActivity(ev(id, 0, 'started', { category: 'merge', target: 'feature/x' })));
-    act(() => emitGitActivity(ev(id, 1, 'finished', { success: true, outcome: 'conflicts' })));
+    act(() => emitGitActivity(REPO, ev(id, 0, 'started', { category: 'merge', target: 'feature/x' })));
+    act(() => emitGitActivity(REPO, ev(id, 1, 'finished', { success: true, outcome: 'conflicts' })));
     const run = result.current.runs[0];
     expect(run?.status).toBe('conflicts');
     expect(run?.outcome).toBe('conflicts');
@@ -45,30 +46,30 @@ describe('useGitActivity — P119 conflicts / outcome / targetCount', () => {
   });
 
   it('stores a fast-forward outcome on a successful run', () => {
-    const { result } = renderHook(() => useGitActivity());
+    const { result } = renderHook(() => useGitActivity(REPO));
     const id = newId();
-    act(() => emitGitActivity(ev(id, 0, 'started', { category: 'merge', target: 'feature/x' })));
-    act(() => emitGitActivity(ev(id, 1, 'finished', { success: true, outcome: 'fastForwarded' })));
+    act(() => emitGitActivity(REPO, ev(id, 0, 'started', { category: 'merge', target: 'feature/x' })));
+    act(() => emitGitActivity(REPO, ev(id, 1, 'finished', { success: true, outcome: 'fastForwarded' })));
     expect(result.current.runs[0]?.status).toBe('success');
     expect(result.current.runs[0]?.outcome).toBe('fastForwarded');
   });
 
   it('a failed run ignores any outcome for its status', () => {
-    const { result } = renderHook(() => useGitActivity());
+    const { result } = renderHook(() => useGitActivity(REPO));
     const id = newId();
-    act(() => emitGitActivity(ev(id, 0, 'started', { category: 'rebase', target: 'main' })));
-    act(() => emitGitActivity(ev(id, 1, 'finished', { success: false })));
+    act(() => emitGitActivity(REPO, ev(id, 0, 'started', { category: 'rebase', target: 'main' })));
+    act(() => emitGitActivity(REPO, ev(id, 1, 'finished', { success: false })));
     expect(result.current.runs[0]?.status).toBe('failed');
     expect(result.current.runs[0]?.outcome).toBeNull();
   });
 
   it('stores started.targetCount (null when absent)', () => {
-    const { result } = renderHook(() => useGitActivity());
+    const { result } = renderHook(() => useGitActivity(REPO));
     const many = newId();
     const one = newId();
-    act(() => emitGitActivity(ev(many, 0, 'started', { category: 'deleteBranches', targetCount: 3 })));
+    act(() => emitGitActivity(REPO, ev(many, 0, 'started', { category: 'deleteBranches', targetCount: 3 })));
     act(() =>
-      emitGitActivity(ev(one, 0, 'started', { category: 'deleteBranches', target: 'feature/x' })),
+      emitGitActivity(REPO, ev(one, 0, 'started', { category: 'deleteBranches', target: 'feature/x' })),
     );
     const byId = new Map(result.current.runs.map((r) => [r.id, r]));
     expect(byId.get(many)?.targetCount).toBe(3);

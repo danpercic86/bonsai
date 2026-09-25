@@ -194,17 +194,17 @@ const submoduleBodies = {
 export const submoduleHandlers = {
   ...submoduleBodies,
   initSubmodule: (repoId: string, name: string) =>
-    runMockActivity('submoduleInit', name, () => submoduleBodies.initSubmodule(repoId, name)),
+    runMockActivity(repoId, 'submoduleInit', name, () => submoduleBodies.initSubmodule(repoId, name)),
   updateSubmodule: (repoId: string, name: string) =>
-    runMockActivity('submoduleUpdate', name, () => submoduleBodies.updateSubmodule(repoId, name)),
+    runMockActivity(repoId, 'submoduleUpdate', name, () => submoduleBodies.updateSubmodule(repoId, name)),
   syncSubmodule: (repoId: string, name: string) =>
-    runMockActivity('submoduleSync', name, () => submoduleBodies.syncSubmodule(repoId, name)),
+    runMockActivity(repoId, 'submoduleSync', name, () => submoduleBodies.syncSubmodule(repoId, name)),
   // The submodule PATH, never the URL (it can carry credentials).
   addSubmodule: (repoId: string, url: string, path: string) =>
-    runMockActivity('submoduleAdd', path, () => submoduleBodies.addSubmodule(repoId, url, path)),
+    runMockActivity(repoId, 'submoduleAdd', path, () => submoduleBodies.addSubmodule(repoId, url, path)),
   deinitSubmodule: (repoId: string, name: string, force: boolean) =>
-    runMockActivity('submoduleDeinit', name, () => submoduleBodies.deinitSubmodule(repoId, name, force)),
+    runMockActivity(repoId, 'submoduleDeinit', name, () => submoduleBodies.deinitSubmodule(repoId, name, force)),
   removeSubmodule: (repoId: string, name: string, force: boolean) =>
-    runMockActivity('submoduleRemove', name, () => submoduleBodies.removeSubmodule(repoId, name, force)),
+    runMockActivity(repoId, 'submoduleRemove', name, () => submoduleBodies.removeSubmodule(repoId, name, force)),
 } satisfies Partial<IpcApi>;
 

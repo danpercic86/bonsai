@@ -15,21 +15,34 @@ pub(super) fn block_on<F: std::future::Future>(f: F) -> F::Output {
 
 pub(super) type Log = Arc<Mutex<Vec<Value>>>;
 
-/// Subscribes a capturing channel to `state`'s hub; every event arrives as the
-/// exact JSON the frontend receives.
+/// A channel that pushes every event it receives, as JSON, onto `log`.
+fn capture(log: &Log) -> tauri::ipc::Channel<bonsai_core::git::activity::GitActivityEvent> {
+    let sink = Arc::clone(log);
+    tauri::ipc::Channel::new(move |body| {
+        if let tauri::ipc::InvokeResponseBody::Json(s) = body {
+            let v: Value = serde_json::from_str(&s).expect("event is JSON");
+            sink.lock().expect("log lock").push(v);
+        }
+        Ok(())
+    })
+}
+
+/// Subscribes a WILDCARD capturing channel (receives every run, any repo) to
+/// `state`'s hub; every event arrives as the exact JSON the frontend receives.
 pub(super) fn subscribe(state: &AppState) -> Log {
     let log: Log = Arc::new(Mutex::new(Vec::new()));
-    let sink = Arc::clone(&log);
-    state
-        .git_activity
-        .subscribe(tauri::ipc::Channel::new(move |body| {
-            if let tauri::ipc::InvokeResponseBody::Json(s) = body {
-                let v: Value = serde_json::from_str(&s).expect("event is JSON");
-                sink.lock().expect("log lock").push(v);
-            }
-            Ok(())
-        }));
+    state.git_activity.subscribe(None, capture(&log));
     log
+}
+
+/// P123: capture only `repo_id`'s runs (the production shape). Returns the
+/// log and the subscription id.
+pub(super) fn subscribe_for(state: &AppState, repo_id: &str) -> (Log, String) {
+    let log: Log = Arc::new(Mutex::new(Vec::new()));
+    let id = state
+        .git_activity
+        .subscribe(Some(repo_id.to_string()), capture(&log));
+    (log, id)
 }
 
 /// Drains everything captured so far.

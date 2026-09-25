@@ -101,7 +101,7 @@ const mergeBodies = {
   // P59a: `skipHooks` ≡ --no-verify; the commit hooks fire around the merge
   // commit (after the unresolved-conflicts guard, matching the backend order).
   async commitMerge(repoId: string, message: string, skipHooks?: boolean): Promise<CommitResult> {
-    return runMockActivity('mergeCommit', 'main', () =>
+    return runMockActivity(repoId, 'mergeCommit', 'main', () =>
       commitMergeInner(repoId, message, skipHooks),
     );
   },
@@ -213,11 +213,11 @@ const mergeBodies = {
 export const mergeHandlers = {
   ...mergeBodies,
   mergeBranch: (repoId: string, name: string) =>
-    runMockActivity('merge', mockRefTarget(name), () => mergeBodies.mergeBranch(repoId, name), {
+    runMockActivity(repoId, 'merge', mockRefTarget(name), () => mergeBodies.mergeBranch(repoId, name), {
       classify: mockMergeOutcome,
     }),
   abortMerge: (repoId: string) =>
-    runMockActivity('abortMerge', mockHeadTarget(repoId), () => mergeBodies.abortMerge(repoId)),
+    runMockActivity(repoId, 'abortMerge', mockHeadTarget(repoId), () => mergeBodies.abortMerge(repoId)),
 } satisfies Partial<IpcApi>;
 
 async function commitMergeInner(

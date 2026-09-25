@@ -57,11 +57,11 @@ function isRemoteCategory(category: GitActivityRun['category']): category is Git
   );
 }
 
-export function useGitDock(deps: { density: PanelDensity }): GitDockApi {
-  const { density } = deps;
-  // The store lives HERE (one subscription for the session), so the container
-  // keeps a single hook call instead of two (file-size discipline).
-  const { runs, activeRun, tick, clear, hasTerminalRuns } = useGitActivity();
+export function useGitDock(deps: { density: PanelDensity; repoId: string }): GitDockApi {
+  const { density, repoId } = deps;
+  // The store lives HERE (one per-repo subscription per mount, P123), so the
+  // container keeps a single hook call instead of two (file-size discipline).
+  const { runs, activeRun, tick, clear, hasTerminalRuns } = useGitActivity(repoId);
 
   const panelRef = useRef<GitActivityDockHandle | null>(null);
   // Session-only geometry (Q5). Starts collapsed; never auto-expands.

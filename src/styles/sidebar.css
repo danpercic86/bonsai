@@ -217,6 +217,14 @@
   --h: var(--warning);
 }
 
+/* P123 / ui-reference §11 "Re-check pill": a verdict pill whose re-check is in
+   flight keeps its label; a static dashed outline laid exactly over the 1px
+   border ring reads as "provisional" with zero layout shift and no motion. */
+.submodule-badge-warn[aria-busy='true'] {
+  outline: 1px dashed currentColor;
+  outline-offset: -1px;
+}
+
 .submodule-badge-glyph {
   color: var(--h, var(--text-2));
 }

@@ -91,7 +91,7 @@ pub(crate) async fn commit_merge_inner(
 ) -> Result<CommitResult, AppError> {
     let target = activity_target(state, repo_id, GitActivityCategory::MergeCommit).await;
     with_activity(
-        state.git_activity_hub(),
+        state.git_activity_for(repo_id),
         GitActivityCategory::MergeCommit,
         target,
         move |emitter| async move {

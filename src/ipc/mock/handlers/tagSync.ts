@@ -149,11 +149,11 @@ const tagSyncBodies = {
 export const tagSyncHandlers = {
   ...tagSyncBodies,
   forceRefreshTag: (repoId: string, remote: string, tagName: string) =>
-    runMockActivity('forceRefreshTag', mockTagTarget(tagName), () =>
+    runMockActivity(repoId, 'forceRefreshTag', mockTagTarget(tagName), () =>
       tagSyncBodies.forceRefreshTag(repoId, remote, tagName),
     ),
   deleteRemoteTag: (repoId: string, remote: string, tagName: string) =>
-    runMockActivity('deleteRemoteTag', mockTagTarget(tagName), () =>
+    runMockActivity(repoId, 'deleteRemoteTag', mockTagTarget(tagName), () =>
       tagSyncBodies.deleteRemoteTag(repoId, remote, tagName),
     ),
 } satisfies Partial<IpcApi>;

@@ -148,7 +148,7 @@ const statusBodies = {
     _sign?: boolean | null,
     skipHooks?: boolean,
   ): Promise<CommitResult> {
-    return runMockActivity('commit', 'main', () => commitInner(repoId, message, skipHooks));
+    return runMockActivity(repoId, 'commit', 'main', () => commitInner(repoId, message, skipHooks));
   },
 } satisfies Partial<IpcApi>;
 
@@ -158,7 +158,7 @@ const statusBodies = {
 export const statusHandlers = {
   ...statusBodies,
   discardPartial: (repoId: string, path: string, origPath: string | null, selection: LineSelection[]) =>
-    runMockActivity('discard', path, () => statusBodies.discardPartial(repoId, path, origPath, selection)),
+    runMockActivity(repoId, 'discard', path, () => statusBodies.discardPartial(repoId, path, origPath, selection)),
 } satisfies Partial<IpcApi>;
 
 

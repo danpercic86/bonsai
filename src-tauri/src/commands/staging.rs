@@ -78,7 +78,7 @@ pub(crate) async fn commit_inner(
 ) -> Result<CommitResult, AppError> {
     let target = activity_target(state, repo_id, GitActivityCategory::Commit).await;
     with_activity(
-        state.git_activity_hub(),
+        state.git_activity_for(repo_id),
         GitActivityCategory::Commit,
         target,
         move |emitter| async move {
@@ -186,7 +186,7 @@ pub(crate) async fn commit_amend_inner(
 ) -> Result<CommitResult, AppError> {
     let target = activity_target(state, repo_id, GitActivityCategory::Amend).await;
     with_activity(
-        state.git_activity_hub(),
+        state.git_activity_for(repo_id),
         GitActivityCategory::Amend,
         target,
         move |emitter| async move {

@@ -2,9 +2,9 @@
  * P87b §7/§8 — the git-activity session store (View C + View D), the git twin of
  * `useAiRuns`.
  *
- * Subscribes ONCE to `ipc.gitActivitySubscribe` on mount; every git op that runs
- * hooks or does network I/O streams `GitActivityEvent`s onto that one channel and
- * lands here. Same D5 discipline as `useAiRuns`: an authoritative `runsRef`, a
+ * P123: subscribes to THIS repo's runs only (`useGitActivitySubscription`, one
+ * backend-routed channel per mounted tab, unsubscribed on unmount); every git op
+ * on the repo streams `GitActivityEvent`s onto that channel and lands here. Same D5 discipline as `useAiRuns`: an authoritative `runsRef`, a
  * render mirror committed on a 50 ms flush, log lines/progress buffered per id, a
  * status/phase change flushed immediately, and any event whose `seq <= last-seen`
  * for its id dropped (HMR/reload can redeliver).
@@ -15,7 +15,6 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { ipc } from '../../ipc';
 import {
   GIT_ACTIVITY_FLUSH_MS,
   appendCappedLines,
@@ -28,6 +27,7 @@ import {
   type GitActivityRun,
   type GitHookRecord,
 } from './gitActivityState';
+import { useGitActivitySubscription } from './useGitActivitySubscription';
 import type { GitActivityEvent } from '../../ipc';
 
 export { GIT_ACTIVITY_FLUSH_MS, GIT_ACTIVITY_LINES_MAX } from './gitActivityLog';
@@ -49,7 +49,7 @@ export interface GitActivityApi {
   tick: number;
 }
 
-export function useGitActivity(): GitActivityApi {
+export function useGitActivity(repoId: string): GitActivityApi {
   // The AUTHORITATIVE store: a Map in insertion (chronological) order. Events
   // arrive from an IPC callback that closes over nothing, so buffered flushes
   // must never read stale React state — they read/write the ref.
@@ -111,6 +111,9 @@ export function useGitActivity(): GitActivityApi {
       const existing = runsRef.current.get(ev.id);
 
       if (ev.kind === 'started') {
+        // P123 defensive drop: the backend routes per repo; a broadcast run
+        // naming ANOTHER repo is not ours. Its later events fall out below.
+        if (ev.repoId !== undefined && ev.repoId !== repoId) return;
         // A redelivered `started` (reload) must not reset an existing run.
         if (existing !== undefined) return;
         const phase = ev.phase ?? { kind: 'preparing' };
@@ -204,19 +207,18 @@ export function useGitActivity(): GitActivityApi {
           return;
       }
     },
-    [commit, flush, patch, scheduleFlush],
+    [commit, flush, patch, repoId, scheduleFlush],
   );
 
-  // Subscribe ONCE on mount. `gitActivitySubscribe` resolves immediately; the
-  // callback stays live for the session. Re-armed on mount for StrictMode.
+  // P123: one per-repo subscription per mount, dropped on unmount.
+  useGitActivitySubscription(repoId, onEvent);
   useEffect(() => {
     mounted.current = true;
-    void ipc.gitActivitySubscribe(onEvent).catch(() => undefined);
     return () => {
       mounted.current = false;
       if (flushTimer.current !== null) clearTimeout(flushTimer.current);
     };
-  }, [onEvent]);
+  }, []);
 
   const clear = useCallback(() => {
     let changed = false;

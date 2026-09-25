@@ -307,6 +307,7 @@ fn recording_with_subject(
     let sink = Arc::clone(&log);
     let emitter = Arc::new(ActivityEmitter::with_subject(
         "git-test-0".to_string(),
+        None,
         subject,
         Box::new(move |ev| sink.lock().expect("lock").push(ev)),
     ));

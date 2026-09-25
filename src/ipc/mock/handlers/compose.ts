@@ -67,7 +67,7 @@ const composeBodies = {
 export const composeHandlers = {
   ...composeBodies,
   applyComposedCommits: (repoId: string, plan: ComposePlan) =>
-    runMockActivity('composeCommits', mockHeadTarget(repoId), () =>
+    runMockActivity(repoId, 'composeCommits', mockHeadTarget(repoId), () =>
       composeBodies.applyComposedCommits(repoId, plan),
     ),
 } satisfies Partial<IpcApi>;

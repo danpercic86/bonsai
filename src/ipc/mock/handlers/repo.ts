@@ -113,8 +113,8 @@ const repoBodies = {
 export const repoHandlers = {
   ...repoBodies,
   cloneRepo: (url: string, dest: string, onProgress: (p: CloneProgress) => void) =>
-    runMockActivity('cloneRepo', mockPathLeaf(dest), () => repoBodies.cloneRepo(url, dest, onProgress)),
+    runMockActivity(null, 'cloneRepo', mockPathLeaf(dest), () => repoBodies.cloneRepo(url, dest, onProgress)),
   initRepo: (path: string) =>
-    runMockActivity('initRepo', mockPathLeaf(path), () => repoBodies.initRepo(path)),
+    runMockActivity(null, 'initRepo', mockPathLeaf(path), () => repoBodies.initRepo(path)),
 } satisfies Partial<IpcApi>;
 

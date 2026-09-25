@@ -283,25 +283,26 @@ const rebaseBodies = {
 export const rebaseHandlers = {
   ...rebaseBodies,
   rebaseBranch: (repoId: string, onto: string) =>
-    runMockActivity('rebase', mockRefTarget(onto), () => rebaseBodies.rebaseBranch(repoId, onto), {
+    runMockActivity(repoId, 'rebase', mockRefTarget(onto), () => rebaseBodies.rebaseBranch(repoId, onto), {
       classify: mockRebaseOutcome,
     }),
   startInteractiveRebase: (repoId: string, ontoOid: string, todos: RebaseTodoOp[]) =>
     runMockActivity(
+      repoId,
       'interactiveRebase',
       mockCommitTarget(ontoOid),
       () => rebaseBodies.startInteractiveRebase(repoId, ontoOid, todos),
       { classify: mockRebaseOutcome },
     ),
   rebaseContinue: (repoId: string) =>
-    runMockActivity('rebaseContinue', mockRebaseTarget(repoId), () => rebaseBodies.rebaseContinue(repoId), {
+    runMockActivity(repoId, 'rebaseContinue', mockRebaseTarget(repoId), () => rebaseBodies.rebaseContinue(repoId), {
       classify: mockRebaseOutcome,
     }),
   rebaseSkip: (repoId: string) =>
-    runMockActivity('rebaseSkip', mockRebaseTarget(repoId), () => rebaseBodies.rebaseSkip(repoId), {
+    runMockActivity(repoId, 'rebaseSkip', mockRebaseTarget(repoId), () => rebaseBodies.rebaseSkip(repoId), {
       classify: mockRebaseOutcome,
     }),
   rebaseAbort: (repoId: string) =>
-    runMockActivity('rebaseAbort', mockRebaseTarget(repoId), () => rebaseBodies.rebaseAbort(repoId)),
+    runMockActivity(repoId, 'rebaseAbort', mockRebaseTarget(repoId), () => rebaseBodies.rebaseAbort(repoId)),
 } satisfies Partial<IpcApi>;
 

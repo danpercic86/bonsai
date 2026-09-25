@@ -145,6 +145,9 @@ mod tests_activity_coverage;
 mod tests_activity_coverage_misc;
 
 #[cfg(test)]
+mod tests_activity_scope;
+
+#[cfg(test)]
 mod tests_ai;
 
 #[cfg(test)]

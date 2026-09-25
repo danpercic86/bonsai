@@ -1383,7 +1383,7 @@ export function RepoWorkspace({
   });
 
   // P87b: the git-activity session store (View C + View D) + its dock container.
-  const gitDock = useGitDock({ density: panelDensity });
+  const gitDock = useGitDock({ density: panelDensity, repoId });
 
   // P60c: describe the last HEAD-moving op (READ-ONLY) and open the UndoDialog.
   // Confirming there reuses the shipped resetBranch (handleResetBranch) with the

@@ -1,3 +1,4 @@
+pub mod activity_hub;
 /// P71 guards on `tauri.conf.json` (strict JSON, so it cannot carry comments).
 #[cfg(test)]
 #[path = "bundle_config_tests.rs"]
@@ -245,6 +246,7 @@ pub fn run() {
                 commands::push,
                 commands::force_push,
                 commands::git_activity_subscribe,
+                commands::git_activity_unsubscribe,
                 commands::get_recent_repos,
                 commands::remove_recent_repo,
                 commands::get_ui_settings,

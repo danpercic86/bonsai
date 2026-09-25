@@ -118,8 +118,14 @@ describe('TagsSection re-check (P121e, non-StrictMode)', () => {
       pending = hook.refetch({ force: true });
     });
     expect(spy).toHaveBeenCalledTimes(2);
-    // While pending: the rollup says checking, the previous badges REMAIN.
-    expect(screen.getByText('checking…')).toBeInTheDocument();
+    // While pending (P123): the rollup KEEPS its verdict pill + the re-check
+    // cue — no `checking…` swap — and the previous row badges REMAIN.
+    expect(screen.queryByText('checking…')).toBeNull();
+    const rechecking = screen.getByRole('img', {
+      name: '1 tag out of sync on origin, checking again',
+    });
+    expect(rechecking).toHaveAttribute('aria-busy', 'true');
+    expect(rechecking).toHaveAttribute('title', '1 tag differs from origin — checking again…');
     expect(row('v1.0').textContent).toContain('out of sync');
 
     await act(async () => {
@@ -127,10 +133,49 @@ describe('TagsSection re-check (P121e, non-StrictMode)', () => {
       await pending;
     });
     expect(screen.queryByText('checking…')).toBeNull();
+    const settled = screen.getByRole('img', { name: '1 tag out of sync on origin' });
+    expect(settled).not.toHaveAttribute('aria-busy');
+    expect(settled).toHaveAttribute('title', '1 tag differs from origin. Expand to resolve.');
     expect(row('v1.0').textContent).not.toContain('out of sync');
     expect(row('v2.0').textContent).toContain('out of sync');
 
     await drainRenderTally();
     expect(tallyRenders('TagsSection')).toBe(1);
+  });
+
+  // Obs OFF for this case: with it on, the ipc proxy hands back the wrapper it
+  // memoised around the FIRST test's `listTagSync` spy — `resetObsConfigForTests`
+  // clears the listener that would drop that memo — so a second spy is unseen.
+  // This case needs no render tally.
+  it('a re-check of a clean (0-divergence) verdict renders no pill at any point', async () => {
+    stopRenderTally();
+    const first = deferred<TagSyncReport>();
+    const second = deferred<TagSyncReport>();
+    const spy = vi
+      .spyOn(mockIpc, 'listTagSync')
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('treeitem', { name: /Tags/ }));
+    expect(spy).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      first.resolve(report('none'));
+      await first.promise;
+    });
+    const noPill = () => {
+      expect(screen.queryByText('checking…')).toBeNull();
+      expect(screen.queryByRole('img', { name: /out of sync/ })).toBeNull();
+    };
+    noPill();
+    let pending!: Promise<void>;
+    act(() => {
+      pending = hook.refetch({ force: true });
+    });
+    noPill();
+    await act(async () => {
+      second.resolve(report('none'));
+      await pending;
+    });
+    noPill();
   });
 });

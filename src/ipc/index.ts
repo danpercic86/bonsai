@@ -114,6 +114,7 @@ export type {
   GitActivityCategory,
   GitActivityEvent,
   GitActivityKind,
+  GitActivityListener,
   GitPhase,
   GitPhaseKind,
   GitRunOutcome,

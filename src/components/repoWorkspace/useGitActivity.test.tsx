@@ -19,11 +19,12 @@ import {
   pruneGitRuns,
   type GitActivityRun,
 } from './gitActivityState';
-import { emitGitActivity } from '../../ipc/mock/gitActivity';
+import { emitGitActivity } from '../../ipc/mock/gitActivityHub';
 import type { GitActivityEvent, GitActivityKind } from '../../ipc';
 
 let idc = 0;
 const newId = (): string => `git-test-${(idc += 1)}`;
+const REPO = 'repo-test';
 
 function ev(
   id: string,
@@ -39,25 +40,24 @@ afterEach(() => vi.useRealTimers());
 
 describe('useGitActivity — the integration sequence (NIT #3)', () => {
   it('flows started → phase → lines → progress → finished into activeRun then a row', () => {
-    const { result } = renderHook(() => useGitActivity());
+    const { result } = renderHook(() => useGitActivity(REPO));
     const id = newId();
 
-    act(() => emitGitActivity(ev(id, 0, 'started', { category: 'fetch', phase: { kind: 'preparing' } })));
+    act(() => emitGitActivity(REPO, ev(id, 0, 'started', { category: 'fetch', phase: { kind: 'preparing' } })));
     expect(result.current.activeRun?.id).toBe(id);
     expect(result.current.runs).toHaveLength(1);
 
-    act(() => emitGitActivity(ev(id, 1, 'phase', { phase: { kind: 'network' } })));
+    act(() => emitGitActivity(REPO, ev(id, 1, 'phase', { phase: { kind: 'network' } })));
     expect(result.current.activeRun?.phase.kind).toBe('network');
 
     act(() => {
-      emitGitActivity(ev(id, 2, 'stdoutLine', { line: 'remote: counting objects' }));
+      emitGitActivity(REPO, ev(id, 2, 'stdoutLine', { line: 'remote: counting objects' }));
       vi.advanceTimersByTime(60);
     });
     expect(result.current.runs[0]?.lines.map((l) => l.text)).toContain('remote: counting objects');
 
     act(() => {
-      emitGitActivity(
-        ev(id, 3, 'progress', {
+      emitGitActivity(REPO, ev(id, 3, 'progress', {
           progress: { receivedObjects: 5, totalObjects: 10, indexedObjects: 5, receivedBytes: 400 },
         }),
       );
@@ -65,23 +65,23 @@ describe('useGitActivity — the integration sequence (NIT #3)', () => {
     });
     expect(result.current.activeRun?.progress?.totalObjects).toBe(10);
 
-    act(() => emitGitActivity(ev(id, 4, 'finished', { code: 0, success: true })));
+    act(() => emitGitActivity(REPO, ev(id, 4, 'finished', { code: 0, success: true })));
     expect(result.current.activeRun).toBeNull();
     expect(result.current.runs[0]?.status).toBe('success');
     expect(result.current.hasTerminalRuns).toBe(true);
   });
 
   it('records per-hook rows and a failed terminal', () => {
-    const { result } = renderHook(() => useGitActivity());
+    const { result } = renderHook(() => useGitActivity(REPO));
     const id = newId();
-    act(() => emitGitActivity(ev(id, 0, 'started', { category: 'push', phase: { kind: 'preparing' } })));
-    act(() => emitGitActivity(ev(id, 1, 'phase', { phase: { kind: 'runningHook', hook: 'pre-push' } })));
+    act(() => emitGitActivity(REPO, ev(id, 0, 'started', { category: 'push', phase: { kind: 'preparing' } })));
+    act(() => emitGitActivity(REPO, ev(id, 1, 'phase', { phase: { kind: 'runningHook', hook: 'pre-push' } })));
     act(() => {
-      emitGitActivity(ev(id, 2, 'stderrLine', { line: 'gitleaks: Failed' }));
+      emitGitActivity(REPO, ev(id, 2, 'stderrLine', { line: 'gitleaks: Failed' }));
       vi.advanceTimersByTime(60);
     });
-    act(() => emitGitActivity(ev(id, 3, 'hookDone', { hook: 'pre-push', code: 1, success: false })));
-    act(() => emitGitActivity(ev(id, 4, 'finished', { code: 1, success: false })));
+    act(() => emitGitActivity(REPO, ev(id, 3, 'hookDone', { hook: 'pre-push', code: 1, success: false })));
+    act(() => emitGitActivity(REPO, ev(id, 4, 'finished', { code: 1, success: false })));
 
     const row = result.current.runs[0];
     expect(row?.status).toBe('failed');
@@ -94,15 +94,15 @@ describe('useGitActivity — the integration sequence (NIT #3)', () => {
 
 describe('useGitActivity — batching, de-dup, ring', () => {
   it('drops an out-of-order (seq <= last-seen) event', () => {
-    const { result } = renderHook(() => useGitActivity());
+    const { result } = renderHook(() => useGitActivity(REPO));
     const id = newId();
-    act(() => emitGitActivity(ev(id, 0, 'started', { category: 'push', phase: { kind: 'preparing' } })));
+    act(() => emitGitActivity(REPO, ev(id, 0, 'started', { category: 'push', phase: { kind: 'preparing' } })));
     act(() => {
-      emitGitActivity(ev(id, 2, 'stdoutLine', { line: 'fresh' }));
+      emitGitActivity(REPO, ev(id, 2, 'stdoutLine', { line: 'fresh' }));
       vi.advanceTimersByTime(60);
     });
     act(() => {
-      emitGitActivity(ev(id, 1, 'stdoutLine', { line: 'stale' }));
+      emitGitActivity(REPO, ev(id, 1, 'stdoutLine', { line: 'stale' }));
       vi.advanceTimersByTime(60);
     });
     const texts = result.current.runs[0]?.lines.map((l) => l.text) ?? [];
@@ -111,11 +111,11 @@ describe('useGitActivity — batching, de-dup, ring', () => {
   });
 
   it('caps per-run output at 500 lines and counts the overflow', () => {
-    const { result } = renderHook(() => useGitActivity());
+    const { result } = renderHook(() => useGitActivity(REPO));
     const id = newId();
-    act(() => emitGitActivity(ev(id, 0, 'started', { category: 'push', phase: { kind: 'network' } })));
+    act(() => emitGitActivity(REPO, ev(id, 0, 'started', { category: 'push', phase: { kind: 'network' } })));
     act(() => {
-      for (let i = 1; i <= 600; i += 1) emitGitActivity(ev(id, i, 'stdoutLine', { line: `L${i}` }));
+      for (let i = 1; i <= 600; i += 1) emitGitActivity(REPO, ev(id, i, 'stdoutLine', { line: `L${i}` }));
       vi.advanceTimersByTime(60);
     });
     const row = result.current.runs[0];
@@ -126,12 +126,12 @@ describe('useGitActivity — batching, de-dup, ring', () => {
   });
 
   it('clear() removes terminal runs but keeps a running one', () => {
-    const { result } = renderHook(() => useGitActivity());
+    const { result } = renderHook(() => useGitActivity(REPO));
     const done = newId();
     const live = newId();
-    act(() => emitGitActivity(ev(done, 0, 'started', { category: 'fetch', phase: { kind: 'network' } })));
-    act(() => emitGitActivity(ev(done, 1, 'finished', { code: 0, success: true })));
-    act(() => emitGitActivity(ev(live, 0, 'started', { category: 'push', phase: { kind: 'network' } })));
+    act(() => emitGitActivity(REPO, ev(done, 0, 'started', { category: 'fetch', phase: { kind: 'network' } })));
+    act(() => emitGitActivity(REPO, ev(done, 1, 'finished', { code: 0, success: true })));
+    act(() => emitGitActivity(REPO, ev(live, 0, 'started', { category: 'push', phase: { kind: 'network' } })));
     expect(result.current.runs).toHaveLength(2);
 
     act(() => result.current.clear());
@@ -143,12 +143,11 @@ describe('useGitActivity — batching, de-dup, ring', () => {
 
 describe('the run target is written ONCE, on started (FU-1 §7)', () => {
   it('target_survives_later_events — phase/line/finished never rewrite it', () => {
-    const { result } = renderHook(() => useGitActivity());
+    const { result } = renderHook(() => useGitActivity(REPO));
     const id = newId();
 
     act(() =>
-      emitGitActivity(
-        ev(id, 0, 'started', {
+      emitGitActivity(REPO, ev(id, 0, 'started', {
           category: 'push',
           phase: { kind: 'preparing' },
           target: 'origin/main',
@@ -158,15 +157,14 @@ describe('the run target is written ONCE, on started (FU-1 §7)', () => {
     expect(result.current.runs[0]?.target).toBe('origin/main');
 
     // Every later event kind the reducer handles, none of which may touch it.
-    act(() => emitGitActivity(ev(id, 1, 'phase', { phase: { kind: 'network' } })));
+    act(() => emitGitActivity(REPO, ev(id, 1, 'phase', { phase: { kind: 'network' } })));
     act(() => {
-      emitGitActivity(ev(id, 2, 'stdoutLine', { line: 'remote: counting objects' }));
-      emitGitActivity(ev(id, 3, 'stderrLine', { line: 'remote: warning' }));
+      emitGitActivity(REPO, ev(id, 2, 'stdoutLine', { line: 'remote: counting objects' }));
+      emitGitActivity(REPO, ev(id, 3, 'stderrLine', { line: 'remote: warning' }));
       vi.advanceTimersByTime(60);
     });
     act(() =>
-      emitGitActivity(
-        ev(id, 4, 'progress', {
+      emitGitActivity(REPO, ev(id, 4, 'progress', {
           progress: {
             receivedObjects: 10,
             totalObjects: 100,
@@ -176,23 +174,23 @@ describe('the run target is written ONCE, on started (FU-1 §7)', () => {
         }),
       ),
     );
-    act(() => emitGitActivity(ev(id, 5, 'hookDone', { hook: 'pre-push', code: 0, success: true })));
+    act(() => emitGitActivity(REPO, ev(id, 5, 'hookDone', { hook: 'pre-push', code: 0, success: true })));
     // A `started` carrying a DIFFERENT target must be ignored outright (redelivery).
     act(() =>
-      emitGitActivity(ev(id, 6, 'started', { category: 'push', target: 'origin/other' })),
+      emitGitActivity(REPO, ev(id, 6, 'started', { category: 'push', target: 'origin/other' })),
     );
-    act(() => emitGitActivity(ev(id, 7, 'finished', { code: 0, success: true })));
+    act(() => emitGitActivity(REPO, ev(id, 7, 'finished', { code: 0, success: true })));
 
     expect(result.current.runs[0]?.target).toBe('origin/main');
     expect(result.current.runs[0]?.status).toBe('success');
   });
 
   it('a started WITHOUT a target yields run.target === null (old backend / no knob)', () => {
-    const { result } = renderHook(() => useGitActivity());
+    const { result } = renderHook(() => useGitActivity(REPO));
     const id = newId();
 
     act(() =>
-      emitGitActivity(ev(id, 0, 'started', { category: 'commit', phase: { kind: 'preparing' } })),
+      emitGitActivity(REPO, ev(id, 0, 'started', { category: 'commit', phase: { kind: 'preparing' } })),
     );
 
     expect(result.current.runs[0]?.target).toBeNull();

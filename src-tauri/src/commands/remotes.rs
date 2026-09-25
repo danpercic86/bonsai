@@ -89,7 +89,7 @@ pub async fn fetch(
 pub(crate) async fn fetch_inner(state: &AppState, repo_id: &str) -> Result<FetchResult, AppError> {
     let target = activity_target(state, repo_id, GitActivityCategory::Fetch).await;
     with_activity(
-        state.git_activity_hub(),
+        state.git_activity_for(repo_id),
         GitActivityCategory::Fetch,
         target,
         move |emitter| async move {
@@ -133,7 +133,7 @@ pub async fn pull(
 pub(crate) async fn pull_inner(state: &AppState, repo_id: &str) -> Result<PullResult, AppError> {
     let target = activity_target(state, repo_id, GitActivityCategory::Pull).await;
     with_activity(
-        state.git_activity_hub(),
+        state.git_activity_for(repo_id),
         GitActivityCategory::Pull,
         target,
         move |emitter| async move {
@@ -175,7 +175,7 @@ pub(crate) async fn push_inner(
 ) -> Result<PushResult, AppError> {
     let target = activity_target(state, repo_id, GitActivityCategory::Push).await;
     with_activity(
-        state.git_activity_hub(),
+        state.git_activity_for(repo_id),
         GitActivityCategory::Push,
         target,
         move |emitter| async move {
@@ -220,7 +220,7 @@ pub(crate) async fn force_push_inner(
 ) -> Result<PushResult, AppError> {
     let target = activity_target(state, repo_id, GitActivityCategory::ForcePush).await;
     with_activity(
-        state.git_activity_hub(),
+        state.git_activity_for(repo_id),
         GitActivityCategory::ForcePush,
         target,
         move |emitter| async move {

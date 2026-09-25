@@ -26,11 +26,13 @@ async function eventsOf(category: GitActivityCategory, opts: RunOpts = {}): Prom
   const search = opts.search ?? '';
   window.history.replaceState({}, '', search === '' ? '/' : `/?${search}`);
   const mod = await import('./gitActivity');
+  const hub = await import('./gitActivityHub');
   const events: GitActivityEvent[] = [];
-  mod.subscribeGitActivity((e) => events.push(e));
+  hub.subscribeGitActivity(null, (e) => events.push(e));
   const fail = opts.fail;
   const done = mod
     .runMockActivity(
+      'repo-test',
       category,
       'topic',
       () => (fail !== undefined ? Promise.reject(fail) : Promise.resolve('ok')),

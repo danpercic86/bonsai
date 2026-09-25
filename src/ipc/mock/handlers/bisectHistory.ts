@@ -128,15 +128,15 @@ const bisectHistoryBodies = {
 export const bisectHistoryHandlers = {
   ...bisectHistoryBodies,
   startBisect: (repoId: string, bad: string, good: string[]) =>
-    runMockActivity('bisectStart', mockCommitTarget(bad), () => bisectHistoryBodies.startBisect(repoId, bad, good)),
+    runMockActivity(repoId, 'bisectStart', mockCommitTarget(bad), () => bisectHistoryBodies.startBisect(repoId, bad, good)),
   // C rows: the commit being judged is HEAD's (the midpoint) at `started`.
   bisectMark: (repoId: string, isGood: boolean) =>
-    runMockActivity(isGood ? 'bisectGood' : 'bisectBad', mockHeadCommitTarget(repoId), () =>
+    runMockActivity(repoId, isGood ? 'bisectGood' : 'bisectBad', mockHeadCommitTarget(repoId), () =>
       bisectHistoryBodies.bisectMark(repoId, isGood),
     ),
   bisectSkip: (repoId: string) =>
-    runMockActivity('bisectSkip', mockHeadCommitTarget(repoId), () => bisectHistoryBodies.bisectSkip(repoId)),
+    runMockActivity(repoId, 'bisectSkip', mockHeadCommitTarget(repoId), () => bisectHistoryBodies.bisectSkip(repoId)),
   bisectReset: (repoId: string) =>
-    runMockActivity('bisectReset', null, () => bisectHistoryBodies.bisectReset(repoId)),
+    runMockActivity(repoId, 'bisectReset', null, () => bisectHistoryBodies.bisectReset(repoId)),
 } satisfies Partial<IpcApi>;
 

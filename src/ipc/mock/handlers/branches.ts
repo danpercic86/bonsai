@@ -367,32 +367,32 @@ const branchBodies = {
 export const branchHandlers = {
   ...branchBodies,
   createBranch: (repoId: string, name: string) =>
-    runMockActivity('createBranch', name, () => branchBodies.createBranch(repoId, name)),
+    runMockActivity(repoId, 'createBranch', name, () => branchBodies.createBranch(repoId, name)),
   createBranchHere: (repoId: string, name: string, oid: string) =>
-    runMockActivity('createBranch', name, () => branchBodies.createBranchHere(repoId, name, oid), {
+    runMockActivity(repoId, 'createBranch', name, () => branchBodies.createBranchHere(repoId, name, oid), {
       classify: mockCreateHereOutcome,
     }),
   checkoutBranch: (repoId: string, name: string) =>
-    runMockActivity('checkoutBranch', name, () => branchBodies.checkoutBranch(repoId, name), {
+    runMockActivity(repoId, 'checkoutBranch', name, () => branchBodies.checkoutBranch(repoId, name), {
       classify: mockCheckoutOutcome,
     }),
   checkoutCommit: (repoId: string, oid: string) =>
-    runMockActivity('checkoutCommit', mockCommitTarget(oid), () => branchBodies.checkoutCommit(repoId, oid), {
+    runMockActivity(repoId, 'checkoutCommit', mockCommitTarget(oid), () => branchBodies.checkoutCommit(repoId, oid), {
       classify: mockCheckoutOutcome,
     }),
   deleteBranch: (repoId: string, name: string) =>
-    runMockActivity('deleteBranch', name, () => branchBodies.deleteBranch(repoId, name)),
+    runMockActivity(repoId, 'deleteBranch', name, () => branchBodies.deleteBranch(repoId, name)),
   renameBranch: (repoId: string, oldName: string, newName: string) =>
-    runMockActivity('renameBranch', newName, () => branchBodies.renameBranch(repoId, oldName, newName)),
+    runMockActivity(repoId, 'renameBranch', newName, () => branchBodies.renameBranch(repoId, oldName, newName)),
   checkoutRemoteBranch: (repoId: string, name: string) =>
-    runMockActivity('checkoutRemote', mockRefTarget(name), () => branchBodies.checkoutRemoteBranch(repoId, name)),
+    runMockActivity(repoId, 'checkoutRemote', mockRefTarget(name), () => branchBodies.checkoutRemoteBranch(repoId, name)),
   deleteRemoteBranch: (repoId: string, name: string) =>
-    runMockActivity('deleteRemoteTracking', mockRefTarget(name), () =>
+    runMockActivity(repoId, 'deleteRemoteTracking', mockRefTarget(name), () =>
       branchBodies.deleteRemoteBranch(repoId, name),
     ),
   // `RunSubject::many`: one name → that target; ≥2 → a count, no target.
   deleteBranches: (repoId: string, names: string[], base?: string) =>
-    runMockActivity('deleteBranches', names.length === 1 ? (names[0] ?? null) : null, () =>
+    runMockActivity(repoId, 'deleteBranches', names.length === 1 ? (names[0] ?? null) : null, () =>
       branchBodies.deleteBranches(repoId, names, base), { count: names.length },
     ),
 } satisfies Partial<IpcApi>;

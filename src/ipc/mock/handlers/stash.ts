@@ -148,7 +148,7 @@ const stashBodies = {
     _sign?: boolean | null,
     skipHooks?: boolean,
   ): Promise<CommitResult> {
-    return runMockActivity('amend', 'main', () => commitAmendInner(repoId, message, skipHooks));
+    return runMockActivity(repoId, 'amend', 'main', () => commitAmendInner(repoId, message, skipHooks));
   },
 } satisfies Partial<IpcApi>;
 
@@ -157,19 +157,19 @@ const stashBodies = {
 export const stashHandlers = {
   ...stashBodies,
   createStash: (repoId: string, message: string | null, scope: StashScope) =>
-    runMockActivity('stashCreate', mockHeadTarget(repoId), () =>
+    runMockActivity(repoId, 'stashCreate', mockHeadTarget(repoId), () =>
       stashBodies.createStash(repoId, message, scope),
     ),
   applyStash: (repoId: string, index: number, skipReserved: boolean, expectedOid?: string) =>
-    runMockActivity('stashApply', mockStashTarget(index), () =>
+    runMockActivity(repoId, 'stashApply', mockStashTarget(index), () =>
       stashBodies.applyStash(repoId, index, skipReserved, expectedOid), { classify: mockStashApplyOutcome },
     ),
   popStash: (repoId: string, index: number, skipReserved: boolean, expectedOid?: string) =>
-    runMockActivity('stashPop', mockStashTarget(index), () =>
+    runMockActivity(repoId, 'stashPop', mockStashTarget(index), () =>
       stashBodies.popStash(repoId, index, skipReserved, expectedOid), { classify: mockStashApplyOutcome },
     ),
   dropStash: (repoId: string, index: number, expectedOid?: string) =>
-    runMockActivity('stashDrop', mockStashTarget(index), () =>
+    runMockActivity(repoId, 'stashDrop', mockStashTarget(index), () =>
       stashBodies.dropStash(repoId, index, expectedOid),
     ),
 } satisfies Partial<IpcApi>;

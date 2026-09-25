@@ -1,8 +1,9 @@
 //! P87 git-activity observability command surface.
 //!
-//! `git_activity_subscribe` registers ONE long-lived channel (Option B — a
-//! session log spans many ops, and future ops appear automatically) with the
-//! AppState [`GitActivityHub`]. Every op inner wraps its core call in
+//! `git_activity_subscribe` registers ONE long-lived channel per mounted tab,
+//! scoped to that tab's repo (P123), with the AppState [`crate::activity_hub::GitActivityHub`];
+//! `git_activity_unsubscribe` drops it on unmount. Every op inner wraps its core
+//! call, via the repo's [`ScopedActivityHub`], in
 //! [`with_activity`], which emits `started`/`finished` and threads an
 //! [`ActivityEmitter`] (as `&dyn GitActivityRecorder`) into `spawn_blocking`.
 //!
@@ -22,19 +23,28 @@ use bonsai_core::git::activity_target::{
     arg_activity_target, resolve_activity_target, RunSubject, TargetArg,
 };
 
+use crate::activity_hub::ScopedActivityHub;
 use crate::commands::shared::repo_path;
-use crate::state::{AppState, GitActivityHub};
+use crate::state::AppState;
 
-/// Registers a long-lived channel that receives `GitActivityEvent`s for EVERY
-/// git op this session. Called once by the frontend on app/repo mount; re-invoked
-/// after an HMR/reload (stale channels are pruned on send failure). Returns
-/// immediately.
+/// P123: registers a channel for ONE repo's runs (plus unscoped clone/init
+/// runs) and returns its backend-minted subscription id (`gas-<n>`). Called once
+/// per `RepoWorkspace` mount. `repo_id` is deliberately not validated (D6): a
+/// tab may mount before `open_repo` resolves, and a stale sub receives nothing.
 #[tauri::command]
 pub fn git_activity_subscribe(
     state: tauri::State<'_, AppState>,
+    repo_id: String,
     on_event: tauri::ipc::Channel<GitActivityEvent>,
-) {
-    state.git_activity.subscribe(on_event);
+) -> String {
+    state.git_activity.subscribe(Some(repo_id), on_event)
+}
+
+/// P123: drops a subscription (the tab unmounted). IDEMPOTENT and never errors:
+/// an unknown or already-dropped id is a no-op.
+#[tauri::command]
+pub fn git_activity_unsubscribe(state: tauri::State<'_, AppState>, subscription_id: String) {
+    state.git_activity.unsubscribe(&subscription_id);
 }
 
 /// The command bracket every activity-emitting op inner runs its core call
@@ -46,7 +56,7 @@ pub fn git_activity_subscribe(
 /// the bracket; it rides on the `started` event only. A target computed under a
 /// race with the last unsubscribe is simply dropped by the passthrough.
 pub(crate) async fn with_activity<T, F, Fut>(
-    hub: GitActivityHub,
+    hub: ScopedActivityHub,
     category: GitActivityCategory,
     target: Option<ActivityTarget>,
     run: F,
@@ -66,14 +76,14 @@ where
 ///   `HookRejected`, whose hook output is already on the stream and whose
 ///   message is the whole hook body), then `finished{success:false}`.
 ///
-/// When NObody is listening it is a straight passthrough (`run(None)`) — the
+/// When nobody is listening TO THIS REPO (P123) it is a straight passthrough (`run(None)`) — the
 /// buffered path, no emitter, no events (contract §10). The op's own result is
 /// returned unchanged either way.
 ///
 /// `run` threads the emitter into the core call inside its own `spawn_blocking`
 /// (deriving a `&dyn GitActivityRecorder` from the `Arc`).
 pub(crate) async fn with_activity_ex<T, F, Fut>(
-    hub: GitActivityHub,
+    hub: ScopedActivityHub,
     category: GitActivityCategory,
     subject: RunSubject,
     classify: fn(&T) -> Option<GitRunOutcome>,
@@ -86,9 +96,11 @@ where
     if !hub.is_active() {
         return run(None).await;
     }
+    let repo = hub.repo_id().map(str::to_owned);
     let hub2 = hub.clone();
     let emitter = Arc::new(ActivityEmitter::with_subject(
         new_activity_id(),
+        repo,
         subject,
         Box::new(move |ev| hub2.emit(ev)),
     ));
@@ -103,7 +115,7 @@ where
 
 /// Resolve a run's target ref before the run starts (FU-1 §5.1).
 ///
-/// `None` when nobody is subscribed (so **no repo open is paid** on the hot
+/// `None` when no tab of `repo_id` is subscribed (so **no repo open is paid** on the hot
 /// path — the `is_active` gate short-circuits before any path work), when the
 /// repo id is unknown, or when the resolver declined. NEVER returns an error: a
 /// failure here must not fail the op, and swallowing the `repo_path` error is
@@ -114,7 +126,7 @@ pub(crate) async fn activity_target(
     repo_id: &str,
     category: GitActivityCategory,
 ) -> Option<ActivityTarget> {
-    if !state.git_activity.is_active() {
+    if !state.git_activity.is_active_for(Some(repo_id)) {
         return None;
     }
     let path = repo_path(state, repo_id).ok()?;
@@ -180,7 +192,7 @@ where
     T: Send + 'static,
     F: FnOnce(std::path::PathBuf) -> Result<T, AppError> + Send + 'static,
 {
-    let hub = state.git_activity_hub();
+    let hub = state.git_activity_for(repo_id);
     with_activity_ex(hub, category, subject.into(), classify, |em| async move {
         let path = repo_path(state, repo_id)?;
         if let (Some(em), LoggedPhase::Network) = (&em, phase) {
@@ -222,11 +234,15 @@ mod tests {
     /// (Channel needs an ipc runtime), so exercise the emitter directly through a
     /// recording closure — the bracket's own logic (is_active gate, started/
     /// finished, exit-code map) is what we assert here.
-    fn hub_with_recorder() -> (GitActivityHub, Arc<Mutex<Vec<GitActivityEvent>>>) {
+    fn hub_with_recorder() -> (ScopedActivityHub, Arc<Mutex<Vec<GitActivityEvent>>>) {
         // A real hub with no subscriber is inactive; to test the active path we
         // reach through `emit` indirectly is not possible without a Channel, so
         // these tests focus on `activity_exit_code` + the inactive passthrough.
-        (GitActivityHub::default(), Arc::new(Mutex::new(Vec::new())))
+        (unscoped(), Arc::new(Mutex::new(Vec::new())))
+    }
+
+    fn unscoped() -> ScopedActivityHub {
+        ScopedActivityHub::new(crate::activity_hub::GitActivityHub::default(), None)
     }
 
     #[test]
@@ -329,7 +345,7 @@ mod tests {
     #[test]
     fn inactive_ex_is_passthrough_and_keeps_the_error() {
         let out: Result<u32, AppError> = tauri::async_runtime::block_on(with_activity_ex(
-            GitActivityHub::default(),
+            unscoped(),
             GitActivityCategory::DeleteBranch,
             RunSubject::default(),
             |_| Some(GitRunOutcome::Merged),

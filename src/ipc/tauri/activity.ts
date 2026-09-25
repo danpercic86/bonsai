@@ -1,17 +1,20 @@
 import { Channel } from '@tauri-apps/api/core';
 import { invoke } from './invoke';
-import type { GitActivityEvent } from '../types';
+import type { GitActivityEvent, GitActivityListener } from '../types';
 
-// P87 git-activity observability. ONE long-lived subscription (Option B): the
-// frontend registers once on app/repo mount and every git op's events arrive on
-// this channel; re-invoked after an HMR/reload (the backend prunes stale
-// channels on send failure). Resolves immediately.
+// P87/P123 git-activity observability. One subscription per mounted tab, scoped
+// to that tab's repo: the backend emits a run only onto its own repo's channels
+// (clone/init broadcast). Resolves to a backend-minted subscription id, which
+// `gitActivityUnsubscribe` drops on unmount (idempotent).
 export const activityCommands = {
-  gitActivitySubscribe(onEvent: (e: GitActivityEvent) => void): Promise<void> {
+  gitActivitySubscribe(repoId: string, onEvent: GitActivityListener): Promise<string> {
     const channel = new Channel<GitActivityEvent>();
     channel.onmessage = onEvent;
     // Tauri auto-serializes the Channel as the `on_event` command argument
     // (mirrors aiResolveConflictStream / streamGraph).
-    return invoke<void>('git_activity_subscribe', { onEvent: channel });
+    return invoke<string>('git_activity_subscribe', { repoId, onEvent: channel });
+  },
+  gitActivityUnsubscribe(subscriptionId: string): Promise<void> {
+    return invoke<void>('git_activity_unsubscribe', { subscriptionId });
   },
 };

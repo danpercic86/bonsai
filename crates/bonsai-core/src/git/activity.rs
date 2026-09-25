@@ -90,6 +90,10 @@ pub struct GitActivityEvent {
     /// `Finished` ONLY, and only when `success == true`. P119 §2.6.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub outcome: Option<GitRunOutcome>,
+    /// `Started` ONLY: the repoId (canonical workdir path, P3e §2) this run acts
+    /// on; absent for an unscoped run (clone/init, P123 D3). Opaque to core.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo_id: Option<String>,
     /// Since the `Started` event.
     pub elapsed_ms: u64,
 }
@@ -172,6 +176,8 @@ pub trait GitActivityRecorder: Send + Sync {
 /// `&dyn GitActivityRecorder`.
 pub struct ActivityEmitter {
     id: String,
+    /// P123: set once here, read only by [`Self::started`] — same rules as `target`.
+    repo_id: Option<String>,
     /// The run's target ref, set ONCE at construction and read only by
     /// [`Self::started`]. No setter and no `&mut self` anywhere, so a mid-run
     /// change is not representable (FU-1 §3.6-2); [`GitActivityRecorder`] gains
@@ -197,18 +203,21 @@ impl ActivityEmitter {
         target: Option<ActivityTarget>,
         emit: Box<dyn Fn(GitActivityEvent) + Send + Sync>,
     ) -> Self {
-        Self::with_subject(id, RunSubject::from(target), emit)
+        Self::with_subject(id, None, RunSubject::from(target), emit)
     }
 
     /// P119 §2.7: the full constructor — a run is about at most one target OR
     /// a count of ≥2 items ([`RunSubject`] guarantees never both).
+    /// P123: `repo_id` rides on `started` only.
     pub fn with_subject(
         id: String,
+        repo_id: Option<String>,
         subject: RunSubject,
         emit: Box<dyn Fn(GitActivityEvent) + Send + Sync>,
     ) -> Self {
         ActivityEmitter {
             id,
+            repo_id,
             target: subject.target.map(ActivityTarget::into_string),
             target_count: subject.count,
             start: Instant::now(),
@@ -246,6 +255,7 @@ impl ActivityEmitter {
             // `finished` (P119 §2.6/§2.7).
             target_count: None,
             outcome: None,
+            repo_id: None,
             elapsed_ms: self.elapsed_ms(),
         }
     }
@@ -263,6 +273,7 @@ impl ActivityEmitter {
         // event that carries either.
         ev.target = self.target.clone();
         ev.target_count = self.target_count;
+        ev.repo_id = self.repo_id.clone();
         (self.emit)(ev);
     }
 
@@ -426,3 +437,7 @@ fn truncate_chars(text: &str, cap: usize) -> String {
 #[cfg(test)]
 #[path = "activity_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "activity_repo_tests.rs"]
+mod repo_tests;

@@ -1678,6 +1678,17 @@ row badges (`.submodule-badge-*`, shared by submodule and worktree rows — `Sid
 - **Busy pill.** While an op runs on that row, the pill's label becomes the present participle
   (`checking out…`, `updating…`) in the hueless style and the row gets `aria-busy="true"` (§8). The
   pill drops its `title` entirely while busy — the participle is the whole message.
+- **Re-check pill (added 2026-09-25, P123).** A different state from the busy pill: a verdict is
+  already settled and a background re-check is in flight. Examples are the Tags rollup `⚠ N`
+  during a focus rescan or auto-fetch. Don't swap the pill for a participle. Keep the verdict
+  label, glyph, hue and size, and add `aria-busy="true"` + a static
+  `outline: 1px dashed currentColor; outline-offset: -1px`. That's zero layout, since the dashes
+  overlay the 1px border ring. The cue is a shape, not a colour, and can't be mistaken for the
+  2px solid `--accent` focus ring. Measured against the 40% warn border, which shows in the dash
+  gaps: 6.0:1 dark / 9.0:1 light. Append
+  `, checking again` to the `aria-label`, and use `… — checking again…` in the `title`, because
+  `aria-busy` alone isn't announced. No motion. A participle pill appears only when there's no
+  settled verdict yet. A clean section re-checks badge-less. See `P123-ui.md` §1.
 - **Density-invariant** — pills live in the sidebar and chrome, which have one geometry (§3).
 - **A pill is one line (§3.0, P111).** Every pill here is `flex: none` with a closed-set label, so it
   is already safe. The rule matters for the *other* stadium boxes — chips holding a branch name, a

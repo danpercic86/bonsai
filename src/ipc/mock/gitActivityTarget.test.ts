@@ -27,8 +27,8 @@ import {
   MOCK_BIDI_TARGET,
   MOCK_LONG_TARGET,
   mockActivityTarget,
-  subscribeGitActivity,
 } from './gitActivity';
+import { subscribeGitActivity } from './gitActivityHub';
 import { mergeHandlers } from './handlers/merge';
 import { remotesSyncHandlers } from './handlers/remotesSync';
 import { repoHandlers } from './handlers/repo';
@@ -40,7 +40,7 @@ beforeAll(() => vi.useFakeTimers());
 afterAll(() => vi.useRealTimers());
 
 const events: GitActivityEvent[] = [];
-subscribeGitActivity((e) => events.push(e));
+subscribeGitActivity(null, (e) => events.push(e));
 
 /** `[category, target]` for every `started` collected so far. */
 function startedTargets(): Array<[string | undefined, string | undefined]> {

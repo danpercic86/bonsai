@@ -142,23 +142,23 @@ const repoMetaBodies = {
 export const repoMetaHandlers = {
   ...repoMetaBodies,
   createTag: (repoId: string, name: string, targetOid: string, message: string | null, force: boolean) =>
-    runMockActivity('createTag', mockTagTarget(name), () =>
+    runMockActivity(repoId, 'createTag', mockTagTarget(name), () =>
       repoMetaBodies.createTag(repoId, name, targetOid, message, force),
     ),
   deleteTag: (repoId: string, name: string) =>
-    runMockActivity('deleteTag', mockTagTarget(name), () => repoMetaBodies.deleteTag(repoId, name)),
+    runMockActivity(repoId, 'deleteTag', mockTagTarget(name), () => repoMetaBodies.deleteTag(repoId, name)),
   pushTag: (repoId: string, remote: string, tagName: string, force: boolean) =>
-    runMockActivity('pushTag', mockTagTarget(tagName), () =>
+    runMockActivity(repoId, 'pushTag', mockTagTarget(tagName), () =>
       repoMetaBodies.pushTag(repoId, remote, tagName, force),
     ),
   // The remote's NAME only: a URL can carry `user:token@` and never goes on the wire.
   addRemote: (repoId: string, name: string, url: string) =>
-    runMockActivity('addRemote', name, () => repoMetaBodies.addRemote(repoId, name, url)),
+    runMockActivity(repoId, 'addRemote', name, () => repoMetaBodies.addRemote(repoId, name, url)),
   removeRemote: (repoId: string, name: string) =>
-    runMockActivity('removeRemote', name, () => repoMetaBodies.removeRemote(repoId, name)),
+    runMockActivity(repoId, 'removeRemote', name, () => repoMetaBodies.removeRemote(repoId, name)),
   renameRemote: (repoId: string, name: string, newName: string) =>
-    runMockActivity('renameRemote', newName, () => repoMetaBodies.renameRemote(repoId, name, newName)),
+    runMockActivity(repoId, 'renameRemote', newName, () => repoMetaBodies.renameRemote(repoId, name, newName)),
   setRemoteUrl: (repoId: string, name: string, url: string) =>
-    runMockActivity('setRemoteUrl', name, () => repoMetaBodies.setRemoteUrl(repoId, name, url)),
+    runMockActivity(repoId, 'setRemoteUrl', name, () => repoMetaBodies.setRemoteUrl(repoId, name, url)),
 } satisfies Partial<IpcApi>;
 
