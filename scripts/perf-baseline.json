@@ -19,8 +19,6 @@
       "stage-unstage": {
         "reactCommits": 8,
         "ipcCalls": 8,
-        "recalcStyle": 10,
-        "layout": 8,
         "layoutShiftsUnprompted": 0,
         "focusLosses": 0
       },

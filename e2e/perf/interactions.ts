@@ -146,6 +146,12 @@ const selectCommit: Interaction = {
 
 const stageUnstage: Interaction = {
   name: 'stage-unstage',
+  // P124 (user ruling 2026-09-25): recalcStyle/layout vary in about half of the
+  // runs (10/8 vs 9/6..8/6), just as much on the pre-P121 tree (5 of 12 at
+  // 618c7f0) as at HEAD, so this is harness timing, not a regression. Whether
+  // the two keyboard-driven section swaps share a real rendering frame depends
+  // on timing. React commits and IPC calls stay exact and stay ratcheted.
+  alwaysNondeterministic: ['recalcStyle', 'layout'],
   async run(page) {
     await openSettled(page);
     const stage = '[aria-label="Stage README.md"]';
