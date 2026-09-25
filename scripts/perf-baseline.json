@@ -4,7 +4,7 @@
     "msedge": {
       "cold-open": {
         "reactCommits": 22,
-        "ipcCalls": 39,
+        "ipcCalls": 40,
         "layoutShiftsUnprompted": 0,
         "focusLosses": 0
       },
