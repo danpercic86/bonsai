@@ -78,7 +78,10 @@ owed) · **P115** (`in-progress`, a Linux/macOS run owed) · **P117** (`awaiting
 **P118/P118b** (`reviewer approved` — which is not `done`, and the orchestrator does not
 self-declare a checkpoint half) · **every open follow-up** · all four ruling ledgers · the accepted
 decisions · the cross-platform-gap finding · both security CLEAN registers' pointers · and
-**A4 finding 6** — a diagnostic regression with no commit that closes it.
+**A4 finding 6** — a diagnostic regression with no commit that closes it *(2026-09-24: largely
+closed in the tree — the raw error is now `console.warn`ed; only the obs-sink mirror remains, see
+its entry)*. **2026-09-24: the release block was re-scoped to the branch head and its BLOCKS
+RELEASE list reopened** (V1–V4, verify natively).
 
 **Order of operations, mandatory since `c5b3ea5`.** That pass cut 1950 lines from this file and wrote
 them **nowhere**; `67e2ce6` had to restore them wholesale. **Extract → diff byte-identical against
@@ -96,12 +99,53 @@ board's own record of being wrong is kept deliberately.
 
 ---
 
-## 🚀 RELEASE v1.6.0 — PREPARED 2026-09-18, **NOT PUBLISHED**
+## 🚀 RELEASE v1.6.0 — PREPARED 2026-09-18, RE-SCOPED 2026-09-24 TO THE BRANCH HEAD, **NOT PUBLISHED**
 
-**Current step: v1.6.0 IS CLEAR TO PUBLISH — zero blockers.** Prep done and verified at the ≈CI
-tier, the installer bundles, the branch is pushed (branch only, 2026-09-18), and on **2026-09-22 the
-user confirmed the three remaining blockers done and verified**: the P112 native checkpoint, the
-`updater-prod.key` backup, and the signing secrets. No agent task remains.
+**Current step (2026-09-24): v1.6.0 is BLOCKED — the release now targets the branch head, and the
+code committed 2026-09-22/23 still owes native verification.** The 2026-09-18 "zero blockers"
+verdict was a claim about the tree on `origin` (`3c7f1a8`, which differs from the verified
+2026-09-18 tree only in docs plus the 11-line `pnpm-workspace.yaml` nanoid removal). Twelve commits
+since then (`a7a7882`..`41cb916`; 101 files, +6493/−420 excluding markdown) carry P113a–c, P115,
+P116, P117 and P118/P118b, and are **local only**. The release was re-scoped to that head, so:
+
+- **✅ AI gate re-run at `41cb916`, 2026-09-24 — `pnpm gate --full`, all 11 steps green** (pasted
+  below). Nextest **2698 run / 2698 passed / 11 skipped**, vitest **3060 / 280 files**, e2e **185**,
+  eslint **38 warnings** (ceiling 50; was 36), cargo-deny + pnpm audit clean, 0 LEAK lines.
+  Log: `D:/Data/Temp/claude/bonsai-gate/gate-v160-recheck-41cb916.log`.
+- **✅ `CHANGELOG.md` `[1.6.0]` extended 2026-09-24** with the post-verdict work (three Fixed
+  entries: forge rate limit, stale settings paths, diagnostics accuracy; two Performance entries:
+  graph cache, sidebar renders). The heading date is still 2026-09-18 and must be set to the tag
+  date. `D:/Data/Temp/claude/bonsai-gate/release-notes-v1.6.0.md` is **stale** — re-extract it from
+  `CHANGELOG.md` before pasting it into the draft body.
+- **🔲 VERIFY NATIVELY — release blockers** (see `### 🔲 BLOCKS RELEASE` below): P113a–c, P117,
+  P118/P118b, and P115's Linux/macOS run. The orchestrator does not self-declare any of these.
+- **🔲 Push the 12 local commits** — `release.yml` tags `context.sha` on GitHub, so unpushed code is
+  not in the release.
+- **🔲 Rebuild the Windows installer for this head** — the NSIS proof below is for the 2026-09-18
+  tree only.
+- **Not in 1.6.0:** P119 (activity dock, `in-progress` in a concurrent session, uncommitted as of
+  2026-09-24). Keep it off the release commit.
+
+```
+════ gate summary — full (≈ CI) — 489.1s total ════
+  ✓   184.9s  [rust] cargo nextest
+  ✓     3.6s  [rust] cargo test --doc
+  ✓     2.1s  [rust] cargo fmt --check
+  ✓     1.2s  [rust] cargo clippy
+  ✓    14.8s  [frontend] eslint
+  ✓    773ms  [frontend] file-size ratchet
+  ✓    75.9s  [frontend] vitest (coverage)
+  ✓    12.6s  [frontend] tsc + vite build
+  ✓   187.9s  [e2e] playwright e2e
+  ✓     4.2s  [audit] cargo-deny
+  ✓     1.1s  [audit] pnpm audit
+
+✓ all 11 steps passed
+```
+
+**Superseded, kept for the record:** *"v1.6.0 IS CLEAR TO PUBLISH — zero blockers"* (2026-09-22) —
+true of `3c7f1a8`, not of the head. The user's 2026-09-22 confirmations (P112 checkpoint,
+`updater-prod.key` backup, signing secrets) **still stand**.
 
 **Two things stay RECOMMENDED rather than required**, and neither is a blocker:
 1. A manual **`workflow_dispatch` CI run on this branch** — still the only ubuntu/macOS verification
@@ -123,7 +167,9 @@ number, SHA, path and caveat below was carried forward).
 ### 🔓 PUSHED 2026-09-18 — branch only, by explicit user choice. Ruling #25 SUPERSEDED for this branch
 
 - Asked with three options laid out (PR to `main` / branch only / hold); the user chose **"Push
-  branch only"**. `feat/post-p91-rulings` is on `origin` at **`b80dd36`**, tracking set.
+  branch only"**. `feat/post-p91-rulings` was pushed at **`b80dd36`**, tracking set. **As of
+  2026-09-24 `origin` is at `3c7f1a8`** (four docs commits later) and the local head is **12
+  commits ahead**, unpushed.
 - **No PR, no tag, nothing published** — `git ls-remote --tags origin` still ends at `v1.5.0`.
 - **Ruling #25 ("DO NOT PUSH … do not raise this again") is superseded for this branch by that
   choice.** Recorded so no later session re-applies it: the ruling's *history* stands, its
@@ -293,7 +339,39 @@ them** — HEAD is a strict superset of `main`, `dev`, `origin/*` and all 17 fea
 releasing from `feat/post-p91-rulings` drops nothing, and `origin/main` is an ancestor **313** commits
 back, i.e. **a PR to `main` fast-forwards**.
 
-### ✅ BLOCKS RELEASE — **EMPTY.** All four cleared (#2 on 2026-09-18, #1/#3/#4 on 2026-09-22)
+### 🔲 BLOCKS RELEASE — **REOPENED 2026-09-24** when the release was re-scoped to the branch head
+
+**VERIFY NATIVELY (user ruling 2026-09-24).** All four are code in the head whose native half has
+not passed. Only the user's confirmation clears them. One `pnpm tauri dev` session with the usual
+~5 repos open (Azure DevOps forge) covers V1–V3; V4 needs a non-Windows run.
+
+- **V1 — P113a–c, forge rate limit + log fixes.** After a comparable stretch: (1)
+  `metrics/usage.json` has no `forgeRateLimited` under `errors`; (2) `cmd.forgeCommitStatuses`
+  total time well below 286,888 ms; (3) no `listTagSync` `dup-ipc` anomalies in the log; (4) CI
+  badges still populate (blank badges during an open suppression window look exactly like "no CI
+  configured", which is the known failure mode); (5) `forgeRepoContext` records show
+  `"authenticated":"bool"`, not `<redacted:token>`. Full text: `## P113`.
+- **V2 — P117, graph cache + per-repo anomaly rules.** (1) `perf.graph_cache_hits` rises sharply
+  against the `cmd.streamGraph` count (was 6 of 81); `perf.graph_redecorates` staying 0 only means
+  failure *if* you switched branches or created one at an existing commit. (2) `redundant-refresh`
+  and `cache-collapse` firings fall substantially, and each surviving firing's records share one
+  `repo` ordinal; a raw path in `"repo"` in strict mode is a redaction regression — stop there.
+  Full text: `## P117` → USER CHECKPOINT.
+- **V3 — P118/P118b, sidebar render storm.** No checkpoint was ever written for it; this is the
+  proposed one. Run checkouts/fetches, then grep the log for `"rule":"render-storm"` naming
+  `RemotesSection`, `BranchesSection` or `BranchRow`: expect far fewer than the 24 of the
+  2026-09-22 session. Not zero by design — P118b's measured floor is still 2 real renders on a round
+  that changes both tips and ahead/behind, and the open `render-storm` threshold decision (fires at
+  ~1.5× real renders under StrictMode) inflates the count. Also confirm checkout/delete from a
+  branch row still works while a mutation is in flight (the row now reads `busy` from a ref).
+- **V4 — P115, a Linux/macOS run.** Satisfied by the recommended `workflow_dispatch` CI run above
+  (rust job on ubuntu-22.04 + macos-latest), or by the gate on a native Linux/macOS machine. The
+  settings prune's path classification (volume root / unreachable share) is Windows-verified only.
+
+**Also required, not a native check:** push the 12 local commits; rebuild the installer for the
+head; re-extract the release notes; set the changelog date and delete its "PREPARED" note.
+
+**Cleared earlier, still standing:**
 
 1. ~~**The P112 native USER CHECKPOINT**~~ — **CONFIRMED DONE AND VERIFIED BY THE USER, 2026-09-22**,
    covering all five items (now archive **Part 76.2**). This is the **user's attestation**, the only
@@ -315,7 +393,9 @@ back, i.e. **a PR to `main` fast-forwards**.
   tag is next cut."** Cutting `v1.6.0` **is** that trigger — verify the sealed ad-hoc signature on the
   produced `.app`/`.dmg`. Gatekeeper will still say "unidentified developer"; that needs Developer ID
   + notarization, scaffolded in `release.yml` but not wired. Detail: `### macOS ad-hoc code signing`.
-- **Not blocking:** everything under `## OPEN follow-ups`; the 36 eslint warnings (**13**
+- **Not blocking:** everything under `## OPEN follow-ups`; the eslint warnings — **38 as of
+  2026-09-24** (ceiling 50; one new one is an unused `eslint-disable` directive for
+  `react-hooks/exhaustive-deps`); the 2026-09-18 breakdown of 36 was (**13**
   `react-refresh/only-export-components`, **6** `react-hooks/exhaustive-deps`, **1** `no-unused-vars`,
   **1** `no-explicit-any` — the last two in test/mock scaffolding, e.g. `src/test/setup.ts:21`, not
   shipped code); `cargo doc`'s 127 pre-existing findings.
@@ -357,8 +437,10 @@ that were owed.
 
 ## P113 — dev-mode log review fixes — `in-progress`
 
-**Current step:** P113a–c **committed green** (`a7a7882`, full gate 9/9 in 502s) —
-**awaiting USER CHECKPOINT**, see below. P113d contract rev 2 approved and ready to implement;
+**🔲 VERIFY NATIVELY — v1.6.0 release blocker V1 (2026-09-24).**
+
+**Current step:** P113a–c **committed green** (`a7a7882`, full gate 9/9 in 502s; re-gated
+`--full` at `41cb916` on 2026-09-24) — **awaiting USER CHECKPOINT**, see below. P113d contract rev 2 approved and ready to implement;
 not started.
 
 **USER CHECKPOINT owed for P113a–c.** The AI gate cannot prove the acceptance criterion that
@@ -535,6 +617,10 @@ the `includeRawNames` toggle, not a crash.
 
 ## P118 — sidebar render-storm from refresh-round fan-out — `reviewer approved`
 
+**🔲 VERIFY NATIVELY — v1.6.0 release blocker V3 (2026-09-24);** the proposed checkpoint is in
+the release block. P118b had targeted checks only when committed; it is now covered by the
+`--full` gate at `41cb916`.
+
 **Current step:** P118 committed `8790b62`. **P118b (the RemotesSection residual) — `reviewer`
 approve, no MUST-FIX; committed `c6ae304`.** See the P118b block below for the measured floor.
 
@@ -666,6 +752,8 @@ Also checked and unrelated: `refetchGraph`'s unconditional `setGraphLoading(true
 only `WorkspaceToolbar`, never the sidebar.
 
 ## P115 — stale repo paths in settings.json: prune + forge-override migration — `in-progress`
+
+**🔲 VERIFY NATIVELY — v1.6.0 release blocker V4 (2026-09-24):** the Linux/macOS run below.
 
 **Current step:** P115 — **code committed `bbd8993`** (contract now rev 2.1, 722 lines).
 Both a code re-review and a security re-audit returned **approve / zero MUST-FIX**, the audit
@@ -813,6 +901,8 @@ what P117 inc 2's 2 → 3 bump had to move — see the P117 section; and its rev
 `### Filed 2026-09-16 — the real-log residue`, re-measured 2026-09-23.
 
 ## P117 — two 2026-09-22 perf signals: graph-cache wipe + repo-blind anomaly rules — `awaiting USER CHECKPOINT`
+
+**🔲 VERIFY NATIVELY — v1.6.0 release blocker V2 (2026-09-24).**
 
 **Current step:** P117 — contract signed (`docs/contracts/P117-perf-signal-fixes.md`, **617 lines**
 as re-measured 2026-09-23; the 583 figure predates `91d9377`, which corrected four wrong statements
@@ -1220,6 +1310,120 @@ Acceptance criteria:
 - Mock IPC emits the same events so the browser harness shows the rows.
 - `@keyframes header-progress-sweep` is kept (the AI panel reuses it).
 
+## P120 — performance & render-stability measurement loop — `awaiting USER CHECKPOINT`
+
+**Current step:** all of parts a, b and c are committed (`1e2b538` … `4e7f584`, plus the ledger
+commit).
+- Bare `pnpm gate` on 2026-09-24: **11/11 green, 828.5 s**.
+  - nextest 2763 passed / 11 skipped
+  - vitest 3293/3293
+  - playwright e2e 185 passed, 1 skipped
+  - perf counts 7/7
+  - perf ratchet 42 counts checked, OK.
+- Tester evidence:
+  - two `test:perf:counts` runs byte-identical (AC 4)
+  - detector 20/20 for injected shift, injected focus steal and clean (AC 2/3)
+  - checker catches a lowered ceiling (AC 5/6)
+  - `graph_layout_counts` 2/2 (AC 7)
+  - mock smoke shows the records and the anomalies (AC 9/10).
+- AC 8 is deferred; see below.
+- Awaiting the USER CHECKPOINT below.
+
+Source: user request 2026-09-24, after reading Anthropic's "How we made claude.ai 3x faster":
+measure → deterministic count → ratchet, so that elements stop jumping, focus stops getting lost,
+and perf gains stop regressing.
+- Spec, plan, tasks: `docs/specs/008-perf-render-stability/{spec,plan,tasks}.md`. `tasks.md`
+  covers parts a + c and is the checklist.
+- Part b (dev-mode `layout.shift` / `focus.lost` records and the `unprompted-shift` /
+  `focus-steal` anomaly rules): `docs/contracts/P120-stability-signals.md`, architect-ratified
+  with amendments A1–A16. It wins over plan.md where they differ, e.g. the sink field `to` → `via`.
+
+**User rulings (2026-09-24):**
+- The six spec defaults, recorded in the spec's "Resolved decisions":
+  - today's counts are the starting ceiling
+  - seven scripted interactions
+  - full gate only
+  - review writes a report only
+  - newest log by default
+  - no new dev-mode switch.
+- `focus-steal` links a loss to a refresh or watcher round by **timing**, with a trace join only
+  when a trace exists (contract A2). Refresh records carry no trace
+  (`useCoalescedRefresh.ts:112-120`).
+
+**Known limits:** `layout.shift` field capture is Windows-only in v1, because the Layout
+Instability API is Chromium-only. `focus.lost` works on all OSes, and the lab ratchet always runs
+on Chromium.
+
+**Commits so far:**
+- `1e2b538`: part a, Tracks R and F. Reviewer APPROVE.
+- `861ae0a`: docs, plus part c.
+- `daee25f`: part b, B1–B3. Reviewer APPROVE.
+
+**Follow-ups filed from review (SHOULD-FIX / NIT, none blocking):**
+- `readiness.ts`: if a tab switch's `openRepo` fails, or the repo is unusable, neither round lands
+  and that tab stays in `boot` until the next successful refresh.
+- `devSink.ts`: a boot-labelled shift that arrives after `markInteractive` holds a boot bucket for
+  up to 30 s. Flush on a short timer when the current phase is already interactive.
+- `obsAnomaly.ts:219`: pass `emit` into `analyzeStability` instead of rebuilding records with
+  casts.
+- `obsAnomalyStability.ts:85`: `toFixed` throws on a malformed ring record (harness only).
+- `lane.rs:153`: count `lanes.len()` outside the reservation closure.
+- `counters.rs:14`: the `Deserialize` derive is unused.
+- `graph.rs:166-177`: the preamble is duplicated with `compute_graph_counted`.
+- Files slightly over their contract line targets, all well under 500: `anomaly/stability.rs` 292,
+  `install.ts`, `devSink.ts`, `phase.ts`, `input.ts`, `sinks.ts`.
+
+**Lab ratchet: dropped metrics, blind spots and reach (Track E review, 2026-09-24):**
+- **Always nondeterministic, so never ratcheted:**
+  - cold-open `recalcStyle` and `layout`
+  - switch-branch `layoutShiftsUnprompted`: the shift crosses the browser's real 500 ms input
+    window about 1 run in 9
+  - cold-open `layoutShiftsUnprompted` is pending a structural-blindness proof under the paused
+    clock (MUST-FIX 2).
+- **Blind spots of the paused-clock method** (accepted for a ratchet):
+  - It is blind to real IPC-latency races and to React time-slicing splits.
+  - Frozen CSS transitions and animations hide per-frame animation regressions.
+  - The pre-positioned mouse and keyboard-driven staging leave out hover commits.
+  - The focus input window compares a faked `at` with real `event.timeStamp`. It can misclassify
+    a prompted loss as unprompted; that fails loud, never hides a regression.
+- **Reach:** the baseline is seeded only for `msedge` (local Windows). An unknown channel warns and
+  passes, and CI runs only `pnpm test:e2e`. So the perf ratchet does not run in CI or off Windows
+  yet. Follow-up: seed a `chromium` channel and add perf to `ci.yml`.
+- **The 20× detector proof (AC 2/3)** is out of the gate, because of gate time (the plan's Risks
+  fallback). Run it manually with `pnpm test:perf`. The gate runs `test:perf:counts`
+  (interactions only).
+- **AC 8 (count tracks clock), explicitly deferred per spec AC 8** (task 11, 2026-09-24).
+  - The candidate: a safe `lane.rs:149-158` change that looks up waiting lanes via
+    `pending.remove(&oid)` instead of a full scan.
+  - It cut `lane_scans` on the 31k fixture from 149,938 to 3,983 (−97%). The output was identical
+    (same SHA-256), and the other counters were unchanged.
+  - Criterion `compute_graph_31k` showed no reproducible gain: −12.3% (p = 0.03), then +8.4%
+    (p = 0.14), against a ±15–20% noise floor that the unchanged `serialize_31k` bench also showed.
+    The change was reverted.
+  - Why: the fixture never has more than 5 lanes, so the scan costs about 0.1–0.3 ms of about
+    550 ms. libgit2 `find_commit` dominates.
+  - `lane_scans` stays in the ratchet, because it is deterministic and cheap.
+  - Next: prove AC 8 on a **wide** fixture with hundreds of concurrent lanes, where the scan really
+    grows with rows × lanes. The reverted change is the ready candidate. Evidence is in
+    `D:\Data\Temp\bonsai-p120\bench-*.log`.
+- **Tester mock smoke:** in 1 of 3 `?perfInjectFocusSteal=1` runs, an extra interactive
+  **sidebar** `layout.shift` and an `unprompted-shift` appeared, although the injected element sits
+  in the details panel. It is probably the same intermittent source as switch-branch's
+  nondeterministic shift count.
+- **Mock noise:** every mock-harness boot logs **6× `dup-ipc` warn** anomalies, clean boots
+  included. Either the mock boot really issues duplicate calls, or the mock layer produces noise.
+  Triage it.
+- **Checker gap (NIT):** a counts file containing no channels at all passes with 0 counts checked.
+  This is unlikely now, because a failed run no longer writes the file.
+- **First real finding:** `background-refresh` reads **1 unprompted layout shift** (seeded ceiling
+  1). A background refresh with the status panel focused moves something on screen. Candidate
+  P120 follow-up: find it and drive the count to 0. On the real clock, cold-open also showed one
+  about 1 boot in 3.
+
+**USER CHECKPOINT (part b, later):** in `pnpm tauri dev` with dev mode on, the log shows
+`layout.shift` records attributed to real panes, and `/perf-review` findings match jumps the user
+actually saw.
+
 ## P121 — fixes from the first /perf-review (session `s229d042a`, 2026-09-24) — `awaiting USER CHECKPOINT`
 
 **Current step:** P121 — code committed (`9bfb8c1` a+b, `5992673` c+e+d, `8bd346f` useNow
@@ -1235,7 +1439,7 @@ deferred; P121d measurement only). Both reviewer passes APPROVE, no MUST-FIX.
   `palette-open-close` nondeterministic because `useNow` ticked on wall-clock :00/:30 boundaries
   inside the stepped-clock lab window; fixed by `8bd346f`. Run 2 failed the ratchet on
   `stage-unstage` recalcStyle/layout 9/7 vs 10/8 in 1 of 3 reps (reactCommits/ipcCalls unchanged
-  at 8/8); across 21 reps this session it was 1/21. Not shown to be P121-caused; see follow-up.
+  at 8/8); across 24 reps this session it was 1/24. Not shown to be P121-caused; see follow-up.
 - Browser harness (mock IPC): repo opens, sidebar/tags/stashes render, stash ages via
   `RelativeAge`, zero console errors.
 
@@ -1246,7 +1450,7 @@ on the 30 s tick, and watcher records carrying `worktreePaths`/`ignoreChecked`/`
 (P121d evidence: `ignoreChecked < worktreePaths` = inconclusive, not all-ignored).
 
 **P121 follow-ups (SHOULD-FIX / NIT, not blocking):**
-- `stage-unstage` CDP recalcStyle/layout flaked 1/21 reps → decide: investigate, or add to the
+- `stage-unstage` CDP recalcStyle/layout flaked 1/24 reps → decide: investigate, or add to the
   interaction's `alwaysNondeterministic` (loosens the ratchet — user call).
 - Tag-sync contract §2.2 "badge-less while checking" is stale for re-checks after the Q1 ruling
   (docs update).
@@ -1862,6 +2066,15 @@ distinguish them. P91's whole observability programme exists so failures are dia
 quietly removed the only record of a real one. **Routing: keep the user-facing string, and preserve
 the raw error on the diagnostic path (dev-mode log).** Not a copy change — the string stays as
 approved.
+
+**✅ LARGELY CLOSED — re-verified in the tree 2026-09-24; the "STILL OPEN" line above is stale.**
+`useSettingsWriteQueue.ts:138-141` now logs the raw error on every failed attempt, before
+`noteFailure(streak)` at `:151`: `console.warn(\`bonsai: settings write failed (attempt N of M):\`,
+errorMessage(e))`. Its comment says why: the `ipcProxy` sink records only the `AppError.kind`
+(`'io'`), and only with Dev capture on. **What is left:** the raw error goes to the **webview
+console**, not the dev-mode JSONL log the routing asked for, so it is lost unless devtools is open
+at the time. Downgraded from a diagnostic regression to a **follow-up: mirror the raw message into
+the obs sink**. Not a release blocker.
 
 
 ### Filed 2026-09-17 — the credential arc's open residue (full narrative: archive Parts 79.1 and 79.4)

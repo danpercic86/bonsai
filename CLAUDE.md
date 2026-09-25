@@ -196,6 +196,25 @@ review.
 - Any destructive Git operation in the app must require **explicit UI confirmation**.
 - **Commit after each green milestone.**
 - Prefer small compiling increments; run `cargo check`/`clippy` and `tsc`/`build` frequently.
+- **Never mutate `TODO.md` (or any markdown ledger: `CHANGELOG.md`, `docs/contracts/*.md`) with a
+  script.** No `sed -i`, no Python rewrite, no generated one-liner — use the `Edit` tool on an
+  explicit anchor, one targeted edit at a time. A malformed Python ternary in exactly such a script
+  truncated 1,950 lines of `TODO.md` and it had to be reconstructed from a prior commit. After any
+  ledger edit, re-read the file and confirm its line count did not shrink (`wc -l` before/after);
+  if it did, restore from `git show HEAD:TODO.md` before doing anything else.
+- **A commit message may only assert what `git diff --cached` shows.** Re-read the staged diff and
+  check every claim in the message against it — a board commit message has already contradicted
+  its own diff. Same rule for the status lines you write into `TODO.md`: a milestone is
+  "done" only when the gate output for it was seen in this session.
+- **Gate output gets pasted, not paraphrased.** `pnpm gate` (`scripts/gate.mjs`) is the canonical
+  gate — it already runs the `rust`, `frontend` and `audit` groups. Pass/fail counts come from that
+  command in *this* session; never from memory or from a subagent's summary. Treat `cargo fmt`
+  churn as a fact to verify with `cargo fmt --all --check`, not something to characterise.
+- **Advisories are red gates, and belong in release prep.** The `audit` group
+  (`cargo deny --all-features check` against `deny.toml`, plus `pnpm audit --audit-level high`)
+  is what catches RUSTSEC advisories and yanked crates — both have surfaced during a version bump.
+  Run it *before* lockfile churn can hide the cause, and report each hit with a minimal safe
+  upgrade path rather than bumping blind.
 - **Token discipline (keeps you under usage limits).** Prefer `Grep` and partial `Read`
   (offset+limit) over whole-file reads; never re-read a file already in this session's context.
   When delegating, pass contract and source **file paths**, not pasted file contents — subagents
@@ -278,6 +297,10 @@ graph-layout algorithm.
   the rule above — that one was adopted *because* a 222-line diff slipped past review on a
   `docs(mcp):` subject, so the trigger exists for the diff nobody flags, and a clean history is not
   evidence the next diff is clean.
+- **`perf-reviewer`** — read-only review of a dev-mode session log + `usage.json`: ranked
+  perf/render-stability findings with `refs` evidence, a `file:line` hypothesis and a proposed
+  deterministic failing check. Invoked via `/perf-review`; never fixes, never files board items
+  (spec 008 / P120).
 - **`refactorer`** — strictly behavior-preserving restructuring, chiefly splitting oversized files
   back under the ~500-line limit. Proves equivalence by identical before/after test counts. Never
   fixes bugs or changes behavior in the same pass — it reports what it finds instead.
