@@ -1,13 +1,15 @@
-/** P121c — the shared, boundary-aligned clock store. ONE timer for the whole
- *  app however many consumers are mounted, and a tick re-renders only the
- *  consumers themselves. Non-StrictMode throughout (the timer-count assertion
- *  is about the steady state, not StrictMode's mount/unmount/remount probe). */
+/** P121c — the shared clock store. ONE timer for the whole app however many
+ *  consumers are mounted; a tick re-renders only the consumers; the phase is
+ *  relative to the first read (never a wall-clock :00/:30 boundary).
+ *  Non-StrictMode unless a test says otherwise. */
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 
 import { NOW_PERIOD_MS, __resetNowForTests, useNow } from './useNow';
 
-const T0 = 1_700_000_010_000; // an exact NOW_PERIOD_MS boundary
+// Deliberately OFF any 30 s wall-clock boundary.
+const T0 = 1_700_000_012_345;
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -21,8 +23,7 @@ afterEach(() => {
 });
 
 describe('useNow (P121c)', () => {
-  it('shares one timer across consumers and clears it on the last unmount', () => {
-    expect(T0 % NOW_PERIOD_MS).toBe(0);
+  it('shares one timer across consumers, ticks each once, clears on the last unmount', () => {
     const renders = [0, 0, 0];
     const seen: number[] = [];
     function Consumer({ i }: { i: number }) {
@@ -47,15 +48,13 @@ describe('useNow (P121c)', () => {
     });
     expect(renders).toEqual(before.map((n) => n + 1));
     expect(seen).toEqual([T0 + NOW_PERIOD_MS, T0 + NOW_PERIOD_MS, T0 + NOW_PERIOD_MS]);
-    // Re-armed for the next boundary — still exactly one timer.
-    expect(vi.getTimerCount()).toBe(1);
+    expect(vi.getTimerCount()).toBe(1); // re-armed, still one chain
 
     unmount();
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('is quantized: mid-period reads return the boundary and do not re-render', () => {
-    vi.setSystemTime(T0 + 12_345);
+  it('first tick lands one period after the first read, not at a wall-clock boundary', () => {
     let renders = 0;
     let seen = 0;
     function Consumer() {
@@ -66,8 +65,14 @@ describe('useNow (P121c)', () => {
     render(<Consumer />);
     expect(seen).toBe(T0);
     const r = renders;
+    // The next wall-clock 30 s boundary passes: nothing happens.
+    const toBoundary = NOW_PERIOD_MS - (T0 % NOW_PERIOD_MS);
     act(() => {
-      vi.advanceTimersByTime(NOW_PERIOD_MS - 12_345 - 1);
+      vi.advanceTimersByTime(toBoundary);
+    });
+    expect(renders).toBe(r);
+    act(() => {
+      vi.advanceTimersByTime(NOW_PERIOD_MS - toBoundary - 1);
     });
     expect(renders).toBe(r);
     act(() => {
@@ -75,5 +80,92 @@ describe('useNow (P121c)', () => {
     });
     expect(renders).toBe(r + 1);
     expect(seen).toBe(T0 + NOW_PERIOD_MS);
+  });
+
+  it('subscribing never re-renders on mount; a late consumer shares the current value', () => {
+    let aRenders = 0;
+    let bSeen = 0;
+    function A() {
+      aRenders += 1;
+      useNow();
+      return null;
+    }
+    function B() {
+      bSeen = useNow();
+      return null;
+    }
+    const { rerender } = render(<A />);
+    expect(aRenders).toBe(1);
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    rerender(
+      <>
+        <A />
+        <B />
+      </>,
+    );
+    expect(bSeen).toBe(T0); // same value as A — labels agree
+    expect(vi.getTimerCount()).toBe(1);
+  });
+
+  it('StrictMode: mount probe + a mid-period remount leave exactly one chain', () => {
+    let seen = 0;
+    function Consumer() {
+      seen = useNow();
+      return null;
+    }
+    const first = render(<Consumer />, { wrapper: StrictMode });
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    first.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    // Resubscribe mid-period: the chain resumes for the REMAINING 20 s.
+    render(<Consumer />, { wrapper: StrictMode });
+    expect(vi.getTimerCount()).toBe(1);
+    expect(seen).toBe(T0);
+    act(() => {
+      vi.advanceTimersByTime(NOW_PERIOD_MS - 10_000);
+    });
+    expect(seen).toBe(T0 + NOW_PERIOD_MS);
+    expect(vi.getTimerCount()).toBe(1);
+  });
+
+  it('an idle store refreshes a full-period-stale value on the next read', () => {
+    let seen = 0;
+    function Consumer() {
+      seen = useNow();
+      return null;
+    }
+    const first = render(<Consumer />);
+    first.unmount();
+    vi.setSystemTime(T0 + 5 * NOW_PERIOD_MS);
+    render(<Consumer />);
+    expect(seen).toBe(T0 + 5 * NOW_PERIOD_MS);
+  });
+  it('a consumer remounted by the tick itself (mid-tick resubscribe) leaves one chain', () => {
+    let childSeen = 0;
+    function Child() {
+      childSeen = useNow();
+      return null;
+    }
+    function Parent() {
+      const now = useNow();
+      return <Child key={now} />; // remounts Child on every tick
+    }
+    render(<Parent />);
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => {
+      vi.advanceTimersByTime(NOW_PERIOD_MS);
+    });
+    expect(vi.getTimerCount()).toBe(1);
+    expect(childSeen).toBe(T0 + NOW_PERIOD_MS);
+    act(() => {
+      vi.advanceTimersByTime(NOW_PERIOD_MS);
+    });
+    expect(vi.getTimerCount()).toBe(1);
+    expect(childSeen).toBe(T0 + 2 * NOW_PERIOD_MS);
   });
 });
