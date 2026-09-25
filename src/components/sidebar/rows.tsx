@@ -20,7 +20,7 @@
 import { memo } from 'react';
 import type { BranchInfo, RemoteInfo, WorktreeInfo } from '../../ipc';
 import type { RevealTarget } from '../../graph/reveal';
-import { relativeDate } from '../../graph/draw';
+import { RelativeAge } from '../RelativeAge';
 import {
   CloudIcon,
   DetachedIcon,
@@ -240,7 +240,6 @@ function StashRowImpl({
   oid,
   message,
   ts,
-  now,
   onContextMenu,
   onReveal,
   treeKey,
@@ -249,12 +248,9 @@ function StashRowImpl({
   index: number;
   oid: string;
   message: string;
+  /** Unix SECONDS of the stash. The age label is a `RelativeAge` leaf (P121c):
+   *  it re-renders itself on the shared clock, so this memoised row does not. */
   ts: number;
-  /** Unix SECONDS, ticked by the container (see `SidebarProps.now`). Read from a
-   *  prop, never `Date.now()`: this row is memoised, so a clock read in the
-   *  render body would freeze the age label until the row changed for some
-   *  other reason. */
-  now: number;
   onContextMenu(index: number, oid: string, clientX: number, clientY: number): void;
   /** P84: stashes aren't ref-labelled in the graph → reveal by oid. */
   onReveal?: (t: RevealTarget) => void;
@@ -291,19 +287,13 @@ function StashRowImpl({
         {message}
       </span>
       <span className="branch-badge" title={label}>
-        {relativeDate(ts, now)}
+        <RelativeAge tsSec={ts} />
       </span>
     </li>
   );
 }
 
-/** Scalar props only → the default shallow comparison is enough.
- *
- *  KNOWN CONSEQUENCE: `now` is read in the render body, so the relative age
- *  ("5 minutes ago") only re-reads the clock when this row actually re-renders.
- *  The render storm used to refresh it incidentally, every few seconds. Filed as
- *  a follow-up — the fix is an explicit slow tick, not un-memoising a row to get
- *  a clock for free. */
+/** Scalar props only → the default shallow comparison is enough. */
 export const StashRow = memo(StashRowImpl);
 
 /** P27 §6.2: display-only badge pills for a worktree row. A row may show more

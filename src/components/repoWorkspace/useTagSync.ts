@@ -27,7 +27,13 @@ const IN_FLIGHT_FLOOR_MS = 2_000;
 
 export interface UseTagSync {
   report: TagSyncReport | null;
+  /** P121e: the SETTLED lifecycle. `'checking'` only for the very first check
+   *  (from `idle`); a re-check keeps the last `'ready'` / `'unavailable'`
+   *  verdict (stale-while-revalidate) so the rows keep their badges. */
   state: TagSyncState;
+  /** P121e: true while ANY check is on the wire (first or re-check). Carried to
+   *  a leaf via `TagSyncCheckingContext` — never read by a section body. */
+  checking: boolean;
   /** The remote name the check targets (resolved the same way Rust does: origin,
    *  else the first configured remote), or null when none is configured. Exposed
    *  independently of a successful report so the §2.3 offline line can still name
@@ -55,6 +61,7 @@ export function useTagSync(repoId: string, remotes: RemoteInfo[]): UseTagSync {
   const [report, setReport] = useState<TagSyncReport | null>(null);
   const [state, setState] = useState<TagSyncState>('idle');
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
+  const [checking, setChecking] = useState(false);
   const remoteCount = remotes.length;
   // Mirror Rust's default-remote resolution so the offline line can name the
   // remote even before/without a successful report (origin, else first).
@@ -81,6 +88,7 @@ export function useTagSync(repoId: string, remotes: RemoteInfo[]): UseTagSync {
         reqId.current += 1;
         setState('idle');
         setReport(null);
+        setChecking(false);
         return;
       }
       if (force && stateRef.current === 'idle') return;
@@ -98,7 +106,10 @@ export function useTagSync(repoId: string, remotes: RemoteInfo[]): UseTagSync {
       // the last attempt reached `ready`, so a failed check never self-suppresses).
       lastFetch.current = now;
       inFlight.current = true;
-      setState('checking');
+      setChecking(true);
+      // P121e: only a first check (no settled verdict yet) shows `checking` in
+      // `state`; a re-check keeps the last verdict so badges never flicker off.
+      if (stateRef.current === 'idle') setState('checking');
       try {
         // Pass null → Rust resolves the default remote (origin, else first); the
         // report echoes which remote it queried for every label/tooltip.
@@ -107,11 +118,13 @@ export function useTagSync(repoId: string, remotes: RemoteInfo[]): UseTagSync {
         setReport(r);
         setState('ready');
         setCheckedAt(Math.floor(Date.now() / 1000));
+        setChecking(false);
       } catch {
         if (id !== reqId.current) return;
         // §2.3: degrade quietly — no error banner, no toast. Keep the last
         // `checkedAt` for the "last checked" tooltip.
         setState('unavailable');
+        setChecking(false);
         // P113b: a FAILED check must never self-suppress, so reset the clock —
         // the next trigger (retry, manual refresh) goes straight to the remote.
         lastFetch.current = 0;
@@ -135,11 +148,12 @@ export function useTagSync(repoId: string, remotes: RemoteInfo[]): UseTagSync {
     setReport(null);
     setState('idle');
     setCheckedAt(null);
+    setChecking(false);
   }, []);
 
   // Prefer the report's echoed remote (authoritative once a check succeeded);
   // fall back to the resolved default so the offline line is never nameless.
   const remote = report?.remote ?? defaultRemote;
 
-  return { report, state, remote, checkedAt, refetch, afterAutoFetch, clear };
+  return { report, state, checking, remote, checkedAt, refetch, afterAutoFetch, clear };
 }

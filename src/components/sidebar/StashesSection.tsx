@@ -24,8 +24,6 @@ export interface StashesSectionProps {
   onCreateStash(): void;
   onContextMenu(index: number, oid: string, clientX: number, clientY: number): void;
   onReveal?: (t: RevealTarget) => void;
-  /** Unix SECONDS, ticked by the container — see `SidebarProps.now`. */
-  now: number;
 }
 
 export function StashesSection({
@@ -36,7 +34,6 @@ export function StashesSection({
   onCreateStash,
   onContextMenu,
   onReveal,
-  now,
 }: StashesSectionProps) {
   return (
     <section className="sidebar-section">
@@ -71,7 +68,6 @@ export function StashesSection({
                 oid={s.oid}
                 message={s.message}
                 ts={s.ts}
-                now={now}
                 onContextMenu={onContextMenu}
                 onReveal={onReveal}
                 treeKey={`stash:${s.index}`}

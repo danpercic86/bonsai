@@ -17,21 +17,23 @@ use std::time::Instant;
 /// Poison-recovered so one failing test can't error out the rest.
 static WATCHER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-fn serialize_watcher_test() -> std::sync::MutexGuard<'static, ()> {
+pub(super) fn serialize_watcher_test() -> std::sync::MutexGuard<'static, ()> {
     WATCHER_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// git2-init'd repo in a temp dir; returns (tempdir, workdir path).
-fn fixture_repo() -> (tempfile::TempDir, std::path::PathBuf) {
+pub(super) fn fixture_repo() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::TempDir::new().unwrap();
     git2::Repository::init(dir.path()).unwrap();
     let workdir = dir.path().to_path_buf();
     (dir, workdir)
 }
 
-fn watch_into_channel(workdir: &Path) -> (WatcherHandle, mpsc::Receiver<(Instant, BurstClass)>) {
+pub(super) fn watch_into_channel(
+    workdir: &Path,
+) -> (WatcherHandle, mpsc::Receiver<(Instant, BurstClass)>) {
     let (tx, rx): (Sender<(Instant, BurstClass)>, _) = channel();
     let handle = spawn_watcher(
         workdir,
@@ -205,10 +207,10 @@ fn watcher_record_shape() {
         .unwrap(),
     );
     crate::obs::trace::set_active_sink(Some(std::sync::Arc::clone(&sink)));
-    log_watcher(5, 3, true, Some(BurstClass::Refs));
+    log_watcher(5, 3, true, Some(BurstClass::Refs), None);
     // P110: a non-fired (raw-batch) record carries NO class — the proof that
     // the pre-P110 record shape is byte-identical when the field is absent.
-    log_watcher(2, 0, false, None);
+    log_watcher(2, 0, false, None, None);
     crate::obs::trace::set_active_sink(None);
     sink.shutdown();
 
@@ -253,29 +255,40 @@ fn burst_accumulation_is_conservative() {
         paths: 3,
         relevant: 2,
         refs: false,
+        ..WatchTick::default()
     };
     let rf = WatchTick {
         paths: 1,
         relevant: 1,
         refs: true,
+        ..WatchTick::default()
     };
 
     // Worktree + Worktree → Worktree.
-    assert_eq!(accumulate(wt, &[wt]).2, BurstClass::Worktree);
+    assert_eq!(
+        accumulate(wt.clone(), std::slice::from_ref(&wt)).2,
+        BurstClass::Worktree
+    );
     // Worktree + Refs → Refs, IN BOTH ORDERS (the fold must not depend on
     // which batch arrived first).
-    assert_eq!(accumulate(wt, &[rf]).2, BurstClass::Refs);
-    assert_eq!(accumulate(rf, &[wt]).2, BurstClass::Refs);
+    assert_eq!(
+        accumulate(wt.clone(), std::slice::from_ref(&rf)).2,
+        BurstClass::Refs
+    );
+    assert_eq!(
+        accumulate(rf.clone(), std::slice::from_ref(&wt)).2,
+        BurstClass::Refs
+    );
     // Single-batch windows keep their own class.
-    assert_eq!(accumulate(rf, &[]).2, BurstClass::Refs);
-    assert_eq!(accumulate(wt, &[]).2, BurstClass::Worktree);
+    assert_eq!(accumulate(rf.clone(), &[]).2, BurstClass::Refs);
+    assert_eq!(accumulate(wt.clone(), &[]).2, BurstClass::Worktree);
     // Refs survives an arbitrarily long tail of worktree batches (the
     // checkout case: one ref write, then thousands of files landing).
-    let tail = vec![wt; 50];
-    assert_eq!(accumulate(rf, &tail).2, BurstClass::Refs);
+    let tail = vec![wt.clone(); 50];
+    assert_eq!(accumulate(rf.clone(), &tail).2, BurstClass::Refs);
 
     // Counts still sum across the window (unchanged §2.4 semantics).
-    let (paths, relevant, _) = accumulate(wt, &[wt, rf]);
+    let (paths, relevant, _) = accumulate(wt.clone(), &[wt, rf]);
     assert_eq!((paths, relevant), (7, 5));
 }
 

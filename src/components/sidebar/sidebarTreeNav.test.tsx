@@ -62,7 +62,7 @@ function baseProps(over: Partial<SidebarProps> = {}): SidebarProps {
     tagSyncState: 'idle',
     tagSyncRemote: null,
     tagSyncCheckedAt: null,
-    now: 1_700_000_000,
+    tagSyncChecking: false,
     onTagsExpand: vi.fn(),
     remotes: [{ name: 'origin', url: 'https://example.com/r.git' }],
     onRemoteContextMenu: vi.fn(),

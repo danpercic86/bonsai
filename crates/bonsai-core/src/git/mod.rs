@@ -55,6 +55,8 @@ pub mod history_index;
 pub mod hooks;
 /// P87 streaming hook variants (split from `hooks.rs` for size).
 pub mod hooks_stream;
+/// P121d gitignore membership counting (watcher dev-mode measurement).
+pub mod ignore;
 pub mod image_diff;
 pub mod intraline;
 pub mod maintenance;

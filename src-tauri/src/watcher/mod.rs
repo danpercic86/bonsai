@@ -21,7 +21,7 @@
 //! ReadDirectoryChangesW can miss events on Windows; the manual refresh
 //! button and window-focus rescan are mandatory companions, not extras.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -34,23 +34,36 @@ mod classify;
 pub(crate) use classify::classify;
 pub use classify::PathClass;
 
+/// P121d: how many worktree paths a fired burst retains for the dev-mode
+/// ignore measurement. The total is still counted past the cap.
+const IGNORE_SAMPLE_CAP: usize = 512;
+
 /// The running reduction of ONE debounce window: the coalesced counts plus the
 /// conservative burst class. Split out of the drain loop so the accumulation
 /// rule this whole feature rests on is testable without wall-clock timing.
-#[derive(Clone, Copy)]
 struct BurstAcc {
     paths: u32,
     relevant: u32,
     refs: bool,
+    /// P121d: absolute worktree paths (≤ `IGNORE_SAMPLE_CAP`, not deduped).
+    /// Empty unless Dev mode was on when the ticks were built. Never leaves the
+    /// debounce thread and is never logged — only counted.
+    worktree_paths: Vec<PathBuf>,
+    /// P121d: every worktree path the window saw, past the cap too.
+    worktree_total: u32,
 }
 
 impl BurstAcc {
     fn new(first: WatchTick) -> Self {
-        Self {
-            paths: first.paths,
-            relevant: first.relevant,
-            refs: first.refs,
-        }
+        let mut acc = Self {
+            paths: 0,
+            relevant: 0,
+            refs: false,
+            worktree_paths: Vec::new(),
+            worktree_total: 0,
+        };
+        acc.absorb(first);
+        acc
     }
 
     /// Folds one more notify batch into the window. CONSERVATIVE: one Refs path
@@ -59,6 +72,11 @@ impl BurstAcc {
         self.paths = self.paths.saturating_add(t.paths);
         self.relevant = self.relevant.saturating_add(t.relevant);
         self.refs |= t.refs;
+        let n = u32::try_from(t.worktree_paths.len()).unwrap_or(u32::MAX);
+        self.worktree_total = self.worktree_total.saturating_add(n);
+        let room = IGNORE_SAMPLE_CAP.saturating_sub(self.worktree_paths.len());
+        self.worktree_paths
+            .extend(t.worktree_paths.into_iter().take(room));
     }
 
     fn class(&self) -> BurstClass {
@@ -76,7 +94,7 @@ impl BurstAcc {
 fn accumulate(first: WatchTick, rest: &[WatchTick]) -> (u32, u32, BurstClass) {
     let mut acc = BurstAcc::new(first);
     for t in rest {
-        acc.absorb(*t);
+        acc.absorb(t.clone());
     }
     (acc.paths, acc.relevant, acc.class())
 }
@@ -91,20 +109,61 @@ const DEBOUNCE: Duration = Duration::from_millis(300);
 /// One notify batch, reduced to the counts P91 §2.4 records. The paths
 /// themselves never cross into the log — only how many, and how many passed the
 /// `.git`-internals filter.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 struct WatchTick {
     paths: u32,
     relevant: u32,
     /// True when at least one relevant path in this batch was `PathClass::Refs`
     /// (or the batch was a notify error, which is treated as ref-affecting).
     refs: bool,
+    /// P121d: the batch's `Worktree`-class absolute paths, collected ONLY while
+    /// Dev mode is on (`active_sink().is_some()`) — zero work otherwise.
+    worktree_paths: Vec<PathBuf>,
+}
+
+/// P121d: the dev-mode ignore measurement of one fired burst (counts only).
+struct IgnoreStats {
+    /// `BurstAcc::worktree_total`.
+    worktree_paths: u32,
+    /// Sampled paths that were workdir-relative and checked; None if the repo
+    /// could not be opened (then `ignored` is None too).
+    ignore_checked: Option<u32>,
+    ignored: Option<u32>,
+}
+
+/// P121d: measures how many of the burst's sampled worktree paths are
+/// gitignored. None when the burst had no worktree paths (refs-only, or Dev
+/// mode off so nothing was sampled). Blocking (opens the repo); runs on the
+/// debounce thread, never a tokio worker. Paths outside `workdir` are skipped.
+fn ignore_stats(workdir: &Path, acc: &BurstAcc) -> Option<IgnoreStats> {
+    if acc.worktree_total == 0 {
+        return None;
+    }
+    let rel: Vec<PathBuf> = acc
+        .worktree_paths
+        .iter()
+        .filter_map(|p| p.strip_prefix(workdir).ok().map(Path::to_path_buf))
+        .collect();
+    let ignored = bonsai_core::git::ignore::count_ignored(workdir, &rel);
+    let checked = u32::try_from(rel.len()).unwrap_or(u32::MAX);
+    Some(IgnoreStats {
+        worktree_paths: acc.worktree_total,
+        ignore_checked: ignored.map(|_| checked),
+        ignored,
+    })
 }
 
 /// Logs a `watcher` record via the global obs sink (§2.4, `root("watcher")`).
 /// A no-op when Dev mode is off (the sink is `None`). The watcher is
 /// Tauri-decoupled and holds no `AppHandle`, so it goes through the same
 /// process-wide sink handle the phase recorder uses.
-fn log_watcher(paths: u32, relevant: u32, fired: bool, class: Option<BurstClass>) {
+fn log_watcher(
+    paths: u32,
+    relevant: u32,
+    fired: bool,
+    class: Option<BurstClass>,
+    ignore: Option<IgnoreStats>,
+) {
     use crate::obs::record::{LogLevel, LogPayload};
     let Some(sink) = crate::obs::trace::active_sink() else {
         return;
@@ -128,6 +187,9 @@ fn log_watcher(paths: u32, relevant: u32, fired: bool, class: Option<BurstClass>
                 }
                 .to_string()
             }),
+            worktree_paths: ignore.as_ref().map(|s| s.worktree_paths),
+            ignore_checked: ignore.as_ref().and_then(|s| s.ignore_checked),
+            ignored: ignore.as_ref().and_then(|s| s.ignored),
         },
     );
     sink.enqueue(rec);
@@ -170,6 +232,9 @@ pub fn spawn_watcher(
     let workdir = std::fs::canonicalize(workdir)
         .map_err(|e| AppError::Other(format!("failed to resolve {}: {e}", workdir.display())))?;
     let git_dir = workdir.join(".git");
+    // P121d: the debounce thread needs the same canonical root to make the
+    // sampled paths relative for the ignore check.
+    let fire_workdir = workdir.clone();
     let (tx, rx) = mpsc::channel::<WatchTick>();
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
@@ -179,17 +244,27 @@ pub fn spawn_watcher(
         let tick = match &res {
             Ok(event) => {
                 let paths = event.paths.len() as u32;
-                let classes = event.paths.iter().filter_map(|p| classify(p, &git_dir));
+                // P121d: sample worktree paths only in Dev mode (no allocation
+                // when off — an empty Vec does not allocate).
+                let sample = crate::obs::trace::active_sink().is_some();
                 let mut relevant = 0u32;
                 let mut refs = false;
-                for c in classes {
+                let mut worktree_paths = Vec::new();
+                for p in &event.paths {
+                    let Some(c) = classify(p, &git_dir) else {
+                        continue;
+                    };
                     relevant += 1;
                     refs |= c == PathClass::Refs;
+                    if sample && c == PathClass::Worktree {
+                        worktree_paths.push(p.clone());
+                    }
                 }
                 WatchTick {
                     paths,
                     relevant,
                     refs,
+                    worktree_paths,
                 }
             }
             // watcher error → trigger a refresh, cheap and safe; count it as one
@@ -199,9 +274,10 @@ pub fn spawn_watcher(
                 paths: 1,
                 relevant: 1,
                 refs: true,
+                worktree_paths: Vec::new(),
             },
         };
-        log_watcher(tick.paths, tick.relevant, false, None);
+        log_watcher(tick.paths, tick.relevant, false, None, None);
         if tick.relevant > 0 {
             let _ = tx.send(tick); // receiver gone: watcher is being torn down
         }
@@ -232,7 +308,15 @@ pub fn spawn_watcher(
                                 }
                                 Err(mpsc::RecvTimeoutError::Timeout) => {
                                     let class = acc.class();
-                                    log_watcher(acc.paths, acc.relevant, true, Some(class));
+                                    // P121d: Dev mode only (sampling is gated
+                                    // on the sink too). Logged BEFORE
+                                    // `on_change` so the record still precedes
+                                    // the refresh it causes.
+                                    let ignore = match crate::obs::trace::active_sink() {
+                                        Some(_) => ignore_stats(&fire_workdir, &acc),
+                                        None => None,
+                                    };
+                                    log_watcher(acc.paths, acc.relevant, true, Some(class), ignore);
                                     on_change(class);
                                     break;
                                 }
@@ -253,3 +337,5 @@ pub fn spawn_watcher(
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_ignore;

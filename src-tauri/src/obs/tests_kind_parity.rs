@@ -145,6 +145,9 @@ fn one_per_variant() -> Vec<LogPayload> {
             suppressed: false,
             suppress_reason: None,
             burst_class: None,
+            worktree_paths: None,
+            ignore_checked: None,
+            ignored: None,
         },
         LogPayload::Refresh {
             round: 0,

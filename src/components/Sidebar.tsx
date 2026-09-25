@@ -25,6 +25,7 @@ import { filterItems, filterTree } from './repoWorkspace/listFilter';
 import { SkeletonRows, WorktreeRow } from './sidebar/rows';
 import { SidebarTreeProvider } from './sidebar/SidebarTreeContext';
 import { SidebarBusyContext, SidebarBusyRefContext } from './sidebar/sidebarBusyContext';
+import { TagSyncCheckingContext } from './sidebar/tagSyncCheckingContext';
 import { useSidebarTreeNav } from './sidebar/useSidebarTreeNav';
 import { useStableRemoteRefs } from './sidebar/useStableRemoteRefs';
 
@@ -91,13 +92,17 @@ export interface SidebarProps {
   /** P77: best-effort tag-sync report (null until first check). The tags list
    *  NEVER blocks on it — it only augments rows with a status badge. */
   tagSyncReport: TagSyncReport | null;
-  /** P77: the ls-remote lifecycle driving badge visibility (§2.2/§2.3). */
+  /** P77: the SETTLED ls-remote verdict driving badge visibility (§2.2/§2.3).
+   *  P121e: stays `ready`/`unavailable` during a re-check — see `tagSyncChecking`. */
   tagSyncState: TagSyncState;
   /** P77 §2.3: the remote the check targets, available even without a successful
    *  report so the offline line can name it on cold-start-offline. */
   tagSyncRemote: string | null;
   /** P77: unix secs of the last successful check (for the "last checked" tip). */
   tagSyncCheckedAt: number | null;
+  /** P121e: a tag-sync check is on the wire. Provided by context to the Tags
+   *  rollup leaf only, so the memoised section body never re-renders on it. */
+  tagSyncChecking: boolean;
   /** P77 §6: fired when the Tags section expands → the container runs listTagSync
    *  (cached ~10s). */
   onTagsExpand(): void;
@@ -115,14 +120,6 @@ export interface SidebarProps {
    *  graph (scroll + flash). Additive to double-click checkout; keyboard is
    *  intentionally out of scope. */
   onReveal?: (t: RevealTarget) => void;
-  /** Render-storm fix (P91 follow-up): the CLOCK as an explicit prop — unix
-   *  SECONDS, re-sampled by the container's 30 s `jobNow` ticker. The sections
-   *  and rows are memoised, so a `Date.now()` in a render body freezes the
-   *  relative-age labels; a ticked prop is what the memo comparators can SEE
-   *  change. 30 s is the cadence these labels already had (that same ticker
-   *  re-rendered the unmemoised Sidebar) and `relativeDate`'s finest bucket is
-   *  one minute, so a label is never more than 30 s late. */
-  now: number;
 }
 
 /** Left sidebar: branches / remotes / tags (M5 contract §4.2). Presentational
@@ -159,13 +156,13 @@ export function Sidebar({
   tagSyncState,
   tagSyncRemote,
   tagSyncCheckedAt,
+  tagSyncChecking,
   onTagsExpand,
   remotes,
   onRemoteContextMenu,
   onAddRemote,
   onCleanupBranches,
   onReveal,
-  now,
 }: SidebarProps) {
   // P91 §9.2 surface 6 — container render churn (each mode). The observed flicker
   // site; the section/row tallies aggregate underneath this record.
@@ -368,6 +365,7 @@ export function Sidebar({
               remoteNoMatch={remoteNoMatch}
             />
 
+            <TagSyncCheckingContext.Provider value={tagSyncChecking}>
             <TagsSection
               tags={data.tags}
               treeMode={treeMode}
@@ -378,8 +376,8 @@ export function Sidebar({
               tagSyncRemote={tagSyncRemote}
               tagSyncCheckedAt={tagSyncCheckedAt}
               onExpand={onTagsExpand}
-              now={now}
             />
+            </TagSyncCheckingContext.Provider>
 
             <StashesSection
               stashes={stashes}
@@ -389,7 +387,6 @@ export function Sidebar({
               onCreateStash={onCreateStash}
               onContextMenu={onStashContextMenu}
               onReveal={onReveal}
-              now={now}
             />
 
             {/* P60d: always shown so a submodule can be added even when none

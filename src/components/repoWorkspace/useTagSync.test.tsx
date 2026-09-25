@@ -310,3 +310,77 @@ describe('useTagSync in-flight duplicate floor', () => {
     expect(result.current.state).toBe('ready');
   });
 });
+
+/** P121e — stale-while-revalidate: a RE-check keeps the last settled verdict
+ *  (`state` stays `ready`, badges stay) and flags itself via `checking`; only
+ *  the very first check from `idle` reports `state === 'checking'`. */
+describe('useTagSync checking flag (P121e)', () => {
+  it('first check from idle → state checking + checking true', async () => {
+    const d = deferred<TagSyncReport>();
+    vi.spyOn(mockIpc, 'listTagSync').mockReturnValue(d.promise);
+    const { result } = renderHook(() => useTagSync(REPO, ORIGIN));
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current.refetch();
+    });
+    expect(result.current.state).toBe('checking');
+    expect(result.current.checking).toBe(true);
+    await act(async () => {
+      d.resolve(report());
+      await pending;
+    });
+    expect(result.current.state).toBe('ready');
+    expect(result.current.checking).toBe(false);
+  });
+
+  it('a re-check keeps state ready while checking is true', async () => {
+    const spy = vi.spyOn(mockIpc, 'listTagSync').mockResolvedValueOnce(report());
+    const { result } = renderHook(() => useTagSync(REPO, ORIGIN));
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(result.current.state).toBe('ready');
+
+    const d = deferred<TagSyncReport>();
+    spy.mockReturnValueOnce(d.promise);
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current.refetch({ force: true });
+    });
+    expect(result.current.state).toBe('ready');
+    expect(result.current.checking).toBe(true);
+    expect(result.current.report?.entries[0].name).toBe('v1.0');
+
+    await act(async () => {
+      d.resolve(report('upstream'));
+      await pending;
+    });
+    expect(result.current.state).toBe('ready');
+    expect(result.current.checking).toBe(false);
+    expect(result.current.report?.remote).toBe('upstream');
+  });
+
+  it('a failed re-check settles to unavailable with checking false; clear() resets it', async () => {
+    const spy = vi.spyOn(mockIpc, 'listTagSync').mockResolvedValueOnce(report());
+    const { result } = renderHook(() => useTagSync(REPO, ORIGIN));
+    await act(async () => {
+      await result.current.refetch();
+    });
+    spy.mockRejectedValueOnce({ kind: 'networkError', message: 'offline' });
+    await act(async () => {
+      await result.current.refetch({ force: true });
+    });
+    expect(result.current.state).toBe('unavailable');
+    expect(result.current.checking).toBe(false);
+
+    const d = deferred<TagSyncReport>();
+    spy.mockReturnValueOnce(d.promise);
+    act(() => {
+      void result.current.refetch({ force: true });
+    });
+    expect(result.current.checking).toBe(true);
+    act(() => result.current.clear());
+    expect(result.current.checking).toBe(false);
+    expect(result.current.state).toBe('idle');
+  });
+});

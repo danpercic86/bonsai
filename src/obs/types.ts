@@ -108,6 +108,13 @@ export interface WatcherPayload {
   /** P110 — the debounced burst's path class. Rust sets it on `fired`
    *  records only; absent everywhere else. */
   burstClass?: 'worktree' | 'refs';
+  /** P121d (Dev-mode measurement) — `fired` records only, when the burst had
+   *  worktree paths: how many it coalesced, how many (≤ the 512 sample cap)
+   *  were checked against gitignore, and how many of those are ignored.
+   *  Counts only; `ignored === ignoreChecked` marks an all-ignored burst. */
+  worktreePaths?: number;
+  ignoreChecked?: number;
+  ignored?: number;
 }
 
 /** §2.5 — one executed coalesced refresh round. >1 contributing trace IS the

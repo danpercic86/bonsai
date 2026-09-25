@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { minutesLabel } from './workspaceUtils';
+import { useNow } from '../hooks/useNow';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
 import { FolderOpenIcon, HistoryIcon, SummarizeIcon } from './menuIcons';
@@ -32,7 +33,6 @@ export interface WorkspaceToolbarProps {
   aiPanelLoading: boolean;
   headBranch: BranchInfo | null;
   jobStatus: JobStatus[];
-  jobNow: number;
   onFetch(): void;
   onPull(): void;
   onPush(): void;
@@ -80,7 +80,6 @@ export function WorkspaceToolbar({
   aiPanelLoading,
   headBranch,
   jobStatus,
-  jobNow,
   onFetch,
   onPull,
   onPush,
@@ -127,6 +126,9 @@ export function WorkspaceToolbar({
 
   // P30 D11: small muted auto-fetch readout next to the Fetch control —
   // "Fetched Xm ago", or the backoff notice with the retry estimate.
+  // P121c: the toolbar reads the shared clock itself, so a tick re-renders
+  // only this component — never the workspace container that owns its props.
+  const jobNow = useNow();
   const autoFetchStatus = jobStatus.find((s) => s.job === 'autoFetch');
   let autoFetchReadout: { text: string; title: string } | null = null;
   if (autoFetchStatus !== undefined && autoFetchStatus.enabled) {

@@ -6,7 +6,6 @@
 import { memo, useMemo, useState } from 'react';
 import type { TagSyncEntry, TagSyncReport } from '../../ipc';
 import type { RevealTarget } from '../../graph/reveal';
-import { relativeDate } from '../../graph/draw';
 import { buildPathTree } from '../../utils/pathTree';
 import { Tree } from '../Tree';
 import { ListFilterInput } from '../ListFilterInput';
@@ -15,7 +14,8 @@ import { rowPropsEqual } from '../../utils/structuralEqual';
 import { RefFilterMarker } from './RefFilterMarker';
 import { SectionHeader } from './SectionHeader';
 import { TagSyncBadge } from './TagSyncBadge';
-import { SectionRollupBadge } from './SectionRollupBadge';
+import { TagSyncOfflineNote } from './TagSyncOfflineNote';
+import { TagSyncRollup } from './TagSyncRollup';
 import { useSidebarTreeItem } from './useSidebarTreeItem';
 import { useRenderCount } from '../../obs/react';
 
@@ -108,7 +108,6 @@ function TagsSectionImpl({
   tagSyncRemote,
   tagSyncCheckedAt,
   onExpand,
-  now,
 }: {
   tags: string[];
   treeMode: boolean;
@@ -116,6 +115,9 @@ function TagsSectionImpl({
   /** P84: single-click reveal, threaded to every tag row. */
   onReveal?: (t: RevealTarget) => void;
   tagSyncReport: TagSyncReport | null;
+  /** The SETTLED lifecycle (P121e): stays `ready`/`unavailable` during a
+   *  re-check. The in-flight flag reaches the rollup leaf by context
+   *  (`TagSyncCheckingContext`) and is never read here. */
   tagSyncState: TagSyncState;
   /** The remote the check targets, available even when no report was obtained
    *  (cold-start-offline), so the §2.3 offline line can name it. */
@@ -123,10 +125,6 @@ function TagsSectionImpl({
   tagSyncCheckedAt: number | null;
   /** Fired when the section transitions collapsed → expanded (sync trigger §6). */
   onExpand(): void;
-  /** Unix SECONDS, ticked by the container (see `SidebarProps.now`). This section
-   *  is memoised, so the "last checked" age has to arrive as a prop — a
-   *  `Date.now()` in the render body froze at the last unrelated re-render. */
-  now: number;
 }) {
   useRenderCount('TagsSection', undefined, 'aggregate'); // §9.2
   // P11a: Tags start collapsed (least-used, can be long). Local/ephemeral state.
@@ -139,8 +137,9 @@ function TagsSectionImpl({
   // default the check attempted (report is null on cold-start-offline).
   const offlineRemote = remote ?? tagSyncRemote;
 
-  // Per-name verdict for badges + menu; only populated when the check is ready so
-  // rows stay badge-less while checking / unavailable (§2.2/§2.3).
+  // Per-name verdict for badges + menu; only populated when a verdict is ready so
+  // rows stay badge-less during the FIRST check and while unavailable
+  // (§2.2/§2.3). P121e: a re-check keeps `ready`, so badges persist through it.
   const byName = useMemo(() => {
     const m = new Map<string, TagSyncEntry>();
     if (ready) for (const e of tagSyncReport!.entries) m.set(e.name, e);
@@ -192,15 +191,7 @@ function TagsSectionImpl({
     setCollapsed((c) => !c);
   };
 
-  const rollup = (
-    <SectionRollupBadge
-      count={divergedCount}
-      busy={tagSyncState === 'checking'}
-      label={'checking…'}
-      ariaLabel={`${divergedCount} tags out of sync${remote !== null ? ` on ${remote}` : ''}`}
-      title={`${divergedCount} tags differ from ${remote ?? 'the remote'}. Expand to resolve.`}
-    />
-  );
+  const rollup = <TagSyncRollup count={divergedCount} remote={remote} state={tagSyncState} />;
 
   const empty = tags.length === 0 && remoteOnlyFiltered.length === 0;
 
@@ -221,18 +212,7 @@ function TagsSectionImpl({
               on every unavailable check (incl. cold-start-offline, where no
               report was ever obtained), naming the targeted remote when known. */}
           {tagSyncState === 'unavailable' && (
-            <p
-              className="branch-muted"
-              title={
-                tagSyncCheckedAt !== null
-                  ? `Last checked ${relativeDate(tagSyncCheckedAt, now)}`
-                  : undefined
-              }
-            >
-              {offlineRemote !== null
-                ? `Couldn't reach ${offlineRemote} — showing local tags only.`
-                : `Couldn't reach the remote — showing local tags only.`}
-            </p>
+            <TagSyncOfflineNote remote={offlineRemote} checkedAt={tagSyncCheckedAt} />
           )}
           {empty ? (
             <p className="branch-muted">No tags</p>

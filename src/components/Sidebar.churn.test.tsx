@@ -110,7 +110,7 @@ function props(over: Partial<SidebarProps> = {}): SidebarProps {
     tagSyncState: 'idle',
     tagSyncRemote: null,
     tagSyncCheckedAt: null,
-    now: 1_700_000_000,
+    tagSyncChecking: false,
     remotes: REMOTES,
     ...CALLBACKS,
     ...over,

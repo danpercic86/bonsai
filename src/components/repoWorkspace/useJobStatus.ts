@@ -1,6 +1,8 @@
 // P30 D11 / P30 §6: the background-job status readout for one open repo — the
 // `get_job_status` mount snapshot, the live `job-status-changed` subscription
-// (upsert + the backoff/fetched toasts) and the 30 s relative-time ticker.
+// (upsert + the backoff/fetched toasts). P121c: the 30 s relative-time ticker
+// that lived here re-rendered the whole container every tick; labels now read
+// the shared clock in their own leaf (`hooks/useNow.ts`).
 // Extracted verbatim from RepoWorkspace so the container only wires it; this
 // block renders status + toasts only and must NOT double-refresh (auto-fetch
 // itself runs in the Rust scheduler).
@@ -11,7 +13,6 @@ import type { PushToast } from '../../ToastContext';
 
 export interface UseJobStatus {
   jobStatus: JobStatus[];
-  jobNow: number;
 }
 
 /**
@@ -28,9 +29,8 @@ export function useJobStatus(
   onAutoFetched?: () => void,
 ): UseJobStatus {
   // P30 D11: background-job status readout (fed by get_job_status on mount +
-  // live job-status-changed events); jobNow re-renders the relative label.
+  // live job-status-changed events).
   const [jobStatus, setJobStatus] = useState<JobStatus[]>([]);
-  const [jobNow, setJobNow] = useState(() => Date.now());
   // Latest-callback mirror: keeping it out of the effect's deps is what stops a
   // re-render from tearing down and re-establishing the event subscription.
   const onAutoFetchedRef = useRef(onAutoFetched);
@@ -108,11 +108,5 @@ export function useJobStatus(
     };
   }, [repoId, pushToast]);
 
-  // Keep the relative-time readout fresh (30 s granularity is plenty).
-  useEffect(() => {
-    const id = window.setInterval(() => setJobNow(Date.now()), 30_000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  return { jobStatus, jobNow };
+  return { jobStatus };
 }

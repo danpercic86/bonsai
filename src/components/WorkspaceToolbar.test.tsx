@@ -8,6 +8,7 @@ import { WorkspaceToolbar } from './WorkspaceToolbar';
 import type { WorkspaceToolbarProps } from './WorkspaceToolbar';
 import type { BranchInfo, JobStatus } from '../ipc';
 import { shortcutLabel } from '../utils/platform';
+import { __resetNowForTests } from '../hooks/useNow';
 
 const HEAD: BranchInfo = {
   name: 'main',
@@ -31,7 +32,6 @@ function renderBar(over: Partial<WorkspaceToolbarProps> = {}) {
     aiPanelLoading: false,
     headBranch: HEAD,
     jobStatus: [],
-    jobNow: 0,
     onFetch: vi.fn(),
     onPull: vi.fn(),
     onPush: vi.fn(),
@@ -183,26 +183,41 @@ describe('WorkspaceToolbar', () => {
   });
 
   it('auto-fetch readout: last-run text and the backoff notice', () => {
-    const base: JobStatus = {
-      job: 'autoFetch',
-      enabled: true,
-      lastRunMs: 0,
-      lastOutcome: 'success',
-      lastError: null,
-      consecutiveFailures: 0,
-      inBackoff: false,
-      nextRunMs: null,
-    };
-    renderBar({ jobStatus: [base], jobNow: 5 * 60_000 });
-    expect(screen.getByText(/Fetched .* ago/)).toBeInTheDocument();
-    renderBar({
-      jobStatus: [{ ...base, inBackoff: true, lastError: 'auth failed', nextRunMs: 10 * 60_000 }],
-      jobNow: 0,
-    });
-    const paused = screen.getByText(/Auto-fetch paused/);
-    expect(paused).toHaveAttribute('title', 'auth failed');
-    // Disabled job or no status -> no readout.
-    renderBar({ jobStatus: [{ ...base, enabled: false }] });
-    expect(screen.getAllByText(/Fetched|paused/)).toHaveLength(2); // only the two above
+    // P121c: the toolbar reads the shared `useNow` clock (no `jobNow` prop).
+    // Pin the wall clock to a period boundary so the labels are exact.
+    const T0 = 1_700_000_010_000;
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    __resetNowForTests();
+    try {
+      const base: JobStatus = {
+        job: 'autoFetch',
+        enabled: true,
+        lastRunMs: T0 - 5 * 60_000,
+        lastOutcome: 'success',
+        lastError: null,
+        consecutiveFailures: 0,
+        inBackoff: false,
+        nextRunMs: null,
+      };
+      renderBar({ jobStatus: [base] });
+      expect(screen.getByText('Fetched 5m ago')).toBeInTheDocument();
+      // The label advances on the shared clock tick, with no prop change.
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(screen.getByText('Fetched 6m ago')).toBeInTheDocument();
+      renderBar({
+        jobStatus: [{ ...base, inBackoff: true, lastError: 'auth failed', nextRunMs: T0 + 10 * 60_000 }],
+      });
+      const paused = screen.getByText(/Auto-fetch paused — retrying in 9m/);
+      expect(paused).toHaveAttribute('title', 'auth failed');
+      // Disabled job or no status -> no readout.
+      renderBar({ jobStatus: [{ ...base, enabled: false }] });
+      expect(screen.getAllByText(/Fetched|paused/)).toHaveLength(2); // only the two above
+    } finally {
+      __resetNowForTests();
+      vi.useRealTimers();
+    }
   });
 });

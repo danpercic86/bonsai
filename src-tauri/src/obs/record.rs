@@ -248,6 +248,19 @@ pub enum LogPayload {
         /// omitted otherwise so the existing record shape is unchanged.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         burst_class: Option<String>,
+        /// P121d (dev-mode measurement): how many WORKTREE-class paths the
+        /// fired burst coalesced. `fired` records only, and only when the
+        /// burst had any; omitted otherwise. Counts only — never paths.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        worktree_paths: Option<u32>,
+        /// P121d: how many of those (≤ the 512-path sample cap) were checked
+        /// against the repo's gitignore rules. Omitted when no check ran.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ignore_checked: Option<u32>,
+        /// P121d: how many of the checked paths are gitignored. `ignored ==
+        /// ignoreChecked` marks an all-ignored (tooling-output) burst.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ignored: Option<u32>,
     },
     #[serde(rename = "refresh")]
     Refresh {

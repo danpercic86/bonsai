@@ -200,6 +200,9 @@ pub(super) fn watcher(ts: i64, fired: bool) -> LogRecord {
             suppressed: false,
             suppress_reason: None,
             burst_class: None,
+            worktree_paths: None,
+            ignore_checked: None,
+            ignored: None,
         },
     )
 }

@@ -307,6 +307,7 @@ export function RepoWorkspace({
   const {
     report: tagSyncReport,
     state: tagSyncState,
+    checking: tagSyncChecking, // P121e: in-flight flag → Tags rollup leaf only
     remote: tagSyncRemote,
     checkedAt: tagSyncCheckedAt,
     refetch: refetchTagSync,
@@ -1042,8 +1043,8 @@ export function RepoWorkspace({
     forgeSignals.refresh('graph');
   }, [graph, forgeSignals.refresh]);
 
-  // P30 D11/§6: job readout + 30 s ticker (useJobStatus.ts). P77: `afterAutoFetch`.
-  const { jobStatus, jobNow } = useJobStatus(repoId, pushToast, afterAutoFetch);
+  // P30 D11/§6: job readout (useJobStatus.ts; clock = useNow leaf). P77: `afterAutoFetch`.
+  const { jobStatus } = useJobStatus(repoId, pushToast, afterAutoFetch);
 
   // Manual refresh (button + Ctrl+R/F5). P58c: also drop the signature-verify
   // cache (keyring / allowedSigners may have changed — OQ8) and re-read the
@@ -1831,7 +1832,6 @@ export function RepoWorkspace({
         aiPanelLoading={aiPanel?.loading === true}
         headBranch={headBranch}
         jobStatus={jobStatus}
-        jobNow={jobNow}
         onFetch={onFetch}
         onPull={onPull}
         onPush={traced('click', GESTURES.push, () => void handlePush())}
@@ -1873,10 +1873,10 @@ export function RepoWorkspace({
           tagSyncState={tagSyncState}
           tagSyncRemote={tagSyncRemote}
           tagSyncCheckedAt={tagSyncCheckedAt}
+          tagSyncChecking={tagSyncChecking}
           remotes={remotes}
           onRemoteContextMenu={handleRemoteContextMenu}
           onReveal={handleReveal}
-          now={Math.floor(jobNow / 1000)}
           {...sidebarCallbacks}
         />
         </RefFilterMarkerContext.Provider>
