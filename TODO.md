@@ -1479,10 +1479,22 @@ user-ruled badge persistence).
   counts (fixed 300 ms debounce, `watcher/mod.rs`). Least certain; writer unknown.
 - **P121e — tags section renders twice per check** (`useTagSync.ts` checking→ready; P118 shape).
 
-## P122 — the `s229d042a` findings P121 left open — `in-progress`
+## P122 — the `s229d042a` findings P121 left open — `awaiting USER CHECKPOINT`
 
-**Current step:** P122a–e implemented. Reviewer and ui-designer both APPROVE. Committing, then
-the bare `pnpm gate`.
+**Current step:** committed as `37bc1d7`.
+- Bare `pnpm gate` on 2026-09-25: **11/11 green, 502.3 s**.
+  - nextest 2772 passed / 11 skipped
+  - vitest 3331/3331
+  - e2e 185 passed, 1 skipped
+  - perf counts 8/8
+  - perf ratchet 42 counts checked, OK.
+  - Log: `D:\Data\Temp\bonsai-p122\gate.log`.
+- **USER CHECKPOINT:** in `pnpm tauri dev` with dev mode on and several repos open, rerun
+  `/perf-review`. Expect:
+  - no `unprompted-shift` attributed to the toolbar or to the collapsed Tags header before Tags is
+    expanded
+  - `event-storm` no longer firing for `repo-changed` / `job-status-changed` fan-out
+  - `superseded-result` info anomalies present, and a handful per session rather than hundreds.
 
 Source: user request 2026-09-25 ("take on your findings"), after the orchestrator's
 `/perf-review` of `s229d042a`. Report: `D:\Data\Temp\bonsai-perf-review\s229d042a.md`. P121
