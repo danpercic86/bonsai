@@ -294,7 +294,10 @@ interfaces from §3 of this contract.
 
 `src/obs/types.ts` (+≈40, ≤315):
 ```ts
-export type StabilityRegion = 'sidebar' | 'graph' | 'details' | 'diff' | 'dock' | 'other';
+export type StabilityRegion = 'sidebar' | 'toolbar' | 'graph' | 'details' | 'diff' | 'dock' | 'other';
+// 'toolbar' added by P122b (2026-09-25). Adding a region is a closed-vocabulary change: extend
+// the Rust StabilityRegion (A14) and the TS union together, keep the round-trip/redaction tests
+// green, and update the Dev privacy copy in the same increment (P120-ui.md amendment).
 export type StabilityPhase = 'boot' | 'interactive';
 export type FocusVia = 'focusout' | 'detached';
 export interface LayoutShiftPayload { region: StabilityRegion; phase: StabilityPhase; hadRecentInput: boolean;

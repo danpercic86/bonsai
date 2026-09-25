@@ -42,8 +42,10 @@ export interface UseTagSync {
   /** Unix secs of the last successful check (for the "last checked" tooltip). */
   checkedAt: number | null;
   /** Run a reconciliation. `force` (manual refresh / focus rescan) bypasses the
-   *  cache but is a no-op until the Tags section has been opened once. */
-  refetch: (opts?: { force?: boolean }) => Promise<void>;
+   *  cache but is a no-op until the Tags section has been opened once.
+   *  `background` (a refresh round's tagSync slice) is likewise a no-op until
+   *  then (P122a): only the section's first expand may start the first check. */
+  refetch: (opts?: { force?: boolean; background?: boolean }) => Promise<void>;
   /** P77 — the auto-fetch trigger, as a stable zero-arg callback. It is
    *  `refetch({ force: true })`: `force` so the ~10 s cache guard cannot swallow a
    *  check that a just-completed network cycle made worth re-running, and still a
@@ -81,8 +83,9 @@ export function useTagSync(repoId: string, remotes: RemoteInfo[]): UseTagSync {
   stateRef.current = state;
 
   const refetch = useCallback(
-    async (opts?: { force?: boolean }) => {
+    async (opts?: { force?: boolean; background?: boolean }) => {
       const force = opts?.force ?? false;
+      const background = opts?.background ?? false;
       if (remoteCount === 0) {
         // §2.4: no remote → feature absent. Keep the tags list, drop any report.
         reqId.current += 1;
@@ -91,7 +94,11 @@ export function useTagSync(repoId: string, remotes: RemoteInfo[]): UseTagSync {
         setChecking(false);
         return;
       }
-      if (force && stateRef.current === 'idle') return;
+      // P122a: a refresh round (watcher/fetch/manual) only RIDES an opt-in. A
+      // non-forced round used to start the first check from idle — an ls-remote
+      // nobody asked for, and a "checking…" → "⚠ N" pill swap that shifted the
+      // Tags header after every background refresh.
+      if ((force || background) && stateRef.current === 'idle') return;
       const now = Date.now();
       // P113b: drop the redundant twin of a check that is ALREADY on the wire —
       // the identical `listTagSync(repoId, null)` would only supersede it. This

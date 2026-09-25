@@ -94,7 +94,9 @@ fn named_changed_props_round_trip() {
 
 // ---- P120 T-R11 — the two stability payloads ------------------------------
 
-const REGIONS: &[&str] = &["sidebar", "graph", "details", "diff", "dock", "other"];
+const REGIONS: &[&str] = &[
+    "sidebar", "graph", "details", "diff", "dock", "toolbar", "other",
+];
 
 fn shift_wire(region: &str) -> serde_json::Value {
     json!({

@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import type { LogSessionInfo } from '../../ipc';
 import type { RedactionMode } from '../../ipc/types/settings';
 import { ExportConfirmDialog, RawNamesConfirmDialog } from './DevConfirmDialogs';
+import { REGIONS } from '../../obs/stability/regions';
 import { SettingsDevPrivacySection } from './SettingsDevPrivacySection';
 
 const noop = () => {};
@@ -275,5 +276,12 @@ describe('dev-mode privacy consent copy', () => {
       />,
     );
     expect(strict.baseElement.querySelector('.dev-warning-bar')).toBeNull();
+  });
+
+  it('names every logged window region in the "contains" list (P120 §3.2, P122b)', () => {
+    // A region added to the closed vocabulary must also be disclosed here.
+    const list = /part of the window — the (.+?) — moves/.exec(panelProse(false))?.[1] ?? '';
+    const named = list.split(/, | or /).sort();
+    expect(named).toEqual(REGIONS.filter((r) => r !== 'other').sort());
   });
 });

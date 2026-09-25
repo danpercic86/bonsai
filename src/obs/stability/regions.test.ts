@@ -36,7 +36,7 @@ describe('regionOf (T-F1)', () => {
   });
 
   it('REGIONS is the closed vocabulary', () => {
-    expect([...REGIONS]).toEqual(['sidebar', 'graph', 'details', 'diff', 'dock', 'other']);
+    expect([...REGIONS]).toEqual(['sidebar', 'graph', 'details', 'diff', 'dock', 'toolbar', 'other']);
     expect(isRegion('graph')).toBe(true);
     expect(isRegion('/etc/passwd')).toBe(false);
   });

@@ -19,6 +19,7 @@ pub enum StabilityRegion {
     Details,
     Diff,
     Dock,
+    Toolbar,
     Other,
 }
 
@@ -30,6 +31,7 @@ impl From<String> for StabilityRegion {
             "details" => StabilityRegion::Details,
             "diff" => StabilityRegion::Diff,
             "dock" => StabilityRegion::Dock,
+            "toolbar" => StabilityRegion::Toolbar,
             _ => StabilityRegion::Other,
         }
     }
@@ -43,6 +45,7 @@ impl StabilityRegion {
             StabilityRegion::Details => "details",
             StabilityRegion::Diff => "diff",
             StabilityRegion::Dock => "dock",
+            StabilityRegion::Toolbar => "toolbar",
             StabilityRegion::Other => "other",
         }
     }

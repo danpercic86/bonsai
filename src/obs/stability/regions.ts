@@ -1,7 +1,7 @@
 /** P120 §3.2 — the closed `data-obs-region` vocabulary and node → region lookup. */
 import type { StabilityRegion } from './types';
 
-export const REGIONS = ['sidebar', 'graph', 'details', 'diff', 'dock', 'other'] as const satisfies readonly StabilityRegion[];
+export const REGIONS = ['sidebar', 'graph', 'details', 'diff', 'dock', 'toolbar', 'other'] as const satisfies readonly StabilityRegion[];
 
 // Compile-time exhaustiveness: every StabilityRegion literal is in REGIONS.
 type Missing = Exclude<StabilityRegion, (typeof REGIONS)[number]>;

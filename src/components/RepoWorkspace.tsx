@@ -880,7 +880,7 @@ export function RepoWorkspace({
           // origin (manual/focus/mutation) pays the ls-remote; `remoteMeta` and
           // watcher-driven rounds run non-forced.
           const forced = slices.tagSyncForcable && userOrigin;
-          tasks.push(refetchTagSync(forced ? { force: true } : undefined));
+          tasks.push(refetchTagSync(forced ? { force: true } : { background: true }));
         }
         await Promise.all(tasks);
       } catch (e) {

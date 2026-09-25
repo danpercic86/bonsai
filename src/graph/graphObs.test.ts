@@ -95,6 +95,32 @@ it('the two dimensions stay distinguishable in one stream', async () => {
   expect(frames().map((f) => f.dim)).toEqual(['paint', 'gap']);
 });
 
+/** P122e — one flushed paint window under `dev`, returning the frame records. */
+async function flushOneWindowWith(dev: DevSettings): Promise<LogRecord[]> {
+  configureObs(dev);
+  const rec = newPaintRecorder();
+  rec.record(12);
+  rec.flushSummary();
+  await flushNow();
+  return frames();
+}
+
+it('P122e: at level debug the captureFrames switch is honoured (off → none)', async () => {
+  expect(await flushOneWindowWith({ ...DEV, level: 'debug', captureFrames: false })).toHaveLength(0);
+});
+
+it('P122e: at level debug the captureFrames switch is honoured (on → a debug record)', async () => {
+  const out = await flushOneWindowWith({ ...DEV, level: 'debug', captureFrames: true });
+  expect(out).toHaveLength(1);
+  expect(out[0].lvl).toBe('debug');
+});
+
+it('P122e: level trace forces frame capture with the switch off', async () => {
+  const out = await flushOneWindowWith({ ...DEV, level: 'trace', captureFrames: false });
+  expect(out).toHaveLength(1);
+  expect(out[0].lvl).toBe('trace');
+});
+
 it('emits nothing while Dev mode is off (§11 zero-cost)', async () => {
   resetObsConfigForTests();
   const rec = newPaintRecorder();

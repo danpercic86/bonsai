@@ -1479,6 +1479,127 @@ user-ruled badge persistence).
   counts (fixed 300 ms debounce, `watcher/mod.rs`). Least certain; writer unknown.
 - **P121e — tags section renders twice per check** (`useTagSync.ts` checking→ready; P118 shape).
 
+## P122 — the `s229d042a` findings P121 left open — `in-progress`
+
+**Current step:** P122a–e implemented. Reviewer and ui-designer both APPROVE. Committing, then
+the bare `pnpm gate`.
+
+Source: user request 2026-09-25 ("take on your findings"), after the orchestrator's
+`/perf-review` of `s229d042a`. Report: `D:\Data\Temp\bonsai-perf-review\s229d042a.md`. P121
+already covered forge statuses, the health refresh, the 30 s clock, watcher measurement and tag
+sync, so they are not repeated here.
+- **P122a — the diff/details pane shifts after a background refresh.**
+  - Field: diff 0.0233 and details 0.0011, both right after a watcher refresh re-fetched the open
+    diff.
+  - Lab: the `background-refresh` interaction reads `layoutShiftsUnprompted: 1` on every run.
+  - Acceptance: that count reaches 0 and the baseline is lowered (`scripts/perf-baseline.json`).
+    Any content change that legitimately changes height is ruled out, not hidden.
+- **P122b — the toolbar's "Fetched Xm ago" label moves the layout twice per auto-fetch**
+  (`WorkspaceToolbar.tsx:144`, `minutesLabel` in `workspaceUtils.ts`).
+  - The toolbar has no `data-obs-region`, so it is logged as `other`.
+  - Acceptance: the label changing width moves nothing, and the toolbar is a named region. Adding
+    a region means extending the closed region enum on both the Rust and TS sides, with the parity
+    and redaction tests.
+- **P122c — every backend event is delivered to all mounted tabs** (1026 UI deliveries for 171
+  `repo-changed` events; 4 of 5 `event-storm` hits).
+  - Establish whether hidden tabs do real work for other repos' events, or only early-return.
+  - Fix the work if it is real. If it is only delivery, fix the rule's counting instead (per event,
+    not per listener). Either way, the field signal must stop being misleading.
+  - **Finding: delivery only.** `onRepoChanged#0` 2496 UI deliveries vs 416 Rust `repo-changed`,
+    and `onJobStatusChanged#0` 612 vs 102 — exactly 6.0×, one per mounted tab. Yet there are only
+    414 `watcher` refresh rounds for those 416 emits (≈1 per emit, not 6). In seq 32056–32099, each
+    cluster of 6 same-`mono` deliveries is followed by exactly one tab's render set. Every listener
+    early-returns on `repoId` (`useRepoChangeSubscription.ts`, `useJobStatus.ts`,
+    `RepoHealthPanel.tsx:371`, `AiAssetsPanel.tsx:108`). The `event-storm` "20 deliveries within
+    1000ms" hits were therefore about 4 backend emits.
+  - **Rule change (the counting, at the producer).** `ipcProxy.ts` `noteDelivery` now writes ONE
+    `event` record per backend emit, with the true fan-out in `listeners` (it used to hard-code 1).
+    Tauri's emit function (`tauri-2.11.5/src/event/mod.rs:224`) and the mock's `Set` loop hand the
+    same payload object to every listener synchronously in one turn. So same-slot deliveries that
+    share a payload object within a turn, each to a distinct listener, count as one emit. The sink
+    rule is unchanged and now counts emits. Why the producer and not the sink: a sink-side
+    `(name, ts)` dedupe would infer from timestamps (one cluster in the log straddles a ms
+    boundary) and leave `listeners` wrong. Costs, accepted: the record is written at the end of
+    the turn, so records the callbacks log synchronously precede it; `causedBy` is the first
+    listener's trace. Test: `src/obs/ipcProxyFanout.test.ts` (6 tabs → one record with
+    `listeners: 6`; 20 emits × 6 tabs → 20 records, not 120).
+  - **Not delivery-only, and NOT fixed: `gitActivitySubscribe#0`** (the 5th hit, seq 55951). Each
+    tab's `useGitDock` → `useGitActivity` subscribes its own channel. `GitActivityEvent` carries
+    **no repo id**, so every tab's dock records every repo's runs (`runsRef` upsert, flush,
+    `RepoWorkspace` render). The effect cleanup (`useGitActivity.ts:215`) never unsubscribes, and
+    Rust prunes a channel only when a send fails, so StrictMode leaks one channel per tab. That
+    gives 12 `git_activity_subscribe` calls, 12 live channels, and 36 deliveries = 3 events × 12.
+    Each channel deserialises its own message, so `noteDelivery` does not coalesce them, and that
+    `event-storm` hit remains an accurate count. Filtering needs a repo id on the Rust payload
+    (contract change). Whether a tab's dock should show only its own repo's activity is a product
+    call. **MUST-FIX follow-up.**
+  - Follow-up: the Rust-side `event` record reports `listeners: 0` for every emit.
+  - Contract follow-up (architect): the P91 §5 row for `superseded-result` still says
+    "where: proxy". It is now emitted by the sink (P122d).
+- **P122d — `superseded-result` never fired**, despite 17 `outcome: superseded` results in the
+  log. Find why the proxy-side rule misses them and fix it, with a test.
+  - **Finding: the rule was never wired.** `superseded-result` had zero hits in `src/` and
+    `src-tauri/` (only the P91 §5 table row). The report says 17; a grep of the log today finds
+    **300** `outcome: superseded` results (the log kept growing after the review). Not reconciled.
+  - **Fix:** the rule is emitted by the **sink** (`anomaly.rs`, `IpcResult` arm, info), not the
+    proxy as §5 said — only the sink knows the result's `seq`, so `refs` is honest. Mirrored in
+    `src/ipc/mock/obsAnomaly.ts`.
+  - **The stamp was wrong too.** `latestSpan` was keyed per `cmd`, so repo B's call in flight made
+    repo A's result "superseded", and a subscription (`onRepoChanged` ×11 etc.) resolving counted.
+    Now it is keyed `cmd` + repo (`repoIdArg`, else the first string argument), and calls with a
+    callback argument are skipped. Replaying the log with that key (argsHash standing in for the
+    fallback): **300 → ~22** (StrictMode double-mount `signingStatus`/`getJobStatus` 6+6, forge
+    last-wins 10). Tests: `tests_anomaly::superseded_result_*`, `ipcProxyFanout.test.ts`
+    (P122d block), `obsAnomaly.test.ts`.
+  - Follow-up, not fixed: `effect-no-change` (§5, site `useTracedEffect`) is also only mentioned
+    in a comment (`src/obs/react.ts:113`), so check it for the same never-wired defect.
+- **P122e — zero `frame` records at `level: trace`**, which should force frame capture on.
+  Establish whether the recorder only emits while the graph scrolls (acceptable, so document it) or
+  is not hooked up (fix it).
+  - **Finding: wired, but batched.** The log has one `frame` record (seq 56260, `dim: paint`,
+    worstMs 23.9), right after the session's only gesture (a fetch click, seq 55919). That proves
+    the path works. Records are written only at `flushSummary()`, i.e. every `LOG_EVERY = 120`
+    recorded frames per dimension per GraphCanvas instance (`useFrameRecorder.ts`). `gap` frames
+    need active scrolling. Graph scrolling is not a logged gesture, so a short scroll cannot be
+    ruled out, but an hour of mostly-idle use yielding ~1 record is expected. Documented at
+    `LOG_EVERY`.
+  - **Real defect fixed:** `obsCaptureFrames()` had no consumer. `graphObs.ts` gated on
+    `obsEnabled()` and inherited the kind's `trace` level, so the `dev.captureFrames` switch did
+    nothing below trace. It now gates on `obsCaptureFrames()`, and under the switch the record is
+    `debug`. This did not affect `s229d042a`, which ran at trace. Tests: `graphObs.test.ts` (P122e ×3).
+  - Follow-up, not fixed: the record's `ts` is the flush time, so `jank-trace` can attribute a
+    window's `worstMs` to traces opened up to 120 paints later.
+
+**P122 review (2026-09-25):**
+- Reviewer: APPROVE, no MUST-FIX. It ran vitest 1367/1367 and nextest 108/108.
+- ui-designer: APPROVE on all three visible items: the 15ch readout slot, Tags gated on first
+  expand (restores P77 L74/L259), and the privacy copy. `P120-ui.md` was amended.
+- Contracts amended in this increment:
+  - P91 §5 `event-storm` now counts backend emits, and `superseded-result` now lives in the sink.
+  - P120 §3.1 gains the `toolbar` region.
+- The gate's `test:perf:counts` now also runs `toolbarReadoutShift.spec`, so P122b is guarded.
+
+**P122 follow-ups (need a user ruling or a later increment):**
+- **git-activity events carry no repo id (user ruling needed).** Every tab's dock records every
+  repo's runs, so hidden tabs do real work for other repos' events (5th `event-storm` hit).
+  Question: should each tab's dock show only its own repo? That needs a repo id in
+  `GitActivityEvent` (Rust payload).
+- **Bug, fix regardless:** the `useGitActivity.ts` cleanup never unsubscribes
+  (`gitActivitySubscribe`). StrictMode leaves 12 channels open in dev, and closing a tab leaks its
+  channel in prod.
+- **Tags re-check jiggle:** after the first check, every re-check swaps "⚠ N" → "checking…" →
+  "⚠ N". ui-designer's proposal: keep the pill during a re-check and mark it with `aria-busy` plus
+  a static dashed outline that takes no layout space. That reverses P121's "rollup shows checking…"
+  test (`TagsSection.recheck.test.tsx` L121–129), so it needs a user ruling.
+- `toolbarReadoutShift.spec`: add a fit check (`scrollWidth <= clientWidth`) for "Fetched 59m ago"
+  and "Fetched 23h ago" (ui-designer SHOULD-FIX).
+- The zero `recalcStyle`/`layout` ceilings for `background-refresh` are exact. Watch for a 1-rep
+  flake, like `stage-unstage`'s 1/24 in P121.
+- `effect-no-change` may never have been wired, like `superseded-result` was (`react.ts:113`).
+- The Rust-side `event` record always reports `listeners: 0`.
+- The `details` field shift (0.0011) from `s229d042a` did not reproduce in the lab and is still
+  unexplained.
+
 ## Follow-ups, ranked, none blocking
 
 - **✅ SPLIT 2026-09-16 (`934a280`) — both zero-slack files now have room, and the baseline is

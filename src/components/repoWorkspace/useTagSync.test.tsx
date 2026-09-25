@@ -142,6 +142,30 @@ describe('useTagSync lifecycle', () => {
     expect(result.current.state).toBe('idle');
   });
 
+  it('P122a: a background refresh round never starts the first check, only rides one', async () => {
+    const clock = fakeClock();
+    const spy = vi.spyOn(mockIpc, 'listTagSync').mockResolvedValue(report());
+    const { result } = renderHook(() => useTagSync(REPO, ORIGIN));
+    await act(async () => {
+      await result.current.refetch({ background: true });
+    });
+    expect(spy).not.toHaveBeenCalled();
+    expect(result.current.state).toBe('idle');
+    expect(result.current.checking).toBe(false);
+
+    // The section's first expand (plain refetch) opts in…
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
+    // …after which background rounds re-check (outside the cache window).
+    clock.advance(11_000);
+    await act(async () => {
+      await result.current.refetch({ background: true });
+    });
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
   it('no remote configured: short-circuits to idle with no fetch', async () => {
     const spy = vi.spyOn(mockIpc, 'listTagSync');
     const { result } = renderHook(() => useTagSync(REPO, []));

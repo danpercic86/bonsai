@@ -151,7 +151,7 @@ export function WorkspaceToolbar({
 
   return (
     <>
-      <div className="workspace-toolbar">
+      <div className="workspace-toolbar" data-obs-region="toolbar">
         <div className="toolbar-center">
           <button
             type="button"
@@ -174,7 +174,7 @@ export function WorkspaceToolbar({
             <span>{remoteOp === 'fetch' ? 'Fetching…' : 'Fetch'}</span>
           </button>
           {autoFetchReadout !== null && (
-            <span className="toolbar-job-status" title={autoFetchReadout.title}>
+            <span className="toolbar-job-status toolbar-fetch-age" title={autoFetchReadout.title}>
               {autoFetchReadout.text}
             </span>
           )}

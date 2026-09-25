@@ -4,7 +4,7 @@
 
 use super::is_mutation_cmd;
 use super::tests_anomaly_support::*;
-use crate::obs::record::{AnomalySeverity, LogPayload};
+use crate::obs::record::{AnomalySeverity, IpcOutcome, LogPayload};
 
 // ---- dup-ipc ---------------------------------------------------------------
 
@@ -134,6 +134,49 @@ fn event_storm_true_negative() {
         h.feed(event(1000 + i, "focus"));
     }
     assert_eq!(h.count("event-storm"), 0);
+}
+
+// ---- superseded-result (P122d) ---------------------------------------------
+
+fn with_outcome(
+    mut r: crate::obs::record::LogRecord,
+    o: IpcOutcome,
+) -> crate::obs::record::LogRecord {
+    if let LogPayload::IpcResult { outcome, .. } = &mut r.payload {
+        *outcome = o;
+    }
+    r
+}
+
+#[test]
+fn superseded_result_true_positive() {
+    let mut h = H::new();
+    let seq = h.feed(with_trace(
+        with_outcome(
+            ipc_result(1000, "listBranches", 5.0),
+            IpcOutcome::Superseded,
+        ),
+        "t1",
+    ));
+    assert_eq!(h.count("superseded-result"), 1);
+    let a = h.find("superseded-result").expect("anomaly emitted");
+    assert_eq!(refs_of(a), &[seq]);
+    assert_eq!(severity_of(a), Some(AnomalySeverity::Info));
+}
+
+#[test]
+fn superseded_result_true_negative_other_outcomes() {
+    let mut h = H::new();
+    h.feed(ipc_result(1000, "listBranches", 5.0));
+    h.feed(with_outcome(
+        ipc_result(1001, "listBranches", 5.0),
+        IpcOutcome::Err,
+    ));
+    h.feed(with_outcome(
+        ipc_result(1002, "listBranches", 5.0),
+        IpcOutcome::Aborted,
+    ));
+    assert_eq!(h.count("superseded-result"), 0);
 }
 
 // ---- watcher-storm ---------------------------------------------------------

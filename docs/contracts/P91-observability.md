@@ -556,10 +556,10 @@ Site-local rules are emitted by the site that has the knowledge. Cross-record ru
 | `effect-no-change` | site (`useTracedEffect`) | — | effect re-ran with `changedDeps.length === 0` | warn |
 | `effect-thrash` | sink | 1 s | same `component.effect` ran ≥5× | warn |
 | `render-storm` | sink | 1 s | a `render.tally` window reports `renders > 3 × instances` | warn |
-| `event-storm` | sink | 1 s | same event `name` ≥20 deliveries | warn |
+| `event-storm` | sink | 1 s | same event `name` ≥20 **backend emits** (amended P122c, 2026-09-25: one `event` record per emit, with the UI fan-out in `listeners`; before, one record per listener delivery made 6 open tabs read as a 6× storm) | warn |
 | `watcher-storm` | sink | 1 s | ≥5 debounce firings | warn |
 | `jank-trace` † | sink | — | `frame.worstMs > 100` ⇒ attribute to traces with an open span at that ts | warn |
-| `superseded-result` | proxy | — | `outcome: 'superseded'` | info |
+| `superseded-result` | sink (amended P122d, 2026-09-25: it was never emitted from the proxy; only the sink knows the record's `seq`; the supersede stamp is keyed per cmd + repo, and subscriptions are skipped) | — | `outcome: 'superseded'` | info |
 | `orphan-trace` | sink | session end | trace with `ipc.call` and no `ipc.result` | error |
 | `unbatched-sink` | sink | 1 s | ≥10 `log_append` calls | info |
 | `drop` | sink | — | records dropped by backpressure | error |

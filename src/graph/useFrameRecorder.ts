@@ -8,7 +8,17 @@
 import { useCallback, useRef } from 'react';
 import { newGapRecorder, newPaintRecorder } from './graphObs';
 
-/** Log a `[bonsai] frames` summary every this many recorded frames. */
+/** Log a `[bonsai] frames` summary every this many recorded frames.
+ *
+ *  P122e — this is ALSO the `frame` log-record cadence: `flushSummary()` is what
+ *  fires the recorder's `onWindow` (`graphObs.ts`), so one record per dimension
+ *  per GraphCanvas instance per 120 recorded frames. `paint` frames come from
+ *  canvas repaints (scroll, data refresh, hover); `gap` frames only while
+ *  scrolling. An hour of mostly-idle use (session `s229d042a`: one gesture —
+ *  a fetch click — though graph scrolling is not a logged gesture, so a short
+ *  scroll of <120 frames is not ruled out) therefore yields ~1 record, and that
+ *  is expected, not a wiring fault. Known limit: the record's `ts` is the flush time, so `jank-trace` may
+ *  attribute a window's `worstMs` to traces open up to 120 paints later. */
 const LOG_EVERY = 120;
 
 export function useFrameRecorder() {

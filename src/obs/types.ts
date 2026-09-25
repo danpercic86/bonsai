@@ -227,7 +227,7 @@ export interface AnomalyPayload {
 
 /** P120 §3.1 — closed stability vocabulary (never a path or user string).
  *  Mirrors `src-tauri/src/obs/record_stability.rs`. */
-export type StabilityRegion = 'sidebar' | 'graph' | 'details' | 'diff' | 'dock' | 'other';
+export type StabilityRegion = 'sidebar' | 'graph' | 'details' | 'diff' | 'dock' | 'toolbar' | 'other';
 export type StabilityPhase = 'boot' | 'interactive';
 export type FocusVia = 'focusout' | 'detached';
 

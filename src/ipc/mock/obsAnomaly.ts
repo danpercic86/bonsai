@@ -11,8 +11,8 @@
  * with no Tauri"; §12 gate row 5).
  *
  * SCOPE: the three rules the gate names — `dup-ipc`, `slow-command`,
- * `slow-phase` — plus P120's `unprompted-shift` / `focus-steal`, mirrored in
- * `obsAnomalyStability.ts`. The other §5 rules are deliberately NOT implemented
+ * `slow-phase` — plus P122d's `superseded-result` and P120's `unprompted-shift`
+ * / `focus-steal`, mirrored in `obsAnomalyStability.ts`. The other §5 rules are deliberately NOT implemented
  * here; the Rust detector owns the full set.
  *
  * Design: a retrospective, dump-time BATCH pass over the ring (no streaming state
@@ -180,6 +180,18 @@ export function analyzeAnomalies(records: readonly LogRecord[]): LogRecord[] {
       const cmd = String(rec.cmd ?? '');
       const ms = Number(rec.ms ?? 0);
       const trace = typeof rec.trace === 'string' ? rec.trace : undefined;
+      // P122d — `superseded-result`, mirroring `anomaly.rs` (same text, emitted
+      // before `slow-command` for the same record, as there).
+      if (rec.outcome === 'superseded') {
+        emit(
+          'superseded-result',
+          'info',
+          `${cmd}: result arrived after a newer call for the same repo`,
+          [rec.seq],
+          trace ? [trace] : [],
+          ts,
+        );
+      }
       const { floor, k } = slowRuleFor(cmd);
       const samples = baselines.get(cmd) ?? [];
 

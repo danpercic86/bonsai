@@ -33,9 +33,9 @@ export function SettingsDevPrivacySection({ rawNames }: { rawNames: boolean }) {
           <strong>A log file contains:</strong> what you clicked, which commands the app ran, how
           long they took, whether they succeeded, how often the screen redrew, and problems Bonsai
           flagged along the way. On Windows it also notes when part of the window — the sidebar,
-          graph, details, diff or dock — moves without you doing anything, and on every system it
-          notes when keyboard focus is lost without a click or key press. Each notes only which
-          area of the window was involved, never what was in it.
+          toolbar, graph, details, diff or dock — moves without you doing anything, and on every
+          system it notes when keyboard focus is lost without a click or key press. Each notes only
+          which area of the window was involved, never what was in it.
         </p>
         <p>
           <strong>A log file never contains — in any mode:</strong> your commit messages, your

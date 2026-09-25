@@ -360,3 +360,14 @@
   white-space: nowrap;
 }
 
+/* P122b: the toolbar group is centred, so any width change of the auto-fetch
+   readout moved every neighbour ("Fetched 5m ago" -> "<1m" -> "1m" around each
+   auto-fetch). The slot reserves the widest steady-state label ("Fetched 59m
+   ago" / "23h") and the text stays start-aligned with tabular digits, so a
+   clock tick moves nothing. Scoped: `.toolbar-phase` shares the base class. */
+.toolbar-fetch-age {
+  display: inline-block;
+  min-width: 15ch;
+  font-variant-numeric: tabular-nums;
+}
+

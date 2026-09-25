@@ -32,11 +32,11 @@
         "focusLosses": 0
       },
       "background-refresh": {
-        "reactCommits": 3,
-        "ipcCalls": 10,
-        "recalcStyle": 2,
-        "layout": 2,
-        "layoutShiftsUnprompted": 1,
+        "reactCommits": 2,
+        "ipcCalls": 9,
+        "recalcStyle": 0,
+        "layout": 0,
+        "layoutShiftsUnprompted": 0,
         "focusLosses": 0
       },
       "scroll-20k": {

@@ -35,7 +35,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use super::record::{AnomalySeverity, LogPayload, LogRecord, LogSource};
+use super::record::{AnomalySeverity, IpcOutcome, LogPayload, LogRecord, LogSource};
 
 mod cache;
 mod slow;
@@ -123,9 +123,26 @@ impl AnomalyDetector {
                 self.detect_dup_ipc(ts, seq, cmd, args_hash, &mut out);
                 self.track_open_call(rec.trace.as_deref(), seq);
             }
-            LogPayload::IpcResult { cmd, ms, .. } => {
+            LogPayload::IpcResult {
+                cmd, ms, outcome, ..
+            } => {
                 let trace = rec.trace.clone();
                 self.close_open_call(trace.as_deref());
+                // P122d — §5 `superseded-result`. The contract row said "proxy",
+                // but no code ever emitted it (0 hits in a session with 300
+                // `outcome: superseded` results). It lives here instead because
+                // only the sink knows the result's `seq`, so `refs` is honest.
+                // The proxy still owns the `superseded` STAMP (`ipcProxy.ts`).
+                if *outcome == IpcOutcome::Superseded {
+                    out.push(self.anomaly(
+                        "superseded-result",
+                        AnomalySeverity::Info,
+                        format!("{cmd}: result arrived after a newer call for the same repo"),
+                        vec![seq],
+                        traces_of(rec),
+                        ts,
+                    ));
+                }
                 self.slow
                     .on_ipc_result(ts, seq, cmd, *ms, trace.as_deref(), &mut out);
             }

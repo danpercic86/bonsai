@@ -17,7 +17,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test --grep-invert @perf",
     "test:perf": "playwright test --project=perf",
-    "test:perf:counts": "playwright test --project=perf interactions.spec",
+    "test:perf:counts": "playwright test --project=perf interactions.spec toolbarReadoutShift.spec",
     "test:rust": "cargo nextest run --workspace",
     "gate": "node scripts/gate.mjs",
     "preview": "vite preview",

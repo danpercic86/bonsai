@@ -89,3 +89,15 @@ describe('slow-command + slow-phase (mock fixture)', () => {
     expect(analyzeAnomalies(records).filter((r) => r.rule === 'slow-command')).toHaveLength(0);
   });
 });
+
+describe('superseded-result (P122d, mirrors anomaly.rs)', () => {
+  it('fires one info anomaly per superseded result, and none for ok', () => {
+    const superseded = { ...result('listBranches', 5, 1000, 't1'), outcome: 'superseded' } as LogRecord;
+    const records = withSeqs([result('listBranches', 5, 990), superseded]);
+    const hits = analyzeAnomalies(records).filter((r) => r.rule === 'superseded-result');
+    expect(hits).toHaveLength(1);
+    expect(hits[0].severity).toBe('info');
+    expect(hits[0].refs).toEqual([records[1].seq]);
+    expect(hits[0].traces).toEqual(['t1']);
+  });
+});
