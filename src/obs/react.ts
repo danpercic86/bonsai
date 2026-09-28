@@ -49,18 +49,18 @@ function changedNames(
  * That is the correct trade: the whole point of §9.1 is to make a render that
  * should not have happened visible, and an effect-based emit would miss renders
  * that bail out before commit — exactly the ones worth catching. The doubling is
- * uniform, dev-only, and `render-storm` (§5) thresholds are set against it.
+ * uniform and dev-only; `each`-mode `render` records are not consumed by any
+ * anomaly rule, so read their counts with the factor in mind.
  *
  * `aggregate` does NOT collapse the doubling — it collapses the RECORD count, not
  * the render count. `renderTally.ts` adds 1 to `renders` per render body, while
  * `instanceId` below is minted once per instance, so under StrictMode `renders`
- * doubles and `instances` does not: the `renders / instances` ratio in a
- * `render.tally` is **2x inflated in dev**. The `render-storm` rule is
- * `renders > 3 * instances` (`src-tauri/src/obs/anomaly.rs`), so with the
- * inflation any window in which a component genuinely commits twice per instance
- * already reads as 4 renders per instance and trips the rule. Read dev
- * `render-storm` warnings on aggregate surfaces with that factor in mind (and any
- * renders-per-instance budget asserted in a StrictMode test likewise).
+ * doubles and `instances` does not. `renders` stays RAW on the wire; instead
+ * each `render.tally` carries `strictModeDoubling` (declared by `main.tsx` via
+ * `setStrictModeDoubling`), and `render-storm` (`src-tauri/src/obs/anomaly.rs`)
+ * doubles its `3 * instances` budget when it is set — so the rule means 3× REAL
+ * renders. A renders-per-instance budget asserted in a StrictMode test still sees
+ * the raw, doubled count.
  *
  * OMITTING `props` means NOT TRACKED, and the emitted record omits
  * `changedProps` entirely to say so. Passing a bag that saw no change reports

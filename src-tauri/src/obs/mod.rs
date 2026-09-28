@@ -101,6 +101,10 @@ mod tests_stability_redaction;
 #[path = "tests_stability_fixture.rs"]
 mod tests_stability_fixture;
 
+#[cfg(test)]
+#[path = "tests_ui_settings_masking.rs"]
+mod tests_ui_settings_masking;
+
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 

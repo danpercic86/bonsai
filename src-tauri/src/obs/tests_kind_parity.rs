@@ -170,6 +170,7 @@ fn one_per_variant() -> Vec<LogPayload> {
             instances: 0,
             changed_props: None,
             traces: vec![],
+            strict_mode_doubling: false,
         },
         LogPayload::Effect {
             component: s(),

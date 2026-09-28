@@ -152,6 +152,10 @@ export interface RenderTallyPayload {
    *  a tally that can only ever say `[]` reports nothing. */
   changedProps?: string[];
   traces: TraceId[];
+  /** `renders` counts render-BODY invocations; `true` ⇒ this window ran under
+   *  React StrictMode in a dev build, so `renders` is 2× the real renders and
+   *  Rust's `render-storm` doubles its budget. Absent ⇒ `false`. */
+  strictModeDoubling?: boolean;
 }
 
 export interface EffectPayload {

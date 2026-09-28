@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { setStrictModeDoubling } from './obs/renderTally';
 import { startStability } from './obs/stability/install';
 import { MockProfiler } from './obs/stability/MockProfiler';
 import './styles.css';
@@ -19,6 +20,11 @@ const app = (
     <App />
   </ErrorBoundary>
 );
+
+// The root below is wrapped in <StrictMode>, which double-invokes render bodies
+// in a dev build only — so `render.tally` records say so, and `render-storm`
+// judges real renders (user ruling 2026-09-28). Keep in step with the wrapper.
+setStrictModeDoubling(import.meta.env.DEV);
 
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>

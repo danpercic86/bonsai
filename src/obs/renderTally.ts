@@ -32,8 +32,19 @@ interface Bucket {
 }
 
 let buckets = new Map<string, Bucket>();
+/** Whether render bodies run twice (React StrictMode in a dev build). Only the
+ *  root knows it installed `<StrictMode>`, so `main.tsx` declares it; the
+ *  default `false` is right for every non-StrictMode mount (and most tests). */
+let strictModeDoubling = false;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let windowStart = 0;
+
+/** Declare whether render bodies are double-invoked (React StrictMode, dev
+ *  build). Stamped onto every `render.tally` so Rust's `render-storm` rule can
+ *  judge REAL renders deterministically instead of assuming a factor. */
+export function setStrictModeDoubling(on: boolean): void {
+  strictModeDoubling = on;
+}
 
 /** Accumulate one render of `component` from `instanceId`. Called only from the
  *  enabled path of `useRenderCount(mode: 'aggregate')`. */
@@ -80,6 +91,7 @@ export function flushRenderTally(): void {
       instances: b.instances.size,
       ...(b.changedProps === null ? {} : { changedProps: [...b.changedProps] }),
       traces: [...b.traces],
+      ...(strictModeDoubling ? { strictModeDoubling: true } : {}),
     });
   }
 }
@@ -92,4 +104,5 @@ export function __resetRenderTally(): void {
   }
   buckets = new Map();
   windowStart = 0;
+  strictModeDoubling = false;
 }

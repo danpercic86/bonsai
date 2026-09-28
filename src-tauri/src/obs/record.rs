@@ -298,6 +298,14 @@ pub enum LogPayload {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         changed_props: Option<Vec<String>>,
         traces: Vec<String>,
+        /// `renders` counts RENDER-BODY invocations, so under React StrictMode
+        /// (dev builds only) it is 2× the real renders while `instances` is not.
+        /// The producer states it (`src/main.tsx` → `renderTally.ts`) rather than
+        /// Rust guessing, so `render-storm` doubles its budget only when it applies.
+        /// Absent ⇒ `false` (every pre-flag record), and omitted on the wire when
+        /// `false` — additive, no `OBS_SCHEMA_VERSION` move.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        strict_mode_doubling: bool,
     },
     #[serde(rename = "effect")]
     Effect {

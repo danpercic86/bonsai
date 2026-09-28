@@ -208,6 +208,17 @@ pub(super) fn watcher(ts: i64, fired: bool) -> LogRecord {
 }
 
 pub(super) fn render_tally(ts: i64, component: &str, renders: u64, instances: u64) -> LogRecord {
+    render_tally_with(ts, component, renders, instances, false)
+}
+
+/// [`render_tally`] with the producer's StrictMode-doubling flag stated.
+pub(super) fn render_tally_with(
+    ts: i64,
+    component: &str,
+    renders: u64,
+    instances: u64,
+    strict_mode_doubling: bool,
+) -> LogRecord {
     base(
         ts,
         LogPayload::RenderTally {
@@ -217,6 +228,7 @@ pub(super) fn render_tally(ts: i64, component: &str, renders: u64, instances: u6
             instances,
             changed_props: None,
             traces: vec![],
+            strict_mode_doubling,
         },
     )
 }

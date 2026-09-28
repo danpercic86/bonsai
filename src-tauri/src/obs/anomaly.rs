@@ -168,15 +168,29 @@ impl AnomalyDetector {
                 component,
                 renders,
                 instances,
+                strict_mode_doubling,
                 ..
             } => {
-                if *renders > 3 * (*instances) {
+                // `3×` means 3× REAL renders: under StrictMode every render body
+                // runs twice, so the raw count is compared against a doubled
+                // budget (multiply, not divide — no rounding at the boundary).
+                // Saturating: both counts arrive from the webview via `log_append`.
+                let factor: u64 = if *strict_mode_doubling { 2 } else { 1 };
+                let budget = instances.saturating_mul(3).saturating_mul(factor);
+                if *renders > budget {
+                    let real = renders / factor;
+                    let detail = if *strict_mode_doubling {
+                        format!(
+                            "{component}: {real} renders vs {instances} instances in window \
+                             ({renders} raw, StrictMode-doubled)"
+                        )
+                    } else {
+                        format!("{component}: {renders} renders vs {instances} instances in window")
+                    };
                     out.push(self.anomaly(
                         "render-storm",
                         AnomalySeverity::Warn,
-                        format!(
-                            "{component}: {renders} renders vs {instances} instances in window"
-                        ),
+                        detail,
                         vec![seq],
                         traces_of(rec),
                         ts,
@@ -425,6 +439,10 @@ mod tests_anomaly_repo;
 #[cfg(test)]
 #[path = "tests_anomaly_stability.rs"]
 mod tests_anomaly_stability;
+
+#[cfg(test)]
+#[path = "tests_render_storm.rs"]
+mod tests_render_storm;
 
 #[cfg(test)]
 #[path = "tests_histogram.rs"]
