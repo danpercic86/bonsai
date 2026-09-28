@@ -55,8 +55,9 @@ Added 2026-09-17 after a literal ZERO WIDTH SPACE was found in `P107-F2-copy-chi
 - Bottom dock (P68e): full-width third child of `.workspace-host`, `flex: none`, absent from the
   DOM until an AI run exists. Never overlaps the panes — it takes height from them. See §9.
 - Header toolbar (P69): `.header-toolbar` lives in `HeaderToolbar.tsx`, not in `App.tsx`. Order,
-  left to right: theme · list view · AI assets · health · **dev (P91, conditional)** · settings ·
-  **identity** (§12.6). The identity control is the far-right "account slot"; repo-scoped controls
+  left to right: theme · list view · AI assets · health · **dependencies (P125, repo-scoped)** ·
+  **dev (P91, conditional)** · settings · **identity** (§12.6). The dependencies button may carry a
+  §11 toolbar count chip (vulnerabilities only). The identity control is the far-right "account slot"; repo-scoped controls
   in the toolbar render only when a repo is open, and the **dev indicator renders only while Dev
   mode is on** (§12.11).
 
@@ -1689,6 +1690,19 @@ row badges (`.submodule-badge-*`, shared by submodule and worktree rows — `Sid
   `, checking again` to the `aria-label`, and use `… — checking again…` in the `title`, because
   `aria-busy` alone isn't announced. No motion. A participle pill appears only when there's no
   settled verdict yet. A clean section re-checks badge-less. See `P123-ui.md` §1.
+- **Toolbar count chip (added 2026-09-28, P125).** This is the one shape for "an icon button has
+  something that needs attention". Use it only for a verdict that warrants reaching the user
+  unprompted, such as vulnerabilities — never for routine counts like available updates.
+  - The `.btn-icon` grows to `width: auto; padding: 0 6px 0 4px; gap: 4px`, and holds the icon plus
+    a chip.
+  - Chip: height 16px, `padding: 0 5px`, radius 999, 600 11px tabular-nums, `--text-1` count. Over
+    `--bg-1` it has a 14% hue tint and a 40% hue border, plus a leading 100% `aria-hidden` verdict
+    glyph (`⊘` danger: **3.8:1** in both themes; count **11.6 / 12.6**). The count is capped at
+    `99+`.
+  - The chip is `aria-hidden`; the count goes in the button's `aria-label` (`Dependencies,
+    3 vulnerable`).
+  - While a re-check runs, apply the re-check pill cue above to the chip.
+  - The button never spins, and no chip means no toolbar running cue. Spec: `P125-ui.md` §3.
 - **Density-invariant** — pills live in the sidebar and chrome, which have one geometry (§3).
 - **A pill is one line (§3.0, P111).** Every pill here is `flex: none` with a closed-set label, so it
   is already safe. The rule matters for the *other* stadium boxes — chips holding a branch name, a
