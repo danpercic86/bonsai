@@ -29,6 +29,11 @@ yaml-rust2 = { version = "0.13", default-features = false }
 # own depth bound). Every parse is preceded by `toml_scan::check_depth`
 # `[HIGH-2]`; a `toml::de::Error` is mapped by span only, never `Display`ed.
 toml = { version = "1", default-features = false, features = ["std", "parse", "serde"] }
+# P125c2: NuGet.Config / MSBuild project files / packages.config. Used ONLY
+# through the pull `Reader` event API (`xml_events.rs`); no `serialize`
+# (serde) and no `encoding` feature. A DOCTYPE is rejected outright and
+# entities are resolved in-house (the five predefined + char refs only).
+quick-xml = { version = "0.41", default-features = false }
 
 # `FakeHostEnv` for the integration sentinels; never on in production.
 [features]

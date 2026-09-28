@@ -433,6 +433,7 @@ dependencies = [
  "bonsai-deps",
  "git2",
  "proptest",
+ "quick-xml",
  "semver",
  "serde",
  "serde_json",

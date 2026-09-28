@@ -40,6 +40,8 @@ impl FakeFile {
 pub struct FakeHostEnv {
     vars: Vec<(String, String)>,
     user: HashMap<UserConfig, FakeFile>,
+    /// Extra files of a set-valued config (`read_user_files`).
+    user_extra: HashMap<UserConfig, Vec<FakeFile>>,
     above: HashMap<(PathBuf, String), FakeFile>,
     /// Serve above-workdir reads from disk for dirs under this root.
     above_from_disk: Option<PathBuf>,
@@ -69,6 +71,16 @@ impl FakeHostEnv {
     /// production user-file read does).
     pub fn user_file_from_disk(mut self, which: UserConfig, path: &Path) -> Self {
         self.user.insert(which, FakeFile::Disk(path.to_path_buf()));
+        self
+    }
+
+    /// `[P125c2]` one more file of a set-valued config (NuGet
+    /// machine-wide), after the one `user_file` configured.
+    pub fn user_file_also(mut self, which: UserConfig, content: &str) -> Self {
+        self.user_extra
+            .entry(which)
+            .or_default()
+            .push(FakeFile::Content(content.to_string()));
         self
     }
 
@@ -154,6 +166,18 @@ impl HostEnv for FakeHostEnv {
         self.user
             .get(&which)
             .map_or(UserRead::Absent, FakeFile::read)
+    }
+
+    fn read_user_files(&self, which: UserConfig) -> Vec<UserRead> {
+        let mut out = vec![self.read_user_file(which)];
+        out.extend(
+            self.user_extra
+                .get(&which)
+                .into_iter()
+                .flatten()
+                .map(FakeFile::read),
+        );
+        out
     }
 
     fn read_above_workdir(&self, dir: &Path, file_name: &str) -> UserRead {

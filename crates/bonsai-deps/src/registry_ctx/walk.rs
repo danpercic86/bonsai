@@ -25,8 +25,16 @@ pub(super) fn manifest_dirs(
     manifests: &[String],
     manifest_name: &str,
 ) -> Result<BTreeSet<String>, Closed> {
+    manifest_dirs_by(manifests, |n| n == manifest_name)
+}
+
+/// [`manifest_dirs`] for ecosystems with several manifest names.
+pub(super) fn manifest_dirs_by(
+    manifests: &[String],
+    is_manifest: impl Fn(&str) -> bool,
+) -> Result<BTreeSet<String>, Closed> {
     let mut dirs = BTreeSet::from([String::new()]);
-    for m in manifests.iter().filter(|m| file_name(m) == manifest_name) {
+    for m in manifests.iter().filter(|m| is_manifest(file_name(m))) {
         if !path_is_clean(m) {
             return Err(Closed);
         }

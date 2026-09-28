@@ -1,7 +1,7 @@
 //! Shared sentinel harness for `privacy_sentinel.rs` and `token_sentinel.rs`
 //! (E4 rows 6 / 6′).
 //!
-//! P125b/c1 have no transport, so [`local_check`] runs the pipeline that
+//! P125b/c1/c2 have no transport, so [`local_check`] runs the pipeline that
 //! exists (discover → `RegistryContext::load` → adapters → `classify`) and
 //! [`outbound_from_public`] renders what a transport WOULD send for the
 //! `Public` set (a deps.dev GET per package + one OSV querybatch body).
@@ -10,6 +10,7 @@
 #![allow(dead_code)]
 
 pub mod fixture;
+pub mod fixture_pn;
 
 use std::path::Path;
 
@@ -63,7 +64,11 @@ pub fn local_check(workdir: &Path, env: &dyn HostEnv) -> LocalCheck {
         rows: Vec::new(),
         errors: Vec::new(),
     };
-    assert_eq!(ADAPTERS.len(), 3, "npm family, Cargo and Go (P125c1)");
+    assert_eq!(
+        ADAPTERS.len(),
+        5,
+        "npm family, Cargo, Go, PyPI and NuGet (P125c2)"
+    );
     for m in files.manifests() {
         let name = m.rsplit('/').next().unwrap_or(m);
         let Some(adapter) = adapter_for_manifest(name) else {

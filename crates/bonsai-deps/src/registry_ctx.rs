@@ -2,8 +2,8 @@
 //! `privacy::classify` consults, and the loader that gathers them.
 //!
 //! P125b loads the npm family (npm / pnpm / yarn, E3); P125c1 adds Cargo
-//! and Go. PyPI and NuGet stay FAIL-CLOSED until their loaders land
-//! (P125c2).
+//! and Go; P125c2 adds PyPI (pip / uv / Poetry) and NuGet (the NuGet.Config
+//! chain incl. the Q7 above-workdir walk).
 //!
 //! `[MEDIUM-1]` `RegistryContext` has NO Debug, Serialize, Deserialize or
 //! Clone (and deliberately no Default: a default context would be a
@@ -17,7 +17,12 @@ mod host_env;
 mod load_cargo;
 mod load_go;
 mod load_npm;
+mod load_nuget;
+mod load_pypi;
 mod npm_cfg;
+mod nuget_cfg;
+mod nuget_chain;
+mod pip_cfg;
 mod walk;
 
 use std::collections::BTreeMap;
@@ -167,7 +172,12 @@ impl RegistryContext {
         if let Ok(open) = load_go::load(env) {
             *ctx.eco_mut(Ecosystem::Go) = open;
         }
-        // PyPI / NuGet: no loader yet (P125c2) ⇒ closed.
+        if let Ok(signals) = load_pypi::load(&canon, manifests, env) {
+            *ctx.eco_mut(Ecosystem::Pypi) = signals.into_open();
+        }
+        if let Ok(open) = load_nuget::load(&canon, manifests, env) {
+            *ctx.eco_mut(Ecosystem::Nuget) = open;
+        }
         ctx
     }
 
@@ -283,3 +293,11 @@ mod cargo_go_load_tests;
 #[cfg(test)]
 #[path = "registry_ctx/go_load_tests.rs"]
 mod go_load_tests;
+
+#[cfg(test)]
+#[path = "registry_ctx/pypi_load_tests.rs"]
+mod pypi_load_tests;
+
+#[cfg(test)]
+#[path = "registry_ctx/nuget_load_tests.rs"]
+mod nuget_load_tests;

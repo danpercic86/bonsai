@@ -64,17 +64,15 @@ fn bad_config(name: &str) -> &'static str {
 }
 
 #[test]
-fn a_clean_load_opens_npm_cargo_and_go_only() {
+fn a_clean_load_opens_every_ecosystem() {
     let r = repo();
     for name in REPO_FILES {
         fs::write(r.wd.join(name), clean_config(name)).unwrap();
     }
     let ctx = load(&r, &FakeHostEnv::new());
-    for eco in [Ecosystem::Npm, Ecosystem::Cargo, Ecosystem::Go] {
+    // P125c2: PyPI and NuGet have loaders now.
+    for eco in Ecosystem::ALL {
         assert!(!ctx.fail_closed(eco), "{eco:?}");
-    }
-    for eco in [Ecosystem::Pypi, Ecosystem::Nuget] {
-        assert!(ctx.fail_closed(eco), "{eco:?} has no loader yet");
     }
     assert!(ctx.eco(Ecosystem::Npm).default_public);
 }

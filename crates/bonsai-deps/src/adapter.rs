@@ -132,7 +132,7 @@ impl ParseError {
 }
 
 /// 1-based `(line, byte column)` of byte offset `at` in `text`.
-fn line_col(text: &str, at: usize) -> (Option<u32>, Option<u32>) {
+pub(crate) fn line_col(text: &str, at: usize) -> (Option<u32>, Option<u32>) {
     let head = text.as_bytes().get(..at).unwrap_or(text.as_bytes());
     let line = head.iter().filter(|b| **b == b'\n').count() + 1;
     let col = head.iter().rev().take_while(|b| **b != b'\n').count() + 1;
@@ -148,6 +148,13 @@ pub trait EcosystemAdapter: Sync {
     /// Names this manifest DECLARES for itself `[HIGH-1 item 3]`, e.g.
     /// package.json `name`. `manifest` is the file CONTENT.
     fn declared_names(&self, manifest: &str) -> Vec<String>;
+    /// `[P125c2]` [`Self::declared_names`] for an ecosystem whose declared
+    /// name can come from the manifest PATH (NuGet: the project file stem
+    /// is the default package id). `local_names` calls this; the default
+    /// ignores the path.
+    fn declared_names_at(&self, _path: &str, manifest: &str) -> Vec<String> {
+        self.declared_names(manifest)
+    }
     fn parse(&self, input: &ParseInput<'_>) -> Result<ParsedGroup, ParseError>;
 }
 
@@ -155,6 +162,8 @@ pub static ADAPTERS: &[&dyn EcosystemAdapter] = &[
     &crate::eco::npm::NpmAdapter,
     &crate::eco::cargo::CargoAdapter,
     &crate::eco::go_mod::GoAdapter,
+    &crate::eco::pypi::PypiAdapter,
+    &crate::eco::nuget::NugetAdapter,
 ];
 
 /// The adapter whose manifest this file name is.
@@ -202,7 +211,7 @@ pub fn local_names(workdir_canon: &std::path::Path, files: &FileSet) -> crate::p
             continue;
         };
         if let ReadOutcome::Content(text) = safe_read(workdir_canon, m, MAX_FILE_BYTES) {
-            for n in adapter.declared_names(&text) {
+            for n in adapter.declared_names_at(m, &text) {
                 names.insert(adapter.ecosystem(), &n);
             }
         }

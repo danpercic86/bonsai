@@ -93,6 +93,8 @@ zerovec v0.11.8 (*)
 smallvec v1.15.2
 utf8_iter v1.0.4
 percent-encoding v2.3.2
+quick-xml v0.41.0
+memchr v2.8.3
 semver v1.0.28
 serde v1.0.229
 serde_core v1.0.229

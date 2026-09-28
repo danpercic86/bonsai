@@ -110,6 +110,12 @@ pub trait HostEnv: Sync {
     /// target is rejected unopened, a dangling link or > 1 MiB ⇒ Unreadable.
     /// Map with [`UserRead::from_outcome`].
     fn read_user_file(&self, which: UserConfig) -> UserRead;
+    /// `[P125c2]` a user / system config that is a SET of files — only
+    /// [`UserConfig::NugetMachineWide`] (`NuGet/Config/*.config`) today —
+    /// one read per file, same rules as [`HostEnv::read_user_file`]. No
+    /// default body `[P125c2 review]`: every `HostEnv` (the P125e real one
+    /// included) must resolve the set itself.
+    fn read_user_files(&self, which: UserConfig) -> Vec<UserRead>;
     /// `[Q7]` `[Q9-narrowed]` Bounded read of `file_name` in `dir` (an
     /// ancestor ABOVE the workdir) via `fsread::read_above_workdir_config`:
     /// symlinks are followed ONLY when `dir` is `$HOME` / `$CARGO_HOME`

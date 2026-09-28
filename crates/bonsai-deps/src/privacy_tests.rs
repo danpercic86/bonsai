@@ -131,6 +131,9 @@ impl HostEnv for NoEnv {
     fn read_user_file(&self, _: UserConfig) -> UserRead {
         UserRead::Absent
     }
+    fn read_user_files(&self, _: UserConfig) -> Vec<UserRead> {
+        Vec::new()
+    }
     fn read_above_workdir(&self, _: &Path, _: &str) -> UserRead {
         UserRead::Absent
     }
