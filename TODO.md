@@ -458,10 +458,20 @@ incl. P115"**. The orchestrator did not observe the runs; the attestation is wha
 - P119 was still headed `in-progress` on the board, though its body read "AI gate done — awaiting
   USER CHECKPOINT".
 
-## P113d — watcher log volume — `pending`
+## P113d — watcher log volume — `awaiting USER CHECKPOINT`
 
-**Current step:** P113d — contract rev 2 approved (`docs/contracts/P113d-watcher-log-volume.md`);
-implementation not started.
+**Current step:** P113d — code committed `b5d66ec` (contract rev 3.1, `6ccef9e`; P91 §3.2 rule 6
+reader rule added). Defaults taken on the contract flags: 9.7 no schema bump (stays 3), 9.2 repo id
+deferred, 9.6 watcher-storm quirk left as-is. Reviewer APPROVE, no MUST-FIX.
+**AI gate: bare `pnpm gate` 2026-09-28 over `b5d66ec` — all 11 steps passed, 806.0s** (nextest
+2816/2816, 11 skipped; vitest 3368/3368 in 319 files; e2e 185 passed; perf 9 passed; perf ratchet OK).
+**USER CHECKPOINT (criteria 10–15, need a real Dev session):** `pnpm tauri dev` with the usual repos
+for a stretch comparable to 2026-09-22, then in the log: `watcher` records ≤ ~1,200 (was 12,001);
+fired records still ~192; `watcher-storm` / stability anomalies unchanged in kind.
+Review NITs, not blocking: `noise.rs:21` + `record.rs` `skipped_paths` doc should say "except ≤ one
+batch's paths at teardown"; `watcher/mod.rs:13-14` "no timers idle" is stale (60 s outer wake);
+`tests_noise.rs:236` absorbs race the first 50 ms flush (absorb before `Loop::spawn`);
+`tests_noise.rs:65` `mine()` errors-marker needs a comment; `tests_noise.rs` is at 495 lines.
 - Goal: stop the per-raw-batch `watcher` records — 12,001 = 61.4% of the 2026-09-22 log, 11,809
   of them non-firing. Target ≤1,200 records (~6%), firings unchanged at ~192.
 - Logging fix only: do **not** change `DEBOUNCE` (300 ms).
