@@ -83,6 +83,11 @@ crate = "bonsai-forge"
 expression = "MIT"
 license-files = []
 
+[[licenses.clarify]]
+crate = "bonsai-deps"
+expression = "MIT"
+license-files = []
+
 # ---------------------------------------------------------------------------
 # Duplicate / banned crates.
 # ---------------------------------------------------------------------------
@@ -96,7 +101,15 @@ multiple-versions = "allow"
 # Bonsai is an application, never published to crates.io, so this cannot be a
 # hard error. Re-tighten to "deny" if the crates ever gain versioned deps.
 wildcards = "allow"
-deny = []
+# P125 `[HIGH-2]` (audit INFO): the dependency tracker parses repo YAML only
+# through yaml-rust2's bounded event API. These crates are the unmaintained /
+# unsafe-FFI / alias-expanding alternatives it must never pull in.
+deny = [
+    { crate = "yaml-rust" },
+    { crate = "serde_yaml" },
+    { crate = "serde_yml" },
+    { crate = "unsafe-libyaml" },
+]
 
 # ---------------------------------------------------------------------------
 # Where crates may come from.

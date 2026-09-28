@@ -137,8 +137,11 @@ impl HostEnv for NoEnv {
 }
 
 #[test]
-fn stub_loader_fails_closed_for_every_ecosystem() {
-    let reg = RegistryContext::load(Path::new("."), &[], &NoEnv);
+fn loader_fails_closed_for_every_ecosystem_without_a_workdir() {
+    // P125b: the real loader. An unusable workdir leaves every ecosystem
+    // closed; ecosystems without a loader yet (Cargo, PyPI, Go, NuGet until
+    // P125c1/c2) stay closed even with one (see registry_ctx load_tests).
+    let reg = RegistryContext::load(Path::new("./does-not-exist-p125b"), &[], &NoEnv);
     for eco in Ecosystem::ALL {
         assert!(reg.fail_closed(eco));
         assert_eq!(

@@ -1,8 +1,28 @@
 bonsai-deps v0.1.0
-semver v1.0.28
-serde v1.0.229
-serde_core v1.0.229
-serde_derive v1.0.229 (proc-macro)
+git2 v0.21.0
+bitflags v2.13.1
+libc v0.2.189
+libgit2-sys v0.18.8+1.9.7
+libc v0.2.189
+libssh2-sys v0.3.3
+libc v0.2.189
+libz-sys v1.1.29
+libc v0.2.189
+openssl-sys v0.9.117
+libc v0.2.189
+libz-sys v1.1.29 (*)
+openssl-sys v0.9.117 (*)
+log v0.4.34
+openssl-probe v0.1.6
+openssl-sys v0.9.117 (*)
+url v2.5.8
+form_urlencoded v1.2.2
+percent-encoding v2.3.2
+idna v1.1.0
+idna_adapter v1.2.2
+icu_normalizer v2.3.0
+icu_collections v2.3.0
+displaydoc v0.2.7 (proc-macro)
 proc-macro2 v1.0.107
 unicode-ident v1.0.24
 quote v1.0.47
@@ -11,4 +31,85 @@ syn v3.0.4
 proc-macro2 v1.0.107 (*)
 quote v1.0.47 (*)
 unicode-ident v1.0.24
+potential_utf v0.1.6
+zerovec v0.11.8
+yoke v0.8.3
+stable_deref_trait v1.2.1
+yoke-derive v0.8.2 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v2.0.119
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+unicode-ident v1.0.24
+synstructure v0.13.2
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v2.0.119 (*)
+zerofrom v0.1.8
+zerofrom-derive v0.1.7 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v2.0.119 (*)
+synstructure v0.13.2 (*)
+zerofrom v0.1.8 (*)
+zerovec-derive v0.11.6 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v3.0.4 (*)
+utf8_iter v1.0.4
+yoke v0.8.3 (*)
+zerofrom v0.1.8 (*)
+zerovec v0.11.8 (*)
+icu_normalizer_data v2.3.0
+icu_provider v2.3.1
+displaydoc v0.2.7 (proc-macro) (*)
+icu_locale_core v2.3.0
+displaydoc v0.2.7 (proc-macro) (*)
+litemap v0.8.3
+tinystr v0.8.4
+displaydoc v0.2.7 (proc-macro) (*)
+zerovec v0.11.8 (*)
+writeable v0.6.4
+zerovec v0.11.8 (*)
+writeable v0.6.4
+yoke v0.8.3 (*)
+zerofrom v0.1.8 (*)
+zerotrie v0.2.5
+displaydoc v0.2.7 (proc-macro) (*)
+yoke v0.8.3 (*)
+zerofrom v0.1.8 (*)
+zerovec v0.11.8 (*)
+smallvec v1.15.2
+zerovec v0.11.8 (*)
+icu_properties v2.3.0
+displaydoc v0.2.7 (proc-macro) (*)
+icu_collections v2.3.0 (*)
+icu_locale_core v2.3.0 (*)
+icu_properties_data v2.3.0
+icu_provider v2.3.1 (*)
+zerotrie v0.2.5 (*)
+zerovec v0.11.8 (*)
+smallvec v1.15.2
+utf8_iter v1.0.4
+percent-encoding v2.3.2
+semver v1.0.28
+serde v1.0.229
+serde_core v1.0.229
+serde_derive v1.0.229 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v3.0.4 (*)
 serde_derive v1.0.229 (proc-macro) (*)
+serde_json v1.0.151
+itoa v1.0.18
+memchr v2.8.3
+serde v1.0.229 (*)
+serde_core v1.0.229 (*)
+zmij v1.0.23
+url v2.5.8 (*)
+yaml-rust2 v0.13.0
+arraydeque v0.5.1
+hashlink v0.12.2
+hashbrown v0.17.1
+foldhash v0.2.0

@@ -15,7 +15,22 @@ name = "bonsai_deps"
 [dependencies]
 serde = { workspace = true }
 semver = "1"
+# P125b: discovery (index + statuses) is in-process git2.
+git2 = { workspace = true }
+# P125b: package.json / package-lock.json.
+serde_json = { workspace = true }
+# P125b `[MEDIUM-1]`: host extraction for registry URLs.
+url = "2"
+# P125b `[HIGH-2]`: used ONLY through the `parser::Parser` event API
+# (`yaml_events.rs`); `YamlLoader` is banned. No `encoding` feature.
+yaml-rust2 = { version = "0.13", default-features = false }
+
+# `FakeHostEnv` for the integration sentinels; never on in production.
+[features]
+test-support = []
 
 [dev-dependencies]
-serde_json = { workspace = true }
+# Self, with the test double enabled for `tests/`.
+bonsai-deps = { path = ".", features = ["test-support"] }
 proptest = "1.6"
+tempfile = { workspace = true }

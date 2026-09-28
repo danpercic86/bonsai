@@ -1,6 +1,8 @@
 //! Host-environment seam for `RegistryContext::load` (contract §4.4). The
-//! real implementation (env vars, user/system config files, the Q7
-//! above-workdir walk) and the `FakeHostEnv` test double land in P125b.
+//! test double `FakeHostEnv` lives in `fake_env.rs` (`cfg(test)` or the
+//! `test-support` feature). The real implementation (env vars via
+//! `vars_os()`, dropping every non-matching value at once; user/system
+//! config files; the Q7 above-workdir walk) lands with src-tauri in P125e.
 
 use std::fmt;
 use std::path::Path;

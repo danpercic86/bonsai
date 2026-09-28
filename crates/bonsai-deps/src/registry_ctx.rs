@@ -1,17 +1,27 @@
 //! `RegistryContext` (contract §4.4): the per-ecosystem registry signals that
-//! `privacy::classify` consults. P125a ships the TYPE and its no-derive
-//! policy; the loader is a fail-closed stub until P125b.
+//! `privacy::classify` consults, and the loader that gathers them.
+//!
+//! P125b loads the npm family (npm / pnpm / yarn, E3). Cargo, PyPI, Go and
+//! NuGet stay FAIL-CLOSED until their loaders land (P125c1/c2).
 //!
 //! `[MEDIUM-1]` `RegistryContext` has NO Debug, Serialize, Deserialize or
 //! Clone (and deliberately no Default: a default context would be a
 //! fail-OPEN one). Its fields are hosts, scope names, globs and bools only.
 
+#[cfg(any(test, feature = "test-support"))]
+mod fake_env;
 mod globs;
 mod host_env;
+mod load_npm;
+mod npm_cfg;
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
+/// Test double; only with `cfg(test)` or the `test-support` feature, so a
+/// production build cannot construct an (empty, fail-open) fake.
+#[cfg(any(test, feature = "test-support"))]
+pub use fake_env::FakeHostEnv;
 pub use host_env::{HostEnv, UserConfig, UserRead};
 
 use crate::adapter::{DepSource, RegistryRef};
@@ -53,7 +63,7 @@ pub(crate) struct EcoRegistry {
 }
 
 impl EcoRegistry {
-    fn public() -> Self {
+    pub(crate) fn public() -> Self {
         EcoRegistry {
             fail_closed: false,
             default_public: true,
@@ -129,10 +139,23 @@ fn idx(eco: Ecosystem) -> usize {
 }
 
 impl RegistryContext {
-    /// STUB until P125b (ancestor walk, E3 inventory, key-filtered
-    /// extractors). It fails CLOSED for every ecosystem, so nothing wired to
-    /// it early can classify a dependency as Public.
-    pub fn load(_workdir: &Path, _manifests: &[String], _env: &dyn HostEnv) -> RegistryContext {
+    /// §4.4. Starts with EVERY ecosystem fail-closed; an ecosystem is opened
+    /// only when its loader returned `Ok` for every step (so any early
+    /// return or error leaves it closed). `workdir` is canonicalised here;
+    /// failing that, everything stays closed.
+    pub fn load(workdir: &Path, manifests: &[String], env: &dyn HostEnv) -> RegistryContext {
+        let mut ctx = Self::all_closed();
+        let Ok(canon) = std::fs::canonicalize(workdir) else {
+            return ctx;
+        };
+        if let Ok(signals) = load_npm::load(&canon, manifests, env) {
+            *ctx.eco_mut(Ecosystem::Npm) = signals.into_open();
+        }
+        // Cargo / PyPI / Go / NuGet: no loader yet (P125c1/c2) ⇒ closed.
+        ctx
+    }
+
+    fn all_closed() -> Self {
         let mut ctx = Self::no_signals();
         for eco in Ecosystem::ALL {
             ctx.eco_mut(eco).fail_closed = true;
@@ -210,8 +233,29 @@ impl RegistryContext {
     }
 }
 
+/// `[MEDIUM-1]` real URL parse (http/https only); returns the lowercase
+/// host alone — userinfo, port, path, query and fragment are dropped. A
+/// value that does not parse (or has no host) ⇒ None, and the caller fails
+/// closed.
+pub(crate) fn extract_host(raw: &str) -> Option<String> {
+    let url = url::Url::parse(raw.trim()).ok()?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return None;
+    }
+    let host = url.host_str()?.trim_end_matches('.').to_ascii_lowercase();
+    (!host.is_empty()).then_some(host)
+}
+
 /// `@scope/name` ⇒ `@scope` (lowercase).
 fn npm_scope(name: &str) -> Option<String> {
     let (scope, _) = name.strip_prefix('@')?.split_once('/')?;
     Some(format!("@{}", scope.to_ascii_lowercase()))
 }
+
+#[cfg(test)]
+#[path = "registry_ctx/load_tests.rs"]
+mod load_tests;
+
+#[cfg(test)]
+#[path = "registry_ctx/npm_cfg_tests.rs"]
+mod npm_cfg_tests;
