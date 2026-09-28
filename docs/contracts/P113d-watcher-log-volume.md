@@ -1,6 +1,6 @@
 # P113d — Watcher log volume (amendment to P91 §2.4 / §3.1)
 
-**Status:** contract **rev 3** (2026-09-28). Ready for senior-dev.
+**Status:** contract **rev 3.1** (2026-09-28). Implemented (`b5d66ec`); rev 3.1 aligns the text to the as-built code.
 
 **Rev history.**
 - rev 1 — evidence tally wrong; handler-local `NoiseAcc`. Superseded by rev 2.
@@ -11,6 +11,10 @@
   taxonomy updated; (c) `BurstAcc`/`WatchTick` moved to `watcher/burst.rs`; (d) all `file:line`
   citations refreshed; (e) rev 2 §9 flag 1 resolved; (f) test list re-derived (5 payload literals
   + 5 `WatchTick` literals, not 1; new tests in new files).
+- **rev 3.1** (2026-09-28) — text aligned to as-built `b5d66ec`, no design change: (a) §7
+  `tests_anomaly_watcher` is registered in `obs/anomaly.rs`; (b) §4.1 / criterion 5 error guarantee
+  limited to completed bursts; (c) §2.3 citation → `watcher/emit.rs:40-58`; (d) §3 `burstMs`
+  includes the trailing quiet, so burst start ≈ ts − burstMs; (e) §2.2 `take()` re-add documented.
 
 **Scope:** Rust only, plus one TS type mirror. No IPC command/event/channel change, no frontend
 behaviour change, no mock-IPC change, **not a UI change**. **`DEBOUNCE` (300 ms) is not touched** —
@@ -95,7 +99,10 @@ pub(super) const NOISE_FLUSH: Duration = Duration::from_secs(60);
 /// (obs/mod.rs guarantee 1: producers never block a git or UI path).
 /// Ordering caveat: the two atomics are independent, so a drain interleaved
 /// between a producer's two adds may attribute one batch's paths to the next
-/// record. Totals stay exact.
+/// record. If a drain then sees batches == 0 but paths > 0, it fetch_adds those
+/// paths back and returns None (as built, noise.rs:47-60), so totals are exact
+/// while running. Only the final teardown take() can lose paths, and at most
+/// one batch's worth.
 #[derive(Default)]
 pub(super) struct NoiseCounters {
     batches: AtomicU32,
@@ -108,7 +115,8 @@ pub(super) struct SkippedNoise { pub(super) batches: u32, pub(super) paths: u32 
 impl NoiseCounters {
     /// Notify thread. `batches.fetch_add(1)`, `paths.fetch_add(paths)`, Relaxed (§9.5).
     pub(super) fn absorb(&self, paths: u32);
-    /// Debounce thread. `swap(0, Relaxed)` on both; `None` when batches == 0.
+    /// Debounce thread. `swap(0, Relaxed)` on both; `None` when batches == 0,
+    /// in which case any swapped-out paths > 0 are re-added (rev 3.1).
     pub(super) fn take(&self) -> Option<SkippedNoise>;
 }
 ```
@@ -149,7 +157,7 @@ P124b note: noise never enters `BurstAcc` (`relevant == 0` ticks are not sent, `
 /// burst_ms = Some(u32::try_from(acc.started.elapsed().as_millis()).unwrap_or(u32::MAX)),
 /// errors = (acc.errors > 0).then_some(acc.errors), skipped_* from `skipped`.
 /// `suppressed`/`suppress_reason: "ignored"` and the P121d ignore fields exactly
-/// as `mod.rs:79-93` today.
+/// as built at `src-tauri/src/watcher/emit.rs:40-58` (was `mod.rs:79-93`).
 pub(super) fn log_watch_fired(
     acc: &BurstAcc,
     class: BurstClass,
@@ -269,8 +277,9 @@ they are the discriminator. *(Tightens rev 2, which allowed them absent.)*
 /// reader knows the per-batch `fired:false` records no longer exist (§3.2).
 #[serde(default, skip_serializing_if = "Option::is_none")]
 batches: Option<u32>,
-/// P113d: ms from the burst's first batch to the fire (burst start =
-/// ts − burstMs − debounceMs). Always present with `batches`.
+/// P113d: ms from the burst's first batch to the fire = `started.elapsed()`,
+/// INCLUDING the trailing `debounceMs` quiet period (burst start ≈
+/// ts − burstMs). Always present with `batches`.
 #[serde(default, skip_serializing_if = "Option::is_none")]
 burst_ms: Option<u32>,
 /// P113d: notify `Err(_)` events in this burst. Fired records only; omitted when 0.
@@ -326,6 +335,8 @@ Pre-P113d files: `raw_notify_batches = count(source=rust, fired=false)`, as befo
 
 Exactness holds over **completed** bursts; a burst in flight at teardown is dropped without a record
 (unchanged from today's `mod.rs:246`), bounded to one burst per watcher per shutdown.
+Noise totals are exact while running (§2.2 `take()` re-add); at most one batch's `skippedPaths` may
+be lost at the final teardown `take()`.
 
 Record taxonomy (rev 3 — adds the P124b row):
 
@@ -343,9 +354,10 @@ batch can never enter a `BurstAcc`) — never add them without the rule above.
 
 1. **Watcher errors.** `Err(_)` stays `WatchTick { paths: 1, relevant: 1, refs: true, error: true,
    .. }` → always a burst, always `Refs`, never P124b-dropped, so the wide refresh runs. Reported
-   ≤ (burst length + 300 ms) later by `errors` on the fired record closing its burst. **Every notify
-   error is counted by exactly one fired record** — dropped-event recovery; a lost signal here is a
-   correctness bug.
+   ≤ (burst length + 300 ms) later by `errors` on the fired record closing its burst. **For
+   completed bursts, every notify error is counted by exactly one fired record** — dropped-event
+   recovery; a lost signal here is a correctness bug. An error tick in a burst still in flight at
+   teardown is dropped with no record (§2.4 inner-`Disconnected` rule; no `on_change` either).
 2. **Burst classification (P110)** and **the P124b drop rule**: `burstClass`, the conservative
    `refs` fold, `burst_verdict`, `last_fire`, `on_change`, `DEBOUNCE`, the inner drain loop — all
    untouched.
@@ -471,8 +483,8 @@ Integration, same file, under `serialize_watcher_test()` (`tests.rs:20`; reuse `
     a record with `skippedBatches > 0` is on disk. (Windows may coalesce: assert ≥ 1 such record,
     never an exact count.)
 
-**Must add — `src-tauri/src/obs/tests_anomaly_watcher.rs` (NEW; register in `obs/mod.rs` next to
-the `tests_anomaly` declaration; reuse `tests_anomaly_support`'s harness / `watcher()` helper):**
+**Must add — `src-tauri/src/obs/tests_anomaly_watcher.rs` (NEW; registered in `obs/anomaly.rs`
+beside the other `tests_anomaly*` modules, `anomaly.rs:425-445` — not `obs/mod.rs`; reuse `tests_anomaly_support`'s harness / `watcher()` helper):**
 
 12. `noise_summaries_never_feed_watcher_rules` — feed 20 noise-summary-shaped records (`fired:false,
     skippedBatches: Some(k)`) within 1 s: zero `watcher-storm`, and no watcher cause credited by a
@@ -508,8 +520,9 @@ Structural (unit-testable):
 4. Fire count, fire timing, `burstClass`, P124b verdicts and `on_change` calls are **identical** to
    pre-P113d for the same tick sequence, including at teardown; P110/P124b tests pass with no
    assertion edits; `DEBOUNCE` unchanged.
-5. Every notify error is counted by exactly one fired record's `errors`, and that record is
-   `suppressed:false`.
+5. For completed bursts, every notify error is counted by exactly one fired record's `errors`, and
+   that record is `suppressed:false`. An error tick in a burst in flight at teardown is dropped
+   with no record (§2.4 inner-`Disconnected`).
 6. At most one noise summary per `NOISE_FLUSH` per watcher.
 7. After `stop_all_watchers()` returns, the tail record is on the sink (test 11).
 8. `OBS_SCHEMA_VERSION` still **3** on both sides (`record.rs:54`, `src/ipc/types/obs.ts:22`); a
