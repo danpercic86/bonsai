@@ -1,19 +1,24 @@
 //! `RegistryContext` (contract §4.4): the per-ecosystem registry signals that
 //! `privacy::classify` consults, and the loader that gathers them.
 //!
-//! P125b loads the npm family (npm / pnpm / yarn, E3). Cargo, PyPI, Go and
-//! NuGet stay FAIL-CLOSED until their loaders land (P125c1/c2).
+//! P125b loads the npm family (npm / pnpm / yarn, E3); P125c1 adds Cargo
+//! and Go. PyPI and NuGet stay FAIL-CLOSED until their loaders land
+//! (P125c2).
 //!
 //! `[MEDIUM-1]` `RegistryContext` has NO Debug, Serialize, Deserialize or
 //! Clone (and deliberately no Default: a default context would be a
 //! fail-OPEN one). Its fields are hosts, scope names, globs and bools only.
 
+mod cargo_cfg;
 #[cfg(any(test, feature = "test-support"))]
 mod fake_env;
 mod globs;
 mod host_env;
+mod load_cargo;
+mod load_go;
 mod load_npm;
 mod npm_cfg;
+mod walk;
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -27,6 +32,11 @@ pub use host_env::{HostEnv, UserConfig, UserRead};
 use crate::adapter::{DepSource, RegistryRef};
 use crate::catalog::is_public_host;
 use crate::model::{Ecosystem, PrivateReason};
+
+/// The ecosystem being loaded must fail closed. Deliberately carries
+/// nothing (no text, no path) `[MEDIUM-1]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Closed;
 
 /// One `<packageSourceMapping>` id pattern (`*`, `Prefix.*` or an exact id),
 /// already resolved to "maps only to nuget.org" or not.
@@ -151,7 +161,13 @@ impl RegistryContext {
         if let Ok(signals) = load_npm::load(&canon, manifests, env) {
             *ctx.eco_mut(Ecosystem::Npm) = signals.into_open();
         }
-        // Cargo / PyPI / Go / NuGet: no loader yet (P125c1/c2) ⇒ closed.
+        if let Ok(signals) = load_cargo::load(&canon, manifests, env) {
+            *ctx.eco_mut(Ecosystem::Cargo) = signals.into_open();
+        }
+        if let Ok(open) = load_go::load(env) {
+            *ctx.eco_mut(Ecosystem::Go) = open;
+        }
+        // PyPI / NuGet: no loader yet (P125c2) ⇒ closed.
         ctx
     }
 
@@ -259,3 +275,11 @@ mod load_tests;
 #[cfg(test)]
 #[path = "registry_ctx/npm_cfg_tests.rs"]
 mod npm_cfg_tests;
+
+#[cfg(test)]
+#[path = "registry_ctx/cargo_go_load_tests.rs"]
+mod cargo_go_load_tests;
+
+#[cfg(test)]
+#[path = "registry_ctx/go_load_tests.rs"]
+mod go_load_tests;

@@ -215,3 +215,53 @@ fn a_bom_prefixed_npmrc_still_routes_its_scope() {
     ));
     assert_no_sentinel(&outbound_from_public(&check.public()), NEEDLES);
 }
+
+#[test]
+fn a_scope_in_the_workspace_root_npmrc_above_a_submodule_stays_private() {
+    // [P125b review (i)] the workdir is a submodule inside an npm/pnpm
+    // workspace; the scope registry lives only in the root's .npmrc ABOVE
+    // the workdir (its package.json there is never read).
+    let r = FixtureRepo::new();
+    r.track(
+        "package.json",
+        r#"{"name": "sub", "dependencies": {"@zzsub/pkg": "^2.0.0", "is-odd": "^3.0.0"}}"#,
+    );
+    std::fs::write(
+        r.parent.join("package.json"),
+        r#"{"name": "root", "workspaces": ["repo"]}"#,
+    )
+    .expect("write");
+    std::fs::write(
+        r.parent.join("pnpm-workspace.yaml"),
+        "packages:\n  - repo\n",
+    )
+    .expect("write");
+    let env = FakeHostEnv::new().above_from_disk_within(&r.parent);
+    let public = |check: &common::LocalCheck| -> Vec<String> {
+        check
+            .public()
+            .iter()
+            .map(|p| p.name().to_string())
+            .collect()
+    };
+    // Control: without the root .npmrc the scope WOULD be sent.
+    assert!(public(&local_check(&r.wd, &env)).contains(&"@zzsub/pkg".to_string()));
+    std::fs::write(
+        r.parent.join(".npmrc"),
+        "@zzsub:registry=https://u:zz-sentinel-token@sub.corp.invalid/\n",
+    )
+    .expect("write");
+    let check = local_check(&r.wd, &env);
+    assert_eq!(
+        only(&check, "@zzsub/pkg"),
+        Visibility::Private(
+            PrivateReason::ScopedRegistry,
+            Some("sub.corp.invalid".into())
+        )
+    );
+    assert_eq!(public(&check), ["is-odd"]);
+    assert_no_sentinel(
+        &outbound_from_public(&check.public()),
+        &["@zzsub/pkg", "zzsub"],
+    );
+}

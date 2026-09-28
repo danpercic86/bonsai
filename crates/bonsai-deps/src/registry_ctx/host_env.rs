@@ -7,6 +7,8 @@
 use std::fmt;
 use std::path::Path;
 
+use crate::fsread::ReadOutcome;
+
 /// Result of reading one registry config file.
 ///
 /// `[NEW-2]` The Debug impl is hand-written and prints ONLY the variant:
@@ -16,6 +18,23 @@ pub enum UserRead {
     Absent,
     Content(String),
     Unreadable,
+}
+
+impl UserRead {
+    /// `[Q9-3]` THE mapping from a safe read to a config read, shared by
+    /// every `HostEnv` (the P125e real one included): only Absent stays
+    /// Absent; NotAFile (symlink where not allowed, network / device
+    /// target), TooLarge and Unreadable all fail the ecosystem closed.
+    /// Exhaustive on purpose — no `_` arm.
+    pub fn from_outcome(o: ReadOutcome) -> UserRead {
+        match o {
+            ReadOutcome::Absent => UserRead::Absent,
+            ReadOutcome::Content(s) => UserRead::Content(s),
+            ReadOutcome::NotAFile => UserRead::Unreadable,
+            ReadOutcome::TooLarge => UserRead::Unreadable,
+            ReadOutcome::Unreadable => UserRead::Unreadable,
+        }
+    }
 }
 
 impl fmt::Debug for UserRead {
@@ -39,6 +58,17 @@ pub enum UserConfig {
     NpmGlobalRc,
     /// pnpm `rc` in the per-OS config dir.
     PnpmRc,
+    /// pnpm 11 `<configDir>/auth.ini` (same config dir as
+    /// [`UserConfig::PnpmGlobalYaml`]): merged by pnpm 11.17.0
+    /// `loadNpmrcConfig` as a full npmrc, so it can route `@scope:registry`.
+    /// Read with the npmrc key filter; path resolution lands in P125e.
+    PnpmAuthIni,
+    /// pnpm 11 global `config.yaml` in the pnpm config dir — VERIFIED in
+    /// pnpm 11.17.0 `getConfigDir`: `$XDG_CONFIG_HOME/pnpm` when set (any
+    /// OS), else macOS `~/Library/Preferences/pnpm`, other Unix
+    /// `~/.config/pnpm`, Windows `%LOCALAPPDATA%\pnpm\config` (falling back
+    /// to `~/.config/pnpm`). Read with the `pnpm-workspace.yaml` extractor.
+    PnpmGlobalYaml,
     /// `~/.yarnrc` (v1).
     YarnRc,
     /// `~/.yarnrc.yml` (berry).
@@ -57,7 +87,10 @@ pub enum UserConfig {
     UvUser,
     /// The per-OS system `uv.toml`.
     UvSystem,
-    /// `$GOENV` else the per-OS go `env` file.
+    /// `$GOENV` (unless `off`) else the per-OS go `env` file: Windows
+    /// `%APPDATA%\go\env`, macOS `~/Library/Application Support/go/env`,
+    /// Linux `$XDG_CONFIG_HOME/go/env`, falling back to `~/.config/go/env`
+    /// when `XDG_CONFIG_HOME` is unset (ASSUMED, E3).
     GoEnv,
     /// The per-OS user `NuGet.Config`.
     NugetUser,
@@ -72,9 +105,17 @@ pub trait HostEnv: Sync {
     /// only registry/index keys are returned, so auth-token-style values are
     /// never read into memory.
     fn vars_with_prefix_ci(&self, prefix: &str, keep: fn(&str) -> bool) -> Vec<(String, String)>;
+    /// `[Q9]` symlinks followed (`fsread::read_config_follow`): the target
+    /// must be a regular file after open, a network / UNC / DOS-device
+    /// target is rejected unopened, a dangling link or > 1 MiB ⇒ Unreadable.
+    /// Map with [`UserRead::from_outcome`].
     fn read_user_file(&self, which: UserConfig) -> UserRead;
-    /// `[Q7]` Bounded, regular-file-only, NO-FOLLOW read of `file_name` in
-    /// `dir` (an ancestor ABOVE the workdir). Symlink / reparse point /
-    /// non-regular / > 1 MiB ⇒ Unreadable.
+    /// `[Q7]` `[Q9-narrowed]` Bounded read of `file_name` in `dir` (an
+    /// ancestor ABOVE the workdir) via `fsread::read_above_workdir_config`:
+    /// symlinks are followed ONLY when `dir` is `$HOME` / `$CARGO_HOME`
+    /// (canonical); in any other ancestor a symlinked component ⇒
+    /// Unreadable (fail closed). Otherwise the `read_user_file` rules.
+    /// `file_name` may be a relative `/`-separated path
+    /// (`.cargo/config.toml`).
     fn read_above_workdir(&self, dir: &Path, file_name: &str) -> UserRead;
 }

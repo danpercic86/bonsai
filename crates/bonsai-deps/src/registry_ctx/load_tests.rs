@@ -64,19 +64,16 @@ fn bad_config(name: &str) -> &'static str {
 }
 
 #[test]
-fn a_clean_load_opens_npm_and_only_npm() {
+fn a_clean_load_opens_npm_cargo_and_go_only() {
     let r = repo();
     for name in REPO_FILES {
         fs::write(r.wd.join(name), clean_config(name)).unwrap();
     }
     let ctx = load(&r, &FakeHostEnv::new());
-    assert!(!ctx.fail_closed(Ecosystem::Npm));
-    for eco in [
-        Ecosystem::Cargo,
-        Ecosystem::Pypi,
-        Ecosystem::Go,
-        Ecosystem::Nuget,
-    ] {
+    for eco in [Ecosystem::Npm, Ecosystem::Cargo, Ecosystem::Go] {
+        assert!(!ctx.fail_closed(eco), "{eco:?}");
+    }
+    for eco in [Ecosystem::Pypi, Ecosystem::Nuget] {
         assert!(ctx.fail_closed(eco), "{eco:?} has no loader yet");
     }
     assert!(ctx.eco(Ecosystem::Npm).default_public);
@@ -186,22 +183,80 @@ fn above_workdir_yarnrc_yml_is_read_and_fails_closed() {
 }
 
 #[test]
-fn a_symlinked_above_workdir_config_fails_closed() {
+fn a_symlinked_above_workdir_config_is_followed_only_in_home() {
+    // [Q9-narrowed] above the workdir, a symlink is followed only when the
+    // ancestor IS $HOME; in any other ancestor it fails closed.
     let r = repo();
-    let target = r.wd.join("real.yml");
+    let target = r.root.join("dotfiles-yarnrc.yml");
     fs::write(
         &target,
-        "npmRegistryServer: \"https://registry.yarnpkg.com\"\n",
+        "npmRegistryServer: \"https://above.corp.invalid\"\n",
     )
     .unwrap();
     if !crate::fsread::tests::try_symlink_file(&target, &r.root.join(".yarnrc.yml")) {
         eprintln!("skipping: cannot create symlinks here");
         return;
     }
+    let not_home = FakeHostEnv::new().above_from_disk_within(&r.root);
+    assert!(npm_closed(&r, &not_home), "symlink in a non-home ancestor");
+    let home = FakeHostEnv::new()
+        .above_from_disk_within(&r.root)
+        .follow_root(&r.root);
+    let ctx = load(&r, &home);
+    let e = ctx.eco(Ecosystem::Npm);
+    assert!(!e.fail_closed && !e.default_public);
+    assert_eq!(e.default_host.as_deref(), Some("above.corp.invalid"));
+    // A link to a directory fails closed.
+    fs::remove_file(r.root.join(".yarnrc.yml")).unwrap();
+    fs::create_dir_all(r.root.join("a-dir")).unwrap();
+    assert!(crate::fsread::tests::try_symlink_file(
+        &r.root.join("a-dir"),
+        &r.root.join(".npmrc")
+    ));
     assert!(npm_closed(
         &r,
         &FakeHostEnv::new().above_from_disk_within(&r.root)
     ));
+}
+
+#[test]
+fn a_symlinked_user_npmrc_is_followed() {
+    // [Q9] the dotfile-manager case: ~/.npmrc -> dotfiles/npmrc.
+    let r = repo();
+    let home = r.root.join("home");
+    fs::create_dir_all(home.join("dotfiles")).unwrap();
+    fs::write(
+        home.join("dotfiles/npmrc"),
+        "@zzdot:registry=https://dot.corp.invalid/\n",
+    )
+    .unwrap();
+    if !crate::fsread::tests::try_symlink_file(&home.join("dotfiles/npmrc"), &home.join(".npmrc")) {
+        eprintln!("skipping: cannot create symlinks here");
+        return;
+    }
+    let env = FakeHostEnv::new().user_file_from_disk(UserConfig::NpmUserRc, &home.join(".npmrc"));
+    let ctx = load(&r, &env);
+    let e = ctx.eco(Ecosystem::Npm);
+    assert!(!e.fail_closed);
+    assert!(e.scoped.contains_key("@zzdot"));
+    // Dangling => closed.
+    fs::remove_file(home.join("dotfiles/npmrc")).unwrap();
+    assert!(npm_closed(&r, &env));
+}
+
+#[test]
+fn a_regular_user_file_from_disk_is_read() {
+    // Runs everywhere: the from-disk user-file path without a symlink.
+    let r = repo();
+    let rc = r.root.join("plain.npmrc");
+    fs::write(&rc, "@zzplain:registry=https://plain.corp.invalid/\n").unwrap();
+    let ctx = load(
+        &r,
+        &FakeHostEnv::new().user_file_from_disk(UserConfig::NpmUserRc, &rc),
+    );
+    assert!(ctx.eco(Ecosystem::Npm).scoped.contains_key("@zzplain"));
+    let env = FakeHostEnv::new().user_file_from_disk(UserConfig::NpmUserRc, &r.root);
+    assert!(npm_closed(&r, &env), "a directory is not a config file");
 }
 
 const USER_FILES: &[(UserConfig, &str)] = &[
@@ -210,6 +265,8 @@ const USER_FILES: &[(UserConfig, &str)] = &[
     (UserConfig::PnpmRc, "registry=file:///x\n"),
     (UserConfig::YarnRc, "\"broken\n"),
     (UserConfig::YarnRcYml, "a: &b 1\n"),
+    (UserConfig::PnpmGlobalYaml, "registries:\n  '@a': nope\n"),
+    (UserConfig::PnpmAuthIni, "@a:registry=${X}\n"),
 ];
 
 #[test]
@@ -283,4 +340,91 @@ fn the_real_load_signature_matches_the_contract() {
     // §4.4: `load(workdir: &Path, manifests: &[String], env: &dyn HostEnv)`.
     let f: fn(&Path, &[String], &dyn HostEnv) -> RegistryContext = RegistryContext::load;
     let _ = f;
+}
+
+#[test]
+fn pnpm_global_config_yaml_routes_scopes_and_rejects_a_redirected_rc() {
+    // [P125b review (ii)] same extractor as pnpm-workspace.yaml.
+    let r = repo();
+    let yaml = "registries:\n  default: https://registry.npmjs.org/\n  '@corp': https://u:zz-sentinel-token@g.corp.invalid/\nstoreDir: /x\n";
+    let ctx = load(
+        &r,
+        &FakeHostEnv::new().user_file(UserConfig::PnpmGlobalYaml, yaml),
+    );
+    let e = ctx.eco(Ecosystem::Npm);
+    assert!(!e.fail_closed && e.default_public);
+    assert_eq!(
+        e.scoped.get("@corp"),
+        Some(&Some("g.corp.invalid".to_string()))
+    );
+    // `npmrcAuthFile` points pnpm at an rc file we never read.
+    let redirect = "npmrcAuthFile: /secrets/npmrc\n";
+    let env = FakeHostEnv::new().user_file(UserConfig::PnpmGlobalYaml, redirect);
+    assert!(npm_closed(&r, &env));
+    // The key means nothing in a repo pnpm-workspace.yaml.
+    fs::write(r.wd.join("pnpm-workspace.yaml"), redirect).unwrap();
+    assert!(!npm_closed(&r, &FakeHostEnv::new()));
+}
+
+#[test]
+fn workspace_root_npmrc_and_pnpm_yaml_above_the_workdir_are_read() {
+    // [P125b review (i)] the workdir is a submodule of an npm / pnpm
+    // workspace whose root (with its .npmrc) sits above it.
+    let r = repo();
+    let env = FakeHostEnv::new().above(
+        &r.root,
+        ".npmrc",
+        "@zzabove:registry=https://u:zz-sentinel-token@above.corp.invalid/\n",
+    );
+    let ctx = load(&r, &env);
+    let e = ctx.eco(Ecosystem::Npm);
+    assert!(!e.fail_closed);
+    assert_eq!(
+        e.scoped.get("@zzabove"),
+        Some(&Some("above.corp.invalid".to_string()))
+    );
+    let yaml = "packages: ['wd']\nregistries:\n  '@zzpnpm': https://pnpm.corp.invalid/\n";
+    let ctx = load(
+        &r,
+        &FakeHostEnv::new().above(&r.root, "pnpm-workspace.yaml", yaml),
+    );
+    assert!(ctx.eco(Ecosystem::Npm).scoped.contains_key("@zzpnpm"));
+    for name in [".npmrc", "pnpm-workspace.yaml"] {
+        let env = FakeHostEnv::new().above_unreadable(&r.root, name);
+        assert!(npm_closed(&r, &env), "{name}");
+    }
+    // Manifests above the workdir are never read (MEDIUM-3): only configs.
+    fs::write(r.root.join("package.json"), "{\"workspaces\": [\"wd\"]}").unwrap();
+    assert!(!npm_closed(
+        &r,
+        &FakeHostEnv::new().above_from_disk_within(&r.root)
+    ));
+}
+
+#[test]
+fn pnpm_auth_ini_routes_scopes_through_the_npmrc_filter() {
+    let r = repo();
+    let ini = "//auth.corp.invalid/:_authToken=zz-sentinel-token\n@zzini:registry=https://u:zz-sentinel-token@auth.corp.invalid/\n";
+    let ctx = load(
+        &r,
+        &FakeHostEnv::new().user_file(UserConfig::PnpmAuthIni, ini),
+    );
+    let e = ctx.eco(Ecosystem::Npm);
+    assert_eq!(
+        e.scoped.get("@zzini"),
+        Some(&Some("auth.corp.invalid".to_string()))
+    );
+}
+
+#[test]
+fn a_regular_above_workdir_config_reads_without_follow_rights() {
+    // Runs everywhere: no-follow mode still reads a plain file.
+    let r = repo();
+    fs::write(
+        r.root.join(".npmrc"),
+        "@zzplainabove:registry=https://pa.corp.invalid/\n",
+    )
+    .unwrap();
+    let ctx = load(&r, &FakeHostEnv::new().above_from_disk_within(&r.root));
+    assert!(ctx.eco(Ecosystem::Npm).scoped.contains_key("@zzplainabove"));
 }

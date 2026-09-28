@@ -8,13 +8,15 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use crate::fsread::{read_nofollow, ReadOutcome, MAX_CONFIG_BYTES};
+use crate::fsread::{read_above_workdir_config, read_config_follow, MAX_CONFIG_BYTES};
 
 use super::host_env::{HostEnv, UserConfig, UserRead};
 
 enum FakeFile {
     Content(String),
     Unreadable,
+    /// `[Q9]` read from this real path with the following config read.
+    Disk(PathBuf),
 }
 
 impl FakeFile {
@@ -22,6 +24,13 @@ impl FakeFile {
         match self {
             FakeFile::Content(s) => UserRead::Content(s.clone()),
             FakeFile::Unreadable => UserRead::Unreadable,
+            FakeFile::Disk(p) => {
+                let (dir, name) = match (p.parent(), p.file_name()) {
+                    (Some(d), Some(n)) => (d, n.to_string_lossy().into_owned()),
+                    _ => return UserRead::Unreadable,
+                };
+                UserRead::from_outcome(read_config_follow(dir, &name, MAX_CONFIG_BYTES))
+            }
         }
     }
 }
@@ -34,6 +43,8 @@ pub struct FakeHostEnv {
     above: HashMap<(PathBuf, String), FakeFile>,
     /// Serve above-workdir reads from disk for dirs under this root.
     above_from_disk: Option<PathBuf>,
+    /// `[Q9-narrowed]` ancestors standing in for `$HOME` / `$CARGO_HOME`.
+    follow_roots: Vec<PathBuf>,
     /// Names of the variables whose VALUE was handed out.
     values_read: Mutex<Vec<String>>,
 }
@@ -51,6 +62,13 @@ impl FakeHostEnv {
     pub fn user_file(mut self, which: UserConfig, content: &str) -> Self {
         self.user
             .insert(which, FakeFile::Content(content.to_string()));
+        self
+    }
+
+    /// `[Q9]` serve `which` from a real file (symlinks followed, as the
+    /// production user-file read does).
+    pub fn user_file_from_disk(mut self, which: UserConfig, path: &Path) -> Self {
+        self.user.insert(which, FakeFile::Disk(path.to_path_buf()));
         self
     }
 
@@ -73,11 +91,19 @@ impl FakeHostEnv {
         self
     }
 
-    /// Serve `read_above_workdir` from the real filesystem (no-follow,
-    /// regular files only, 1 MiB cap) for unconfigured paths at or below
-    /// `root`; anything above `root` reads as Absent (hermetic).
+    /// Serve `read_above_workdir` from the real filesystem (the production
+    /// `[Q9-narrowed]` read: no-follow unless the ancestor is a follow root)
+    /// for unconfigured paths at or below `root`; anything above `root`
+    /// reads as Absent (hermetic).
     pub fn above_from_disk_within(mut self, root: &Path) -> Self {
         self.above_from_disk = Some(root.to_path_buf());
+        self
+    }
+
+    /// `[Q9-narrowed]` treat `dir` as `$HOME` / `$CARGO_HOME`: symlinks in
+    /// above-workdir entries of exactly this ancestor are followed.
+    pub fn follow_root(mut self, dir: &Path) -> Self {
+        self.follow_roots.push(dir.to_path_buf());
         self
     }
 
@@ -141,12 +167,11 @@ impl HostEnv for FakeHostEnv {
         {
             return UserRead::Absent;
         }
-        match read_nofollow(&dir.join(file_name), MAX_CONFIG_BYTES) {
-            ReadOutcome::Absent => UserRead::Absent,
-            ReadOutcome::Content(s) => UserRead::Content(s),
-            ReadOutcome::NotAFile | ReadOutcome::TooLarge | ReadOutcome::Unreadable => {
-                UserRead::Unreadable
-            }
-        }
+        UserRead::from_outcome(read_above_workdir_config(
+            dir,
+            file_name,
+            MAX_CONFIG_BYTES,
+            &self.follow_roots,
+        ))
     }
 }

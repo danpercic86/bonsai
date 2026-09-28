@@ -91,25 +91,15 @@ fn resolve(workdir_canon: &Path, rel: &str) -> Result<PathBuf, ReadOutcome> {
 /// §4.5. `workdir_canon` MUST be `fs::canonicalize` output (on Windows both
 /// sides of the containment check are then `\\?\` paths).
 pub fn safe_read(workdir_canon: &Path, rel: &str, cap: u64) -> ReadOutcome {
-    let canon = match resolve(workdir_canon, rel) {
-        Ok(p) => p,
-        Err(o) => return o,
-    };
-    read_regular(&canon, cap)
+    if let Err(o) = resolve(workdir_canon, rel) {
+        return o;
+    }
+    // Every component no-follow, re-verified after open [MEDIUM-3].
+    read_nofollow_under(workdir_canon, rel, cap)
 }
 
-/// Opens `path`, re-checks that the HANDLE is a regular file, and reads at
-/// most `cap` bytes. Used after the no-follow checks above, and by the host
-/// environment for user / above-workdir configs.
-pub(crate) fn read_regular(path: &Path, cap: u64) -> ReadOutcome {
-    let Ok(f) = File::open(path) else {
-        return ReadOutcome::Unreadable;
-    };
-    match f.metadata() {
-        Ok(md) if md.is_file() => {}
-        Ok(_) => return ReadOutcome::NotAFile,
-        Err(_) => return ReadOutcome::Unreadable,
-    }
+/// The bounded `take(cap + 1)` read of an already-verified handle.
+fn read_handle(f: File, cap: u64) -> ReadOutcome {
     let mut bytes = Vec::new();
     if f.take(cap.saturating_add(1))
         .read_to_end(&mut bytes)
@@ -123,17 +113,65 @@ pub(crate) fn read_regular(path: &Path, cap: u64) -> ReadOutcome {
     ReadOutcome::Content(String::from_utf8_lossy(&bytes).into_owned())
 }
 
-/// `[Q7]` a NO-FOLLOW read of an absolute path (a config above the
-/// workdir): a symlink, junction or non-regular file is `NotAFile`, and the
-/// handle is re-checked after open.
-#[cfg(any(test, feature = "test-support"))]
-pub(crate) fn read_nofollow(path: &Path, cap: u64) -> ReadOutcome {
-    match fs::symlink_metadata(path) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => ReadOutcome::Absent,
-        Err(_) => ReadOutcome::Unreadable,
-        Ok(md) if md.file_type().is_symlink() || !md.is_file() => ReadOutcome::NotAFile,
-        Ok(_) => read_regular(path, cap),
+/// `dir/rel` with every intermediate component a real directory and the
+/// final one a regular file — none of them a symlink / junction — plus
+/// the final `symlink_metadata`.
+fn nofollow_components(dir: &Path, rel: &str) -> Result<(PathBuf, fs::Metadata), ReadOutcome> {
+    if !path_is_clean(rel) {
+        return Err(ReadOutcome::NotAFile);
     }
+    let mut p = dir.to_path_buf();
+    let mut parts = rel.split('/').peekable();
+    while let Some(part) = parts.next() {
+        if cfg!(windows) && is_dos_device_name(part) {
+            // [Q9-4] `NUL`, `CON`, `COM1`, … name a device, not a file.
+            return Err(ReadOutcome::NotAFile);
+        }
+        p.push(part);
+        let md = match fs::symlink_metadata(&p) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(ReadOutcome::Absent),
+            Err(_) => return Err(ReadOutcome::Unreadable),
+            Ok(md) => md,
+        };
+        let last = parts.peek().is_none();
+        let kind_ok = if last { md.is_file() } else { md.is_dir() };
+        if md.file_type().is_symlink() || !kind_ok {
+            return Err(ReadOutcome::NotAFile);
+        }
+        if last {
+            return Ok((p, md));
+        }
+    }
+    Err(ReadOutcome::NotAFile)
+}
+
+/// `[MEDIUM-3]` NO-FOLLOW read of `dir/rel`, where `rel` may have several
+/// `/`-separated components (`.cargo/config.toml`): every component is
+/// checked with `symlink_metadata` (a symlinked / junctioned `.cargo` dir
+/// is `NotAFile`), the handle is re-checked after open, and the component
+/// checks are RE-RUN after open and compared with the handle, so a swap
+/// between check and open is caught.
+pub(crate) fn read_nofollow_under(dir: &Path, rel: &str, cap: u64) -> ReadOutcome {
+    let (path, before) = match nofollow_components(dir, rel) {
+        Ok(v) => v,
+        Err(o) => return o,
+    };
+    // `[Q9-5]` the last component is opened with O_NOFOLLOW /
+    // FILE_FLAG_OPEN_REPARSE_POINT.
+    let Ok(f) = open_nofollow(&path) else {
+        return ReadOutcome::Unreadable;
+    };
+    let handle = match f.metadata() {
+        Ok(md) if md.is_file() => md,
+        Ok(_) => return ReadOutcome::NotAFile,
+        Err(_) => return ReadOutcome::Unreadable,
+    };
+    match nofollow_components(dir, rel) {
+        Ok((_, after)) if same_file(&before, &after) && same_file(&after, &handle) => {}
+        Ok(_) => return ReadOutcome::NotAFile,
+        Err(o) => return o,
+    }
+    read_handle(f, cap)
 }
 
 /// §4.5: the same checks as [`safe_read`]; returns `(len, mtime_ms)`.
@@ -150,6 +188,13 @@ pub fn safe_stat(workdir_canon: &Path, rel: &str) -> Option<(u64, i64)> {
         .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
     Some((md.len(), mtime_ms))
 }
+
+mod follow;
+mod open_nofollow;
+pub use follow::{
+    is_dos_device_name, is_network_path, read_above_workdir_config, read_config_follow,
+};
+use open_nofollow::{open_nofollow, same_file};
 
 #[cfg(test)]
 #[path = "fsread_tests.rs"]

@@ -24,6 +24,11 @@ url = "2"
 # P125b `[HIGH-2]`: used ONLY through the `parser::Parser` event API
 # (`yaml_events.rs`); `YamlLoader` is banned. No `encoding` feature.
 yaml-rust2 = { version = "0.13", default-features = false }
+# P125c1: Cargo.toml / Cargo.lock / `.cargo/config{,.toml}`. Parse + serde
+# only: no `display` (writer) and never `unbounded` (it lifts toml_parser's
+# own depth bound). Every parse is preceded by `toml_scan::check_depth`
+# `[HIGH-2]`; a `toml::de::Error` is mapped by span only, never `Display`ed.
+toml = { version = "1", default-features = false, features = ["std", "parse", "serde"] }
 
 # `FakeHostEnv` for the integration sentinels; never on in production.
 [features]

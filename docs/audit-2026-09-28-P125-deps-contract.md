@@ -418,3 +418,137 @@ item in the audit's P125a list is resolved.
   E3 rows, which the contract already states. HIGH-2 and MEDIUM-3 are fully specified for P125b.
 - **Fold into P125a's done-criterion:** NEW-3.
 - **Fix before P125d:** the deviation (a) nit.
+
+---
+
+## Re-check 2026-09-28 (Q9 / P125c1)
+
+**Scope:** the Q9 ruling (contract §11 end; §4.4/§4.5 `[Q9]` lines) and the uncommitted P125c1 working tree
+against baseline `615593b`. I read in full:
+- `crates/bonsai-deps/src/fsread/follow.rs` and `src/fsread.rs`;
+- `src/registry_ctx/{walk.rs,host_env.rs,load_go.rs}`, plus `load_npm.rs` 60–100;
+- the key-filter entry points in `npm_cfg.rs`;
+- `fake_env.rs` 150–175 and `follow_tests.rs` 25–50.
+
+I did not read `load_cargo.rs`/`cargo_cfg.rs` bodies beyond confirming they route through `walk.rs`, and I
+did not re-read the three sentinel test files. Nothing was executed.
+
+**Important context:** the production `HostEnv` (the only non-test caller of `read_config_follow`) lands in
+P125e. Today the follow path is reached only through `FakeHostEnv`. None of the findings below has a live
+path yet. They gate P125e, not this commit.
+
+### Q1 — what a repo- or parent-controlled symlink above the workdir can reach
+
+"Parent-controlled" is realistic. If the user opens a **submodule** (or any nested repo) of a hostile
+superproject as its own repo, the superproject's tracked files, symlinks included, sit *above* the opened
+workdir. A single repo cannot place anything above its own workdir.
+
+| Target | Result | Evidence |
+|---|---|---|
+| `\\srv\sh`, `//srv/sh`, `\\?\UNC\…`, `\\?\GLOBALROOT\…`, `\\?\Volume{…}`, `\\.\pipe\…`, `\??\…`, `//?/UNC/…` | **rejected before being touched** (NotAFile ⇒ fail-closed) | `is_network_path` runs on the start path, on every `read_link` target text and on the final path (`follow.rs:78,109,124`). Only `\\?\X:` passes. Tests are at `follow_tests.rs:25-50`. |
+| NT-rooted `\Device\Mup\…`, drive-relative `C:foo` | rejected (Unreadable) | `push_components` refuses a rooted path that is not absolute. |
+| `..` games, verbatim `//?/C:/../UNC/…` | contained | `..` is applied **lexically** to the already-resolved prefix and never passed to the OS. `PathBuf::pop` cannot rise above the prefix. The final `net(&out)` re-check covers it. |
+| 8.3 names | no effect | They only alias local paths and cannot form a UNC prefix. |
+| Mapped / `subst` drive letter (`Z:\…`) | **followed** | This reaches the network, but only a server the user has already mapped. An attacker cannot choose the host. INFO. |
+| DOS device names (`NUL`, `CON`, `COM1`, `CONIN$`, including `C:\x\NUL` on this Win10 host) | probably fail-closed, **UNVERIFIED** | Rust's `is_file()` on Windows means "not a dir and not a symlink", so a device may pass the `lstat` gate. The handle's `GetFileInformationByHandle` should then fail ⇒ Unreadable. See Q9-4. |
+| `/dev/zero`, FIFOs, sockets, char/block devices | rejected without open | The final `symlink_metadata().is_file()` check is at `follow.rs:141`. An intermediate component that is not a dir ⇒ NotAFile. |
+| `/proc/self/fd/N` → `pipe:[…]` | fail-closed | The relative text gives NotFound behind a link ⇒ Unreadable. |
+| `/proc/self/environ` and other procfs regular files | read (≤ 1 MiB) | The npm/Go extractors keep only registry keys, and the resulting hosts are local display only. **No value leaves the process.** |
+| **macOS `/net/<host>/…` (autofs `-hosts`), `/afs/<cell>/…`, Linux autofs `-hosts`** | **followed ⇒ network access to an attacker-chosen host, plus a possible long hang** | `is_network_path` only knows Windows syntax. `lstat("/net/evil.example")` makes automountd contact `evil.example` (DNS, then portmap/NFS; AUTH_SYS carries uid/gid/hostname, not a secret). A hard-mount timeout can leave the blocking thread stuck well past `CHECK_DEADLINE`, which only abandons it. **See Q9-1.** Whether macOS ships `/net -hosts` enabled in current releases is UNVERIFIED; it historically did. |
+| slow or hung NFS the user mounted | may hang the blocking thread | The host is not attacker-chosen. INFO. |
+| OOM | bounded | `take(cap+1)` with a 1 MiB cap, 40 hops, and a component stack bounded by target text length. |
+
+### Q2 — TOCTOU between resolution and re-open
+
+**Acceptable under the threat model.**
+- `read_config_follow` resolves, `lstat`s the target, then `File::open`s it, which follows links again.
+- `read_regular` re-checks that the handle is a file.
+- Exploiting the window needs a concurrent writer in a directory on the path, i.e. control of the local
+  machine, which is outside the threat model. Checked-out repo content is static.
+
+Optional hardening (LOW, Q9-5): on Unix, compare `(dev, ino)` of the resolved `lstat` with `f.metadata()`,
+as `read_nofollow_under::same_file` already does. That closes the final-component swap. Intermediate-directory
+swaps remain and are accepted.
+
+### Q3 — can pnpm `auth.ini` or GOENV collect a token?
+
+**No.**
+- **`auth.ini`** goes through the npmrc extractor (`npm_cfg::apply_pair`). It keeps only a key equal to
+  `registry` or ending in `:registry`. `//host/:_authToken`, `_auth` and similar lines are skipped unstored.
+  A `${…}` placeholder in a registry key fails closed. URL values go through `host_of`/`extract_host`, which
+  keeps the host only.
+- **GOENV:** `file_values` matches only the listed keys: `GOPRIVATE`, `GONOPROXY`, `GONOSUMDB`, `GOINSECURE`,
+  `GOPROXY` and `GOSUMDB`. `GOAUTH` and `GOFLAGS` are never read. `GOPROXY=https://u:tok@proxy.corp` yields
+  only `proxy.corp`.
+- In both cases the whole file exists transiently as `UserRead::Content`, whose `Debug` is redacted
+  (`host_env.rs`).
+
+### Q4 — is any Q9 change fail-open?
+
+**No fail-open path in the committed-to-be code.** Specifically:
+- `resolve` returns `Absent` only for NotFound on an original-path component *before any link was followed*.
+- A dangling link, or EACCES / hop overflow / an unresolvable target, gives Unreadable. A network or device
+  target gives NotAFile.
+- `fake_env::from_outcome` maps everything except Absent/Content to Unreadable ⇒ `Closed` (`walk.rs`).
+- Go takes the **union** of environment and file, and any non-public `GOPROXY`/`GOSUMDB`, or a host-less
+  entry, ⇒ private/Closed.
+
+The one latent risk is Q9-3.
+
+### Findings
+
+- **Q9-1 (MEDIUM, MUST-fix before P125e wires the real `HostEnv`) — the "reject network targets" constraint
+  is Windows-only.**
+  - **Scenario:** a hostile superproject tracks a symlink `.npmrc` (or `.cargo/config.toml`,
+    `pnpm-workspace.yaml`) → `/net/attacker.example/x`. The user opens one of its submodules in Bonsai with
+    the tracker enabled.
+  - The above-workdir walk `lstat`s through `/net`, and the automounter dials `attacker.example`. That gives
+    attacker-chosen egress (IP, uid/gid, hostname) and a possibly long blocked thread.
+  - The Q9 ruling's constraint "reject … network-share targets" is not met on macOS/Linux.
+  - **Fix (preferred: remove the primitive).** Follow symlinks only where the Q9 rationale lives: the fixed
+    user/system config files, plus an above-workdir ancestor that *is* `$HOME` or `$CARGO_HOME`. In any other
+    ancestor above the workdir, keep no-follow, so a symlinked config there ⇒ fail-closed. A hostile parent
+    can then only withhold, which it can already do with a plain file. This narrows the Q9 ruling's wording,
+    so the orchestrator must confirm it with the user.
+  - **Fix (alternative, if the user keeps "follow everywhere"):**
+    - On Unix, before `lstat`ing a child of `out`, refuse to descend when `out`'s `st_dev` differs from the
+      start directory's and `$HOME`'s `st_dev`. That catches autofs, NFS, FUSE and AFS mount points before
+      they trigger.
+    - Also reject absolute target text under `/net/`, `/Network/`, `/afs/` and `/.autofs` as a second layer.
+    - Add a unix-gated test: a symlink to a path under a different-device directory ⇒ NotAFile.
+- **Q9-2 (LOW, functional; defeats the Q9 motivation) — any link on the path makes a later plain miss "dangling".**
+  - `via_link` is sticky. If `~/.cargo` (or `~/.config`, or `/home` itself) is a symlinked **directory**,
+    every absent file under it gives NotFound with `via_link = true`, i.e. Unreadable.
+  - So the always-absent legacy `$CARGO_HOME/config`, or a missing pnpm `rc`, turns the whole ecosystem
+    private. That is the exact outcome Q9 was ruled to avoid.
+  - This fails safe.
+  - **Fix:** treat NotFound as dangling only while consuming components that came from a link's *target
+    text*. Push a marker after the target's components and clear `via_link` when it pops. Test: a symlinked
+    `.cargo` dir with no legacy `config` ⇒ Absent.
+- **Q9-3 (LOW, must be structural before P125e) — the NotAFile→Unreadable mapping lives only in the test double.**
+  - `from_outcome` is private to `fake_env.rs` (`cfg(test)` / `test-support`).
+  - If P125e's real `HostEnv` maps `NotAFile` or `TooLarge` to `Absent`, a network-rejected or oversize
+    config is silently skipped and its private signals are lost. That is fail-open.
+  - **Fix:** move `from_outcome` to `host_env.rs` as `pub(crate)`, used by both implementations, with an
+    exhaustive match and no `_` arm.
+- **Q9-4 (LOW, UNVERIFIED) — Windows DOS device names are not rejected by name.**
+  - Reject any resolved component whose stem (before the first `.`, trailing spaces and dots trimmed) is
+    case-insensitively `CON`, `PRN`, `AUX`, `NUL`, `COM0`–`COM9`, `LPT0`–`LPT9`, `CONIN$` or `CONOUT$`,
+    including the superscript-digit forms, before `lstat`.
+  - This host is Win10, where `C:\x\NUL` still maps to the device.
+- **Q9-5 (LOW, optional)** — the Unix `(dev, ino)` handle comparison described under Q2.
+- **INFO:**
+  - A workdir on a UNC share (canonical `\\?\UNC\…`) fails every above-workdir config closed, so npm, Cargo
+    and NuGet all show private. That is safe; document it in the P125-ui copy for "all private".
+  - Windows cloud-file reparse points (OneDrive placeholders) are not `is_symlink`, and opening one hydrates
+    it. They cannot be planted via git, so they are not attacker-steerable.
+  - pnpm `auth.ini` and GOENV key filters are clean (Q3).
+
+### Verdict (Q9)
+
+**OK to commit P125c1 as a wip.** No production caller of the follow path exists until P125e, and nothing
+here is fail-open today. **MUST-fix before P125e lands:**
+- **Q9-1**, which needs the user to confirm the narrowed follow scope, or else the device-boundary alternative;
+- **Q9-3**.
+
+Q9-2 should ride along with Q9-1 (same function). Q9-4 and Q9-5 are optional hardening.

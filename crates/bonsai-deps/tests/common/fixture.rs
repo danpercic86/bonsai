@@ -95,3 +95,100 @@ packages:
   is-odd@3.0.1:
     resolution: {integrity: sha512-b}
 ";
+
+/// Cargo sentinels (E4 row 6): git, named registry, patched, a private
+/// transitive lock entry, a workspace member inheriting a dep.
+pub const CARGO_ROOT: &str = r#"
+[package]
+name = "cargo-app"
+version = "0.1.0"
+
+[workspace]
+members = ["crates/zz-sentinel-member"]
+
+[workspace.dependencies]
+serde = "1"
+
+[dependencies]
+serde = { workspace = true }
+itoa = "1"
+zz-sentinel-above = "0.1"
+zz_sentinel_git = { git = "https://git.corp.invalid/zz.git" }
+zz-sentinel-reg = { version = "0.3", registry = "corp" }
+zz-sentinel-patched = "0.1"
+zz-sentinel-member = { path = "crates/zz-sentinel-member" }
+
+[patch.crates-io]
+zz-sentinel-patched = { path = "../zz-sentinel-patched" }
+"#;
+
+pub const CARGO_MEMBER: &str = r#"
+[package]
+name = "zz-sentinel-member"
+version = "0.1.0"
+
+[dependencies]
+serde = { workspace = true }
+zz-sentinel-patched = "0.1"
+"#;
+
+pub const CARGO_LOCK: &str = r#"
+version = 4
+
+[[package]]
+name = "itoa"
+version = "1.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "serde"
+version = "1.0.203"
+source = "sparse+https://index.crates.io/"
+
+[[package]]
+name = "zz-sentinel-above"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "zz-sentinel-member"
+version = "0.1.0"
+
+[[package]]
+name = "zz-sentinel-patched"
+version = "0.1.0"
+
+[[package]]
+name = "zz_sentinel_git"
+version = "0.1.0"
+source = "git+https://git.corp.invalid/zz.git#0123abc"
+
+[[package]]
+name = "zz-sentinel-trans-cargo"
+version = "0.2.0"
+source = "registry+https://cargo.corp.invalid/index"
+"#;
+
+/// Go sentinels: a GOPRIVATE module and a local replacement.
+pub const GO_MOD: &str = "module example.com/app
+
+go 1.22
+
+require (
+\tgithub.com/pkg/errors v0.9.1
+\tcorp.invalid/zzsentinel/mod v1.0.0
+\texample.com/zz-sentinel-local v0.0.0-00010101000000-000000000000
+\tgolang.org/x/text v0.14.0 // indirect
+)
+
+replace example.com/zz-sentinel-local => ./local
+";
+
+/// `[Q7]` E4 row 6 (f): a parent-dir `.cargo/config.toml` with a
+/// credentialed replacement registry.
+pub const Q7_CARGO_CONFIG: &str = r#"[source.crates-io]
+replace-with = "corp"
+
+[source.corp]
+registry = "https://u:zz-sentinel-token@cargo.corp.invalid/index"
+"#;

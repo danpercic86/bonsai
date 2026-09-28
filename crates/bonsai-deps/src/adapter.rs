@@ -115,6 +115,28 @@ impl ParseError {
     pub(crate) fn from_yaml(file: &str, e: crate::yaml_events::YamlError) -> Self {
         Self::at(file, e.kind, e.line, e.col)
     }
+
+    /// Maps a toml error by its span only — its `Display` renders the
+    /// offending source line (which can hold a token) and is never called.
+    pub(crate) fn from_toml(file: &str, text: &str, e: &toml::de::Error) -> Self {
+        let (line, col) = e
+            .span()
+            .map_or((None, None), |span| line_col(text, span.start));
+        Self::at(file, ParseErrorKind::InvalidSyntax, line, col)
+    }
+
+    /// `[HIGH-2]` the §4.2 TOML depth pre-scan rejected the file.
+    pub(crate) fn too_deep(file: &str, e: crate::toml_scan::TooDeep) -> Self {
+        Self::at(file, ParseErrorKind::LimitExceeded, Some(e.line), None)
+    }
+}
+
+/// 1-based `(line, byte column)` of byte offset `at` in `text`.
+fn line_col(text: &str, at: usize) -> (Option<u32>, Option<u32>) {
+    let head = text.as_bytes().get(..at).unwrap_or(text.as_bytes());
+    let line = head.iter().filter(|b| **b == b'\n').count() + 1;
+    let col = head.iter().rev().take_while(|b| **b != b'\n').count() + 1;
+    (u32::try_from(line).ok(), u32::try_from(col).ok())
 }
 
 pub trait EcosystemAdapter: Sync {
@@ -129,7 +151,11 @@ pub trait EcosystemAdapter: Sync {
     fn parse(&self, input: &ParseInput<'_>) -> Result<ParsedGroup, ParseError>;
 }
 
-pub static ADAPTERS: &[&dyn EcosystemAdapter] = &[&crate::eco::npm::NpmAdapter];
+pub static ADAPTERS: &[&dyn EcosystemAdapter] = &[
+    &crate::eco::npm::NpmAdapter,
+    &crate::eco::cargo::CargoAdapter,
+    &crate::eco::go_mod::GoAdapter,
+];
 
 /// The adapter whose manifest this file name is.
 pub fn adapter_for_manifest(file_name: &str) -> Option<&'static dyn EcosystemAdapter> {

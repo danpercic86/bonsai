@@ -26,7 +26,7 @@ pub(crate) fn try_symlink_file(target: &Path, link: &Path) -> bool {
     }
 }
 
-fn try_symlink_dir(target: &Path, link: &Path) -> bool {
+pub(crate) fn try_symlink_dir(target: &Path, link: &Path) -> bool {
     #[cfg(unix)]
     {
         std::os::unix::fs::symlink(target, link).is_ok()
@@ -180,9 +180,22 @@ fn debug_prints_only_the_variant() {
 }
 
 #[test]
-fn read_regular_rejects_a_directory_handle() {
+fn nofollow_read_rejects_a_directory_and_a_device_name() {
     let (_d, w) = workdir();
-    // Opening a directory fails on Windows and yields a non-file handle on
-    // unix; either way it is not Content.
-    assert!(!matches!(read_regular(&w, 10), ReadOutcome::Content(_)));
+    fs::create_dir_all(w.join("d")).unwrap();
+    assert!(matches!(
+        read_nofollow_under(&w, "d", 10),
+        ReadOutcome::NotAFile
+    ));
+    if cfg!(windows) {
+        // [Q9-4] refused by name, never opened.
+        assert!(matches!(
+            read_nofollow_under(&w, "NUL", 10),
+            ReadOutcome::NotAFile
+        ));
+        assert!(matches!(
+            read_nofollow_under(&w, "d/com1.txt", 10),
+            ReadOutcome::NotAFile
+        ));
+    }
 }

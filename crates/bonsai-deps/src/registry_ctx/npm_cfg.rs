@@ -11,11 +11,8 @@ use crate::catalog::is_public_host;
 use crate::model::Ecosystem;
 use crate::yaml_events::{parse_first, YNode};
 
+pub(crate) use super::Closed;
 use super::{extract_host, EcoRegistry};
-
-/// The npm ecosystem must fail closed. Deliberately carries nothing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Closed;
 
 /// The npm-family signals gathered so far. It has NO fail-open flag: a
 /// context is opened only by [`NpmSignals::into_open`], which the loader
@@ -207,13 +204,31 @@ pub(crate) fn yarnrc_yml(sig: &mut NpmSignals, text: &str) -> Result<(), Closed>
 /// pnpm ≥ 11 `pnpm-workspace.yaml`: `registry`, `registries` (`default` +
 /// `@scope` keys) and `namedRegistries` (alias → URL).
 pub(crate) fn pnpm_workspace(sig: &mut NpmSignals, text: &str) -> Result<(), Closed> {
+    pnpm_yaml(sig, text, false)
+}
+
+/// pnpm 11 global `<configDir>/config.yaml` (verified in pnpm 11.17.0: read
+/// with the workspace-manifest reader, its `registries` merged under the
+/// workspace ones). Same keys as [`pnpm_workspace`], plus `npmrcAuthFile`,
+/// which REDIRECTS the user npmrc to a file we do not read ⇒ `Closed`.
+pub(crate) fn pnpm_global_yaml(sig: &mut NpmSignals, text: &str) -> Result<(), Closed> {
+    pnpm_yaml(sig, text, true)
+}
+
+fn pnpm_yaml(sig: &mut NpmSignals, text: &str, global: bool) -> Result<(), Closed> {
     let keep = |p: &[String]| match p.len() {
         0 => true,
-        1 => matches!(p[0].as_str(), "registry" | "registries" | "namedRegistries"),
+        1 => {
+            matches!(p[0].as_str(), "registry" | "registries" | "namedRegistries")
+                || (global && p[0] == "npmrcAuthFile")
+        }
         2 => matches!(p[0].as_str(), "registries" | "namedRegistries"),
         _ => false,
     };
     let doc = parse_first(strip_bom(text), &keep).map_err(|_| Closed)?;
+    if global && doc.get("npmrcAuthFile").is_some() {
+        return Err(Closed);
+    }
     if let Some(v) = doc.get("registry") {
         sig.set_default(scalar(v)?)?;
     }

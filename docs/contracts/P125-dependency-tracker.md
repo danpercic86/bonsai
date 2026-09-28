@@ -412,8 +412,9 @@ pub trait HostEnv: Sync {
     /// returned, so `npm_config_//host/:_authToken`-style values are never read into memory.
     fn vars_with_prefix_ci(&self, prefix: &str, keep: fn(&str) -> bool) -> Vec<(String, String)>; // npm_config_*, CARGO_REGISTRIES_*
     fn read_user_file(&self, which: UserConfig) -> UserRead;               // closed enum of E3 user/system paths
-    /// [Q7] Bounded, regular-file-only, NO-FOLLOW read of `file_name` in `dir` (an ancestor ABOVE the
-    /// workdir). Symlink / reparse point / non-regular / > 1 MiB ⇒ Unreadable. Test fake: FakeHostEnv.
+    /// [Q7][Q9-narrowed] Bounded read of `file_name` in `dir` (an ancestor ABOVE the workdir);
+    /// symlinks followed ONLY when `dir` is `$HOME`/`$CARGO_HOME`, else a symlink ⇒ Unreadable; a
+    /// UNC/network target, a dangling link, a non-regular target after open or > 1 MiB ⇒ Unreadable.
     fn read_above_workdir(&self, dir: &Path, file_name: &str) -> UserRead;
 }
 impl RegistryContext {
@@ -475,8 +476,9 @@ safe_read:
 - `safe_stat` applies the same checks and returns `(len, mtime_ms)`.
 - The E3 "repo walk" means **in-repo ancestors only**.
 - The Q7 above-workdir walk (Cargo and NuGet config files only) goes through
-  `HostEnv::read_above_workdir`: `symlink_metadata` first (symlink ⇒ Unreadable), regular file only,
-  re-check after open, and a `take(1 MiB + 1)` read `[Q7]`.
+  `HostEnv::read_above_workdir`: symlinks followed only in `$HOME`/`$CARGO_HOME` (else ⇒
+  Unreadable), each link target checked before use (UNC / network ⇒ Unreadable), regular file
+  only, re-check after open, and a `take(1 MiB + 1)` read `[Q7]` `[Q9-narrowed]`.
 - `$CARGO_HOME` and the other user/system files are read with `HostEnv::read_user_file` (a bounded
   read that requires a regular file).
 
@@ -852,7 +854,7 @@ sentinel tests, the HIGH-2 YAML/TOML bomb tests, the MEDIUM-3 fs tests and the L
 | **P125c1** | Cargo + Go adapters + their E3 rows, **incl. the Q7 above-workdir `.cargo/config{,.toml}` walk**; **[P125b review] (i)** extend the above-workdir config-only walk to npm (`workspaces` root) and pnpm (`pnpm-workspace.yaml` root) `.npmrc`, same user-file read rules; **(ii)** pnpm 11 global `config.yaml` as a new `UserConfig` variant reusing the `pnpm_workspace` extractor; TOML depth pre-scan | E2 rows covered; the Cargo/Go sentinels incl. E4 AC6 (f) Cargo half | `cargo nextest run -p bonsai-deps eco::` |
 | **P125c2** | PyPI + NuGet adapters + their E3 rows (incl. NuGet `<clear/>`, disabled sources, machine-wide config, **the Q7 above-workdir `NuGet.Config` walk**) | E2 rows covered; the PyPI/NuGet sentinels incl. unparseable `nuget.config` and E4 AC6 (f) NuGet half | same |
 | **P125d** | `remote/*`, `cvss.rs`, `check.rs`, `cache.rs`, the full `privacy_sentinel` + `token_sentinel`; live fixtures incl. the LOW-4 known-vulnerable set and the §3.3 yanked probe | AC2/4/5/6/7 green offline; LOW-3 caps; `CheckError`/`ParseError` carry no strings; **[P125b review] `catch_unwind` per parse, `MAX_PARSE_BYTES`, the cache-bytes + serialized-view halves of `token_sentinel`, sentinel harness switched from `outbound_from_public` to recorded requests; npm builtin `npmrc` read fail-closed; `pnpm_config__auth` presence-only check (never read the value)**. **security-auditor pass.** | `cargo nextest run -p bonsai-deps`; clippy |
-| **P125e** | src-tauri: setting, `deps/{mod,plan,exec}.rs`, `GatedTransport`, the deadline wrapper, commands, hooks, disable/startup wipe, registration | AC1/8/9/12 (6-worker) + repo switch; real `HostEnv` via `std::env::vars_os()` (drop non-matching values, never copy them) [P125b review]; src-tauri's `bonsai-deps` dependency must **not** enable the `test-support` feature (it exposes the fail-open `FakeHostEnv`). **Precondition: P125c1 (i)(ii) and P125d's builtin-npmrc / `pnpm_config__auth` items landed.** **security-auditor pass.** — gates: LOW-1 | `cargo nextest run -p bonsai deps::`; `cargo nextest run -p bonsai settings_defaults_parity`; `cargo clippy -p bonsai -- -D warnings` |
+| **P125e** | src-tauri: setting, `deps/{mod,plan,exec}.rs`, `GatedTransport`, the deadline wrapper, commands, hooks, disable/startup wipe, registration | AC1/8/9/12 (6-worker) + repo switch; real `HostEnv` via `std::env::vars_os()` (drop non-matching values, never copy them) [P125b review]; src-tauri's `bonsai-deps` dependency must **not** enable the `test-support` feature (it exposes the fail-open `FakeHostEnv`); **[P125c1 review]** real HostEnv resolves `UserConfig::{PnpmGlobalYaml, PnpmAuthIni, GoEnv}` paths (incl. Linux `~/.config/go/env`) and canonicalizes `$HOME`/`$CARGO_HOME` exactly like workdir ancestors (else Q9 silently never follows); **precondition: the 13 symlink tests that skip on Windows have passed on a Linux run** (CI or local) — seen, not assumed. **Precondition: P125c1 (i)(ii) and P125d's builtin-npmrc / `pnpm_config__auth` items landed.** **security-auditor pass.** — gates: LOW-1 | `cargo nextest run -p bonsai deps::`; `cargo nextest run -p bonsai settings_defaults_parity`; `cargo clippy -p bonsai -- -D warnings` |
 | **P125f** | frontend IPC (types per E6), mock + all fixtures (E5, incl. `mirror`, `large` and the long-content rows [UI-c]), `useDepTracker`, settings plumbing | AC13 vitest; `tsc`; settings parity | `pnpm vitest run src/ipc/mock/handlers/depTracker.test.ts src/hooks/useDepTracker.test.ts src/settings`; `pnpm tsc --noEmit` |
 | **P125g** | UI per `P125-ui.md` | harness proof of every `?deps=` state, both themes | `pnpm gate --frontend` |
 
@@ -895,3 +897,19 @@ Q4 active tab only · Q5 accept, disclose in consent copy · Q6 keep user-level 
 **RULED 2026-09-28 (user): both recommendations accepted.** Q7 extend the config-only walk to the
 filesystem root for Cargo and NuGet (user-file read rules: bounded, regular file, key-filtered) ·
 Q8 neutral consent sentence, not "run by Google" (recorded in `P125-ui.md` §11.1).
+
+**Q9 — RULED 2026-09-28 (user; raised in P125c1): symlinked config files ABOVE the workdir are
+followed.** Applies to the above-workdir config-only walk (Q7 + the P125c1 npm/pnpm ancestor
+walk) and the fixed user-level config files. Constraints (all mandatory): the final target must be
+a regular file **after open**; read through `take(cap+1)`; key-filtered extraction only; **reject
+Windows UNC / `\\?\UNC` / network-share targets** (would trigger SMB/NTLM); a dangling or
+unresolvable symlink ⇒ that ecosystem fail-closed. **Inside the workdir, no-follow is unchanged
+(MEDIUM-3).** Rationale: config signals can only withhold names; repo-controlled content is still
+never followed. This amends §4.4 / §4.5 Q7 text and E4 row 6(f); `security-auditor` re-passes
+the P125c1 round-2 diff.
+
+**Q9 NARROWED — RULED 2026-09-28 (user; audit Q9-1, Unix automounter `/net/<host>` reach):**
+symlinks are followed **only** for the fixed user/system config files and for ancestor
+directories equal to `$HOME` / `$CARGO_HOME` (and the Go/pnpm config dirs they resolve to). Any
+other symlinked config above the workdir — e.g. in a parent monorepo / superproject — makes that
+ecosystem **fail closed**. All other Q9 constraints stand.

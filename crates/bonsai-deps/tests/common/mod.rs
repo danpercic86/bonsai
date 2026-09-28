@@ -1,7 +1,7 @@
 //! Shared sentinel harness for `privacy_sentinel.rs` and `token_sentinel.rs`
 //! (E4 rows 6 / 6′).
 //!
-//! P125b has no transport, so [`local_check`] runs the npm pipeline that
+//! P125b/c1 have no transport, so [`local_check`] runs the pipeline that
 //! exists (discover → `RegistryContext::load` → adapters → `classify`) and
 //! [`outbound_from_public`] renders what a transport WOULD send for the
 //! `Public` set (a deps.dev GET per package + one OSV querybatch body).
@@ -16,6 +16,7 @@ use std::path::Path;
 use bonsai_deps::adapter::{adapter_for_manifest, local_names, ParseError, ParseInput, ADAPTERS};
 use bonsai_deps::discover::{discover_full, workdir_canon};
 use bonsai_deps::fsread::{safe_read, ReadOutcome, MAX_FILE_BYTES};
+use bonsai_deps::model::Ecosystem;
 use bonsai_deps::privacy::{classify, PublicPackage, Visibility};
 use bonsai_deps::registry_ctx::{HostEnv, RegistryContext};
 
@@ -62,7 +63,7 @@ pub fn local_check(workdir: &Path, env: &dyn HostEnv) -> LocalCheck {
         rows: Vec::new(),
         errors: Vec::new(),
     };
-    assert_eq!(ADAPTERS.len(), 1, "P125b ships the npm family only");
+    assert_eq!(ADAPTERS.len(), 3, "npm family, Cargo and Go (P125c1)");
     for m in files.manifests() {
         let name = m.rsplit('/').next().unwrap_or(m);
         let Some(adapter) = adapter_for_manifest(name) else {
@@ -122,13 +123,25 @@ fn pct_encode(s: &str) -> String {
         .collect()
 }
 
+/// `(deps.dev system, OSV ecosystem)` names.
+fn systems(eco: Ecosystem) -> (&'static str, &'static str) {
+    match eco {
+        Ecosystem::Npm => ("npm", "npm"),
+        Ecosystem::Cargo => ("cargo", "crates.io"),
+        Ecosystem::Pypi => ("pypi", "PyPI"),
+        Ecosystem::Go => ("go", "Go"),
+        Ecosystem::Nuget => ("nuget", "NuGet"),
+    }
+}
+
 /// What a transport would send for `public` (deps.dev + OSV shapes, §0.1).
 pub fn outbound_from_public(public: &[PublicPackage]) -> Vec<Request> {
     let mut reqs: Vec<Request> = public
         .iter()
         .map(|p| Request {
             url: format!(
-                "https://api.deps.dev/v3/systems/npm/packages/{}",
+                "https://api.deps.dev/v3/systems/{}/packages/{}",
+                systems(p.ecosystem()).0,
                 pct_encode(p.name())
             ),
             body: None,
@@ -138,7 +151,7 @@ pub fn outbound_from_public(public: &[PublicPackage]) -> Vec<Request> {
         .iter()
         .map(|p| {
             serde_json::json!({
-                "package": {"name": p.name(), "ecosystem": "npm"},
+                "package": {"name": p.name(), "ecosystem": systems(p.ecosystem()).1},
                 "version": p.version(),
             })
         })

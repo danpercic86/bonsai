@@ -9,7 +9,9 @@
 //! P125a shipped the model, privacy classification, the `RegistryContext`
 //! type, the version schemes and the OSV newtypes. P125b adds safe reads,
 //! discovery, the bounded YAML reader, the adapter surface, the npm family
-//! and the npm/pnpm/yarn registry-context loader.
+//! and the npm/pnpm/yarn registry-context loader. P125c1 adds the Cargo and
+//! Go adapters, their registry-context loaders (incl. the Q7 above-workdir
+//! `.cargo/config{,.toml}` walk) and the TOML depth pre-scan.
 #![forbid(unsafe_code)]
 #![deny(clippy::disallowed_types, clippy::disallowed_methods)]
 
@@ -22,6 +24,7 @@ pub mod model;
 pub mod privacy;
 pub mod registry_ctx;
 pub mod remote;
+mod toml_scan;
 pub mod version;
 mod yaml_events;
 
