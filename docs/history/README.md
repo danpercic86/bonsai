@@ -89,6 +89,10 @@ the rule there, read the story here.
 | **The `P115` section, verbatim as it stood before the 2026-09-23 tightening** | `todo-archive-2026-09.md` Part 85 | **NOT an archived milestone — P115 is LIVE on the board and `in-progress`.** `bbd8993`, full gate green (9/9, 574.5s), but **a Linux/macOS run is still owed** — the `#[cfg(unix)]` legs have never compiled on this machine. **134 → 134, net zero**: nine lines out, nine back in, because the `CLAUDE.md` gate-rule correction was promoted here as canonical. |
 | **The open follow-up entries rewritten by the 2026-09-23 staleness sweep** | `todo-archive-2026-09.md` Part 86 (86.1 the real-log residue · 86.2 A4 finding 6's citation · 86.3 the U+200B closure · 86.4 the 20-file split queue · 86.5 the `gitbin.rs` count · 86.6 the gate `DEP0190` bullet · 86.7 the velocity follow-ups · 86.8 the struck `no_proxy_client` · 86.9 P80 forge follow-up (a)) | **Three items were CLOSED, each verified against the current tree and never from a commit subject:** cross-repo detector keying (`obs/anomaly/window.rs:160-178` + `src/obs/types.ts:266-269`; P117 inc 2, `83bbdf3`) · `RemotesSection` re-rendering on a local-branch change (`RemotesSection.tsx:13-17`, `:156`; P118b, `c6ae304`) · the gate's `DEP0190` / `shell: true` argv concatenation (zero live uses in `scripts/`). **Everything else was re-measured and left open**, including the 20-file split queue (**5 of 20 done, 15 open**) and the `P91-observability.md` schema drift, which got worse. |
 | Superseded curator bookkeeping (the pre-pass navigation body, the `Archive` table, the 2026-09-22 "~1810 lines" note) | `todo-archive-2026-09.md` Part 87 (87.1 navigation · 87.2 the Archive table + curator note) | Moved 2026-09-23. 87.2's final paragraph is the one this pass acted on: it escalated moving the durable rules to their own file for the third time, and the user decided in favour. |
+| **P113a–c, P118/P118b, P115** — release blockers V1, V3, V4 — in full | `todo-archive-2026-09.md` Part 88 (88.1 P113, incl. P113d's design text · 88.2 P118 + P118b · 88.3 P115) | Moved **2026-09-28**, after the user attested every pending native USER CHECKPOINT confirmed — **"Verified by me, incl. P115"** (P115's owed Linux/macOS run included). Relayed by the orchestrator; **not observed** by it or the curator. **Still live in `TODO.md`:** **P113d** (`pending`, contract rev 2 not implemented) and the hoisted residue under `### Hoisted 2026-09-28`. **Supersedes** the "P117/P115 is LIVE" wording in the Part 84 / 85 rows above. |
+| **P117** — release blocker V2 — in full | `todo-archive-2026-09.md` Part 89 (89.1) | Moved 2026-09-28, same attestation. Its pre-tightening text is Part 84. Contract corrections owed to `architect` and the inc-1 follow-ups are hoisted to `TODO.md`. |
+| **P119, P120, P121, P122, P123, P124** — in full | `todo-archive-2026-09.md` Part 90 (90.1-90.6) | Moved 2026-09-28, same attestation. P121's own record says the `s1d3f226f` log did **not** pass its checkpoint; the attestation is what closes it. P124a2 batching stays `deferred` on the board. |
+| Superseded release and curator bookkeeping (the `Not archived` paragraph, the release `Current step` + bullets, the V1–V4 BLOCKS RELEASE list, the 2026-09-23 "~2545 lines" note) | `todo-archive-2026-09.md` Part 91 (91.1-91.4) | Moved 2026-09-28. 91.3 is the checkpoint text V1–V4 were confirmed against. |
 
 ## Non-milestone records
 
@@ -116,7 +120,10 @@ old they are.
 
 **And the order is mandatory, since `c5b3ea5` truncated 1950 lines into nowhere:** extract → diff
 byte-identical against `git show HEAD:TODO.md` → *then* remove → leave a Part pointer where the text
-stood. The 2026-09-23 pass moved **956 lines across 15 ranges, all 15 verified byte-identical in
+stood. The 2026-09-28 pass moved **14 ranges (10 milestone sections, 1270 lines, plus 4 bookkeeping
+ranges), all 14 verified byte-identical with `cmp` in the destination before removal**, plus a
+whole-file check that every unique non-blank, non-`---` line of `git show HEAD:TODO.md` still exists
+on the board or under `docs/` (4 lines differ only because they were extended in place). The 2026-09-23 pass moved **956 lines across 15 ranges, all 15 verified byte-identical in
 the destination after the append** (14 here as Parts 83-87, 1 in `docs/durable-rules.md`), plus a
 whole-file check over all 2305 unique non-blank, non-`---` lines of `git show HEAD:TODO.md`:
 **zero unaccounted for.** The 2026-09-22 pass moved **2425 lines across 17 ranges, all 17 verified
