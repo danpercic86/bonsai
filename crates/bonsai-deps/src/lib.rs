@@ -14,12 +14,17 @@
 //! `.cargo/config{,.toml}` walk) and the TOML depth pre-scan. P125c2 adds
 //! the PyPI and NuGet adapters, their loaders (pip / uv / Poetry configs;
 //! the NuGet.Config chain incl. the Q7 above-workdir walk) and the bounded
-//! XML reader.
+//! XML reader. P125d adds the transport (`remote/`: reqwest over rustls +
+//! ring, the recording `FakeTransport`), deps.dev + OSV, CVSS scoring,
+//! `run_check` and the report cache.
 #![forbid(unsafe_code)]
 #![deny(clippy::disallowed_types, clippy::disallowed_methods)]
 
 pub mod adapter;
+pub mod cache;
 mod catalog;
+pub mod check;
+pub mod cvss;
 pub mod discover;
 pub mod eco;
 pub mod fsread;
@@ -32,5 +37,10 @@ pub mod version;
 mod xml_events;
 mod yaml_events;
 
+pub use check::{run_check, CancelToken, CheckCtx, CheckError, CHECK_DEADLINE, DEPSDEV_PARALLEL};
+pub use remote::transport::{OutboundRequest, Transport};
+
 #[cfg(test)]
 mod fixtures;
+#[cfg(test)]
+mod test_pkg;

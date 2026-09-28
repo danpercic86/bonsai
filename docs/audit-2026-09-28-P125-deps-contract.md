@@ -552,3 +552,143 @@ here is fail-open today. **MUST-fix before P125e lands:**
 - **Q9-3**.
 
 Q9-2 should ride along with Q9-1 (same function). Q9-4 and Q9-5 are optional hardening.
+
+---
+
+## Re-check 2026-09-28 (P125d)
+
+**Scope:** `git diff 5d1dc96 -- crates/bonsai-deps Cargo.lock docs/contracts` plus the untracked files under
+`crates/bonsai-deps`. I read in full:
+- `src/remote/{transport,reqwest_transport,mod,depsdev,osv,osv_vuln,recorder}.rs`;
+- `src/cache.rs`, `src/check/pool.rs`, `clippy.toml` and `tests/live_record.rs`;
+- `tests/common/mod.rs` 60–90 and 140–295 (`recorded_check`, `haystacks`, `assert_report_clean`);
+- the `load_npm.rs` diff and the relevant `host_env.rs` lines;
+- the sentinel call sites (grep), and contract §0.1 39–68.
+
+I checked with commands:
+- `dep-tree.txt`;
+- `cargo tree -e features -i serde_json` (features are `default` and `std` only, no `unbounded_depth`);
+- that no `eprintln!`/`println!`/`log::`/`tracing::` appears in non-test `src`;
+- that no gate/CI file passes `--ignored`/`--run-ignored`.
+
+I did not read `check.rs` beyond its cancel points, `check/rows.rs` beyond its `clean_display` and
+`registry_url` sites, `cvss.rs`, the NuGet adapter, or the recorded JSON fixtures.
+
+### Answers
+
+1. **Transport — clean.**
+   - `OutboundRequest` has private fields and three `pub(in crate::remote)` constructors. Each formats a URL
+     from `const DEPSDEV_BASE = "https://api.deps.dev"` / `OSV_BASE = "https://api.osv.dev"` plus
+     `pct_encode(name)` (everything outside RFC 3986 unreserved is encoded) or a minted id. No caller
+     supplies a URL or a header.
+   - `reqwest_transport.rs` sets `redirect::Policy::none()`, `https_only(true)`, `connect_timeout` 10 s,
+     `timeout` 30 s (whole request including the body), and a fixed `User-Agent`/`Accept`/`Content-Type`.
+     There is no cookie store and no auth.
+   - The body is read through `take(cap+1)` with caps of 8 / 16 / 1 MiB. No decompression feature is
+     compiled in (`dep-tree.txt`: reqwest `[blocking, rustls-no-provider]`), so the caps bound wire bytes.
+     There is no HTTP fallback.
+   - **Proxy:** reqwest honours `HTTP(S)_PROXY` / `ALL_PROXY` / `NO_PROXY` from the **environment** even
+     without `system-proxy`. That feature only adds the Windows-registry and macOS system settings, which are
+     off. The code comment says so. For https targets the proxy tunnels with CONNECT, so it sees the host but
+     not the path or body. That is the user's own configuration (INFO, as before).
+   - **TLS roots:** `rustls-platform-verifier` 0.6, i.e. the OS trust store. `webpki-root-certs` and
+     `rustls-native-certs` appear in the tree as that crate's per-platform backends. A TLS-inspecting
+     corporate root in the OS store is trusted (INFO).
+2. **D7 and tokens — clean, and the sentinels now test the real pipeline.**
+   - `tests/common::local_check` runs a full `run_check` over a recording `FakeTransport`, and every
+     `assert_no_sentinel` matches against the resulting haystacks: raw URL, **percent-decoded** URL, raw body,
+     and **every JSON-decoded string** (keys and values), all case-insensitive.
+   - Positive controls exist (`privacy_sentinel.rs:194-196`, where `@zzign/pkg` and `@zzenv/pkg` must be
+     *found* when planted).
+   - Bare markers are used (`zz-sentinel`, `zzsentinel`, `corp.invalid`, `zzsub`).
+   - `assert_report_clean` checks the token against the cache file bytes, the serialized report and `Debug`.
+   - **NEW-1 is resolved.**
+   - Limitation (INFO): the default fake answers deps.dev 404 with no advisories, so the `osv_vuln` path is not
+     exercised with sentinels. Its only input is a minted `AdvisoryId`, so there is no private input to carry.
+3. **Response parsing — clean, with one LOW.**
+   - Caps are applied before `serde_json::from_slice`, and the default 128 recursion limit is kept.
+   - Typed DTOs are used. deps.dev `links`/`registries` and OSV `details`/`references`/`affected` are never
+     deserialized.
+   - Every response string that reaches the model goes through `clean_display`: advisory `id`, `aliases`
+     (shape-checked, then capped at 16), `summary`, and `modified` (osv.rs `mint_refs`). The display paths in
+     `rows.rs` go through it as well.
+   - `AdvisoryId`/`PageToken` are minted only by the private `mint_id` / `mint_page_token` in `remote/osv.rs`,
+     from DTO fields.
+   - `advisory_url` is built from the minted id. `versions` > 20 000 ⇒ `Service`, and a
+     `results.len() != pending.len()` mismatch ⇒ `BadJson`. See LOW-D2 for one malformed id.
+4. **Cache — clean.**
+   - `cache_path` accepts only a `[A-Za-z0-9_-]{1,128}` key.
+   - `save` serializes, writes `<key>.json.tmp`, calls `sync_all`, then `rename`; the tmp file is removed on
+     error.
+   - `load` opens the file, checks it is a regular file, reads through `take(32 MiB + 1)`, deserializes, then
+     checks `schema`, `repo_id` and `report.repo_id`.
+   - Content is the `DepReport` only. Private/local names appear only as the by-design "private — not checked"
+     rows plus host-only `registryHost`, and the token sentinel asserts no token in the file bytes.
+5. **`clippy.toml` `allow-invalid` — safe.**
+   - It applies only to the `tokio::process::Command` entry. Clippy then does not warn that the path fails to
+     resolve (tokio is in the graph without `process`). If `process` is ever unified in, the path resolves and
+     the ban fires.
+   - `std::process::Command` and `Command::new` remain strict, and the `no_process` source scan is independent
+     of clippy.
+   - Transitive crates (reqwest blocking, hyper/hyper-util, tokio without `process`, rustls, ring,
+     rustls-platform-verifier/native-certs) do not spawn processes. The `dep-tree.txt` snapshot guards
+     additions. **Clean.**
+6. **`live_record.rs` — clean.**
+   - It is `#[ignore = "live network…"]`, and no gate or CI script passes `--ignored`/`--run-ignored` (grep of
+     `scripts/gate.mjs`, workflows and nextest config).
+   - It uses `FakeHostEnv::new()`, so it never reads the developer's real `.npmrc` or tokens, and
+     `corpus_repo()` names only well-known public packages: lodash, serde, tokio, smallvec, itoa,
+     requests 2.19.1, gorilla/websocket, Newtonsoft.Json.
+   - `RecordingTransport` writes only 200 responses under `tests/fixtures/remote/` and is `test-support`-gated.
+7. **NuGet OSV case sensitivity — security-relevant (MEDIUM-D1 below).**
+8. **`npm_config__auth` — not a D7 gap.**
+   - npm `_auth` authenticates to whichever `registry` is configured, and it is not a routing key. Routing is
+     read from `registry` / `@scope:registry` in files and env. Reading or acting on `_auth` would only touch
+     a credential for no signal.
+   - The real residual is **private (org-scoped) packages hosted on `registry.npmjs.org`**. Their host is
+     public, so they are classified Public and their names are sent; deps.dev 404s them. No config reveals
+     them without treating every scoped dependency as private, which would destroy coverage.
+   - Recommend disclosing this in the consent copy (INFO; P125g / ui-designer).
+   - Separately, add a one-line comment on *why* `pnpm_config__auth` changes routing. The code asserts it but
+     does not say how.
+
+### Findings
+
+- **MEDIUM-D1 — NuGet: a differently-cased package id silently yields "no vulnerabilities"**
+  (contract §0.1 row "OSV `package.name` is case-sensitive for NuGet"; NuGet `normalize` is trim-only;
+  `transport.rs::osv_querybatch` sends the manifest casing).
+  - **Scenario:** a `.csproj` declares `<PackageReference Include="newtonsoft.json" Version="12.0.3" />`.
+    MSBuild and NuGet are case-insensitive, so this restores fine and is common.
+  - deps.dev matches the id case-insensitively, so the row is `Checked`. OSV returns `{}`, so the row shows
+    `vulnsChecked: true, vulns: []`, and the UI states there are no known vulnerabilities for a package with
+    GHSA-5crp-9r3c-p9vr. This is a false negative in the one signal the feature exists to give.
+  - **Fix:**
+    - (a) For NuGet, send the id casing from the lockfile when one exists. Match `packages.lock.json` entries
+      (or `obj/project.assets.json` `libraries` keys, which carry the package's own nuspec casing)
+      ASCII-case-insensitively, and use that casing for the OSV query. Whether `packages.lock.json` keys are
+      canonical is UNVERIFIED; confirm with a live fixture.
+    - (b) When no lockfile casing is available, a NuGet row with zero OSV hits sets `vulns_checked = false`,
+      so the UI says "not verified" instead of "none".
+    - (c) Add a test: lowercase `newtonsoft.json@12.0.3` never renders as "no vulnerabilities".
+  - **Must be fixed before results become user-visible (P125g).** It does not block this commit.
+- **LOW-D2 — one malformed advisory id fails the whole check.**
+  - `osv.rs::mint_refs` maps a bad id to `Service(BadJson)` for the entire run. §7.5 said such ids are
+    *dropped*.
+  - This is availability only, and it requires bad data from OSV.
+  - Fix: filter out ids that fail `mint_id`, and count them for obs if wanted.
+- **INFO:**
+  - env-proxy honouring and OS-store roots (answer 1);
+  - private npmjs-hosted org packages are sent (answer 8; consent copy);
+  - the `pnpm_config__auth` rationale comment;
+  - the `osv_vuln` path is not sentinel-exercised (answer 2; no private input exists for it).
+
+### Verdict (P125d)
+
+**OK to commit.** Nothing here sends a private name, token or config value. The transport is locked to the two
+§7.1 hosts with fixed URLs, and the no-process guarantee holds for the new tree. **MUST-fix before P125g
+exposes results:** MEDIUM-D1 (NuGet casing ⇒ silent "no vulnerabilities"). LOW-D2 can ride along.
+
+**Round 2 (P125d, working tree):**
+- **MEDIUM-D1: resolved.** `eco/nuget.rs:101-103` sends the `packages.lock.json` casing only when every TFM agrees (`nuget_lock::canonical`). Otherwise `check/rows.rs:268` sets `vulns_checked=false` on zero hits. Exact-case fixtures in `fake_transport.rs` close the vacuous NTFS pass. I did not re-read `tests/check_copies.rs`.
+- **LOW-D2: resolved.** `remote/osv.rs:141-142` now uses `filter_map` plus `mint_id(...)?`, so a malformed id is dropped rather than failing the check.
+- **No new privacy issue.** The lock casing is looked up by the lowercased declared id, so it can only be a case variant of that same name. It still passes `classify`, including `valid_public_name`. Every private/local match is case-insensitive: `LocalNames::match_key` case-folds, and `nuget_best_mapping` and `packageSourceMapping` lowercase. So a recasing cannot turn a Private or Local row into Public.

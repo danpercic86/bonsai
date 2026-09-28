@@ -1,14 +1,14 @@
 //! Shared sentinel harness for `privacy_sentinel.rs` and `token_sentinel.rs`
 //! (E4 rows 6 / 6′).
 //!
-//! P125b/c1/c2 have no transport, so [`local_check`] runs the pipeline that
-//! exists (discover → `RegistryContext::load` → adapters → `classify`) and
-//! [`outbound_from_public`] renders what a transport WOULD send for the
-//! `Public` set (a deps.dev GET per package + one OSV querybatch body).
-//! P125d replaces `outbound_from_public` with the recorded requests of a
-//! FakeTransport under `run_check`; [`assert_no_sentinel`] stays as is.
+//! [`local_check`] runs discover → `RegistryContext::load` → adapters →
+//! `classify` and exposes every visibility (incl. private lock entries,
+//! which never become rows) for the row assertions. The OUTBOUND assertions
+//! use [`recorded_outbound`] (P125d): the requests a recording
+//! `FakeTransport` saw during a full `run_check`.
 #![allow(dead_code)]
 
+pub mod corpus;
 pub mod fixture;
 pub mod fixture_pn;
 
@@ -17,9 +17,11 @@ use std::path::Path;
 use bonsai_deps::adapter::{adapter_for_manifest, local_names, ParseError, ParseInput, ADAPTERS};
 use bonsai_deps::discover::{discover_full, workdir_canon};
 use bonsai_deps::fsread::{safe_read, ReadOutcome, MAX_FILE_BYTES};
-use bonsai_deps::model::Ecosystem;
+use bonsai_deps::model::CachedReport;
 use bonsai_deps::privacy::{classify, PublicPackage, Visibility};
 use bonsai_deps::registry_ctx::{HostEnv, RegistryContext};
+use bonsai_deps::remote::FakeTransport;
+use bonsai_deps::{run_check, CancelToken, CheckCtx, CheckError};
 
 /// One request as it would leave the process.
 pub struct Request {
@@ -27,13 +29,22 @@ pub struct Request {
     pub body: Option<String>,
 }
 
-/// Every classified dependency / lock entry, plus the parse errors.
+/// Every classified dependency / lock entry, plus the parse errors, plus
+/// the REAL outbound set and report of a full `run_check` over the same
+/// repo and env (P125d).
 pub struct LocalCheck {
     pub rows: Vec<(String, Visibility)>,
     pub errors: Vec<ParseError>,
+    pub outbound: Vec<Request>,
+    pub report: CachedReport,
 }
 
 impl LocalCheck {
+    /// Positive control: `needle` appears in the recorded outbound set.
+    pub fn sent(&self, needle: &str) -> bool {
+        find_sentinel(&self.outbound, &[needle]).is_some()
+    }
+
     pub fn public(&self) -> Vec<PublicPackage> {
         self.rows
             .iter()
@@ -60,9 +71,16 @@ pub fn local_check(workdir: &Path, env: &dyn HostEnv) -> LocalCheck {
     let wd = workdir_canon(&repo).expect("workdir");
     let ctx = RegistryContext::load(&wd, files.manifests(), env);
     let local = local_names(&wd, &files);
+    let full = recorded_check(workdir, env);
+    let report = match full.report {
+        Ok(r) => r,
+        Err(e) => panic!("run_check failed: {e:?}"),
+    };
     let mut out = LocalCheck {
         rows: Vec::new(),
         errors: Vec::new(),
+        outbound: full.requests,
+        report,
     };
     assert_eq!(
         ADAPTERS.len(),
@@ -116,56 +134,56 @@ pub fn local_check(workdir: &Path, env: &dyn HostEnv) -> LocalCheck {
     out
 }
 
-fn pct_encode(s: &str) -> String {
-    s.bytes()
-        .map(|b| {
-            if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
-                (b as char).to_string()
-            } else {
-                format!("%{b:02X}")
-            }
-        })
-        .collect()
+/// The result of a full [`run_check`] over a recording `FakeTransport`.
+pub struct Checked {
+    pub requests: Vec<Request>,
+    pub report: Result<CachedReport, CheckError>,
 }
 
-/// `(deps.dev system, OSV ecosystem)` names.
-fn systems(eco: Ecosystem) -> (&'static str, &'static str) {
-    match eco {
-        Ecosystem::Npm => ("npm", "npm"),
-        Ecosystem::Cargo => ("cargo", "crates.io"),
-        Ecosystem::Pypi => ("pypi", "PyPI"),
-        Ecosystem::Go => ("go", "Go"),
-        Ecosystem::Nuget => ("nuget", "NuGet"),
+impl Checked {
+    /// Whether any recorded URL or body mentions `needle` (decoded,
+    /// case-insensitive) — the positive controls of the sentinels.
+    pub fn sent(&self, needle: &str) -> bool {
+        find_sentinel(&self.requests, &[needle]).is_some()
     }
 }
 
-/// What a transport would send for `public` (deps.dev + OSV shapes, §0.1).
-pub fn outbound_from_public(public: &[PublicPackage]) -> Vec<Request> {
-    let mut reqs: Vec<Request> = public
-        .iter()
-        .map(|p| Request {
-            url: format!(
-                "https://api.deps.dev/v3/systems/{}/packages/{}",
-                systems(p.ecosystem()).0,
-                pct_encode(p.name())
-            ),
-            body: None,
+/// `[P125d]` the REAL outbound set: `run_check` over a recording
+/// `FakeTransport` (empty defaults: deps.dev 404, no advisories), so every
+/// sentinel asserts on the exact URLs and bodies the pipeline sends.
+pub fn recorded_check(workdir: &Path, env: &dyn HostEnv) -> Checked {
+    recorded_check_with(workdir, env, &FakeTransport::new())
+}
+
+pub fn recorded_check_with(workdir: &Path, env: &dyn HostEnv, t: &FakeTransport) -> Checked {
+    let cancel = CancelToken::new();
+    let ctx = CheckCtx {
+        transport: t,
+        env,
+        cancel: &cancel,
+        progress: &|_, _| {},
+        prev: None,
+        now_ms: 1,
+    };
+    let report = run_check(workdir, "repo-under-test", &ctx);
+    let requests = t
+        .requests()
+        .into_iter()
+        .map(|r| Request {
+            url: r.url,
+            body: r.body,
         })
         .collect();
-    let queries: Vec<serde_json::Value> = public
-        .iter()
-        .map(|p| {
-            serde_json::json!({
-                "package": {"name": p.name(), "ecosystem": systems(p.ecosystem()).1},
-                "version": p.version(),
-            })
-        })
-        .collect();
-    reqs.push(Request {
-        url: "https://api.osv.dev/v1/querybatch".into(),
-        body: Some(serde_json::json!({ "queries": queries }).to_string()),
-    });
-    reqs
+    Checked { requests, report }
+}
+
+/// The outbound set of a full check. Panics if the check itself failed.
+pub fn recorded_outbound(workdir: &Path, env: &dyn HostEnv) -> Vec<Request> {
+    let c = recorded_check(workdir, env);
+    if let Err(e) = &c.report {
+        panic!("run_check failed: {e:?}");
+    }
+    c.requests
 }
 
 fn pct_decode(s: &str) -> String {
@@ -235,7 +253,42 @@ pub fn find_sentinel(reqs: &[Request], needles: &[&str]) -> Option<String> {
 
 /// Fails if any sentinel (or its bare marker) appears.
 pub fn assert_no_sentinel(reqs: &[Request], needles: &[&str]) {
-    if let Some(h) = find_sentinel(reqs, needles) {
-        panic!("a sentinel reached the outbound set: {h}");
+    assert_no_sentinel_except(reqs, needles, &[]);
+}
+
+/// [`assert_no_sentinel`], after deleting each `allowed` name (a control
+/// package that is deliberately public in this fixture) from every decoded
+/// haystack.
+pub fn assert_no_sentinel_except(reqs: &[Request], needles: &[&str], allowed: &[&str]) {
+    let hay: Vec<String> = haystacks(reqs)
+        .into_iter()
+        .map(|h| {
+            allowed
+                .iter()
+                .fold(h, |h, a| h.replace(&a.to_lowercase(), ""))
+        })
+        .collect();
+    for n in needles {
+        let n = n.to_lowercase();
+        if let Some(h) = hay.iter().find(|h| h.contains(&n)) {
+            panic!("a sentinel reached the outbound set: {h}");
+        }
     }
+}
+
+/// `[MEDIUM-1]` the persisted and serialized halves of E4 row 6′.
+pub fn assert_report_clean(report: &CachedReport, token: &str) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    bonsai_deps::cache::save(dir.path(), "0123abcd", report).expect("save");
+    let path = bonsai_deps::cache::cache_path(dir.path(), "0123abcd").expect("path");
+    let bytes = std::fs::read(path).expect("read cache");
+    let text = String::from_utf8_lossy(&bytes).to_lowercase();
+    assert!(!text.contains(token), "token in the cache file");
+    assert!(
+        bonsai_deps::cache::load(dir.path(), "0123abcd", &report.repo_id).is_some(),
+        "the cache round-trips"
+    );
+    let view = serde_json::to_string(&report.report).expect("serialize");
+    assert!(!view.contains(token), "token in the serialized report");
+    assert!(!format!("{report:?}").contains(token));
 }

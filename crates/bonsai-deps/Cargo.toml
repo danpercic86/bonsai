@@ -34,6 +34,15 @@ toml = { version = "1", default-features = false, features = ["std", "parse", "s
 # (serde) and no `encoding` feature. A DOCTYPE is rejected outright and
 # entities are resolved in-house (the five predefined + char refs only).
 quick-xml = { version = "0.41", default-features = false }
+# P125d: the deps.dev / OSV transport (§7.2). Byte-identical to
+# crates/bonsai-forge: blocking client, `rustls-no-provider` + the pure-Rust
+# `ring` provider installed by `ReqwestTransport::new` (no aws-lc-rs, no
+# OpenSSL). No `json` (bodies are serde_json strings), no `gzip` / `brotli` /
+# `zstd` / `deflate` (the §7.2 body caps count wire bytes), no `cookies`, no
+# `system-proxy`, no `http2`. reqwest spawns no process.
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls-no-provider"] }
+# Provider only — default features would re-enable aws_lc_rs.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 # `FakeHostEnv` for the integration sentinels; never on in production.
 [features]

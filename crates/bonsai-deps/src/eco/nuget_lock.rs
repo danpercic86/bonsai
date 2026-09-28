@@ -31,6 +31,8 @@ struct LockDep {
 
 pub(crate) struct NugetLock {
     entries: Vec<LockEntry>,
+    /// Lowercase id ⇒ every exact casing the lockfile writes for it.
+    casings: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl NugetLock {
@@ -39,6 +41,16 @@ impl NugetLock {
         self.entries
             .iter()
             .find(|e| e.name.eq_ignore_ascii_case(id))
+    }
+
+    /// `[P125d review, MEDIUM-D1]` the lockfile's casing of `id` (the
+    /// canonical nuspec id, VERIFIED §0.1) — only when every TFM agrees.
+    pub(crate) fn canonical(&self, id: &str) -> Option<&str> {
+        let set = self.casings.get(&id.to_ascii_lowercase())?;
+        match (set.len(), set.iter().next()) {
+            (1, Some(c)) => Some(c.as_str()),
+            _ => None,
+        }
     }
 
     pub(crate) fn into_entries(self) -> Vec<LockEntry> {
@@ -54,7 +66,12 @@ pub(crate) fn parse(path: &str, text: &str) -> Result<NugetLock, ParseError> {
     }
     let mut seen = BTreeSet::new();
     let mut entries = Vec::new();
+    let mut casings: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (id, dep) in dto.dependencies.into_values().flatten() {
+        casings
+            .entry(id.to_ascii_lowercase())
+            .or_default()
+            .insert(id.clone());
         let project = dep
             .kind
             .as_deref()
@@ -77,5 +94,5 @@ pub(crate) fn parse(path: &str, text: &str) -> Result<NugetLock, ParseError> {
             source,
         });
     }
-    Ok(NugetLock { entries })
+    Ok(NugetLock { entries, casings })
 }

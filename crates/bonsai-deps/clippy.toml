@@ -5,9 +5,14 @@
 # P125b §4.2 `[HIGH-2]`: YAML is read only through yaml_events.rs, which
 # drives `Parser::next_token` itself. `YamlLoader` (alias-expanding tree
 # loader) and the recursive `Parser::load` are banned the same way.
+#
+# P125d: tokio is now in the graph (reqwest `blocking`) but WITHOUT its
+# `process` feature, so `tokio::process::Command` does not exist and clippy
+# warns about the entry; `allow-invalid` keeps the ban armed should that
+# feature ever be unified in.
 disallowed-types = [
     "std::process::Command",
-    "tokio::process::Command",
+    { path = "tokio::process::Command", allow-invalid = true },
     "yaml_rust2::YamlLoader",
 ]
 disallowed-methods = [

@@ -147,6 +147,11 @@ impl HostEnv for FakeHostEnv {
         hit
     }
 
+    fn var_present_ci(&self, name: &str) -> bool {
+        // Presence only: never `note()`d, the value is not touched.
+        self.vars.iter().any(|(k, _)| k.eq_ignore_ascii_case(name))
+    }
+
     fn vars_with_prefix_ci(&self, prefix: &str, keep: fn(&str) -> bool) -> Vec<(String, String)> {
         let mut out = Vec::new();
         for (k, v) in &self.vars {

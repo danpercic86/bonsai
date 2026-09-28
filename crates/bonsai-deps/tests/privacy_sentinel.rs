@@ -12,7 +12,7 @@ use bonsai_deps::privacy::Visibility;
 use bonsai_deps::registry_ctx::FakeHostEnv;
 
 use common::fixture::{try_symlink_file, FixtureRepo, PNPM_V9_IGN, YARN_V1_ROOT};
-use common::{assert_no_sentinel, local_check, outbound_from_public};
+use common::{assert_no_sentinel, local_check};
 
 /// Full sentinels and their bare markers.
 const NEEDLES: &[&str] = &[
@@ -92,7 +92,8 @@ fn npm_sentinels_never_reach_the_outbound_set() {
         names.contains(&"left-pad") && names.contains(&"is-odd"),
         "{names:?}"
     );
-    assert_no_sentinel(&outbound_from_public(&public), NEEDLES);
+    assert!(check.sent("left-pad") && check.sent("is-odd"));
+    assert_no_sentinel(&check.outbound, NEEDLES);
 }
 
 #[test]
@@ -174,7 +175,7 @@ fn an_unreadable_config_signal_fails_the_whole_ecosystem_closed() {
     std::fs::create_dir_all(r.wd.join("ign/.yarnrc.yml")).expect("mkdir");
     let check = local_check(&r.wd, &env());
     assert!(check.public().is_empty());
-    assert_no_sentinel(&outbound_from_public(&check.public()), NEEDLES);
+    assert_no_sentinel(&check.outbound, NEEDLES);
 }
 
 #[test]
@@ -213,7 +214,7 @@ fn a_bom_prefixed_npmrc_still_routes_its_scope() {
         only(&check, "@zzsentinel/scoped"),
         Visibility::Private(PrivateReason::ScopedRegistry, _)
     ));
-    assert_no_sentinel(&outbound_from_public(&check.public()), NEEDLES);
+    assert_no_sentinel(&check.outbound, NEEDLES);
 }
 
 #[test]
@@ -260,8 +261,5 @@ fn a_scope_in_the_workspace_root_npmrc_above_a_submodule_stays_private() {
         )
     );
     assert_eq!(public(&check), ["is-odd"]);
-    assert_no_sentinel(
-        &outbound_from_public(&check.public()),
-        &["@zzsub/pkg", "zzsub"],
-    );
+    assert_no_sentinel(&check.outbound, &["@zzsub/pkg", "zzsub"]);
 }

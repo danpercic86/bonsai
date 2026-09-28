@@ -92,8 +92,17 @@ fn dependency(item: Item, lock: Option<&NugetLock>) -> Dependency {
         ItemKind::PackagesConfig => resolved.or_else(|| declared.clone()),
         _ => resolved,
     };
+    // [P125d review, MEDIUM-D1] OSV matches NuGet ids case-sensitively,
+    // and `packages.lock.json` keys carry the canonical nuspec casing even
+    // when the project writes the id differently (VERIFIED, §0.1). A locked
+    // dependency therefore takes the lockfile's casing.
+    // TFMs disagreeing on the casing ⇒ keep the project's (and the row
+    // reads "not verified" on zero hits, `check/rows.rs`).
+    let name = lock
+        .and_then(|l| l.canonical(&item.id))
+        .map_or(item.id.clone(), str::to_string);
     Dependency {
-        name: item.id,
+        name,
         scope,
         declared,
         resolved,

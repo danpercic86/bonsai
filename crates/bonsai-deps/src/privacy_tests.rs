@@ -125,6 +125,9 @@ impl HostEnv for NoEnv {
     fn var(&self, _: &str) -> Option<String> {
         None
     }
+    fn var_present_ci(&self, _: &str) -> bool {
+        false
+    }
     fn vars_with_prefix_ci(&self, _: &str, _: fn(&str) -> bool) -> Vec<(String, String)> {
         Vec::new()
     }

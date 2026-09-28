@@ -434,6 +434,8 @@ dependencies = [
  "git2",
  "proptest",
  "quick-xml",
+ "reqwest",
+ "rustls",
  "semver",
  "serde",
  "serde_json",

@@ -95,6 +95,223 @@ utf8_iter v1.0.4
 percent-encoding v2.3.2
 quick-xml v0.41.0
 memchr v2.8.3
+reqwest v0.13.4
+base64 v0.22.1
+bytes v1.12.1
+futures-channel v0.3.34
+futures-core v0.3.34
+futures-sink v0.3.34
+futures-core v0.3.34
+futures-util v0.3.34
+futures-core v0.3.34
+futures-io v0.3.34
+futures-sink v0.3.34
+futures-task v0.3.34
+memchr v2.8.3
+pin-project-lite v0.2.17
+slab v0.4.12
+http v1.5.0
+bytes v1.12.1
+itoa v1.0.18
+http-body v1.1.0
+bytes v1.12.1
+http v1.5.0 (*)
+http-body-util v0.1.5
+bytes v1.12.1
+futures-core v0.3.34
+http v1.5.0 (*)
+http-body v1.1.0 (*)
+pin-project-lite v0.2.17
+hyper v1.11.0
+atomic-waker v1.1.2
+bytes v1.12.1
+futures-channel v0.3.34 (*)
+futures-core v0.3.34
+http v1.5.0 (*)
+http-body v1.1.0 (*)
+httparse v1.10.1
+itoa v1.0.18
+pin-project-lite v0.2.17
+smallvec v1.15.2
+tokio v1.53.1
+bytes v1.12.1
+libc v0.2.189
+mio v1.2.2
+libc v0.2.189
+wasi v0.11.1+wasi-snapshot-preview1
+windows-sys v0.61.2
+windows-link v0.2.1
+pin-project-lite v0.2.17
+socket2 v0.6.5
+libc v0.2.189
+windows-sys v0.61.2 (*)
+windows-sys v0.61.2 (*)
+want v0.3.1
+try-lock v0.2.5
+hyper-rustls v0.27.9
+http v1.5.0 (*)
+hyper v1.11.0 (*)
+hyper-util v0.1.20
+base64 v0.22.1
+bytes v1.12.1
+futures-channel v0.3.34 (*)
+futures-util v0.3.34 (*)
+http v1.5.0 (*)
+http-body v1.1.0 (*)
+hyper v1.11.0 (*)
+ipnet v2.12.1
+libc v0.2.189
+percent-encoding v2.3.2
+pin-project-lite v0.2.17
+socket2 v0.6.5 (*)
+tokio v1.53.1 (*)
+tower-service v0.3.3
+tracing v0.1.44
+pin-project-lite v0.2.17
+tracing-core v0.1.36
+once_cell v1.21.4
+rustls v0.23.45
+once_cell v1.21.4
+ring v0.17.14
+cfg-if v1.0.4
+getrandom v0.2.17
+cfg-if v1.0.4
+libc v0.2.189
+wasi v0.11.1+wasi-snapshot-preview1
+libc v0.2.189
+untrusted v0.9.0
+windows-sys v0.52.0
+windows-targets v0.52.6
+windows_aarch64_gnullvm v0.52.6
+windows_aarch64_msvc v0.52.6
+windows_i686_gnu v0.52.6
+windows_i686_gnullvm v0.52.6
+windows_i686_msvc v0.52.6
+windows_x86_64_gnu v0.52.6
+windows_x86_64_gnullvm v0.52.6
+windows_x86_64_msvc v0.52.6
+rustls-pki-types v1.15.1
+zeroize v1.9.0
+rustls-webpki v0.103.15
+ring v0.17.14 (*)
+rustls-pki-types v1.15.1 (*)
+untrusted v0.9.0
+subtle v2.6.1
+zeroize v1.9.0
+tokio v1.53.1 (*)
+tokio-rustls v0.26.4
+rustls v0.23.45 (*)
+tokio v1.53.1 (*)
+tower-service v0.3.3
+hyper-util v0.1.20 (*)
+js-sys v0.3.104
+cfg-if v1.0.4
+futures-util v0.3.34 (*)
+wasm-bindgen v0.2.127
+cfg-if v1.0.4
+once_cell v1.21.4
+wasm-bindgen-macro v0.2.127 (proc-macro)
+quote v1.0.47 (*)
+wasm-bindgen-macro-support v0.2.127
+bumpalo v3.20.3
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v2.0.119 (*)
+wasm-bindgen-shared v0.2.127
+unicode-ident v1.0.24
+wasm-bindgen-shared v0.2.127 (*)
+log v0.4.34
+percent-encoding v2.3.2
+pin-project-lite v0.2.17
+rustls v0.23.45 (*)
+rustls-pki-types v1.15.1 (*)
+rustls-platform-verifier v0.6.2
+core-foundation v0.10.1
+core-foundation-sys v0.8.7
+libc v0.2.189
+core-foundation-sys v0.8.7
+jni v0.21.1
+cesu8 v1.1.0
+cfg-if v1.0.4
+combine v4.6.8
+bytes v1.12.1
+memchr v2.8.3
+jni-sys v0.3.1
+jni-sys v0.4.1
+jni-sys-macros v0.4.1 (proc-macro)
+quote v1.0.47 (*)
+syn v2.0.119 (*)
+log v0.4.34
+thiserror v1.0.69
+thiserror-impl v1.0.69 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v2.0.119 (*)
+windows-sys v0.45.0
+windows-targets v0.42.2
+windows_aarch64_gnullvm v0.42.2
+windows_aarch64_msvc v0.42.2
+windows_i686_gnu v0.42.2
+windows_i686_msvc v0.42.2
+windows_x86_64_gnu v0.42.2
+windows_x86_64_gnullvm v0.42.2
+windows_x86_64_msvc v0.42.2
+log v0.4.34
+once_cell v1.21.4
+rustls v0.23.45 (*)
+rustls-native-certs v0.8.4
+openssl-probe v0.2.1
+rustls-pki-types v1.15.1 (*)
+schannel v0.1.29
+windows-sys v0.61.2 (*)
+security-framework v3.7.0
+bitflags v2.13.1
+core-foundation v0.10.1 (*)
+core-foundation-sys v0.8.7
+libc v0.2.189
+security-framework-sys v2.17.0
+core-foundation-sys v0.8.7
+libc v0.2.189
+rustls-platform-verifier-android v0.1.1
+rustls-webpki v0.103.15 (*)
+security-framework v3.7.0 (*)
+security-framework-sys v2.17.0 (*)
+webpki-root-certs v1.0.9
+rustls-pki-types v1.15.1 (*)
+windows-sys v0.61.2 (*)
+sync_wrapper v1.0.2
+futures-core v0.3.34
+tokio v1.53.1 (*)
+tokio-rustls v0.26.4 (*)
+tower v0.5.3
+futures-core v0.3.34
+futures-util v0.3.34 (*)
+pin-project-lite v0.2.17
+sync_wrapper v1.0.2 (*)
+tokio v1.53.1 (*)
+tower-layer v0.3.3
+tower-service v0.3.3
+tower-http v0.6.11
+bitflags v2.13.1
+bytes v1.12.1
+futures-util v0.3.34 (*)
+http v1.5.0 (*)
+http-body v1.1.0 (*)
+pin-project-lite v0.2.17
+tower v0.5.3 (*)
+tower-layer v0.3.3
+tower-service v0.3.3
+url v2.5.8 (*)
+tower-service v0.3.3
+url v2.5.8 (*)
+wasm-bindgen v0.2.127 (*)
+wasm-bindgen-futures v0.4.77
+js-sys v0.3.104 (*)
+wasm-bindgen v0.2.127 (*)
+web-sys v0.3.104
+js-sys v0.3.104 (*)
+wasm-bindgen v0.2.127 (*)
+rustls v0.23.45 (*)
 semver v1.0.28
 serde v1.0.229
 serde_core v1.0.229

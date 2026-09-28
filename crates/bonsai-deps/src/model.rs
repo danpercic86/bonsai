@@ -205,7 +205,8 @@ pub enum GroupState {
 pub struct ManifestGroup {
     pub manifest_path: String,
     pub lockfile_path: Option<String>,
-    /// None ⇔ NotTracked.
+    /// None ⇔ NotTracked, or the `MAX_MANIFESTS` overflow `ParseError`
+    /// group (`<N more manifests>`, `LimitExceeded`) `[P125d review]`.
     pub ecosystem: Option<Ecosystem>,
     pub state: GroupState,
     pub rows: Vec<DepRow>,

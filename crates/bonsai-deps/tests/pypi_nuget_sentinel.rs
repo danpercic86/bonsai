@@ -15,7 +15,7 @@ use common::fixture_pn::{
     CSPROJ, CSPROJ_LIB, NUGET_BROKEN, NUGET_MAPPED, PYPROJECT, Q7_NUGET_CONFIG, REQ_DEV, REQ_ROOT,
     UV_LOCK,
 };
-use common::{assert_no_sentinel, local_check, outbound_from_public, LocalCheck};
+use common::{assert_no_sentinel, assert_no_sentinel_except, local_check, LocalCheck};
 
 const NEEDLES: &[&str] = &["zz-sentinel", "zz_sentinel", "zzsentinel", "corp.invalid"];
 
@@ -49,14 +49,6 @@ fn public_names(check: &LocalCheck) -> Vec<String> {
         .collect()
 }
 
-fn sent_without_above(check: &LocalCheck) -> Vec<bonsai_deps::privacy::PublicPackage> {
-    check
-        .public()
-        .into_iter()
-        .filter(|p| p.name() != ABOVE)
-        .collect()
-}
-
 fn private(host: &str) -> Visibility {
     Visibility::Private(PrivateReason::CustomRegistry, Some(host.into()))
 }
@@ -71,8 +63,9 @@ fn pypi_and_nuget_sentinels_never_reach_the_outbound_set() {
     let public = public_names(&check);
     for n in ["six", "httpx", "Newtonsoft.Json", ABOVE] {
         assert!(public.iter().any(|p| p == n), "{n} missing: {public:?}");
+        assert!(check.sent(n), "{n} not in the recorded outbound set");
     }
-    assert_no_sentinel(&outbound_from_public(&sent_without_above(&check)), NEEDLES);
+    assert_no_sentinel_except(&check.outbound, NEEDLES, &[ABOVE]);
 }
 
 #[test]
@@ -133,7 +126,7 @@ fn env_only_pypi_indexes_keep_every_package_private() {
             public.iter().any(|n| n == "Newtonsoft.Json"),
             "NuGet unaffected"
         );
-        assert_no_sentinel(&outbound_from_public(&sent_without_above(&check)), NEEDLES);
+        assert_no_sentinel_except(&check.outbound, NEEDLES, &[ABOVE]);
     }
 }
 
@@ -165,7 +158,7 @@ fn a_tracked_mapped_nuget_config_keeps_the_corp_pattern_private() {
     assert_eq!(only(&check, "ZzSentinel.Pkg"), mapped);
     assert_eq!(only(&check, ABOVE), mapped);
     assert!(public_names(&check).iter().any(|n| n == "Newtonsoft.Json"));
-    assert_no_sentinel(&outbound_from_public(&check.public()), NEEDLES);
+    assert_no_sentinel(&check.outbound, NEEDLES);
 }
 
 #[test]
@@ -177,7 +170,7 @@ fn an_unparseable_nuget_config_makes_every_nuget_dep_config_unreadable() {
     assert_eq!(only(&check, "Newtonsoft.Json"), UNREADABLE);
     assert_eq!(only(&check, ABOVE), UNREADABLE);
     assert!(public_names(&check).iter().any(|n| n == "six"));
-    assert_no_sentinel(&outbound_from_public(&check.public()), NEEDLES);
+    assert_no_sentinel(&check.outbound, NEEDLES);
 }
 
 fn q7_env(r: &FixtureRepo) -> FakeHostEnv {
@@ -199,7 +192,7 @@ fn q7_a_parent_dir_nuget_config_keeps_every_package_private() {
         public_names(&check).iter().any(|n| n == "six"),
         "PyPI control"
     );
-    assert_no_sentinel(&outbound_from_public(&check.public()), NEEDLES);
+    assert_no_sentinel(&check.outbound, NEEDLES);
 }
 
 #[test]
@@ -223,7 +216,7 @@ fn q9_a_symlinked_parent_nuget_config_fails_closed_unless_the_parent_is_home() {
     let home = q7_env(&r).follow_root(&r.parent);
     let check = local_check(&r.wd, &home);
     assert_eq!(only(&check, ABOVE), private("nuget.corp.invalid"));
-    assert_no_sentinel(&outbound_from_public(&check.public()), NEEDLES);
+    assert_no_sentinel(&check.outbound, NEEDLES);
     // A link to a directory ⇒ ConfigUnreadable, even in $HOME.
     std::fs::remove_file(r.parent.join("NuGet.Config")).expect("rm");
     std::fs::create_dir_all(r.parent.join("a-dir")).expect("mkdir");
@@ -259,7 +252,7 @@ fn a_pdm_or_rye_source_keeps_every_pypi_package_private() {
         assert_eq!(only(&check, "zz-sentinel-pdmdep"), private(host), "{tool}");
         assert_eq!(only(&check, "six"), private(host), "{tool}");
         assert!(public_names(&check).iter().any(|n| n == "Newtonsoft.Json"));
-        assert_no_sentinel(&outbound_from_public(&sent_without_above(&check)), NEEDLES);
+        assert_no_sentinel_except(&check.outbound, NEEDLES, &[ABOVE]);
     }
 }
 

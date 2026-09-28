@@ -40,6 +40,7 @@ const REPO_FILES: &[(&str, Format)] = &[
 const USER_FILES: &[(UserConfig, Format)] = &[
     (UserConfig::NpmUserRc, Format::Npmrc),
     (UserConfig::NpmGlobalRc, Format::Npmrc),
+    (UserConfig::NpmBuiltinRc, Format::Npmrc),
     (UserConfig::PnpmRc, Format::Npmrc),
     (UserConfig::PnpmAuthIni, Format::Npmrc),
     (UserConfig::YarnRc, Format::YarnV1),
@@ -73,7 +74,14 @@ fn extract(sig: &mut NpmSignals, fmt: Format, text: &str) -> Result<(), Closed> 
     }
 }
 
+/// `[P125b review]` token-bearing variables that can change registry
+/// routing. Their VALUE is never read: presence alone fails npm closed.
+const PRESENCE_CLOSES: &[&str] = &["pnpm_config__auth"];
+
 fn env_vars(sig: &mut NpmSignals, env: &dyn HostEnv) -> Result<(), Closed> {
+    if PRESENCE_CLOSES.iter().any(|n| env.var_present_ci(n)) {
+        return Err(Closed);
+    }
     let npm = env.vars_with_prefix_ci("npm_config_", keep_npm_env);
     let pnpm = env.vars_with_prefix_ci("pnpm_config_", keep_npm_env);
     let yarn = env.vars_with_prefix_ci("yarn_", keep_yarn_env);

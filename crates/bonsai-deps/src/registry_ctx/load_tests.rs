@@ -305,7 +305,6 @@ fn env_loader_never_reads_auth_values() {
     let env = FakeHostEnv::new()
         .var("npm_config_//npm.corp.invalid/:_authToken", TOKEN)
         .var("NPM_TOKEN", TOKEN)
-        .var("pnpm_config__auth", TOKEN)
         .var("YARN_NPM_AUTH_TOKEN", TOKEN)
         .var("npm_config_@zzenv:registry", "https://env.corp.invalid/");
     let ctx = load(&r, &env);
@@ -316,6 +315,32 @@ fn env_loader_never_reads_auth_values() {
         env.values_read(),
         vec!["npm_config_@zzenv:registry".to_string()]
     );
+}
+
+#[test]
+fn pnpm_auth_presence_fails_npm_closed_without_reading_it() {
+    // [P125b review] presence-only: the value is never materialised.
+    for name in ["pnpm_config__auth", "PNPM_CONFIG__AUTH"] {
+        let r = repo();
+        let env = FakeHostEnv::new().var(name, TOKEN);
+        assert!(npm_closed(&r, &env), "{name}");
+        assert!(env.values_read().is_empty(), "{:?}", env.values_read());
+    }
+}
+
+#[test]
+fn the_builtin_npmrc_routes_and_fails_closed() {
+    // [P125b review] npm's builtin `<npm dir>/npmrc` is a user-level read.
+    let r = repo();
+    let env = FakeHostEnv::new().user_file(
+        UserConfig::NpmBuiltinRc,
+        "@zzbuiltin:registry=https://builtin.corp.invalid/
+",
+    );
+    let ctx = load(&r, &env);
+    assert!(ctx.eco(Ecosystem::Npm).scoped.contains_key("@zzbuiltin"));
+    let env = FakeHostEnv::new().user_unreadable(UserConfig::NpmBuiltinRc);
+    assert!(npm_closed(&r, &env));
 }
 
 #[test]

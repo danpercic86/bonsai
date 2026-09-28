@@ -11,7 +11,7 @@ use bonsai_deps::registry_ctx::FakeHostEnv;
 use common::fixture::{
     try_symlink_file, FixtureRepo, CARGO_LOCK, CARGO_MEMBER, CARGO_ROOT, GO_MOD, Q7_CARGO_CONFIG,
 };
-use common::{assert_no_sentinel, local_check, outbound_from_public, LocalCheck};
+use common::{assert_no_sentinel, assert_no_sentinel_except, local_check, LocalCheck};
 
 /// Full sentinels and their bare markers.
 const NEEDLES: &[&str] = &["zz-sentinel", "zz_sentinel", "zzsentinel", "corp.invalid"];
@@ -74,12 +74,16 @@ fn cargo_and_go_sentinels_never_reach_the_outbound_set() {
     ] {
         assert!(public.iter().any(|p| p == n), "{n} missing: {public:?}");
     }
-    let sent: Vec<_> = check
-        .public()
-        .into_iter()
-        .filter(|p| p.name() != ABOVE)
-        .collect();
-    assert_no_sentinel(&outbound_from_public(&sent), NEEDLES);
+    for n in [
+        "serde",
+        "itoa",
+        "github.com/pkg/errors",
+        "golang.org/x/text",
+    ] {
+        assert!(check.sent(n), "{n} not in the recorded outbound set");
+    }
+    // `zz-sentinel-above` is a public crate without the Q7 config.
+    assert_no_sentinel_except(&check.outbound, NEEDLES, &[ABOVE]);
 }
 
 #[test]
@@ -134,7 +138,7 @@ fn an_env_only_crates_io_replacement_makes_every_crate_private() {
         only(&check, "serde"),
         Visibility::Private(PrivateReason::CustomRegistry, _)
     ));
-    assert_no_sentinel(&outbound_from_public(&check.public()), NEEDLES);
+    assert_no_sentinel(&check.outbound, NEEDLES);
 }
 
 #[test]
@@ -157,7 +161,7 @@ fn q7_a_parent_dir_cargo_config_keeps_every_crate_private() {
     );
     assert_eq!(only(&check, ABOVE), above);
     assert_eq!(only(&check, "serde"), above);
-    assert_no_sentinel(&outbound_from_public(&check.public()), NEEDLES);
+    assert_no_sentinel(&check.outbound, NEEDLES);
 }
 
 #[test]
@@ -194,7 +198,7 @@ fn q9_a_symlinked_parent_config_fails_closed_unless_the_parent_is_home() {
             Some("cargo.corp.invalid".into())
         )
     );
-    assert_no_sentinel(&outbound_from_public(&check.public()), NEEDLES);
+    assert_no_sentinel(&check.outbound, NEEDLES);
     // A link to a directory ⇒ ConfigUnreadable, even in $HOME.
     std::fs::remove_file(r.parent.join(".cargo/config.toml")).expect("rm");
     std::fs::create_dir_all(r.parent.join("a-dir")).expect("mkdir");
@@ -215,12 +219,7 @@ fn go_rows(env: &FakeHostEnv) -> LocalCheck {
     let r = fixture();
     let check = local_check(&r.wd, env);
     // `zz-sentinel-above` is a public crate without the Q7 config.
-    let sent: Vec<_> = check
-        .public()
-        .into_iter()
-        .filter(|p| p.name() != ABOVE)
-        .collect();
-    assert_no_sentinel(&outbound_from_public(&sent), NEEDLES);
+    assert_no_sentinel_except(&check.outbound, NEEDLES, &[ABOVE]);
     check
 }
 

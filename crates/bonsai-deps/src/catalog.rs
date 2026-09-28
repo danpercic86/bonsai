@@ -60,7 +60,6 @@ pub(crate) const SKIPPED_SEGMENTS: &[&str] = &[
 
 /// §7.6 registry-page URL templates; `{}` is the percent-encoded, already
 /// validated name.
-#[allow(dead_code)] // consumed by the check pipeline (P125d).
 pub(crate) fn registry_page_template(eco: Ecosystem) -> &'static str {
     match eco {
         Ecosystem::Npm => "https://www.npmjs.com/package/{}",

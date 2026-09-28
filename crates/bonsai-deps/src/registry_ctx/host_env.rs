@@ -56,6 +56,14 @@ pub enum UserConfig {
     NpmUserRc,
     /// `$NPM_CONFIG_PREFIX/etc/npmrc`, else the per-OS global npmrc.
     NpmGlobalRc,
+    /// `[P125b review]` npm's BUILTIN config, `<npm install dir>/npmrc`
+    /// (npm docs `npmrc.md` "Built-in config file": "an unchangeable
+    /// builtin configuration file that npm keeps consistent across
+    /// updates"). Path resolution (the npm package dir next to the `node`
+    /// executable) lands with the real `HostEnv` in P125e — ASSUMED. Read
+    /// with the npmrc key filter; Absent when npm is not installed; a file
+    /// that exists but cannot be read ⇒ Unreadable ⇒ npm fails closed.
+    NpmBuiltinRc,
     /// pnpm `rc` in the per-OS config dir.
     PnpmRc,
     /// pnpm 11 `<configDir>/auth.ini` (same config dir as
@@ -101,6 +109,12 @@ pub enum UserConfig {
 /// Everything `RegistryContext::load` reads from outside the repo.
 pub trait HostEnv: Sync {
     fn var(&self, name: &str) -> Option<String>;
+    /// `[P125b review]` whether variable `name` is set (ASCII
+    /// case-insensitive), WITHOUT reading its value. For token-bearing
+    /// variables whose mere presence must fail an ecosystem closed
+    /// (`pnpm_config__auth`). No default body: every `HostEnv` implements
+    /// it, and none may materialise the value.
+    fn var_present_ci(&self, name: &str) -> bool;
     /// `[NEW-2]` `keep` filters on the KEY before the value is collected:
     /// only registry/index keys are returned, so auth-token-style values are
     /// never read into memory.

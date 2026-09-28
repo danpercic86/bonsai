@@ -12,7 +12,7 @@ use bonsai_deps::privacy::Visibility;
 use bonsai_deps::registry_ctx::{FakeHostEnv, UserConfig};
 
 use common::fixture::FixtureRepo;
-use common::{assert_no_sentinel, local_check, outbound_from_public};
+use common::{assert_no_sentinel, local_check};
 
 const TOKEN: &str = "zz-sentinel-token";
 
@@ -77,7 +77,11 @@ fn pypi_and_nuget_tokens_never_reach_outbound_errors_or_hosts() {
         "{:?}",
         public.iter().map(|p| p.name()).collect::<Vec<_>>()
     );
-    assert_no_sentinel(&outbound_from_public(&public), &[TOKEN, "zz-sentinel"]);
+    assert_no_sentinel(&check.outbound, &[TOKEN, "zz-sentinel"]);
+    assert!(
+        check.outbound.is_empty(),
+        "zero requests when nothing is public"
+    );
     assert_eq!(check.errors.len(), 2, "the two broken manifests");
     for e in &check.errors {
         assert!(!format!("{e:?}").contains(TOKEN));
@@ -93,6 +97,7 @@ fn pypi_and_nuget_tokens_never_reach_outbound_errors_or_hosts() {
     // The broken project file also hides its RestoreSources, so NuGet is
     // ConfigUnreadable (no host); the PyPI rows carry theirs.
     assert!(hosts >= 1, "the PyPI rows carry their display host");
+    common::assert_report_clean(&check.report, TOKEN);
 }
 
 #[test]
@@ -100,8 +105,11 @@ fn only_index_env_values_are_read() {
     let r = fixture();
     let env = env(&r.parent);
     let _ = local_check(&r.wd, &env);
-    // [NEW-2] the token-bearing names are filtered before their value.
-    assert_eq!(env.values_read(), ["PIP_INDEX_URL"]);
+    // [NEW-2] the token-bearing names are filtered before their value
+    // (`local_check` loads the context twice: its own pass + `run_check`).
+    let mut read = env.values_read();
+    read.dedup();
+    assert_eq!(read, ["PIP_INDEX_URL"]);
 }
 
 #[test]
