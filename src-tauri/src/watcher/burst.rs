@@ -5,7 +5,7 @@
 //! are testable without wall-clock timing or a real `notify` watch.
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::BurstClass;
 
@@ -38,6 +38,8 @@ pub(super) struct WatchTick {
     pub(super) worktree_paths: Vec<PathBuf>,
     /// P124b: EVERY `Worktree`-class path in the batch, past the cap too.
     pub(super) worktree_count: u32,
+    /// P113d: this tick is a notify `Err(_)` (true only on that arm).
+    pub(super) error: bool,
 }
 
 /// The running reduction of ONE debounce window: the coalesced counts plus the
@@ -52,6 +54,12 @@ pub(super) struct BurstAcc {
     pub(super) worktree_paths: Vec<PathBuf>,
     /// Every worktree path the window saw, past the cap too.
     pub(super) worktree_total: u32,
+    /// P113d: notify batches coalesced (saturating, +1 per absorb incl. `new`).
+    pub(super) batches: u32,
+    /// P113d: `Err(_)` ticks coalesced (saturating, +1 per `t.error`).
+    pub(super) errors: u32,
+    /// P113d: `Instant::now()` in `new`; `burst_ms = started.elapsed()` at fire.
+    pub(super) started: Instant,
 }
 
 impl BurstAcc {
@@ -62,6 +70,9 @@ impl BurstAcc {
             refs: false,
             worktree_paths: Vec::new(),
             worktree_total: 0,
+            batches: 0,
+            errors: 0,
+            started: Instant::now(),
         };
         acc.absorb(first);
         acc
@@ -73,6 +84,8 @@ impl BurstAcc {
         self.paths = self.paths.saturating_add(t.paths);
         self.relevant = self.relevant.saturating_add(t.relevant);
         self.refs |= t.refs;
+        self.batches = self.batches.saturating_add(1);
+        self.errors = self.errors.saturating_add(u32::from(t.error));
         self.worktree_total = self.worktree_total.saturating_add(t.worktree_count);
         let room = IGNORE_SAMPLE_CAP.saturating_sub(self.worktree_paths.len());
         self.worktree_paths

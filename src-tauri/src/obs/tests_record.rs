@@ -159,3 +159,70 @@ fn an_unknown_region_deserialises_to_other_without_rejecting_the_batch() {
         "a forged region must never reach disk: {out}"
     );
 }
+
+/// A `watcher` payload with the pre-P113d optionals set and the five P113d
+/// fields all `new` (`None` or `Some(n)`).
+fn watcher_payload(new: Option<u32>) -> LogPayload {
+    LogPayload::Watcher {
+        paths: 5,
+        relevant: 3,
+        debounce_ms: 300,
+        fired: true,
+        suppressed: true,
+        suppress_reason: Some("ignored".into()),
+        burst_class: Some("worktree".into()),
+        worktree_paths: Some(3),
+        ignore_checked: Some(3),
+        ignored: Some(3),
+        batches: new,
+        burst_ms: new,
+        errors: new,
+        skipped_batches: new,
+        skipped_paths: new,
+    }
+}
+
+fn key_set(p: &LogPayload) -> std::collections::BTreeSet<String> {
+    let v = serde_json::to_value(p).expect("serialize");
+    v.as_object().expect("object").keys().cloned().collect()
+}
+
+/// P113d §3: the five new fields are additive — absent, the key set is the
+/// pre-P113d one byte-for-byte; present, they serialize camelCase.
+#[test]
+fn watcher_record_key_set_unchanged_when_new_fields_absent() {
+    let legacy: std::collections::BTreeSet<String> = [
+        "kind",
+        "paths",
+        "relevant",
+        "debounceMs",
+        "fired",
+        "suppressed",
+        "suppressReason",
+        "burstClass",
+        "worktreePaths",
+        "ignoreChecked",
+        "ignored",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    assert_eq!(key_set(&watcher_payload(None)), legacy);
+
+    let with_new = key_set(&watcher_payload(Some(2)));
+    let added: Vec<&str> = with_new
+        .iter()
+        .filter(|k| !legacy.contains(*k))
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        added,
+        vec![
+            "batches",
+            "burstMs",
+            "errors",
+            "skippedBatches",
+            "skippedPaths"
+        ]
+    );
+}

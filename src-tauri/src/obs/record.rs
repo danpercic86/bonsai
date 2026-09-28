@@ -263,6 +263,31 @@ pub enum LogPayload {
         /// ignoreChecked` marks an all-ignored (tooling-output) burst.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ignored: Option<u32>,
+        /// P113d: notify batches coalesced into this burst. ALWAYS present on a
+        /// Rust `fired` record written by a P113d build (≥ 1) — its presence is
+        /// how a reader knows the per-batch `fired:false` records no longer
+        /// exist (P113d §3.2).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        batches: Option<u32>,
+        /// P113d: ms from the debounce thread receiving the burst's first batch
+        /// to the fire (includes the trailing `debounceMs` quiet period). Always
+        /// present with `batches`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        burst_ms: Option<u32>,
+        /// P113d: notify `Err(_)` events in this burst. Fired records only;
+        /// omitted when 0.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        errors: Option<u32>,
+        /// P113d: notify batches the `.git`-internals filter rejected whole
+        /// (`relevant == 0`) since this watcher's previous record. On fired
+        /// records AND noise summaries; omitted when 0. Never set by the
+        /// frontend.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        skipped_batches: Option<u32>,
+        /// P113d: total paths in those batches (see `NoiseCounters`' ordering
+        /// caveat — per-record attribution may shift by one batch; totals exact).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        skipped_paths: Option<u32>,
     },
     #[serde(rename = "refresh")]
     Refresh {

@@ -2,7 +2,7 @@
 //!
 //! Split out of `mod.rs` to keep that file under the ~500-line limit. Child
 //! module of `watcher`, so `use super::*` reaches its private items
-//! (`WatchTick`, `accumulate`, `log_watcher`).
+//! (`WatchTick`, `accumulate`, `log_watch_fired`, `log_watch_noise`).
 
 use super::*;
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
@@ -185,9 +185,10 @@ fn drop_is_clean() {
     }
 }
 
-/// P91 §2.4: a debounce firing records a `watcher` record with the right
-/// `paths`/`relevant`/`debounceMs`/`fired`. Drives `log_watcher` directly (a
-/// real git-op burst is tester/integration scope).
+/// P91 §2.4 / P113d: a debounce firing records a `watcher` record with the
+/// right `paths`/`relevant`/`debounceMs`/`fired` plus the always-present
+/// `batches`/`burstMs`; a noise summary carries no class, only `skipped*`.
+/// Drives the two emit fns directly (a real git-op burst is integration scope).
 #[test]
 fn watcher_record_shape() {
     let _serial = crate::obs::trace::test_sink_lock();
@@ -207,10 +208,22 @@ fn watcher_record_shape() {
         .unwrap(),
     );
     crate::obs::trace::set_active_sink(Some(std::sync::Arc::clone(&sink)));
-    log_watcher(5, 3, true, Some(BurstClass::Refs), None, false);
-    // P110: a non-fired (raw-batch) record carries NO class — the proof that
-    // the pre-P110 record shape is byte-identical when the field is absent.
-    log_watcher(2, 0, false, None, None, false);
+    let mut acc = BurstAcc::new(WatchTick {
+        paths: 3,
+        relevant: 2,
+        refs: true,
+        ..WatchTick::default()
+    });
+    acc.absorb(WatchTick {
+        paths: 2,
+        relevant: 1,
+        ..WatchTick::default()
+    });
+    log_watch_fired(&acc, acc.class(), None, false, None);
+    log_watch_noise(super::noise::SkippedNoise {
+        batches: 4,
+        paths: 9,
+    });
     crate::obs::trace::set_active_sink(None);
     sink.shutdown();
 
@@ -237,12 +250,27 @@ fn watcher_record_shape() {
     assert_eq!(v["suppressed"], false);
     // P110: the burst class rides along on `fired` records…
     assert_eq!(v["burstClass"], "refs");
-    // …and is OMITTED entirely otherwise (unchanged legacy record shape).
-    let raw = not_fired.expect("a non-fired watcher record");
+    // P113d: …and so do the always-present aggregates.
+    assert_eq!(v["batches"], 2);
+    assert!(v["burstMs"].is_u64(), "burstMs must be present: {v}");
+    assert!(v["errors"].is_null(), "errors omitted when 0: {v}");
+    assert!(v["skippedBatches"].is_null(), "no noise drained: {v}");
+    // …while a noise summary carries NO class (legacy absent-field shape) and
+    // is identified by `skippedBatches`.
+    let raw = not_fired.expect("a noise-summary watcher record");
     assert!(
         raw["burstClass"].is_null(),
         "burstClass must be absent on non-fired records, got {}",
         raw["burstClass"]
+    );
+    assert_eq!(raw["paths"], 0);
+    assert_eq!(raw["relevant"], 0);
+    assert_eq!(raw["suppressed"], false);
+    assert_eq!(raw["skippedBatches"], 4);
+    assert_eq!(raw["skippedPaths"], 9);
+    assert!(
+        raw["batches"].is_null() && raw["burstMs"].is_null(),
+        "{raw}"
     );
 }
 

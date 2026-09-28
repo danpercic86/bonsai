@@ -203,6 +203,11 @@ pub(super) fn watcher(ts: i64, fired: bool) -> LogRecord {
             worktree_paths: None,
             ignore_checked: None,
             ignored: None,
+            batches: None,
+            burst_ms: None,
+            errors: None,
+            skipped_batches: None,
+            skipped_paths: None,
         },
     )
 }

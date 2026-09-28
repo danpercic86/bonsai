@@ -120,6 +120,15 @@ export interface WatcherPayload {
   worktreePaths?: number;
   ignoreChecked?: number;
   ignored?: number;
+  /** P113d — Rust `fired` records only. `batches`/`burstMs` are always present on
+   *  a P113d-era Rust firing; `errors` only when > 0. */
+  batches?: number;
+  burstMs?: number;
+  errors?: number;
+  /** P113d — irrelevant notify batches folded into this record (Rust fired
+   *  records and noise summaries; never on frontend echo records). */
+  skippedBatches?: number;
+  skippedPaths?: number;
 }
 
 /** §2.5 — one executed coalesced refresh round. >1 contributing trace IS the

@@ -429,6 +429,10 @@ mod tests_anomaly_support;
 mod tests_anomaly;
 
 #[cfg(test)]
+#[path = "tests_anomaly_watcher.rs"]
+mod tests_anomaly_watcher;
+
+#[cfg(test)]
 #[path = "tests_anomaly_slow.rs"]
 mod tests_anomaly_slow;
 

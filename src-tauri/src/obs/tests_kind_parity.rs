@@ -148,6 +148,11 @@ fn one_per_variant() -> Vec<LogPayload> {
             worktree_paths: None,
             ignore_checked: None,
             ignored: None,
+            batches: None,
+            burst_ms: None,
+            errors: None,
+            skipped_batches: None,
+            skipped_paths: None,
         },
         LogPayload::Refresh {
             round: 0,

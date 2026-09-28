@@ -422,6 +422,10 @@ pub fn run() {
                 // without this a `claude` child (and the node process behind the
                 // npm shim) could outlive the window indefinitely.
                 app.state::<bonsai_core::ai::AiRunRegistry>().cancel_all();
+                // P113d §6: stop every watcher while the log sink is still
+                // live, so each debounce thread's noise tail is recorded.
+                // Exit is never cancelled past this arm.
+                app.state::<state::AppState>().stop_all_watchers();
                 // P91 §6: flush-and-join the log writer (2 s handshake) so a
                 // clean exit loses ZERO records. A no-op when Dev mode is off.
                 obs::shutdown_on_exit(&app.state::<obs::ObsState>());

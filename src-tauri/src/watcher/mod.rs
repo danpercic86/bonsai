@@ -15,6 +15,11 @@
 //! - P124b: a small burst whose every worktree path is gitignored AND
 //!   untracked is DROPPED (logged as a suppressed `fired` record, no
 //!   `on_change`), bounded by a 5-min heartbeat — see `burst.rs`;
+//! - P113d: nothing is logged per raw notify batch. A `relevant == 0` batch
+//!   (pure `.git` noise) only bumps the shared `noise::NoiseCounters`; every
+//!   `watcher` record comes from the debounce thread — one per firing (with
+//!   `batches`/`burstMs`/`errors` + any drained noise), or a noise summary when
+//!   noise sat undrained for `NOISE_FLUSH` or the watcher is torn down;
 //! - clean shutdown: dropping `WatcherHandle` drops the watcher first (the
 //!   channel sender disconnects), then joins the debounce thread.
 //!
@@ -24,8 +29,8 @@
 //! ReadDirectoryChangesW can miss events on Windows; the manual refresh
 //! button and window-focus rescan are mandatory companions, not extras.
 
-use std::path::Path;
-use std::sync::mpsc;
+use std::path::{Path, PathBuf};
+use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
 use notify::Watcher;
@@ -34,12 +39,16 @@ use bonsai_core::error::AppError;
 
 mod burst;
 mod classify;
+mod emit;
+mod noise;
 
 #[cfg(test)]
 use burst::accumulate;
 use burst::{burst_verdict, drop_eligible, ignore_stats, BurstAcc, BurstVerdict, WatchTick};
 #[cfg(test)]
 use burst::{IgnoreStats, DROP_MAX_PATHS, IGNORED_HEARTBEAT, IGNORE_SAMPLE_CAP};
+use emit::{log_watch_fired, log_watch_noise};
+use noise::{NoiseCounters, NOISE_FLUSH};
 
 pub(crate) use classify::classify;
 pub use classify::PathClass;
@@ -50,51 +59,6 @@ pub use classify::PathClass;
 pub type BurstClass = PathClass;
 
 const DEBOUNCE: Duration = Duration::from_millis(300);
-
-/// Logs a `watcher` record via the global obs sink (§2.4, `root("watcher")`).
-/// A no-op when Dev mode is off (the sink is `None`). The watcher is
-/// Tauri-decoupled and holds no `AppHandle`, so it goes through the same
-/// process-wide sink handle the phase recorder uses.
-fn log_watcher(
-    paths: u32,
-    relevant: u32,
-    fired: bool,
-    class: Option<BurstClass>,
-    ignore: Option<burst::IgnoreStats>,
-    suppressed: bool,
-) {
-    use crate::obs::record::{LogLevel, LogPayload};
-    let Some(sink) = crate::obs::trace::active_sink() else {
-        return;
-    };
-    let meta = crate::obs::TraceMeta::root("watcher");
-    let rec = crate::obs::trace::make_record(
-        &sink,
-        LogLevel::Debug,
-        &meta,
-        LogPayload::Watcher {
-            paths,
-            relevant,
-            debounce_ms: DEBOUNCE.as_millis() as u32,
-            fired,
-            // P124b: a dropped all-ignored burst still logs its `fired`
-            // record, marked so, and no refresh round follows it.
-            suppressed,
-            suppress_reason: suppressed.then(|| "ignored".to_string()),
-            burst_class: class.map(|c| {
-                match c {
-                    PathClass::Worktree => "worktree",
-                    PathClass::Refs => "refs",
-                }
-                .to_string()
-            }),
-            worktree_paths: ignore.as_ref().map(|s| s.worktree_paths),
-            ignore_checked: ignore.as_ref().and_then(|s| s.ignore_checked),
-            ignored: ignore.as_ref().and_then(|s| s.ignored),
-        },
-    );
-    sink.enqueue(rec);
-}
 
 /// Keeps the watcher and its debounce thread alive; dropping it stops both.
 pub struct WatcherHandle {
@@ -108,7 +72,8 @@ impl Drop for WatcherHandle {
     fn drop(&mut self) {
         // Drop the watcher first so its event handler (holding the tx) stops
         // and the channel disconnects, then join the debounce thread — it
-        // returns promptly on `Err(Disconnected)`.
+        // returns promptly on `Err(Disconnected)`, after flushing its noise
+        // tail (P113d §6), so `drop` returning ⇒ the tail record is enqueued.
         drop(self.watcher.take());
         if let Some(t) = self.debounce_thread.take() {
             let _ = t.join();
@@ -137,11 +102,14 @@ pub fn spawn_watcher(
     // sampled paths relative for the ignore check.
     let fire_workdir = workdir.clone();
     let (tx, rx) = mpsc::channel::<WatchTick>();
+    // P113d: `.git`-internals noise counts, shared with the debounce thread.
+    let noise = Arc::new(NoiseCounters::default());
+    let handler_noise = Arc::clone(&noise);
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        // P91 §2.4: log the raw notify batch (counts only), then forward a tick
-        // carrying the same counts so the debounce firing can report the total
-        // paths/relevant that were coalesced into it.
+        // P113d: no obs call here. A relevant batch is forwarded as a tick
+        // carrying its counts (the debounce firing reports the burst sums);
+        // an irrelevant one only bumps two relaxed counters.
         let tick = match &res {
             Ok(event) => {
                 let paths = event.paths.len() as u32;
@@ -170,20 +138,24 @@ pub fn spawn_watcher(
                     refs,
                     worktree_paths,
                     worktree_count,
+                    error: false,
                 }
             }
             // watcher error → trigger a refresh, cheap and safe; count it as one
             // relevant path so the debounce fires, and as ref-affecting so the
             // frontend runs the WIDE refresh (we don't know what was dropped).
+            // P113d: `error` makes the fired record closing the burst count it.
             Err(_) => WatchTick {
                 paths: 1,
                 relevant: 1,
                 refs: true,
+                error: true,
                 ..WatchTick::default()
             },
         };
-        log_watcher(tick.paths, tick.relevant, false, None, None, false);
-        if tick.relevant > 0 {
+        if tick.relevant == 0 {
+            handler_noise.absorb(tick.paths);
+        } else {
             let _ = tx.send(tick); // receiver gone: watcher is being torn down
         }
     })
@@ -195,61 +167,7 @@ pub fn spawn_watcher(
 
     let debounce_thread = std::thread::Builder::new()
         .name("bonsai-watch-debounce".into())
-        .spawn(move || {
-            // P124b: the heartbeat clock — the last `on_change` (spawn counts).
-            let mut last_fire = Instant::now();
-            loop {
-                match rx.recv() {
-                    Err(mpsc::RecvError) => return, // watcher dropped → clean shutdown
-                    Ok(first) => {
-                        // Accumulate the coalesced counts + burst class across
-                        // the debounce window so the `fired` record and the
-                        // callback both describe the whole burst.
-                        let mut acc = BurstAcc::new(first);
-                        // Drain until 300 ms of quiet, then fire once.
-                        loop {
-                            match rx.recv_timeout(DEBOUNCE) {
-                                Ok(t) => {
-                                    acc.absorb(t);
-                                    continue; // storm ongoing, keep absorbing
-                                }
-                                Err(mpsc::RecvTimeoutError::Timeout) => {
-                                    let class = acc.class();
-                                    // P124b: the git check runs only for a
-                                    // drop-eligible burst, or in Dev mode (the
-                                    // P121d measurement). Logged BEFORE
-                                    // `on_change` so the record still precedes
-                                    // the refresh it causes.
-                                    let dev = crate::obs::trace::active_sink().is_some();
-                                    let stats = if drop_eligible(&acc) || dev {
-                                        ignore_stats(&fire_workdir, &acc)
-                                    } else {
-                                        None
-                                    };
-                                    let verdict =
-                                        burst_verdict(&acc, stats.as_ref(), last_fire.elapsed());
-                                    let dropped = verdict == BurstVerdict::DropIgnored;
-                                    log_watcher(
-                                        acc.paths,
-                                        acc.relevant,
-                                        true,
-                                        Some(class),
-                                        stats,
-                                        dropped,
-                                    );
-                                    if !dropped {
-                                        on_change(class);
-                                        last_fire = Instant::now();
-                                    }
-                                    break;
-                                }
-                                Err(mpsc::RecvTimeoutError::Disconnected) => return,
-                            }
-                        }
-                    }
-                }
-            }
-        })
+        .spawn(move || debounce_loop(rx, noise, fire_workdir, on_change, NOISE_FLUSH))
         .map_err(|e| AppError::Other(format!("failed to spawn debounce thread: {e}")))?;
 
     Ok(WatcherHandle {
@@ -258,7 +176,89 @@ pub fn spawn_watcher(
     })
 }
 
+/// The debounce thread body (P113d §2.4; extracted so tests can drive it over a
+/// hand-fed channel) — the ONLY writer of Rust `watcher` records. `noise_flush`
+/// bounds the OUTER idle wait only (production: `NOISE_FLUSH`), which runs only
+/// with no burst in flight, so it can never move fire timing; the inner drain
+/// loop, `DEBOUNCE` and the P124b heartbeat are unchanged.
+fn debounce_loop(
+    rx: mpsc::Receiver<WatchTick>,
+    noise: Arc<NoiseCounters>,
+    workdir: PathBuf,
+    on_change: Box<dyn Fn(BurstClass) + Send>,
+    noise_flush: Duration,
+) {
+    // P124b: the heartbeat clock — the last `on_change` (spawn counts).
+    let mut last_fire = Instant::now();
+    loop {
+        let first = match rx.recv_timeout(noise_flush) {
+            Ok(first) => first,
+            // Idle: report noise that found no firing to ride on.
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if let Some(s) = noise.take() {
+                    log_watch_noise(s);
+                }
+                continue;
+            }
+            // Watcher dropped → flush the noise tail, clean shutdown.
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                if let Some(s) = noise.take() {
+                    log_watch_noise(s);
+                }
+                return;
+            }
+        };
+        // Accumulate the coalesced counts + burst class across the debounce
+        // window so the `fired` record and the callback both describe the
+        // whole burst.
+        let mut acc = BurstAcc::new(first);
+        // Drain until 300 ms of quiet, then fire once.
+        loop {
+            match rx.recv_timeout(DEBOUNCE) {
+                Ok(t) => {
+                    acc.absorb(t);
+                    continue; // storm ongoing, keep absorbing
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    let class = acc.class();
+                    // P124b: the git check runs only for a drop-eligible burst,
+                    // or in Dev mode (the P121d measurement). Logged BEFORE
+                    // `on_change` so the record still precedes the refresh it
+                    // causes.
+                    let dev = crate::obs::trace::active_sink().is_some();
+                    let stats = if drop_eligible(&acc) || dev {
+                        ignore_stats(&workdir, &acc)
+                    } else {
+                        None
+                    };
+                    let verdict = burst_verdict(&acc, stats.as_ref(), last_fire.elapsed());
+                    let dropped = verdict == BurstVerdict::DropIgnored;
+                    // Noise is drained unconditionally (even with no sink), so
+                    // a Dev-mode-off period never leaks into a later record.
+                    log_watch_fired(&acc, class, stats.as_ref(), dropped, noise.take());
+                    if !dropped {
+                        on_change(class);
+                        last_fire = Instant::now();
+                    }
+                    break;
+                }
+                // Teardown mid-burst: flush noise but write NO fired record —
+                // no `on_change` ran, so `fired: true` would lie (and feed a
+                // spurious `watcher-storm` on app exit).
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    if let Some(s) = noise.take() {
+                        log_watch_noise(s);
+                    }
+                    return;
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_ignore;
+#[cfg(test)]
+mod tests_noise;

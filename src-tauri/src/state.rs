@@ -74,4 +74,29 @@ impl AppState {
     pub fn git_activity_unscoped(&self) -> ScopedActivityHub {
         ScopedActivityHub::new(self.git_activity.clone(), None)
     }
+
+    /// P113d §6: drops every repo's `WatcherHandle`, so each debounce thread
+    /// flushes its noise tail while the obs sink is still live (called from
+    /// the `ExitRequested` arm BEFORE `obs::shutdown_on_exit`). The handles are
+    /// taken under the `repos` lock (poison-recovered) and dropped AFTER it is
+    /// released — `Drop` joins the debounce thread, whose `on_change` may
+    /// itself touch app state. Idempotent; every `RepoEntry` stays in place
+    /// with `watcher: None`.
+    pub fn stop_all_watchers(&self) {
+        let handles: Vec<WatcherHandle> = {
+            let mut repos = self
+                .repos
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            repos
+                .values_mut()
+                .filter_map(|entry| entry.watcher.take())
+                .collect()
+        };
+        drop(handles);
+    }
 }
+
+#[cfg(test)]
+#[path = "state_tests.rs"]
+mod state_tests;

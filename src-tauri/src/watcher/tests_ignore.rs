@@ -17,6 +17,7 @@ fn burst_samples_worktree_paths_with_a_cap() {
             .map(|i| std::path::PathBuf::from(format!("f{i}")))
             .collect(),
         worktree_count: n as u32,
+        error: false,
     };
     let mut acc = BurstAcc::new(tick(100));
     for _ in 0..5 {
@@ -60,6 +61,11 @@ fn watcher_ignore_fields_serde() {
         worktree_paths: Some(9),
         ignore_checked: Some(8),
         ignored: Some(7),
+        batches: None,
+        burst_ms: None,
+        errors: None,
+        skipped_batches: None,
+        skipped_paths: None,
     };
     let v = serde_json::to_value(&fired).unwrap();
     assert_eq!(v["worktreePaths"], 9);
@@ -77,10 +83,24 @@ fn watcher_ignore_fields_serde() {
         worktree_paths: None,
         ignore_checked: None,
         ignored: None,
+        batches: None,
+        burst_ms: None,
+        errors: None,
+        skipped_batches: None,
+        skipped_paths: None,
     };
     let v = serde_json::to_value(&raw).unwrap();
     let obj = v.as_object().unwrap();
-    for k in ["worktreePaths", "ignoreChecked", "ignored"] {
+    for k in [
+        "worktreePaths",
+        "ignoreChecked",
+        "ignored",
+        "batches",
+        "burstMs",
+        "errors",
+        "skippedBatches",
+        "skippedPaths",
+    ] {
         assert!(!obj.contains_key(k), "{k} must be omitted, got {v}");
     }
 }
@@ -103,6 +123,7 @@ fn ignore_stats_counts_relative_paths() {
             std::path::PathBuf::from("elsewhere").join("b.js"),
         ],
         worktree_count: 3,
+        error: false,
     });
     acc.absorb(WatchTick::default());
     let s = ignore_stats(&workdir, &acc).expect("stats for a worktree burst");
@@ -203,6 +224,7 @@ fn wt_acc(n: usize, raw: u32) -> BurstAcc {
             .map(|i| std::path::PathBuf::from(format!("dist/f{i}.js")))
             .collect(),
         worktree_count: n as u32,
+        error: false,
     })
 }
 
@@ -294,6 +316,7 @@ fn workdir_root_path_is_never_droppable() {
         refs: false,
         worktree_paths: vec![workdir.join("dist").join("a.js")],
         worktree_count: 1,
+        error: false,
     });
     let s = ignore_stats(&workdir, &only_ignored).expect("stats");
     let fresh = Duration::from_secs(1);
@@ -308,6 +331,7 @@ fn workdir_root_path_is_never_droppable() {
         refs: false,
         worktree_paths: vec![workdir.join("dist").join("a.js"), workdir.clone()],
         worktree_count: 2,
+        error: false,
     });
     let s = ignore_stats(&workdir, &with_root).expect("stats");
     assert!(!s.all_relative);
@@ -333,6 +357,11 @@ fn dropped_firing_serde() {
         worktree_paths: Some(3),
         ignore_checked: Some(3),
         ignored: Some(3),
+        batches: None,
+        burst_ms: None,
+        errors: None,
+        skipped_batches: None,
+        skipped_paths: None,
     };
     let json = serde_json::to_string(&dropped).unwrap();
     assert!(
