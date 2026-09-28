@@ -1,0 +1,5 @@
+# P125 §7.4 (AC11): the dependency tracker never spawns a process. The ban is
+# denied crate-wide in lib.rs (`#![deny(clippy::disallowed_types,
+# clippy::disallowed_methods)]`) and backed by the tests/no_process.rs scan.
+disallowed-types = ["std::process::Command", "tokio::process::Command"]
+disallowed-methods = ["std::process::Command::new"]

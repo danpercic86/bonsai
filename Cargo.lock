@@ -421,6 +421,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bonsai-deps"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "semver",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bonsai-forge"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,21 @@
+[package]
+name = "bonsai-deps"
+version = "0.1.0"
+edition = "2021"
+rust-version.workspace = true
+
+[lib]
+name = "bonsai_deps"
+
+# P125 dependency tracker (docs/contracts/P125-dependency-tracker.md). This
+# crate NEVER spawns a process (clippy.toml ban + tests/no_process.rs) and uses
+# only the §7.4 allowlist of bonsai-core items. Dependencies are added in the
+# sub-increment that first uses them, so every change to the set shows up in
+# the committed `dep-tree.txt` snapshot (§7.4, MEDIUM-4).
+[dependencies]
+serde = { workspace = true }
+semver = "1"
+
+[dev-dependencies]
+serde_json = { workspace = true }
+proptest = "1.6"

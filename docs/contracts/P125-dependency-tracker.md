@@ -746,7 +746,9 @@ Enforcement:
   matching.
 - **Dependency snapshot:** `crates/bonsai-deps/dep-tree.txt` holds the committed output of
   `cargo tree -p bonsai-deps -e normal --prefix none --target all` (`--target all` so the
-  snapshot is identical on every OS `[NEW-3]`). The **P125a done criterion** is that a
+  snapshot is identical on every OS `[NEW-3]`), piped through
+  `sed -E 's/ \([^)]*[\\/][^)]*\)//g'` to strip checkout-absolute path-dependency sources (found in
+  P125a; generate from Git Bash — a PowerShell `>` writes UTF-16). The **P125a done criterion** is that a
   regenerated snapshot is byte-identical (`git diff --exit-code`). Any later change to the dependency
   set shows up in review. Adding it to the `pnpm gate` audit group is an orchestrator follow-up.
 
@@ -845,7 +847,7 @@ sentinel tests, the HIGH-2 YAML/TOML bomb tests, the MEDIUM-3 fs tests and the L
 
 | # | Scope | Done when | Commands |
 |---|---|---|---|
-| **P125a** | crate, `clippy.toml`, `model.rs` (+`summarize`, `clean_display`), `privacy.rs` (fail-closed `classify`, `LocalNames`, `valid_public_name` with dot-segment rules), `RegistryContext` **type + no-derive policy** (loader stubbed), `remote/osv.rs` newtype skeleton (`AdvisoryId`/`PageToken`, private mint), `version/*`, `tests/no_process.rs` (tokens + allowlist), `dep-tree.txt` | AC3 green; both `compile_fail` doctests; the no-process scan + allowlist; **`dep-tree.txt` regenerates byte-identical**; `privacy_tests` (LOW-2, fail-closed, local names) — gates: HIGH-1 items 2–5, MEDIUM-2, MEDIUM-4, LOW-2, MEDIUM-1 derive | `cargo nextest run -p bonsai-deps`; `cargo test -p bonsai-deps --doc`; `cargo clippy -p bonsai-deps -- -D warnings`; `cargo tree -p bonsai-deps -e normal --prefix none > crates/bonsai-deps/dep-tree.txt && git diff --exit-code crates/bonsai-deps/dep-tree.txt` |
+| **P125a** | crate, `clippy.toml`, `model.rs` (+`summarize`, `clean_display`), `privacy.rs` (fail-closed `classify`, `LocalNames`, `valid_public_name` with dot-segment rules), `RegistryContext` **type + no-derive policy** (loader stubbed), `remote/osv.rs` newtype skeleton (`AdvisoryId`/`PageToken`, private mint), `version/*`, `tests/no_process.rs` (tokens + allowlist), `dep-tree.txt` | AC3 green; both `compile_fail` doctests; the no-process scan + allowlist; **`dep-tree.txt` regenerates byte-identical**; `privacy_tests` (LOW-2, fail-closed, local names) — gates: HIGH-1 items 2–5, MEDIUM-2, MEDIUM-4, LOW-2, MEDIUM-1 derive | `cargo nextest run -p bonsai-deps`; `cargo test -p bonsai-deps --doc`; `cargo clippy -p bonsai-deps -- -D warnings`; `cargo tree -p bonsai-deps -e normal --prefix none --target all \| sed -E 's/ \([^)]*[\\/][^)]*\)//g' > crates/bonsai-deps/dep-tree.txt && git diff --exit-code crates/bonsai-deps/dep-tree.txt` |
 | **P125b** | `fsread.rs`, `discover.rs`, `yaml_events.rs`, `registry_ctx.rs` (ancestor walk, extractors, `extract_host`, npm/yarn/pnpm rows of E3, `FakeHostEnv` incl. `read_above_workdir`), `adapter.rs`, `catalog.rs`, the npm family, `deny.toml` bans | `fsread_tests`, `yaml_events_tests`, the npm part of `privacy_sentinel` (ignored `.npmrc`, env, yarn ws, symlinked config) and `token_sentinel` for npm; the YAML-corpus result recorded in §0.1; E3 npm/yarn rows flipped to VERIFIED — gates: HIGH-1 item 1, HIGH-2, MEDIUM-1 extractor, MEDIUM-3 | same + `cargo deny --all-features check` |
 | **P125c1** | Cargo + Go adapters + their E3 rows, **incl. the Q7 above-workdir `.cargo/config{,.toml}` walk** | E2 rows covered; the Cargo/Go sentinels incl. E4 AC6 (f) Cargo half | `cargo nextest run -p bonsai-deps eco::` |
 | **P125c2** | PyPI + NuGet adapters + their E3 rows (incl. NuGet `<clear/>`, disabled sources, machine-wide config, **the Q7 above-workdir `NuGet.Config` walk**) | E2 rows covered; the PyPI/NuGet sentinels incl. unparseable `nuget.config` and E4 AC6 (f) NuGet half | same |

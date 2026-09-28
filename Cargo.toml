@@ -1,5 +1,5 @@
 [workspace]
-members = ["src-tauri", "crates/bonsai-core", "crates/bonsai-mcp", "crates/bonsai-forge"]
+members = ["src-tauri", "crates/bonsai-core", "crates/bonsai-mcp", "crates/bonsai-forge", "crates/bonsai-deps"]
 resolver = "2"
 
 # Enforced MSRV floor, not a convention. `rust-toolchain.toml` pins 1.97 and CI
