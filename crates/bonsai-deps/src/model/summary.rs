@@ -42,7 +42,7 @@ pub fn summarize(groups: &[ManifestGroup]) -> DepSummary {
                         s.up_to_date += 1;
                     }
                 }
-                Availability::Unknown => s.unknown += 1,
+                Availability::Unknown { .. } => s.unknown += 1,
                 Availability::Local { .. } => s.local += 1,
                 Availability::Private { .. } => s.private += 1,
             }

@@ -12,10 +12,23 @@ use crate::check::error::{status_error, CheckError, ServiceFault};
 use crate::model::Ecosystem;
 use crate::privacy::{normalize, PublicPackage};
 
-use super::transport::{OutboundRequest, Transport, DEPSDEV_BODY_CAP};
+use super::transport::{OutboundRequest, Transport, TransportError, DEPSDEV_BODY_CAP};
 
-/// §7.5: more versions than this ⇒ `Service(TooLarge)`.
+/// §7.5 / P125h §2: more versions than this ⇒ that package is
+/// [`VersionsLookup::TooLarge`] (`Unknown { reason: TooLarge }`), not an abort.
 pub const MAX_VERSIONS: usize = 20_000;
+
+/// One deps.dev lookup outcome (P125h §2).
+#[derive(Clone, PartialEq, Eq)]
+pub enum VersionsLookup {
+    Found(Vec<RegistryVersion>),
+    /// 404, or a `versionKey.name` that is not the package asked for.
+    NotFound,
+    /// The body exceeded `DEPSDEV_BODY_CAP`, or listed more than
+    /// [`MAX_VERSIONS`] versions. A degraded response: it counts toward the
+    /// check's breaker.
+    TooLarge,
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,31 +74,30 @@ fn same_name(eco: Ecosystem, sent: &str, got: &str) -> bool {
     }
 }
 
-/// Maps a deps.dev response. `Ok(None)` ⇒ Unknown (404, or a
-/// `versionKey.name` that is not the package asked for).
+/// Maps a deps.dev response.
 pub(crate) fn map_package(
     p: &PublicPackage,
     status: u16,
     body: &[u8],
-) -> Result<Option<Vec<RegistryVersion>>, CheckError> {
+) -> Result<VersionsLookup, CheckError> {
     match status {
         200 => {}
-        404 => return Ok(None),
+        404 => return Ok(VersionsLookup::NotFound),
         s => return Err(status_error(s)),
     }
     let dto: PackageDto =
         serde_json::from_slice(body).map_err(|_| CheckError::Service(ServiceFault::BadJson))?;
     if dto.versions.len() > MAX_VERSIONS {
-        return Err(CheckError::Service(ServiceFault::TooLarge));
+        return Ok(VersionsLookup::TooLarge);
     }
     if dto
         .versions
         .iter()
         .any(|v| !same_name(p.ecosystem(), p.name(), &v.version_key.name))
     {
-        return Ok(None);
+        return Ok(VersionsLookup::NotFound);
     }
-    Ok(Some(
+    Ok(VersionsLookup::Found(
         dto.versions
             .into_iter()
             .map(|v| RegistryVersion {
@@ -97,11 +109,12 @@ pub(crate) fn map_package(
     ))
 }
 
-/// §5.1 step 8: one GET. `Ok(None)` ⇒ Unknown.
-pub fn fetch_versions(
-    t: &dyn Transport,
-    p: &PublicPackage,
-) -> Result<Option<Vec<RegistryVersion>>, CheckError> {
-    let resp = t.send(&OutboundRequest::depsdev_package(p), DEPSDEV_BODY_CAP)?;
-    map_package(p, resp.status, &resp.body)
+/// §5.1 step 8: one GET. An oversize body is a per-package
+/// [`VersionsLookup::TooLarge`], not an error (P125h §2).
+pub fn fetch_versions(t: &dyn Transport, p: &PublicPackage) -> Result<VersionsLookup, CheckError> {
+    match t.send(&OutboundRequest::depsdev_package(p), DEPSDEV_BODY_CAP) {
+        Ok(resp) => map_package(p, resp.status, &resp.body),
+        Err(TransportError::TooLarge) => Ok(VersionsLookup::TooLarge),
+        Err(e) => Err(e.into()),
+    }
 }

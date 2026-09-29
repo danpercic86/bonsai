@@ -6,7 +6,7 @@ mod common;
 
 use bonsai_deps::model::{
     Availability, DepReport, DepSummary, Ecosystem, GroupState, ManifestGroup, ParseErrorKind,
-    PrivateReason, Relation, Severity, UpdateKind,
+    PrivateReason, Relation, Severity, UnknownReason, UpdateKind,
 };
 use bonsai_deps::registry_ctx::FakeHostEnv;
 use bonsai_deps::remote::{FakeTransport, RawResponse, RecordedRequest};
@@ -48,7 +48,7 @@ fn recount(groups: &[ManifestGroup]) -> DepSummary {
                 && r.relation == Relation::Direct
                 && r.update.is_none()
         }),
-        unknown: n(&|r| r.availability == Availability::Unknown),
+        unknown: n(&|r| matches!(r.availability, Availability::Unknown { .. })),
         local: n(&|r| matches!(r.availability, Availability::Local { .. })),
         private: n(&|r| matches!(r.availability, Availability::Private { .. })),
         not_tracked: groups
@@ -196,7 +196,12 @@ fn unknown_row_keeps_vulns() {
     }));
     let rep = report(&corpus_repo(), &t);
     let lodash = &group(&rep, "web/package.json").rows[0];
-    assert_eq!(lodash.availability, Availability::Unknown);
+    assert_eq!(
+        lodash.availability,
+        Availability::Unknown {
+            reason: UnknownReason::NotFound
+        }
+    );
     assert_eq!(lodash.latest, None);
     assert!(!lodash.vulns.is_empty());
     assert!(

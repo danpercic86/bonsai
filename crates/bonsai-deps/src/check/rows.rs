@@ -7,15 +7,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::adapter::ParseError;
 use crate::catalog::registry_page_template;
 use crate::model::{
-    clean_display, Advisory, Availability, DepRow, DepScope, Ecosystem, GroupState, ManifestGroup,
-    ParseErrorKind, Relation, UpdateKind, MAX_DISPLAY,
+    clean_display, Availability, DepRow, DepScope, Ecosystem, GroupState, ManifestGroup,
+    ParseErrorKind, Relation, UnknownReason, UpdateKind, MAX_DISPLAY,
 };
 use crate::privacy::{classify, normalize, LocalNames, PublicPackage, Visibility};
 use crate::registry_ctx::RegistryContext;
-use crate::remote::depsdev::RegistryVersion;
+use crate::remote::depsdev::VersionsLookup;
 use crate::version::{classify_update, classify_update_declared, select_latest, VersionCandidate};
 
 use super::groups::GroupInput;
+use super::verdict::{self, AdvisoryMap};
 
 pub(crate) struct Direct {
     name: String,
@@ -56,10 +57,8 @@ pub(crate) enum Classified {
     },
 }
 
-/// `(eco, wire name)` ⇒ deps.dev versions (`None` = Unknown).
-pub(crate) type LatestMap = BTreeMap<(Ecosystem, String), Option<Vec<RegistryVersion>>>;
-/// `(eco, wire name, version)` ⇒ advisories (sorted).
-pub(crate) type AdvisoryMap = BTreeMap<(Ecosystem, String, String), Vec<Advisory>>;
+/// `(eco, wire name)` ⇒ the deps.dev lookup.
+pub(crate) type LatestMap = BTreeMap<(Ecosystem, String), VersionsLookup>;
 
 fn key(eco: Ecosystem, name: &str) -> String {
     normalize(eco, name).to_lowercase()
@@ -224,13 +223,6 @@ fn registry_url(p: &PublicPackage) -> String {
     registry_page_template(p.ecosystem()).replace("{}", &enc)
 }
 
-fn vulns_for(p: &PublicPackage, adv: &AdvisoryMap) -> Vec<Advisory> {
-    p.version()
-        .and_then(|v| adv.get(&(p.ecosystem(), p.name().to_string(), v.to_string())))
-        .cloned()
-        .unwrap_or_default()
-}
-
 fn non_public(vis: &Visibility) -> Availability {
     match vis {
         Visibility::Local(reason) => Availability::Local { reason: *reason },
@@ -239,7 +231,9 @@ fn non_public(vis: &Visibility) -> Availability {
             registry_host: host.as_deref().map(disp),
         },
         // Unreachable for callers; Unknown is the safe reading.
-        Visibility::Public(_) => Availability::Unknown,
+        Visibility::Public(_) => Availability::Unknown {
+            reason: UnknownReason::NotFound,
+        },
     }
 }
 
@@ -257,21 +251,30 @@ fn direct_row(eco: Ecosystem, d: Direct, latest: &LatestMap, adv: &AdvisoryMap) 
         vulns_checked: false,
         vulns: Vec::new(),
         registry_url: None,
+        vulns_unverified: None,
     };
     let Visibility::Public(p) = &d.vis else {
         return row;
     };
     row.registry_url = Some(registry_url(p));
-    row.vulns = vulns_for(p, adv);
-    // [MEDIUM-D1] a NuGet id in an unverified casing with zero OSV hits is
-    // "not verified", never "clean".
-    row.vulns_checked = p.version().is_some() && (d.osv_name_exact || !row.vulns.is_empty());
-    let versions = latest
-        .get(&(eco, p.name().to_string()))
-        .and_then(Option::as_ref);
-    let Some(versions) = versions else {
-        row.availability = Availability::Unknown;
-        return row;
+    let (vulns, unverified) = verdict::direct(p, d.osv_name_exact, adv);
+    row.vulns = vulns;
+    row.vulns_unverified = unverified;
+    row.vulns_checked = unverified.is_none();
+    let versions = match latest.get(&(eco, p.name().to_string())) {
+        Some(VersionsLookup::Found(v)) => v,
+        Some(VersionsLookup::TooLarge) => {
+            row.availability = Availability::Unknown {
+                reason: UnknownReason::TooLarge,
+            };
+            return row;
+        }
+        Some(VersionsLookup::NotFound) | None => {
+            row.availability = Availability::Unknown {
+                reason: UnknownReason::NotFound,
+            };
+            return row;
+        }
     };
     row.availability = Availability::Checked;
     let cands: Vec<VersionCandidate<'_>> = versions
@@ -292,12 +295,14 @@ fn direct_row(eco: Ecosystem, d: Direct, latest: &LatestMap, adv: &AdvisoryMap) 
     row
 }
 
-/// A transitive row exists only with vulns (AC4). Its availability is
-/// `Checked`: OSV was asked; deps.dev is never asked for transitives.
+/// A transitive row exists only with vulns (AC4), or when its OSV result is
+/// unverified (P125h R2). Its availability is `Checked`: OSV was asked;
+/// deps.dev is never asked for transitives.
 fn transitive_row(eco: Ecosystem, t: &Transitive, adv: &AdvisoryMap) -> Option<DepRow> {
     let p = public(&t.vis)?;
-    let vulns = vulns_for(p, adv);
-    (!vulns.is_empty()).then(|| DepRow {
+    let r = verdict::transitive(p, adv)?;
+    let unverified = r.unverified;
+    Some(DepRow {
         name: disp(&t.name),
         ecosystem: eco,
         relation: Relation::Transitive,
@@ -307,9 +312,10 @@ fn transitive_row(eco: Ecosystem, t: &Transitive, adv: &AdvisoryMap) -> Option<D
         latest: None,
         update: None,
         availability: Availability::Checked,
-        vulns_checked: true,
-        vulns,
+        vulns_checked: unverified.is_none(),
+        vulns: r.advisories.clone(),
         registry_url: Some(registry_url(p)),
+        vulns_unverified: unverified,
     })
 }
 
@@ -383,9 +389,12 @@ pub(crate) fn assemble(
                 direct,
                 transitive,
             } => {
+                // P125h §1: an unverified transitive is shown but not counted.
                 let checked = transitive
                     .iter()
-                    .filter(|t| public(&t.vis).is_some_and(|p| p.version().is_some()))
+                    .filter(|t| {
+                        public(&t.vis).is_some_and(|p| verdict::transitive_verified(p, adv))
+                    })
                     .count();
                 let mut rows: Vec<DepRow> = transitive
                     .iter()
@@ -393,6 +402,7 @@ pub(crate) fn assemble(
                     .collect();
                 rows.extend(direct.into_iter().map(|d| direct_row(eco, d, latest, adv)));
                 sort_rows(&mut rows);
+                debug_assert!(rows.iter().all(DepRow::verdict_consistent));
                 ManifestGroup {
                     manifest_path: disp(&manifest_path),
                     lockfile_path: lockfile_path.as_deref().map(disp),

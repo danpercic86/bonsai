@@ -106,6 +106,37 @@ pub enum PrivateReason {
     SourceMapping,
     /// `[HIGH-1]` fail-closed: a registry signal could not be read or resolved.
     ConfigUnreadable,
+    /// P125h §3: a folder / file / UNC package source; `registry_host` is
+    /// always `None`.
+    LocalFeed,
+}
+
+/// Why a public row is `Unknown` (P125h §0). v1 JSON `{"kind":"unknown"}`
+/// has no reason and reads as [`UnknownReason::NotFound`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UnknownReason {
+    /// deps.dev 404, or a `versionKey.name` that is not the package asked for.
+    #[default]
+    NotFound,
+    /// The deps.dev body exceeded `DEPSDEV_BODY_CAP`, or listed more than
+    /// `MAX_VERSIONS` versions (P125h §2).
+    TooLarge,
+}
+
+/// Why a `Checked` / `Unknown` row's `vulns_checked` is false (P125h §0, §4c).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VulnsUnverifiedReason {
+    /// No resolved version, so OSV was not asked.
+    NoVersion,
+    /// `[MEDIUM-D1]` a NuGet id in an unconfirmed casing with zero OSV hits.
+    NameCasing,
+    /// ≥ 1 OSV hit for this package failed the id shape check and was
+    /// dropped (P125h §1).
+    MalformedAdvisory,
+    /// ≥ 1 of its advisory records exceeded `OSV_VULN_BODY_CAP` (P125h §2).
+    ResponseTooLarge,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -113,9 +144,13 @@ pub enum PrivateReason {
 pub enum Availability {
     /// deps.dev knew it.
     Checked,
-    /// deps.dev 404. OSV is still queried when a resolved version exists, so
-    /// an Unknown row CAN carry vulns `[UI-e]`.
-    Unknown,
+    /// deps.dev did not answer usably (see [`UnknownReason`]). OSV is still
+    /// queried when a resolved version exists, so an Unknown row CAN carry
+    /// vulns `[UI-e]`.
+    Unknown {
+        #[serde(default)]
+        reason: UnknownReason,
+    },
     Local {
         reason: LocalReason,
     },
@@ -156,9 +191,26 @@ pub struct DepRow {
     pub vulns_checked: bool,
     pub vulns: Vec<Advisory>,
     pub registry_url: Option<String>,
+    /// Why `vulns_checked` is false; `None` on v1 cache rows (P125h §0).
+    #[serde(default)]
+    pub vulns_unverified: Option<VulnsUnverifiedReason>,
 }
 
 impl DepRow {
+    /// The P125h §0 row invariant: a `Checked` / `Unknown` row is verified
+    /// iff it has no unverified reason; a `Local` / `Private` row is never
+    /// verified and carries no reason (its availability explains it).
+    pub fn verdict_consistent(&self) -> bool {
+        match self.availability {
+            Availability::Checked | Availability::Unknown { .. } => {
+                self.vulns_checked == self.vulns_unverified.is_none()
+            }
+            Availability::Local { .. } | Availability::Private { .. } => {
+                !self.vulns_checked && self.vulns_unverified.is_none()
+            }
+        }
+    }
+
     /// The highest severity among this row's advisories, if any.
     pub fn max_severity(&self) -> Option<Severity> {
         self.vulns
@@ -250,6 +302,10 @@ pub struct DepReport {
     /// Empty ⇒ "No dependency manifests found".
     pub groups: Vec<ManifestGroup>,
     pub summary: DepSummary,
+    /// P125h §4b: a user/system config base dir is on a network share.
+    /// `false` on v1 cache reports.
+    #[serde(default)]
+    pub network_profile: bool,
 }
 
 /// Persisted only (cache.rs); never on the wire.

@@ -11,6 +11,7 @@ pub mod error;
 mod groups;
 mod pool;
 mod rows;
+mod verdict;
 mod vulns;
 
 use std::path::Path;
@@ -30,6 +31,11 @@ use crate::remote::transport::Transport;
 pub const DEPSDEV_PARALLEL: usize = 6;
 /// Enforced by the async caller (§6.4), not inside the worker.
 pub const CHECK_DEADLINE: Duration = Duration::from_secs(10 * 60);
+/// P125h §2 breaker: per-package oversize responses (deps.dev bodies or
+/// version lists, advisory records) tolerated in one check. The one past
+/// this aborts with `Service(TooLarge)` — a proxy inflating every body must
+/// not produce a report of all-Unknown rows.
+pub const MAX_DEGRADED_RESPONSES: u32 = 32;
 
 /// Cooperative cancellation; clones share the flag.
 #[derive(Debug, Clone, Default)]
@@ -84,6 +90,23 @@ impl Progress<'_> {
     }
 }
 
+/// The per-check degraded-response counter behind
+/// [`MAX_DEGRADED_RESPONSES`], shared by the worker threads.
+#[derive(Default)]
+pub(crate) struct Breaker(AtomicU32);
+
+impl Breaker {
+    /// Records one degraded response; the one past the limit is an error.
+    fn degraded(&self) -> Result<(), CheckError> {
+        let n = self.0.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+        if n > MAX_DEGRADED_RESPONSES {
+            Err(CheckError::Service(ServiceFault::TooLarge))
+        } else {
+            Ok(())
+        }
+    }
+}
+
 fn discover_err(e: DiscoverError) -> CheckError {
     match e {
         DiscoverError::Bare => CheckError::Internal(InternalFault::GitOpen),
@@ -128,10 +151,12 @@ pub fn run_check(
         cb: ctx.progress,
     };
     (ctx.progress)(0, progress.total);
-    // 8. deps.dev (6 in flight; any non-404 failure aborts)
-    let latest = vulns::fetch_all_versions(ctx, &latest_q, &progress)?;
+    let breaker = Breaker::default();
+    // 8. deps.dev (6 in flight; an oversize body degrades only its package,
+    //    any other non-404 failure aborts)
+    let latest = vulns::fetch_all_versions(ctx, &latest_q, &progress, &breaker)?;
     // 9–10. OSV querybatch chunks, then advisory details (reused from prev)
-    let advisories = vulns::fetch_advisories(ctx, &vuln_q, &progress)?;
+    let advisories = vulns::fetch_advisories(ctx, &vuln_q, &progress, &breaker)?;
     ctx.check_cancel()?;
     // 11. assemble, sort, summarize
     let groups = rows::assemble(classified, &latest, &advisories);
@@ -140,6 +165,8 @@ pub fn run_check(
         checked_at_ms: ctx.now_ms,
         summary: summarize(&groups),
         groups,
+        // P125h §4b: wired to `HostEnv::profile_on_network` in h3.
+        network_profile: false,
     };
     // 12. stamps
     Ok(CachedReport {

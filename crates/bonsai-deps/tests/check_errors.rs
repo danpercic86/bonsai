@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use bonsai_deps::check::ServiceFault;
-use bonsai_deps::model::{CachedReport, DepReport};
+use bonsai_deps::model::{Availability, CachedReport, DepReport, Relation, UnknownReason};
 use bonsai_deps::registry_ctx::FakeHostEnv;
 use bonsai_deps::remote::{FakeTransport, Method, RawResponse, RecordedRequest, TransportError};
 use bonsai_deps::{run_check, CancelToken, CheckCtx, CheckError};
@@ -74,10 +74,8 @@ fn error_mapping_follows_the_table() {
         ),
         (Err(TransportError::Connect), CheckError::Offline),
         (Err(TransportError::Timeout), CheckError::Timeout),
-        (
-            Err(TransportError::TooLarge),
-            CheckError::Service(ServiceFault::TooLarge),
-        ),
+        // (`TransportError::TooLarge` from deps.dev degrades the package
+        // instead — P125h §2, `an_oversize_body_degrades_each_package`.)
         (Err(TransportError::Gated), CheckError::Cancelled),
     ] {
         let t = respond_depsdev(res);
@@ -85,17 +83,37 @@ fn error_mapping_follows_the_table() {
     }
 }
 
+/// P125h §2: a deps.dev body over `DEPSDEV_BODY_CAP` (the real 8 MiB cap,
+/// enforced by the fake) is `Unknown { reason: TooLarge }` for that package;
+/// the check succeeds (6 lookups, under the breaker).
 #[test]
-fn an_oversize_body_is_too_large() {
+fn an_oversize_body_degrades_each_package() {
     let big = format!(
         "{{\"versions\":[],\"pad\":\"{}\"}}",
         "x".repeat(8 * 1024 * 1024)
     );
     let t = respond_depsdev(status(200, &big));
-    assert_eq!(
-        run(&corpus_repo(), &t).err(),
-        Some(CheckError::Service(ServiceFault::TooLarge))
-    );
+    let rep = match run(&corpus_repo(), &t) {
+        Ok(c) => c.report,
+        Err(e) => panic!("{e:?}"),
+    };
+    let direct_public: Vec<_> = rep
+        .groups
+        .iter()
+        .flat_map(|g| &g.rows)
+        .filter(|r| r.registry_url.is_some() && r.relation == Relation::Direct)
+        .collect();
+    assert_eq!(direct_public.len(), 6);
+    for r in direct_public {
+        assert_eq!(
+            r.availability,
+            Availability::Unknown {
+                reason: UnknownReason::TooLarge
+            },
+            "{}",
+            r.name
+        );
+    }
 }
 
 #[test]

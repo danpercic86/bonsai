@@ -1,6 +1,6 @@
-use super::depsdev::{map_package, MAX_VERSIONS};
+use super::depsdev::{fetch_versions, map_package, VersionsLookup, MAX_VERSIONS};
 use super::osv::VulnRef;
-use super::osv_vuln::map_vuln;
+use super::osv_vuln::{fetch_vuln, map_vuln, unknown_advisory, VulnDetail};
 use super::transport::{pct_encode, OutboundRequest};
 use super::*;
 use crate::check::error::{CheckError, ServiceFault};
@@ -70,40 +70,95 @@ fn depsdev_mapping() {
     let body = br#"{"packageKey":{"name":"newtonsoft.json"},"versions":[
         {"versionKey":{"name":"newtonsoft.json","version":"13.0.4"},"isDefault":true,"links":[{"x":1}]},
         {"versionKey":{"name":"newtonsoft.json","version":"13.0.2"},"isDeprecated":true,"deprecatedReason":"zz"}]}"#;
-    let v = map_package(&p, 200, body)
-        .ok()
-        .flatten()
-        .unwrap_or_default();
+    let v = match map_package(&p, 200, body) {
+        Ok(VersionsLookup::Found(v)) => v,
+        _ => Vec::new(),
+    };
     assert_eq!(v.len(), 2, "NuGet names compare case-insensitively");
     assert!(v[0].is_default && !v[0].is_deprecated && v[1].is_deprecated);
     // A different package in the response ⇒ Unknown.
     let other = br#"{"versions":[{"versionKey":{"name":"evil","version":"1"}}]}"#;
-    assert!(matches!(map_package(&p, 200, other), Ok(None)));
-    assert!(matches!(map_package(&p, 404, b""), Ok(None)));
+    assert!(matches!(
+        map_package(&p, 200, other),
+        Ok(VersionsLookup::NotFound)
+    ));
+    assert!(matches!(
+        map_package(&p, 404, b""),
+        Ok(VersionsLookup::NotFound)
+    ));
     // PyPI: deps.dev normalises (`Django` ⇒ `django`).
     let dj = pkg(Ecosystem::Pypi, "Django", None);
     let body = br#"{"versions":[{"versionKey":{"name":"django","version":"5.0"}}]}"#;
-    assert!(matches!(map_package(&dj, 200, body), Ok(Some(_))));
+    assert!(matches!(
+        map_package(&dj, 200, body),
+        Ok(VersionsLookup::Found(_))
+    ));
     // npm is exact.
     let lp = pkg(Ecosystem::Npm, "left-pad", None);
     let body = br#"{"versions":[{"versionKey":{"name":"Left-Pad","version":"1"}}]}"#;
-    assert!(matches!(map_package(&lp, 200, body), Ok(None)));
+    assert!(matches!(
+        map_package(&lp, 200, body),
+        Ok(VersionsLookup::NotFound)
+    ));
 }
 
+/// P125h §2 (flips the rev-3 §7.5 `Service(TooLarge)` rule): an oversize
+/// body or version list is a per-package lookup outcome, not an error.
 #[test]
-fn depsdev_version_cap() {
+fn depsdev_too_large_is_a_lookup_not_an_error() {
     let p = pkg(Ecosystem::Npm, "x", None);
     let one = r#"{"versionKey":{"name":"x","version":"1"}}"#;
     let body = format!(
         "{{\"versions\":[{}]}}",
         vec![one; MAX_VERSIONS + 1].join(",")
     );
-    assert_eq!(
-        map_package(&p, 200, body.as_bytes()).err(),
-        Some(CheckError::Service(ServiceFault::TooLarge))
-    );
+    assert!(matches!(
+        map_package(&p, 200, body.as_bytes()),
+        Ok(VersionsLookup::TooLarge)
+    ));
     let body = format!("{{\"versions\":[{}]}}", vec![one; MAX_VERSIONS].join(","));
-    assert!(matches!(map_package(&p, 200, body.as_bytes()), Ok(Some(_))));
+    assert!(matches!(
+        map_package(&p, 200, body.as_bytes()),
+        Ok(VersionsLookup::Found(_))
+    ));
+    // Body over DEPSDEV_BODY_CAP (the transport refuses it).
+    let big =
+        FakeTransport::new().with_responder(Box::new(|_| Some(Err(TransportError::TooLarge))));
+    assert!(matches!(
+        fetch_versions(&big, &p),
+        Ok(VersionsLookup::TooLarge)
+    ));
+    // Other transport failures still abort.
+    let off = FakeTransport::new().with_responder(Box::new(|_| Some(Err(TransportError::Connect))));
+    assert_eq!(fetch_versions(&off, &p).err(), Some(CheckError::Offline));
+}
+
+#[test]
+fn vuln_too_large_is_placeholder() {
+    let r = vref();
+    let big = FakeTransport::new().with_responder(Box::new(|_| {
+        Some(Ok(RawResponse {
+            status: 200,
+            body: vec![b' '; transport::OSV_VULN_BODY_CAP + 1],
+        }))
+    }));
+    match fetch_vuln(&big, &r) {
+        Ok(VulnDetail::TooLarge(a)) => {
+            assert_eq!(a, unknown_advisory(&r));
+            assert_eq!(a.severity, Severity::Unknown);
+            assert_eq!(a.url, "https://osv.dev/vulnerability/GHSA-aaaa-bbbb-cccc");
+        }
+        other => panic!("{other:?}"),
+    }
+    let ok = FakeTransport::new().with_responder(Box::new(|_| {
+        Some(Ok(RawResponse {
+            status: 200,
+            body: br#"{"summary":"s"}"#.to_vec(),
+        }))
+    }));
+    assert!(matches!(fetch_vuln(&ok, &r), Ok(VulnDetail::Record(_))));
+    let off = FakeTransport::new().with_responder(Box::new(|_| Some(Err(TransportError::Timeout))));
+    assert_eq!(fetch_vuln(&off, &r).err(), Some(CheckError::Timeout));
 }
 
 fn vref() -> VulnRef {
@@ -117,7 +172,7 @@ fn vref() -> VulnRef {
     let q = [pkg(Ecosystem::Npm, "x", Some("1.0.0"))];
     let hits = osv::query_chunk(&t, &q, &|| false).ok().unwrap_or_default();
     hits.into_iter()
-        .flatten()
+        .flat_map(|h| h.refs)
         .next()
         .unwrap_or_else(|| panic!("no hit"))
 }

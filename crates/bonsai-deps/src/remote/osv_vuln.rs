@@ -13,7 +13,7 @@ use crate::cvss::{band, base_score_v3};
 use crate::model::{clean_display, Advisory, Severity, MAX_ID_DISPLAY, MAX_SUMMARY_DISPLAY};
 
 use super::osv::{is_id_shape, VulnRef};
-use super::transport::{OutboundRequest, Transport, OSV_VULN_BODY_CAP};
+use super::transport::{OutboundRequest, Transport, TransportError, OSV_VULN_BODY_CAP};
 
 /// §2.1: at most this many aliases per advisory.
 pub const MAX_ALIASES: usize = 16;
@@ -122,8 +122,22 @@ pub(crate) fn map_vuln(r: &VulnRef, status: u16, body: &[u8]) -> Result<Advisory
     })
 }
 
-/// One advisory-detail GET.
-pub fn fetch_vuln(t: &dyn Transport, r: &VulnRef) -> Result<Advisory, CheckError> {
-    let resp = t.send(&OutboundRequest::osv_vuln(&r.id), OSV_VULN_BODY_CAP)?;
-    map_vuln(r, resp.status, &resp.body)
+/// One advisory-detail outcome (P125h §2).
+#[derive(Debug, Clone, PartialEq)]
+pub enum VulnDetail {
+    Record(Advisory),
+    /// The record exceeded `OSV_VULN_BODY_CAP`: the [`unknown_advisory`]
+    /// placeholder. Every row carrying it is `ResponseTooLarge`, and it is a
+    /// degraded response for the check's breaker.
+    TooLarge(Advisory),
+}
+
+/// One advisory-detail GET. An oversize record is a placeholder, not an
+/// error (P125h §2).
+pub fn fetch_vuln(t: &dyn Transport, r: &VulnRef) -> Result<VulnDetail, CheckError> {
+    match t.send(&OutboundRequest::osv_vuln(&r.id), OSV_VULN_BODY_CAP) {
+        Ok(resp) => map_vuln(r, resp.status, &resp.body).map(VulnDetail::Record),
+        Err(TransportError::TooLarge) => Ok(VulnDetail::TooLarge(unknown_advisory(r))),
+        Err(e) => Err(e.into()),
+    }
 }

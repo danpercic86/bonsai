@@ -117,6 +117,7 @@ fn row(name: &str, rel: Relation, update: Option<UpdateKind>, sev: Option<Severi
             .into_iter()
             .collect(),
         registry_url: None,
+        vulns_unverified: None,
     }
 }
 

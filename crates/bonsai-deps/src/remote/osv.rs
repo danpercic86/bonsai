@@ -134,30 +134,50 @@ pub struct VulnRef {
     pub modified: String,
 }
 
+/// Every hit OSV reported for one package, across all its pages.
+#[derive(Clone, Default)]
+pub struct PackageHits {
+    /// The hits whose id passed the shape check.
+    pub refs: Vec<VulnRef>,
+    /// P125h §1: hits whose id FAILED the shape check. Non-zero ⇒ the
+    /// package is `MalformedAdvisory`, never "clean".
+    pub dropped: u32,
+}
+
 /// Mints every id of one result. `[P125d review, LOW-D2]` an id failing
-/// the shape check is DROPPED (§7.5), not a failed check.
-fn mint_refs(r: Vec<VulnRefDto>) -> Vec<VulnRef> {
-    r.into_iter()
+/// the shape check is DROPPED (§7.5), not a failed check — but it is
+/// COUNTED, so the package cannot read as clean (P125h §1).
+fn mint_refs(r: Vec<VulnRefDto>) -> (Vec<VulnRef>, u32) {
+    let mut dropped = 0u32;
+    let refs = r
+        .into_iter()
         .filter_map(|v| {
-            let id = mint_id(&v.id)?;
+            let Some(id) = mint_id(&v.id) else {
+                dropped = dropped.saturating_add(1);
+                return None;
+            };
             Some(VulnRef {
                 id,
                 modified: crate::model::clean_display(&v.modified, crate::model::MAX_ID_DISPLAY),
             })
         })
-        .collect()
+        .collect();
+    (refs, dropped)
 }
 
 /// §5.1 step 9 for ONE chunk (≤ [`OSV_BATCH_MAX`] versioned packages):
 /// the batch, then re-sends of only the paged queries with their OSV-issued
 /// tokens, ≤ [`OSV_MAX_PAGES`] requests per query. `cancelled` is polled
-/// before every send. Returns one hit list per input package.
+/// before every send. Returns one [`PackageHits`] per input package (the
+/// dropped counts summed across pages). An oversize querybatch body stays a
+/// whole-check `Service(TooLarge)` (P125h §2): it cannot be tied to one
+/// package.
 pub fn query_chunk(
     t: &dyn Transport,
     chunk: &[PublicPackage],
     cancelled: &dyn Fn() -> bool,
-) -> Result<Vec<Vec<VulnRef>>, CheckError> {
-    let mut hits: Vec<Vec<VulnRef>> = vec![Vec::new(); chunk.len()];
+) -> Result<Vec<PackageHits>, CheckError> {
+    let mut hits: Vec<PackageHits> = vec![PackageHits::default(); chunk.len()];
     // (index into `chunk`, token for the next page).
     let mut pending: Vec<(usize, Option<PageToken>)> =
         (0..chunk.len()).map(|i| (i, None)).collect();
@@ -184,7 +204,10 @@ pub fn query_chunk(
         }
         let mut next = Vec::new();
         for ((i, _), r) in pending.iter().zip(dto.results) {
-            hits[*i].extend(mint_refs(r.vulns));
+            let (refs, dropped) = mint_refs(r.vulns);
+            let h = &mut hits[*i];
+            h.refs.extend(refs);
+            h.dropped = h.dropped.saturating_add(dropped);
             if let Some(raw) = r.next_page_token.filter(|s| !s.is_empty()) {
                 let tok =
                     mint_page_token(&raw).ok_or(CheckError::Service(ServiceFault::BadJson))?;

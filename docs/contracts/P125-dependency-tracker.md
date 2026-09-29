@@ -919,3 +919,8 @@ symlinks are followed **only** for the fixed user/system config files and for an
 directories equal to `$HOME` / `$CARGO_HOME` (and the Go/pnpm config dirs they resolve to). Any
 other symlinked config above the workdir — e.g. in a parent monorepo / superproject — makes that
 ecosystem **fail closed**. All other Q9 constraints stand.
+
+**P125h follow-ups → `P125-followups.md`** (2026-09-29). Rulings R1 (relax `registry.default` /
+`CARGO_REGISTRY_DEFAULT`), R2 (all-malformed transitive ⇒ `not verified` row), R3
+(network-profile lead from the exact flag only) and LOW-E1 (UNC-only; mapped drives deferred) are
+recorded in its §10 and supersede the conflicting text here and in `P125-ecosystems.md` E3.

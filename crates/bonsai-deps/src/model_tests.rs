@@ -66,6 +66,7 @@ fn row(
         vulns_checked: true,
         vulns,
         registry_url: None,
+        vulns_unverified: None,
     }
 }
 
@@ -104,7 +105,9 @@ fn sample_groups() -> Vec<ManifestGroup> {
                 row(
                     Direct,
                     Some(UpdateKind::Patch),
-                    A::Unknown,
+                    A::Unknown {
+                        reason: UnknownReason::NotFound,
+                    },
                     vec![adv(Severity::Unknown)],
                 ),
                 row(
@@ -160,7 +163,7 @@ fn recount(groups: &[ManifestGroup]) -> DepSummary {
                 && r.relation == Relation::Direct
                 && r.update.is_none()
         }),
-        unknown: n(&|r| r.availability == Availability::Unknown),
+        unknown: n(&|r| matches!(r.availability, Availability::Unknown { .. })),
         local: n(&|r| matches!(r.availability, Availability::Local { .. })),
         private: n(&|r| matches!(r.availability, Availability::Private { .. })),
         not_tracked: groups
@@ -204,6 +207,7 @@ fn wire_shape_is_camel_case_with_kind_tags() {
         checked_at_ms: 1,
         summary: summarize(&groups),
         groups,
+        network_profile: false,
     };
     let v = serde_json::to_value(&report).unwrap();
     let g0 = &v["groups"][0];
@@ -264,10 +268,127 @@ fn cached_report_roundtrips() {
             checked_at_ms: 0,
             groups: vec![],
             summary: DepSummary::default(),
+            network_profile: false,
         },
     };
     let v = serde_json::to_value(&c).unwrap();
     assert_eq!(v["stamps"][0]["mtimeMs"], 5);
     let back: CachedReport = serde_json::from_value(v).unwrap();
     assert_eq!(back, c);
+}
+
+#[test]
+fn p125h_wire_names() {
+    let v = serde_json::to_value(PrivateReason::LocalFeed).unwrap();
+    assert_eq!(v, "localFeed");
+    let u = Availability::Unknown {
+        reason: UnknownReason::TooLarge,
+    };
+    assert_eq!(
+        serde_json::to_value(&u).unwrap(),
+        serde_json::json!({"kind": "unknown", "reason": "tooLarge"})
+    );
+    let names: Vec<serde_json::Value> = [
+        VulnsUnverifiedReason::NoVersion,
+        VulnsUnverifiedReason::NameCasing,
+        VulnsUnverifiedReason::MalformedAdvisory,
+        VulnsUnverifiedReason::ResponseTooLarge,
+    ]
+    .iter()
+    .map(|r| serde_json::to_value(r).unwrap())
+    .collect();
+    assert_eq!(
+        names,
+        [
+            "noVersion",
+            "nameCasing",
+            "malformedAdvisory",
+            "responseTooLarge"
+        ]
+    );
+    let mut r = row(Relation::Direct, None, Availability::Checked, vec![]);
+    let v = serde_json::to_value(&r).unwrap();
+    assert!(v["vulnsUnverified"].is_null(), "always serialized: {v}");
+    assert!(v.get("vulnsUnverified").is_some());
+    r.vulns_checked = false;
+    r.vulns_unverified = Some(VulnsUnverifiedReason::MalformedAdvisory);
+    let v = serde_json::to_value(&r).unwrap();
+    assert_eq!(v["vulnsUnverified"], "malformedAdvisory");
+    let report = DepReport {
+        repo_id: "r".into(),
+        checked_at_ms: 0,
+        groups: vec![],
+        summary: DepSummary::default(),
+        network_profile: true,
+    };
+    assert_eq!(
+        serde_json::to_value(&report).unwrap()["networkProfile"],
+        true
+    );
+}
+
+#[test]
+fn v1_json_still_deserializes() {
+    // A v1 row: `{"kind":"unknown"}` with no reason, no `vulnsUnverified`.
+    let row = serde_json::json!({
+        "name": "lodash", "ecosystem": "npm", "relation": "direct", "scope": "normal",
+        "declared": "^4", "current": "4.17.20", "latest": null, "update": null,
+        "availability": {"kind": "unknown"}, "vulnsChecked": true, "vulns": [],
+        "registryUrl": null
+    });
+    let r: DepRow = serde_json::from_value(row.clone()).unwrap();
+    assert_eq!(
+        r.availability,
+        Availability::Unknown {
+            reason: UnknownReason::NotFound
+        }
+    );
+    assert_eq!(r.vulns_unverified, None);
+    // A v1 report without `networkProfile`.
+    let report = serde_json::json!({
+        "repoId": "r", "checkedAtMs": 3,
+        "groups": [{"manifestPath": "package.json", "lockfilePath": null, "ecosystem": "npm",
+                    "state": {"kind": "ok"}, "rows": [row], "transitiveChecked": 0}],
+        "summary": serde_json::to_value(DepSummary::default()).unwrap()
+    });
+    let rep: DepReport = serde_json::from_value(report).unwrap();
+    assert!(!rep.network_profile);
+    assert_eq!(rep.groups[0].rows[0], r);
+}
+
+#[test]
+fn row_verdict_invariant_table() {
+    use Availability as A;
+    use VulnsUnverifiedReason as U;
+    let local = A::Local {
+        reason: LocalReason::Path,
+    };
+    let private = A::Private {
+        reason: PrivateReason::LocalFeed,
+        registry_host: None,
+    };
+    let unknown = A::Unknown {
+        reason: UnknownReason::TooLarge,
+    };
+    // (availability, vulns_checked, vulns_unverified, consistent)
+    let cases = [
+        (A::Checked, true, None, true),
+        (A::Checked, false, Some(U::MalformedAdvisory), true),
+        (A::Checked, false, None, false),
+        (A::Checked, true, Some(U::ResponseTooLarge), false),
+        (unknown.clone(), true, None, true),
+        (unknown.clone(), false, Some(U::NoVersion), true),
+        (unknown, false, None, false),
+        (local.clone(), false, None, true),
+        (local.clone(), true, None, false),
+        (local, false, Some(U::NameCasing), false),
+        (private.clone(), false, None, true),
+        (private, true, None, false),
+    ];
+    for (availability, checked, reason, want) in cases {
+        let mut r = row(Relation::Direct, None, availability, vec![]);
+        r.vulns_checked = checked;
+        r.vulns_unverified = reason;
+        assert_eq!(r.verdict_consistent(), want, "{r:?}");
+    }
 }

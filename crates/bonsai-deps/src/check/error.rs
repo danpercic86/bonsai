@@ -10,7 +10,10 @@ pub enum ServiceFault {
     Status(u16),
     Redirect,
     BadJson,
-    /// Oversize body, or more than `MAX_VERSIONS` deps.dev versions.
+    /// An oversize OSV querybatch body, or more than
+    /// `MAX_DEGRADED_RESPONSES` per-package oversize responses in one check
+    /// (P125h §2: a single oversize deps.dev body / advisory record degrades
+    /// only its package).
     TooLarge,
     TooManyAdvisories,
     PageLimit,
