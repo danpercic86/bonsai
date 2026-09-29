@@ -276,3 +276,85 @@ fn switch_cancels_old_run_and_enable_starts_the_active_repo() {
     assert!(!lock(&h.state.repos).contains_key(&rb));
     assert!(lock(&h.state.active).is_none());
 }
+
+/// Counts `kind` events for `repo_id`.
+fn count(h: &Harness, repo_id: &str, kind: DepsChangedKind) -> usize {
+    h.events
+        .kinds(repo_id)
+        .iter()
+        .filter(|k| **k == kind)
+        .count()
+}
+
+#[test]
+fn a_restart_serves_the_cached_report_before_any_network_result() {
+    // AC7: a NEW DepsState over the same app-data dir (= an app restart).
+    let dir = scratch();
+    let wd = repo(dir.path(), &[("package.json", &npm_manifest(2))]);
+    let rid = id(&wd);
+    let first = TestTransport::holding();
+    first.release();
+    let h1 = harness(dir.path(), true, first, TestEnv::default(), LONG);
+    run_to_end(&h1, &rid, &wd);
+    let before = view(&h1.state, &rid, &wd).report.expect("cached");
+    drop(h1);
+
+    let held = TestTransport::holding();
+    let h2 = harness(dir.path(), true, held.clone(), TestEnv::default(), LONG);
+    let cold = view(&h2.state, &rid, &wd);
+    assert_eq!(cold.report.as_ref(), Some(&before), "served from disk");
+    assert_eq!(held.sends(), 0, "no request before the view");
+
+    // Reopening starts the "opened" check; while it is blocked in the
+    // transport the previous report (and its checkedAt) stays on view.
+    on_active_changed(&h2.state, None, Some((&rid, wd.clone())));
+    wait_until("a blocked send", || {
+        held.in_flight.load(Ordering::SeqCst) > 0
+    });
+    let during = view(&h2.state, &rid, &wd);
+    assert_eq!(during.report.as_ref(), Some(&before));
+    assert!(during.running.is_some());
+    held.release();
+    wait_until("the reopen check finished", || {
+        count(&h2, &rid, DepsChangedKind::Finished) == 1
+    });
+}
+
+#[test]
+fn the_interval_elapsing_runs_a_check_and_a_changed_interval_applies() {
+    // AC8 through `tick` (plan_tests covers the pure planner only).
+    let dir = scratch();
+    let wd = repo(dir.path(), &[("package.json", &npm_manifest(1))]);
+    let rid = id(&wd);
+    let t = TestTransport::holding();
+    t.release();
+    let h = harness(dir.path(), true, t.clone(), TestEnv::default(), LONG);
+    run_to_end(&h, &rid, &wd);
+    let active = || Some((rid.clone(), wd.clone()));
+    let hour = 3_600_000;
+
+    // Default 12 h: 2 h later nothing runs; 13 h later a check runs unasked.
+    tick(&h.state, active(), unix_now_ms() + 2 * hour);
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(count(&h, &rid, DepsChangedKind::Started), 1);
+    tick(&h.state, active(), unix_now_ms() + 13 * hour);
+    wait_until("the 12 h check", || {
+        count(&h, &rid, DepsChangedKind::Finished) == 2
+    });
+
+    // Settings change to 1 h: the same 2 h-later tick is now due.
+    apply_config(
+        &h.state,
+        DepTracker {
+            enabled: true,
+            interval_hours: 1,
+        },
+        std::slice::from_ref(&rid),
+    );
+    assert!(!h.events.kinds(&rid).contains(&DepsChangedKind::Cleared));
+    tick(&h.state, active(), unix_now_ms() + 2 * hour);
+    wait_until("the 1 h check", || {
+        count(&h, &rid, DepsChangedKind::Finished) == 3
+    });
+    assert_eq!(t.sends(), 3, "one lookup per check");
+}
