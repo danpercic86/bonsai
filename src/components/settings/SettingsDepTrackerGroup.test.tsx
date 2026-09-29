@@ -5,7 +5,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, within } from '@testing-library/react';
 
 import { renderPanel } from '../../test/settingsPanelKit';
-import { CONSENT_CONFIRM, CONSENT_TITLE, SETTINGS_LEAD, SETTINGS_OFF_NOTE } from '../deps/depsCopy';
+import {
+  CONSENT_CONFIRM,
+  CONSENT_TITLE,
+  SETTINGS_GROUP_TITLE,
+  SETTINGS_LEAD,
+  SETTINGS_OFF_NOTE,
+} from '../deps/depsCopy';
 import { DEP_OFF_NOTE_ID } from './SettingsDepTrackerGroup';
 
 afterEach(() => {
@@ -51,5 +57,20 @@ describe('SettingsDepTrackerGroup', () => {
     expect(screen.queryByRole('dialog', { name: CONSENT_TITLE })).toBeNull();
     expect(props.onChange).toHaveBeenCalledWith({ depTracker: { enabled: false, intervalHours: 6 } });
     expect(document.getElementById(DEP_OFF_NOTE_ID)?.textContent).toBe(SETTINGS_OFF_NOTE);
+  });
+
+  it("the dialog's deep link scrolls the group into view and focuses its switch", () => {
+    const scroll = vi.spyOn(Element.prototype, 'scrollIntoView');
+    renderPanel({ initialCategory: 'general', configInitialFocus: 'dep-tracker' });
+    const group = screen.getByRole('region', { name: SETTINGS_GROUP_TITLE });
+    expect(scroll.mock.contexts).toContain(group);
+    expect(document.activeElement).toBe(toggle());
+  });
+
+  it('no deep link (or a different target): no scroll, no focus grab', () => {
+    const scroll = vi.spyOn(Element.prototype, 'scrollIntoView');
+    renderPanel({ initialCategory: 'general', configInitialFocus: 'identity' });
+    expect(scroll.mock.contexts).not.toContain(screen.getByRole('region', { name: SETTINGS_GROUP_TITLE }));
+    expect(document.activeElement).not.toBe(toggle());
   });
 });

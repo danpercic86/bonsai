@@ -151,10 +151,13 @@ export function SettingsShell({
   // effect even when that page is already mounted (Settings open, already on Git
   // config, second failed commit). Remounting the page is the honest way to say
   // "this is a new request"; ordinary category switches keep a stable key.
-  const pageKey =
-    category.id === 'git-config' && configInitialFocus === 'identity'
-      ? `${category.id}:${requestSeq}`
-      : category.id;
+  const focusPage: SettingsCategoryId | null =
+    configInitialFocus === 'identity'
+      ? 'git-config'
+      : configInitialFocus === 'dep-tracker'
+        ? 'general'
+        : null;
+  const pageKey = category.id === focusPage ? `${category.id}:${requestSeq}` : category.id;
 
   return (
     <div

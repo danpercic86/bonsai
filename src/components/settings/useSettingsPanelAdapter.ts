@@ -22,7 +22,7 @@ import { useCallback, useMemo, useRef } from 'react';
 import { DEFAULT_UI_SETTINGS } from '../../settings/defaults';
 import { findSettingsRow } from './settingsCatalog';
 import { useSettingsConsentGates } from './useSettingsConsentGates';
-import type { SettingsCategoryId, SettingsRowId } from './types';
+import type { SettingsCategoryId, SettingsFocusTarget, SettingsRowId } from './types';
 import type { UiSettings } from '../../ipc/types';
 import type {
   AiAutonomy,
@@ -137,8 +137,9 @@ export interface SettingsPanelProps {
    *  "This repository" (`local`-scope) registration row. */
   repoPath: string | null;
   /** P40b: when 'identity', the Git-config section scrolls/focuses its Identity
-   *  sub-section on open (commit-error "Set identity…" linkage). */
-  configInitialFocus?: 'identity' | null;
+   *  sub-section on open (commit-error "Set identity…" linkage). P125: when
+   *  'dep-tracker', General scrolls/focuses its "Dependency checks" group. */
+  configInitialFocus?: SettingsFocusTarget | null;
   /** P69i / UI §4.3 item 2: the Identities card whose Label field takes focus on
    *  open, so `Save “…” as an identity…` lands ON the draft it just created. */
   focusProfileId?: string | null;

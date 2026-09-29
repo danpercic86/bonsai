@@ -14,13 +14,14 @@
 
 import { useCallback, useMemo, useState } from 'react';
 
-import type { SettingsCategoryId } from '../components/settings/types';
+import type { SettingsCategoryId, SettingsFocusTarget } from '../components/settings/types';
 
 export interface SettingsRequest {
   /** `null` ⇒ "wherever it was" (the plain ⚙ / palette open). */
   category: SettingsCategoryId | null;
-  /** P40b: 'identity' scrolls + focuses the Git-config Identity sub-section. */
-  focus: 'identity' | null;
+  /** P40b: 'identity' scrolls + focuses the Git-config Identity sub-section;
+   *  P125: 'dep-tracker' scrolls + focuses General's "Dependency checks". */
+  focus: SettingsFocusTarget | null;
   /** P69i: the identity card whose Label field should take focus, for the
    *  header menu's `Save “…” as an identity…` (UI §4.3 item 2). */
   focusProfileId: string | null;
@@ -33,7 +34,7 @@ export interface SettingsRequestState {
   /** Open (or re-target) Settings. Always bumps `seq`. */
   openAt(
     category: SettingsCategoryId | null,
-    focus?: 'identity' | null,
+    focus?: SettingsFocusTarget | null,
     focusProfileId?: string | null,
   ): void;
   /** The `configMissing` commit-error linkage (App.tsx's old
@@ -52,7 +53,7 @@ export function useSettingsRequest(): SettingsRequestState {
   const openAt = useCallback(
     (
       category: SettingsCategoryId | null,
-      focus: 'identity' | null = null,
+      focus: SettingsFocusTarget | null = null,
       focusProfileId: string | null = null,
     ): void => {
       setRequest((r) => ({ category, focus, focusProfileId, seq: r.seq + 1 }));

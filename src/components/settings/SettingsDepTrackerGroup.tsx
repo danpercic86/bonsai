@@ -8,7 +8,7 @@
 // row help. The outcome goes through General's ONE `useOutcomeNotes` channel,
 // so the page keeps exactly one live region (P112 UA12) — the announcer the
 // External tools group renders.
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { NumberSlider } from '../NumberSlider';
 import { DEP_TRACKER_INTERVAL_MAX, DEP_TRACKER_INTERVAL_MIN } from '../../settings/ranges';
@@ -22,6 +22,7 @@ import type { OutcomeNotes } from './useOutcomeNotes';
 import { SettingsRow } from './SettingsRow';
 import { SettingsSwitch } from './SettingsSwitch';
 import { useSettingsActions, useSettingsValues } from './SettingsContext';
+import { useSettingsSearch } from './SettingsSearchContext';
 
 const DEP_TRACKER = 'general.dep-tracker';
 const DEP_INTERVAL = 'general.dep-interval';
@@ -35,9 +36,23 @@ export function SettingsDepTrackerGroup({
   begin,
   report,
 }: Pick<OutcomeNotes, 'notes' | 'begin' | 'report'>) {
-  const { depTracker } = useSettingsValues();
+  const { depTracker, configInitialFocus } = useSettingsValues();
   const { change } = useSettingsActions();
   const [consentOpen, setConsentOpen] = useState(false);
+  // A search result is never a focus target (the GitConfigCategory HAZARD).
+  const searching = useSettingsSearch() !== null;
+  const sectionRef = useRef<HTMLElement>(null);
+  const focusedOnce = useRef(false);
+
+  // P125 deep link (the dialog's "Open Settings"): bring the group into view
+  // and put focus on its switch, once per mount — SettingsShell remounts the
+  // page per request, so a second deep link lands again.
+  useEffect(() => {
+    if (configInitialFocus !== 'dep-tracker' || searching || focusedOnce.current) return;
+    focusedOnce.current = true;
+    sectionRef.current?.scrollIntoView({ block: 'start' });
+    document.getElementById(SWITCH_ID)?.focus({ preventScroll: true });
+  }, [configInitialFocus, searching]);
 
   const patch = (next: DepTrackerSettings) => change({ depTracker: next });
 
@@ -54,7 +69,7 @@ export function SettingsDepTrackerGroup({
   };
 
   return (
-    <SettingsGroup id="general-deps" title={SETTINGS_GROUP_TITLE}>
+    <SettingsGroup id="general-deps" title={SETTINGS_GROUP_TITLE} innerRef={sectionRef}>
       <p className="settings-group-lead">{SETTINGS_LEAD}</p>
       {/* Spelled out rather than `SettingsSwitchRow` so the ↺ (reset → Off)
           goes through `onToggle` too and reports the same outcome note. */}

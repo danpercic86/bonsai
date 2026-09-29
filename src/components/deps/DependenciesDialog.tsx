@@ -31,7 +31,8 @@ export interface DependenciesDialogProps {
   tracker: UseDepTracker;
   settings: DepTrackerSettings;
   onSettingsChange(patch: UiSettingsPatch): void;
-  onOpenSettingsAt(category: SettingsCategoryId): void;
+  /** Deep link: General with `focus: 'dep-tracker'` lands ON "Dependency checks". */
+  onOpenSettingsAt(category: SettingsCategoryId, focus: 'dep-tracker'): void;
 }
 
 interface MenuTarget {
@@ -142,7 +143,7 @@ export function DependenciesDialog({
 
   const openSettings = useCallback(() => {
     onClose();
-    onOpenSettingsAt('general');
+    onOpenSettingsAt('general', 'dep-tracker');
   }, [onClose, onOpenSettingsAt]);
 
   if (!open) return null;

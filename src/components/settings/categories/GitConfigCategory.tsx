@@ -42,7 +42,7 @@ export function GitConfigCategory() {
          the repository's real `user.name`. A search result is never a focus
          target; the non-search deep link (the commit-error "Set identity…"
          linkage, covered by e2e) is unaffected. */
-      initialFocus={searching ? undefined : configInitialFocus}
+      initialFocus={searching || configInitialFocus !== 'identity' ? undefined : 'identity'}
     />
   );
 }

@@ -21,7 +21,7 @@ import type { SettingsOutcome } from './SettingsOutcomeNote';
 import type { AiRunPrefs } from '../../settings/aiRunPrefs';
 import type { ToolSelection } from '../../hooks/useUiSettings';
 import type { UpdateUiState } from '../../hooks/useUpdateController';
-import type { SettingsRowId } from './types';
+import type { SettingsFocusTarget, SettingsRowId } from './types';
 
 /**
  * Persisted settings the pages read.
@@ -102,7 +102,7 @@ export interface SettingsRuntimeValues {
   updateState: UpdateUiState;
   /** Passed through verbatim (`undefined` included) so the Git-config section's
    *  scroll+focus effect sees exactly the value it sees today. */
-  configInitialFocus: 'identity' | null | undefined;
+  configInitialFocus: SettingsFocusTarget | null | undefined;
   /** P69i: the Identities card to focus on open (null ⇒ none). */
   focusProfileId: string | null;
   /**

@@ -20,6 +20,13 @@ export type SettingsCategoryId =
   | 'dev';
 
 /**
+ * A deep link's in-page focus target (the `openAt(category, focus)` request):
+ * 'identity' → Git config's Identity sub-section (P40b); 'dep-tracker' →
+ * General's "Dependency checks" group (P125).
+ */
+export type SettingsFocusTarget = 'identity' | 'dep-tracker';
+
+/**
  * A rail entry.
  *
  * §4.1 lists a `Page: React.ComponentType` field and then resolves it: the page

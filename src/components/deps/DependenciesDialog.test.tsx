@@ -13,10 +13,12 @@ import { DependenciesDialog } from './DependenciesDialog';
 import {
   CLEAR_FILTERS,
   EMPTY_TITLE,
+  FOOTER_SETTINGS,
   LIVE_START,
   NO_LOCKFILE_LINE,
   NO_MATCH,
   OFF_HEADING,
+  OPEN_SETTINGS,
   STALE_NOTICE,
   TURN_ON,
   UP_TO_DATE,
@@ -241,4 +243,19 @@ describe('header live region (§4.1)', () => {
     const s = base.report?.summary;
     expect(live()).toBe(liveFinished(s?.vulnerable ?? 0, (s?.major ?? 0) + (s?.minor ?? 0) + (s?.patch ?? 0)));
   });
+});
+
+describe('Settings links', () => {
+  it.each([
+    ['populated', FOOTER_SETTINGS],
+    ['off', OPEN_SETTINGS],
+  ] as const)(
+    '%s: "%s" closes and deep-links to General → Dependency checks',
+    (mode, label) => {
+      const { props } = renderDialog(mode);
+      fireEvent.click(screen.getByRole('button', { name: label }));
+      expect(props.onClose).toHaveBeenCalledTimes(1);
+      expect(props.onOpenSettingsAt).toHaveBeenCalledWith('general', 'dep-tracker');
+    },
+  );
 });

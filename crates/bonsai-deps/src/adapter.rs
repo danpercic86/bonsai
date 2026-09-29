@@ -98,18 +98,16 @@ impl ParseError {
     }
 
     /// Maps a serde_json error by category and position only — its message
-    /// (which can quote input) is never read.
+    /// (which can quote input) is never read. serde_json positions are
+    /// 1-based, but an error right after a newline (e.g. a truncated file
+    /// ending in `\n`) reports column 0 — that is dropped (line only).
     pub(crate) fn from_json(file: &str, e: &serde_json::Error) -> Self {
         let kind = match e.classify() {
             serde_json::error::Category::Io => ParseErrorKind::Internal,
             _ => ParseErrorKind::InvalidSyntax,
         };
-        Self::at(
-            file,
-            kind,
-            u32::try_from(e.line()).ok(),
-            u32::try_from(e.column()).ok(),
-        )
+        let one_based = |n: usize| u32::try_from(n).ok().filter(|n| *n > 0);
+        Self::at(file, kind, one_based(e.line()), one_based(e.column()))
     }
 
     pub(crate) fn from_yaml(file: &str, e: crate::yaml_events::YamlError) -> Self {

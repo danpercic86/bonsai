@@ -10,8 +10,10 @@
 // While on: fetches the view on mount, on repo change, on window focus and on
 // every `deps-changed` other than `progress`. It does NOT fetch on `repo-changed`
 // (the backend decides staleness via `probe_stale`) and never polls on a timer
-// — the schedule lives in Rust. Enable/disable is a settings write through
-// `useUiSettings`, never through this hook.
+// — the schedule lives in Rust. The one timed re-read is bounded: a DISABLED
+// answer while the local setting is on (the enable write not applied yet) is
+// dropped and re-read a few times, so the UI never flashes "off" after enabling.
+// Enable/disable is a settings write through `useUiSettings`, never this hook.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ipc } from '../ipc';
@@ -60,6 +62,11 @@ const RESETS_PROGRESS: ReadonlySet<DepsChangedPayload['kind']> = new Set([
   'cleared',
 ]);
 
+/** Re-reads of a disabled answer while the local setting is on (≈ 2 s total)
+ *  before it is believed — see `fetchView`. Exported for tests. */
+export const OFF_RETRY_MS = 250;
+export const OFF_RETRY_LIMIT = 8;
+
 export function useDepTracker(repoId: string | null, enabled: boolean): UseDepTracker {
   const [view, setView] = useState<DepTrackerView | null>(null);
   // Read by async results: an answer that lands after a disable is dropped.
@@ -74,7 +81,15 @@ export function useDepTracker(repoId: string | null, enabled: boolean): UseDepTr
   const seq = useRef(0);
   const mounted = useRef(true);
 
-  const fetchView = useCallback((forRepo: string) => {
+  // The pending "backend has not applied the enable yet" re-read (see below).
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearRetry = useCallback(() => {
+    if (retryTimer.current !== null) clearTimeout(retryTimer.current);
+    retryTimer.current = null;
+  }, []);
+
+  const fetchView = useCallback((forRepo: string, attempt = 0) => {
+    clearRetry();
     seq.current += 1;
     const mine = seq.current;
     ipc
@@ -82,6 +97,21 @@ export function useDepTracker(repoId: string | null, enabled: boolean): UseDepTr
       .then((v) => {
         if (!mounted.current || mine !== seq.current || !enabledRef.current) return;
         if (repoRef.current !== forRepo || v.repoId !== forRepo) return;
+        // Enabling is an optimistic settings write: the first read can beat
+        // `set_ui_settings` → `apply_config` and come back disabled. While
+        // the local setting is on, such an answer is dropped (the view stays
+        // loading / as it was — never a flash of "off") and re-read shortly;
+        // the `started` event usually lands first. After the bounded budget
+        // (e.g. the write failed) the backend's answer is shown as-is.
+        if (!v.enabled && attempt < OFF_RETRY_LIMIT) {
+          retryTimer.current = setTimeout(() => {
+            retryTimer.current = null;
+            if (mounted.current && enabledRef.current && repoRef.current === forRepo) {
+              fetchView(forRepo, attempt + 1);
+            }
+          }, OFF_RETRY_MS);
+          return;
+        }
         // Progress is event-driven only: a fetch that was in flight when the
         // check started would otherwise wipe the live numbers.
         setView(v);
@@ -91,24 +121,26 @@ export function useDepTracker(repoId: string | null, enabled: boolean): UseDepTr
         // simply stays as it was. Anything else is logged, never thrown.
         console.warn('deps: get view failed', e);
       });
-  }, []);
+  }, [clearRetry]);
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      clearRetry();
     };
-  }, []);
+  }, [clearRetry]);
 
   // Mount + repo change + enable: never show one repo's report under another,
   // and never a stale report after a disable (the view flips to off at once,
   // without waiting for `cleared`).
   useEffect(() => {
     seq.current += 1; // drop any in-flight answer
+    clearRetry(); // …and any pending off re-read (zero IPC once disabled)
     setView(null);
     setProgress(null);
     if (enabled && repoId !== null) fetchView(repoId);
-  }, [repoId, enabled, fetchView]);
+  }, [repoId, enabled, fetchView, clearRetry]);
 
   // One subscription pair while enabled, reading the repo via ref.
   useEffect(() => {

@@ -350,3 +350,30 @@ fn malformed_manifest_error_carries_no_text() {
     });
     assert_eq!(not_obj.unwrap_err().kind, ParseErrorKind::InvalidSyntax);
 }
+
+fn manifest_err(manifest: &str) -> ParseError {
+    let files = FileSet::default();
+    NpmAdapter
+        .parse(&ParseInput {
+            manifest_path: "package.json",
+            manifest,
+            lockfile: None,
+            files: &files,
+        })
+        .unwrap_err()
+}
+
+#[test]
+fn truncated_manifest_never_reports_column_zero() {
+    // EOF right after a newline: serde_json says column 0 — reported as
+    // line only.
+    let err = manifest_err("{\n  \"name\": \"x\",\n");
+    assert_eq!(err.kind, ParseErrorKind::InvalidSyntax);
+    assert_eq!(err.line, Some(3));
+    assert_eq!(err.col, None);
+    // EOF mid-line keeps its real 1-based column.
+    let err = manifest_err("{\"name\": \"x\"");
+    assert_eq!(err.kind, ParseErrorKind::InvalidSyntax);
+    assert_eq!(err.line, Some(1));
+    assert!(err.col.is_some_and(|c| c > 0), "{err:?}");
+}

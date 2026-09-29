@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mockIpc } from '../ipc/mock';
 import { buildDepView } from '../ipc/fixtures/depTracker';
 import { deriveState } from '../components/deps/depsView';
-import { disabledDepView, useDepTracker } from './useDepTracker';
+import { disabledDepView, OFF_RETRY_LIMIT, OFF_RETRY_MS, useDepTracker } from './useDepTracker';
 import type { DepsChangedPayload, DepTrackerView } from '../ipc/types/depTracker';
 
 type DepsCb = (p: DepsChangedPayload) => void;
@@ -152,9 +152,9 @@ describe('useDepTracker', () => {
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
 
     check.mockRejectedValueOnce({ kind: 'other', message: 'dependency tracker is disabled' });
-    get.mockImplementation(async (id) => viewOf(id, 'off'));
+    get.mockImplementation(async (id) => viewOf(id, 'error'));
     await act(async () => result.current.refresh());
-    await waitFor(() => expect(result.current.view?.enabled).toBe(false));
+    await waitFor(() => expect(result.current.view?.lastError).not.toBeNull());
     expect(warn).toHaveBeenCalled();
   });
 
@@ -204,6 +204,64 @@ describe('useDepTracker — zero IPC while off (cold-open ratchet)', () => {
     expect(result.current.view).toEqual(disabledDepView('r1'));
     expect(offDeps).toHaveBeenCalledTimes(1);
     expect(offFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it('off → on while the backend still reads off ⇒ never "off", re-read until the enable lands', async () => {
+    vi.useFakeTimers();
+    let backendOn = false;
+    const get = vi
+      .spyOn(mockIpc, 'getDepTracker')
+      .mockImplementation(async (id) => viewOf(id, backendOn ? 'populated' : 'off'));
+    const bodies: string[] = [];
+    const { result, rerender } = renderHook(({ on }) => {
+      const r = useDepTracker('r1', on);
+      if (on) bodies.push(deriveState(r.view).body);
+      return r;
+    }, { initialProps: { on: false } });
+    rerender({ on: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(OFF_RETRY_MS * 2 + 10);
+    });
+    expect(get.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(result.current.view).toBeNull(); // still "loading", not "off"
+    backendOn = true; // `apply_config` ran
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(OFF_RETRY_MS + 10);
+    });
+    expect(result.current.view?.enabled).toBe(true);
+    expect(bodies).not.toContain('off');
+    // The re-reads stop once the view landed.
+    const calls = get.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(OFF_RETRY_MS * OFF_RETRY_LIMIT * 2);
+    });
+    expect(get).toHaveBeenCalledTimes(calls);
+  });
+
+  it('a persistent backend off is believed after the bounded re-reads', async () => {
+    vi.useFakeTimers();
+    const get = vi.spyOn(mockIpc, 'getDepTracker').mockImplementation(async (id) => viewOf(id, 'off'));
+    const { result } = renderHook(() => useDepTracker('r1', true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(OFF_RETRY_MS * (OFF_RETRY_LIMIT + 2));
+    });
+    expect(get).toHaveBeenCalledTimes(OFF_RETRY_LIMIT + 1);
+    expect(deriveState(result.current.view).body).toBe('off');
+  });
+
+  it('disabling during the re-reads cancels them (zero IPC while off)', async () => {
+    vi.useFakeTimers();
+    const get = vi.spyOn(mockIpc, 'getDepTracker').mockImplementation(async (id) => viewOf(id, 'off'));
+    const { rerender } = renderHook(({ on }) => useDepTracker('r1', on), { initialProps: { on: true } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(get).toHaveBeenCalledTimes(1);
+    rerender({ on: false });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(OFF_RETRY_MS * (OFF_RETRY_LIMIT + 2));
+    });
+    expect(get).toHaveBeenCalledTimes(1);
   });
 
   it('a pinned ?deps=<mode> implies the setting, so the harness mode renders', async () => {

@@ -1,41 +1,102 @@
 //! `[Q9-5]` opening the FINAL path component without following a symlink,
 //! plus the handle-vs-`lstat` identity check. Hard-coded flag values (no
-//! `libc` / `windows-sys` edge, no `unsafe`); on an unlisted target the
-//! flag is 0 and only the identity check guards the open.
+//! `libc` / `windows-sys` edge, no `unsafe`). A Unix target whose value is
+//! not listed below is a `compile_error!` — never a silent `0` flag, which
+//! would make the final open follow symlinks (fail-open).
 
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::Path;
 
-/// `O_NOFOLLOW`, per `<fcntl.h>`: Linux asm-generic `0o400000` (x86,
-/// x86_64, riscv64, loongarch64, s390x); `0o100000` on Linux arm / aarch64
-/// / powerpc (`arch/*/include/uapi/asm/fcntl.h`); `0x0100` on macOS / iOS /
-/// the BSDs (`sys/fcntl.h`).
-#[cfg(unix)]
-const O_NOFOLLOW: i32 = if cfg!(any(
+/// `O_NOFOLLOW`, per `<fcntl.h>`: `0x0100` on the Darwin family (macOS /
+/// iOS / tvOS / watchOS / visionOS) and the BSDs (`sys/fcntl.h`).
+#[cfg(any(
     target_os = "macos",
     target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos",
     target_os = "freebsd",
     target_os = "openbsd",
     target_os = "netbsd",
     target_os = "dragonfly"
-)) {
-    0x0100
-} else if cfg!(all(
-    target_os = "linux",
+))]
+const O_NOFOLLOW: i32 = 0x0100;
+
+/// `O_NOFOLLOW` on the Linux kernel (Linux + Android) for arm / aarch64 /
+/// powerpc / m68k: `0o100000` (`arch/*/include/uapi/asm/fcntl.h`).
+#[cfg(all(
+    any(target_os = "linux", target_os = "android"),
     any(
         target_arch = "arm",
         target_arch = "aarch64",
         target_arch = "powerpc",
-        target_arch = "powerpc64"
+        target_arch = "powerpc64",
+        target_arch = "m68k"
     )
-)) {
-    0o100000
-} else if cfg!(target_os = "linux") {
-    0o400000
-} else {
-    0
-};
+))]
+const O_NOFOLLOW: i32 = 0o100000;
+
+/// `O_NOFOLLOW` on the Linux kernel (Linux + Android), asm-generic
+/// `0o400000` (x86, x86_64, riscv, loongarch64, s390x; mips and sparc
+/// define the same `0x20000`).
+#[cfg(all(
+    any(target_os = "linux", target_os = "android"),
+    any(
+        target_arch = "x86",
+        target_arch = "x86_64",
+        target_arch = "riscv32",
+        target_arch = "riscv64",
+        target_arch = "loongarch64",
+        target_arch = "s390x",
+        target_arch = "mips",
+        target_arch = "mips64",
+        target_arch = "sparc",
+        target_arch = "sparc64"
+    )
+))]
+const O_NOFOLLOW: i32 = 0o400000;
+
+// Fail closed: every Unix target must match exactly one arm above. This
+// predicate is the negation of their union — keep the two in sync.
+#[cfg(all(
+    unix,
+    not(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "watchos",
+        target_os = "visionos",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly",
+        all(
+            any(target_os = "linux", target_os = "android"),
+            any(
+                target_arch = "arm",
+                target_arch = "aarch64",
+                target_arch = "powerpc",
+                target_arch = "powerpc64",
+                target_arch = "m68k",
+                target_arch = "x86",
+                target_arch = "x86_64",
+                target_arch = "riscv32",
+                target_arch = "riscv64",
+                target_arch = "loongarch64",
+                target_arch = "s390x",
+                target_arch = "mips",
+                target_arch = "mips64",
+                target_arch = "sparc",
+                target_arch = "sparc64"
+            )
+        )
+    ))
+))]
+compile_error!(
+    "bonsai-deps: no known O_NOFOLLOW value for this Unix target; add it to \
+     fsread/open_nofollow.rs (a 0 fallback would make the open follow symlinks)"
+);
 
 /// `FILE_FLAG_OPEN_REPARSE_POINT` (`WinBase.h`): open the reparse point
 /// itself, so a symlink / junction yields a handle that is not a file.
