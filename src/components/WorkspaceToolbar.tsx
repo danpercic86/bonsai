@@ -12,7 +12,6 @@ import {
   CaretDownIcon,
   RefreshIcon,
 } from './appIcons';
-import { ToolbarPhaseReadout } from './ToolbarPhaseReadout';
 import { useMinimumBusy } from './repoWorkspace/useMinimumBusy';
 import { categoryMeta } from './gitActivityFormat';
 import type { BranchInfo, GitActivityCategory, JobStatus } from '../ipc';
@@ -57,12 +56,6 @@ export interface WorkspaceToolbarProps {
   /** P87b View C: the active REMOTE git-activity run's category — drives the busy
    *  button participle (so a force-push reads `Force-pushing…`). Null when idle. */
   gitCategory?: GitActivityCategory | null;
-  /** P87b View C: the in-flight phase/transfer readout (`Running pre-push hook…`,
-   *  `12,340 / 50,000 objects`), rendered in an adjacent `.toolbar-phase` span so
-   *  the toolbar never reflows. Null unless a remote op is running. */
-  gitPhase?: string | null;
-  /** P87b §5-3: expand the git activity dock + reveal the active run. */
-  onShowGitActivity?: () => void;
 }
 
 /** P3e: the top workspace toolbar (fetch/pull/push + auto-fetch readout + AI
@@ -92,8 +85,6 @@ export function WorkspaceToolbar({
   onRefresh,
   externalItems,
   gitCategory,
-  gitPhase,
-  onShowGitActivity,
 }: WorkspaceToolbarProps) {
   // P37b: anchor for the Push caret dropdown (positioned at the caret's rect).
   const caretRef = useRef<HTMLButtonElement>(null);
@@ -220,13 +211,6 @@ export function WorkspaceToolbar({
               <CaretDownIcon />
             </button>
           </span>
-          {/* P87b View C: the granular phase/transfer readout, adjacent to the op
-              buttons so the RunningHook → Network transition is visible without
-              reflowing the toolbar. */}
-          <ToolbarPhaseReadout
-            phase={gitPhase ?? null}
-            onShow={onShowGitActivity}
-          />
           {aiEligible && (
             <button
               type="button"

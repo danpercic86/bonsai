@@ -95,7 +95,7 @@ describe('WorkspaceToolbar', () => {
   });
 
   it('no .header-progress during a remote op either (P119 §1)', () => {
-    const { container } = renderBar({ remoteOp: 'fetch', gitCategory: 'fetch', gitPhase: 'Fetching…' });
+    const { container } = renderBar({ remoteOp: 'fetch', gitCategory: 'fetch' });
     expect(container.querySelector('.header-progress')).toBeNull();
     // A remote op is not a refresh: the Refresh glyph does not spin.
     expect(btn('Refresh')).not.toHaveAttribute('aria-busy');

@@ -4,7 +4,6 @@ import type { SigningStatus, StashScope } from '../ipc';
 import { ConfirmDialog } from './ConfirmDialog';
 import { CommitOptionsMenu } from './CommitOptionsMenu';
 import { CommitNote } from './CommitNote';
-import { ToolbarPhaseReadout } from './ToolbarPhaseReadout';
 import { SummarizeIcon } from './menuIcons';
 import { COMMIT_HOOK_CANCELED, COMMIT_PUSH_CANCELED } from './commitPushSignal';
 
@@ -82,12 +81,6 @@ export interface CommitBoxProps {
    * null/undefined (unread or read failed) ⇒ the toggle is hidden and commits
    * follow `commit.gpgsign` (sign = null). Hidden in merge mode. */
   signingStatus?: SigningStatus | null;
-  /** P87b View C §2.2: the active commit/amend/mergeCommit run's phase readout
-   *  (`Running pre-commit hook…`), shown beside the commit button while a commit
-   *  is in flight so the granular phase is visible where the commit was launched. */
-  commitPhase?: string | null;
-  /** P87b §5-3: expand the git activity dock + reveal the active run. */
-  onShowGitActivity?: () => void;
 }
 
 /** Imperative submit hook so OpBanner's [Commit merge] triggers the same
@@ -129,8 +122,6 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
     hasUntracked = false,
     onOpenIdentitySettings,
     signingStatus,
-    commitPhase,
-    onShowGitActivity,
   },
   ref,
 ) {
@@ -444,9 +435,6 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
               {pushBtn(false, splitAction)}
             </>
           )}
-          {submitting !== null && (
-            <ToolbarPhaseReadout phase={commitPhase ?? null} onShow={onShowGitActivity} />
-          )}
         </div>
       ) : (
         <div className="commit-button-row">
@@ -464,9 +452,6 @@ export const CommitBox = forwardRef<CommitBoxHandle, CommitBoxProps>(function Co
                   ? 'Amend'
                   : 'Commit'}
           </button>
-          {submitting !== null && (
-            <ToolbarPhaseReadout phase={commitPhase ?? null} onShow={onShowGitActivity} />
-          )}
         </div>
       )}
 

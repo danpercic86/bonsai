@@ -1,6 +1,5 @@
-/* Bonsai — Git activity dock (P87b, ui-reference §12.10): the in-flight toolbar
-   phase readout (View C), the determinate progress bar, and the session log dock
-   (View D — the git twin of the AI dock §9).
+/* Bonsai — Git activity dock (P87b, ui-reference §12.10): the determinate
+   progress bar and the session log dock (View D — the git twin of the AI dock §9).
 
    §11 tokens: every colour below aliases an existing themed custom property (a
    §2 token) or is a color-mix over one, so ONE rule set serves both themes — NO
@@ -10,37 +9,6 @@
    View D's EXPANDED RUN DETAIL (§3.5 — hook sub-rows, the output log, Copy, the
    blocking-hook note) is NOT here: it lives in `git-dock-log.css`, imported
    immediately after this file. */
-
-/* ---------- View C: toolbar phase readout + determinate bar ---------- */
-
-/* §2.1: reuses `.toolbar-job-status` (11px --text-2); a real <button> so it is a
-   ≥24px clickable that expands the dock, with the chrome stripped back to the span. */
-.toolbar-phase {
-  border: none;
-  background: transparent;
-  padding: 0 4px;
-  min-height: 24px;
-  max-width: 22ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-  font-family: inherit;
-  /* §2.1/§6: the "is it hung?" reassurance string must be legible — set --text-2
-     explicitly (~7.2:1); do NOT inherit .toolbar-job-status's --text-3 (fails AA
-     at 11px: ~3.0-3.4:1 both themes). */
-  color: var(--text-2);
-}
-
-.toolbar-phase:hover {
-  color: var(--text-1);
-}
-
-.toolbar-phase:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-  border-radius: 4px;
-}
 
 /* ---------- View D: the git activity dock ---------- */
 
@@ -412,7 +380,7 @@
 
 /* FU-1 (§3.4) — the run's target ref, identical in the collapsed bar and the
    expanded row. Identity, so it outranks the transient phase text when the dock
-   is narrow (the subphase shrinks 3x faster). 22ch matches .toolbar-phase; `ch`
+   is narrow (the subphase shrinks 3x faster). 22ch cap; `ch`
    resolves against this rule's own 11px mono, so one value serves both
    densities. `.ref-label`'s own overflow/nowrap (P111 §3.3) does the truncating
    and keeps the leaf; `withTitle` puts the whole ref on the span's title. */

@@ -2037,8 +2037,6 @@ export function RepoWorkspace({
           onOpenAccountSettings={onOpenAccountSettings}
           signingStatus={signingStatus}
           commitSignature={commitSignature}
-          commitPhase={gitDock.commitPhase}
-          onShowGitActivity={gitDock.focusDock}
         />
       </div>
 

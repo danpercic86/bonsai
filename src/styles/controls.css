@@ -364,7 +364,7 @@
    readout moved every neighbour ("Fetched 5m ago" -> "<1m" -> "1m" around each
    auto-fetch). The slot reserves the widest steady-state label ("Fetched 59m
    ago" / "23h") and the text stays start-aligned with tabular digits, so a
-   clock tick moves nothing. Scoped: `.toolbar-phase` shares the base class. */
+   clock tick moves nothing. */
 .toolbar-fetch-age {
   display: inline-block;
   min-width: 15ch;
