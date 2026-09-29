@@ -124,6 +124,8 @@ const deepWorkspace = group(DEEP_MANIFEST_PATH, 'pnpm-lock.yaml', 'npm', [
   row({ name: LONG_NPM_NAME, ecosystem: 'npm', declared: '^2.14.0', current: '2.14.0', latest: '2.18.1', update: 'minor' }),
   row({ name: 'zod', ecosystem: 'npm', declared: '^3.24.2', current: '3.24.2', latest: '3.24.2' }),
   row({ name: '@bonsai/shared', ecosystem: 'npm', declared: 'workspace:*', current: '0.4.0', availability: { kind: 'local', reason: 'workspace' } }),
+  // [UI-c] §8.4 private cell: scopedRegistry with no host.
+  row({ name: '@internal/config', ecosystem: 'npm', declared: '^1.2.0', current: '1.2.4', availability: { kind: 'private', reason: 'scopedRegistry', registryHost: null } }),
 ], 0);
 
 const cargo = group('src-tauri/Cargo.toml', 'src-tauri/Cargo.lock', 'cargo', [
@@ -133,7 +135,21 @@ const cargo = group('src-tauri/Cargo.toml', 'src-tauri/Cargo.lock', 'cargo', [
   row({ name: 'serde', ecosystem: 'cargo', declared: '1', current: '1.0.219', latest: '1.0.219' }),
   row({ name: 'serde_json', ecosystem: 'cargo', declared: '1', current: '1.0.139', latest: '1.0.140', update: 'patch' }),
   row({ name: 'bonsai-core', ecosystem: 'cargo', declared: null, current: '0.1.0', availability: { kind: 'local', reason: 'path' } }),
+  // [UI-c] §8.4 private cell: configUnreadable (one ecosystem only, so the
+  // report-wide lead does NOT fire here — see `?deps=mirror`).
+  row({ name: 'corp-telemetry', ecosystem: 'cargo', declared: '0.9', current: '0.9.3', availability: { kind: 'private', reason: 'configUnreadable', registryHost: null } }),
 ], 486);
+
+// [UI-c] NuGet: a resolved version with `vulnsChecked: false` (unconfirmed
+// casing, no packages.lock.json) and the remaining §8.4 private cells.
+const nugetProject = group('src/Api/Api.csproj', null, 'nuget', [
+  row({ name: 'Newtonsoft.Json', ecosystem: 'nuget', declared: '13.0.1', current: '13.0.1', latest: '13.0.3', update: 'patch', vulnsChecked: false }),
+  row({ name: 'Serilog', ecosystem: 'nuget', declared: '4.2.0', current: '4.2.0', latest: '4.2.0', vulnsChecked: false }),
+  row({ name: 'Corp.Billing.Client', ecosystem: 'nuget', declared: '3.1.0', current: '3.1.0', availability: { kind: 'private', reason: 'customRegistry', registryHost: 'nuget.corp.example' } }),
+  row({ name: 'Corp.Shared.Models', ecosystem: 'nuget', declared: '1.8.2', current: '1.8.2', availability: { kind: 'private', reason: 'customRegistry', registryHost: null } }),
+  row({ name: 'Corp.Auth', ecosystem: 'nuget', declared: '2.0.0', current: '2.0.0', availability: { kind: 'private', reason: 'sourceMapping', registryHost: 'pkgs.dev.azure.com' } }),
+  row({ name: 'Corp.Logging', ecosystem: 'nuget', declared: '5.4.1', current: '5.4.1', availability: { kind: 'private', reason: 'sourceMapping', registryHost: null } }),
+], 0);
 
 const goModule = group('cmd/indexer/go.mod', 'cmd/indexer/go.sum', 'go', [
   // [UI-c] the Go pseudo-version.
@@ -191,6 +207,7 @@ export const POPULATED_GROUPS: readonly DepManifestGroup[] = sortGroups([
   deepWorkspace,
   cargo,
   goModule,
+  nugetProject,
   requirements,
   gradle,
   brokenGo,

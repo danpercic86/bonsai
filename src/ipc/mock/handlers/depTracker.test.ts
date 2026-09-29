@@ -215,8 +215,17 @@ describe('DEP_VIEW_POPULATED content (AC13 + [UI-c] / [UI-e])', () => {
 
 describe('mirror and large modes ([UI-c])', () => {
   it('mirror: every row in two groups is private customRegistry on the mirror host', () => {
-    const groups = DEP_VIEW_MIRROR.report?.groups ?? [];
+    const all = DEP_VIEW_MIRROR.report?.groups ?? [];
+    // P125-ui §9: the other groups are the npm + NuGet configUnreadable variant.
+    const groups = all.filter((g) =>
+      g.rows.every((r) => r.availability.kind === 'private' && r.availability.reason === 'customRegistry'),
+    );
     expect(groups).toHaveLength(2);
+    const unreadable = all.filter((g) => !groups.includes(g));
+    expect(new Set(unreadable.map((g) => g.ecosystem))).toEqual(new Set(['npm', 'nuget']));
+    for (const r of unreadable.flatMap((g) => g.rows)) {
+      expect(r.availability).toEqual({ kind: 'private', reason: 'configUnreadable', registryHost: null });
+    }
     for (const r of groups.flatMap((g) => g.rows)) {
       expect(r.availability).toEqual({ kind: 'private', reason: 'customRegistry', registryHost: MIRROR_HOST });
       expect(r.registryUrl).toBeNull();

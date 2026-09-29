@@ -112,6 +112,7 @@ export function renderPanel(over: Partial<SettingsPanelProps> = {}, before: Reac
       captureFrames: false,
       includeRawNames: false,
     },
+    depTracker: { enabled: false, intervalHours: 12 },
     onRegisterMcp: vi.fn(async () => {}),
     onShowOnboarding: vi.fn(),
     onOpenRepository: vi.fn(),

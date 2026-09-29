@@ -34,6 +34,8 @@ import {
   Package,
   FolderDown,
   FolderPlus,
+  Boxes,
+  ExternalLink,
 } from 'lucide-react';
 
 // Shared render props for all Lucide chrome icons (identical to menuIcons').
@@ -84,6 +86,12 @@ export const ChartIcon = () => <ChartColumn {...ICON_PROPS} />;
 
 /** Settings (Lucide) — the cog / settings. */
 export const GearIcon = () => <Settings {...ICON_PROPS} />;
+
+/** P125: Dependencies toolbar entry (Lucide `Boxes`). */
+export const DependenciesIcon = () => <Boxes {...ICON_PROPS} />;
+
+/** P125: open-in-browser row action (Lucide `ExternalLink`). */
+export const ExternalLinkIcon = () => <ExternalLink {...ICON_PROPS} />;
 
 /* ---------- Workspace toolbar ---------- */
 

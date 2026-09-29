@@ -174,6 +174,8 @@ export const MINIMAL: FixtureValues = {
   // P91: Dev mode off at the production defaults, so the fieldset is disabled and
   // no dev ↺ shows in the minimal fixture.
   dev: D.dev,
+  // P125: the tracker off at its defaults, so neither dependency ↺ shows.
+  depTracker: D.depTracker,
   updateCurrentVersion: '1.2.3',
   autoCheckUpdates: D.autoCheckUpdates,
   updateState: { status: 'idle' },
@@ -251,4 +253,6 @@ export const MAXIMAL: FixtureValues = {
     captureFrames: true,
     includeRawNames: true,
   },
+  // P125: on, with a non-default interval, so both dependency ↺ are present.
+  depTracker: { enabled: true, intervalHours: 6 },
 };

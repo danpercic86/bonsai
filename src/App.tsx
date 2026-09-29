@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CloneDialog } from './components/CloneDialog';
-import { ContextMenu } from './components/ContextMenu';
 import { RepoWorkspace } from './components/RepoWorkspace';
 import { SettingsPanel } from './components/SettingsPanel';
-import { externalToolsItems } from './components/workspaceMenus';
 import { AiConsentDialog } from './components/dialogs/AiConsentDialog';
 import { McpConsentDialog } from './components/dialogs/McpConsentDialog';
 import { McpWriteConsentDialog } from './components/dialogs/McpWriteConsentDialog';
 import { AiAssetsPanel } from './components/AiAssetsPanel';
 import { RepoHealthPanel } from './components/RepoHealthPanel';
+import { DependenciesDialog } from './components/deps/DependenciesDialog';
+import { TabContextMenu } from './components/TabContextMenu';
 import { OnboardingOverlay } from './components/OnboardingOverlay';
 import { EmptyState } from './components/EmptyState';
 import { GitMissingBanner } from './components/GitMissingBanner';
@@ -20,7 +20,7 @@ import { AppUpdateSurfaces } from './components/AppUpdateSurfaces';
 import { useAiAvailability } from './hooks/useAiAvailability';
 import { useAppCommands } from './hooks/useAppCommands';
 import { useCloneFlow } from './hooks/useCloneFlow';
-import { useExternalTools } from './hooks/useExternalTools';
+import { useDepTracker } from './hooks/useDepTracker';
 import { useMcpWiring } from './hooks/useMcpWiring';
 import { usePaneWidthState } from './hooks/usePaneWidthState';
 import { useRepoTabs } from './hooks/useRepoTabs';
@@ -60,6 +60,7 @@ export default function App() {
   const [aiAssetsOpen, setAiAssetsOpen] = useState(false);
   // P29c: read-only repo-health overlay (active repo only).
   const [healthOpen, setHealthOpen] = useState(false);
+  const [depsOpen, setDepsOpen] = useState(false); // P125: deps dialog (active repo only).
   // P43a: first-run onboarding overlay. Opened at startup when `onboardingSeen`
   // is false (or `?onboarding=1`); re-openable from Settings. Dismissal persists
   // `onboardingSeen: true` so it does not reappear.
@@ -103,6 +104,7 @@ export default function App() {
     terminalTool,
     editorTool,
     dev,
+    depTracker,
     aiDockHeight,
     aiDockCollapsed,
     aiStreamLog,
@@ -179,14 +181,8 @@ export default function App() {
     queueSettingsWrite({ listView: next });
   }, [listView, queueSettingsWrite]);
 
-  // P49b: external-tool launchers for the per-tab context menu (the strip is
-  // App-owned, spanning all tabs). Shared with RepoWorkspace via the hook —
-  // never gated by any repo op; failures surface via the AppError→toast path.
-  const {
-    handleOpenInTerminal: openInTerminal,
-    handleRevealInFileManager: revealInFileManager,
-    handleOpenInEditor: openInEditor,
-  } = useExternalTools(pushToast);
+  const deps = useDepTracker(activeRepo); // P125-ui §2: the ONE fetch source (toolbar + dialog).
+  useEffect(() => { if (activeRepo === null) setDepsOpen(false); }, [activeRepo]); // no stale modal flag
 
   // §8.3 / §8.4: the Claude Code CLI probe + the one-time AI consent dialog
   // (see hooks/useAiAvailability.ts).
@@ -230,6 +226,7 @@ export default function App() {
     openSettingsAt: settings.openAt,
     setAiAssetsOpen,
     setHealthOpen,
+    setDepsOpen, depsEnabled: deps.view?.enabled === true, depsRefresh: deps.refresh,
     setOverlayOpen,
     toggleTheme,
     toggleListView,
@@ -340,6 +337,7 @@ export default function App() {
     settings.open ||
     aiAssetsOpen ||
     healthOpen ||
+    depsOpen ||
     onboardingOpen ||
     consentOpen ||
     mcp.modalOpen ||
@@ -356,6 +354,7 @@ export default function App() {
     setOverlayOpen,
     setAiAssetsOpen,
     setHealthOpen,
+    depsOpen, setDepsOpen,
     activeRepo,
     handleOpenRepository,
     closeTab,
@@ -391,6 +390,7 @@ export default function App() {
             activeRepo={activeRepo}
             onOpenAiAssets={() => setAiAssetsOpen(true)}
             onOpenHealth={() => setHealthOpen(true)}
+            depsView={deps.view} onOpenDeps={() => setDepsOpen(true)}
             onOpenSettings={() => settings.openAt(null)}
             onOpenSettingsAt={settings.openAt} devEnabled={dev.enabled}
             onMenuOpenChange={setMenuOpen}
@@ -498,6 +498,7 @@ export default function App() {
           editorTool={editorTool}
           onAdoptToolSelection={adoptToolSelection}
           dev={dev}
+          depTracker={depTracker}
           onShowOnboarding={showOnboarding}
           onOpenRepository={openRepository}
           updateCurrentVersion={update.currentVersion}
@@ -521,6 +522,16 @@ export default function App() {
             repoId={activeRepo}
           />
         )}
+        {activeRepo !== null && (
+          <DependenciesDialog key={activeRepo} // keyed: a repo switch resets its filter/expansion
+            open={depsOpen}
+            onClose={() => setDepsOpen(false)}
+            tracker={deps}
+            settings={depTracker}
+            onSettingsChange={handleSettingsChange}
+            onOpenSettingsAt={settings.openAt}
+          />
+        )}
         <AiConsentDialog
           open={consentOpen}
           onConfirm={handleConfirmConsent}
@@ -540,18 +551,7 @@ export default function App() {
         />
         {/* The updater's two surfaces, from one controller (own file). */}
         <AppUpdateSurfaces update={update} />
-        {tabMenu !== null && (
-          <ContextMenu
-            x={tabMenu.x}
-            y={tabMenu.y}
-            items={externalToolsItems(tabMenu.path, {
-              onOpenInTerminal: openInTerminal,
-              onRevealInFileManager: revealInFileManager,
-              onOpenInEditor: openInEditor,
-            })}
-            onClose={() => setTabMenu(null)}
-          />
-        )}
+        <TabContextMenu menu={tabMenu} onClose={() => setTabMenu(null)} pushToast={pushToast} />
         <Toasts toasts={toasts} onDismiss={dismissToast} />
       </div>
     </ToastContext.Provider>

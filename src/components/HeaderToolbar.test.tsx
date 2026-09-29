@@ -30,6 +30,8 @@ function renderToolbar(activeRepo: string | null) {
     activeRepo,
     onOpenAiAssets: vi.fn(),
     onOpenHealth: vi.fn(),
+    depsView: null,
+    onOpenDeps: vi.fn(),
     onOpenSettings: vi.fn(),
     onOpenSettingsAt: vi.fn(),
     devEnabled: false,

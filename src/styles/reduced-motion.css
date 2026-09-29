@@ -66,5 +66,15 @@
     animation: none;
     transition: none;
   }
+
+  /* P125-ui §5.6: the dependency dialog's disclosure chevron snaps and its
+     skeleton is static. */
+  .deps-chevron {
+    transition: none;
+  }
+
+  .deps-loading .skeleton-row {
+    animation: none;
+  }
 }
 

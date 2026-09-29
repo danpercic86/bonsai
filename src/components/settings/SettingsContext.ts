@@ -61,6 +61,8 @@ export type SettingsPersistedValues = Pick<
   | 'terminalTool'
   | 'editorTool'
   | 'dev'
+  /** P125-ui §7: the dependency tracker (whole-struct, the autoFetch idiom). */
+  | 'depTracker'
 > &
   /** Spec-002: optional in `UiSettings` (frontend-only, absent from the Rust
    *  oracle), but the adapter resolves them to concrete defaults, so the pages

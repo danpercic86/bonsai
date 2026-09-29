@@ -55,6 +55,8 @@
 @import './styles/ai-assets.css';
 @import './styles/agent-assets.css';
 @import './styles/repo-health.css';
+@import './styles/deps.css';
+@import './styles/deps-list.css';
 @import './styles/worktrees.css';
 @import './styles/composer.css';
 @import './styles/forge-pr.css';

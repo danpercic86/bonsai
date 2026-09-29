@@ -38,10 +38,28 @@ function mirrorRows(names: readonly string[]): DepRow[] {
   );
 }
 
-/** `DEP_VIEW_MIRROR` groups: two groups, every row private. */
+/** [UI-c] the P125-ui §9 `configUnreadable` variant: rows spanning npm AND
+ *  NuGet whose registry settings could not be read, so (with no `checked` row
+ *  in either ecosystem) the UI infers the report-wide lead (§8.3 / §11.5). */
+function unreadableRows(ecosystem: 'npm' | 'nuget', names: readonly string[]): DepRow[] {
+  return names.map((name, i) =>
+    row({
+      name,
+      ecosystem,
+      declared: `${2 + i}.0.0`,
+      current: `${2 + i}.0.1`,
+      availability: { kind: 'private', reason: 'configUnreadable', registryHost: null },
+    }),
+  );
+}
+
+/** `DEP_VIEW_MIRROR` groups: the two Q2 mirror groups (every row private on
+ *  {@link MIRROR_HOST}) plus the npm + NuGet config-unreadable groups. */
 export const MIRROR_GROUPS: readonly DepManifestGroup[] = sortGroups([
   group('package.json', 'package-lock.json', 'npm', mirrorRows(MIRROR_NAMES.slice(0, 6)), 0),
   group('apps/web/package.json', 'package-lock.json', 'npm', mirrorRows(MIRROR_NAMES.slice(4)), 0),
+  group('apps/admin/package.json', 'package-lock.json', 'npm', unreadableRows('npm', ['axios', 'luxon', 'yup']), 0),
+  group('services/Api/Api.csproj', 'services/Api/packages.lock.json', 'nuget', unreadableRows('nuget', ['Dapper', 'Polly']), 0),
 ]);
 
 const UPDATE_CYCLE: readonly (DepUpdateKind | null)[] = [null, 'patch', null, 'minor', null, null, 'major'];

@@ -1,0 +1,357 @@
+/* Bonsai — dependency tracker list (P125-ui §4.3 / §4.4): the sticky column
+   header, manifest groups, the fixed-layout group tables, the 32px rows (never
+   wrap) and the advisory details. Split from deps.css for the 500-line limit.
+   Existing tokens only — no hex literal, no new hue. */
+
+/* ---------- §4.3 sticky column header + groups ---------- */
+
+.deps-colhead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  background: var(--bg-1);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+  line-height: 24px;
+}
+
+.deps-colhead > span {
+  flex: none;
+  padding: 0 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.deps-colhead > .deps-colhead-name {
+  flex: 1 1 auto;
+  min-width: 200px;
+  padding-left: 28px;
+}
+
+.deps-colhead-ver {
+  width: 112px;
+}
+
+.deps-colhead-upd {
+  width: 72px;
+}
+
+.deps-colhead-vuln {
+  width: 208px;
+}
+
+.deps-colhead-act {
+  width: 32px;
+}
+
+.deps-group-h {
+  margin: 0;
+  font: inherit;
+}
+
+.deps-group-toggle {
+  width: 100%;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.deps-group-toggle:hover {
+  background: var(--bg-2);
+}
+
+.deps-chevron {
+  flex: none;
+  width: 20px;
+  display: inline-block;
+  color: var(--text-2);
+  transition: transform 120ms ease-out;
+}
+
+[aria-expanded='true'] > .deps-chevron {
+  transform: rotate(90deg);
+}
+
+.deps-group-path {
+  font-size: 12px;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.deps-group-meta {
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.deps-group-eco {
+  flex: 0 2 auto;
+}
+
+.deps-group-lock {
+  flex: 0 2 auto;
+  font-size: 12px;
+}
+
+.deps-group-count {
+  flex: none;
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--text-2);
+}
+
+.deps-group-line {
+  margin: 0;
+  padding: 4px 8px 4px 28px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.deps-group-wrap {
+  max-width: 96ch;
+}
+
+.deps-group-single {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deps-show-all {
+  margin: 4px 0 8px 28px;
+}
+
+/* ---------- §4.3 / §4.4 group table + rows (32px, never wrap) ---------- */
+
+.deps-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.deps-col-ver {
+  width: 112px;
+}
+
+.deps-col-upd {
+  width: 72px;
+}
+
+.deps-col-vuln {
+  width: 208px;
+}
+
+.deps-col-act {
+  width: 32px;
+}
+
+/* The per-table header is for AT only: kept in table layout (so the column
+   semantics survive) but clipped to nothing. */
+.deps-thead tr {
+  height: 0;
+}
+
+.deps-thead th {
+  height: 0;
+  padding: 0;
+  border: 0;
+  line-height: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.deps-row {
+  height: 32px;
+  border-top: 1px solid var(--border);
+}
+
+.deps-row:hover {
+  background: var(--bg-2);
+}
+
+.deps-row.is-expanded {
+  background: var(--selection);
+}
+
+.deps-cell {
+  padding: 0 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: var(--text-1);
+  vertical-align: middle;
+}
+
+.deps-cell.mono {
+  font-size: 12px;
+}
+
+.deps-latest--same {
+  color: var(--text-2);
+}
+
+.deps-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.deps-row-toggle {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.deps-name-plain {
+  display: inline-flex;
+  min-width: 0;
+  padding-left: 20px;
+}
+
+.deps-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.deps-tag {
+  flex: none;
+  display: inline-flex;
+}
+
+.deps-vuln,
+.deps-avail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.deps-vuln-id {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.deps-avail-reason {
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.deps-avail-host {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.deps-cell-action {
+  padding: 0 4px;
+  text-overflow: clip;
+}
+
+.btn-icon.deps-row-action {
+  width: 24px;
+  height: 24px;
+  margin-left: 0;
+  color: var(--text-2);
+}
+
+/* ---------- §4.4 advisory details ---------- */
+
+.deps-details > td {
+  padding: 8px 8px 8px 28px;
+  background: var(--bg-0);
+}
+
+.deps-advisories {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.deps-advisory-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.deps-advisory-id {
+  font-size: 12px;
+  color: var(--text-1);
+  flex: none;
+}
+
+.deps-advisory-cvss {
+  font-size: 12px;
+  color: var(--text-2);
+  flex: none;
+}
+
+.deps-advisory-aliases {
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.deps-advisory-summary {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-1);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.deps-advisory-summary--none {
+  color: var(--text-2);
+}

@@ -113,7 +113,8 @@ describe('P112 §2 — the group, and General’s ONE live region (UA12)', () =>
     // UA11: every outcome note is description-only.
     expect(pane.querySelectorAll('[data-outcome-note][aria-live]')).toHaveLength(0);
     expect(pane.querySelectorAll('[data-outcome-note][role]')).toHaveLength(0);
-    expect(pane.querySelectorAll('[data-outcome-note]')).toHaveLength(3);
+    // P125: + the Dependency checks switch's "off" outcome note (same channel).
+    expect(pane.querySelectorAll('[data-outcome-note]')).toHaveLength(4);
   });
 
   it('composes both description ids on the picker AND on Browse, none dangling', async () => {

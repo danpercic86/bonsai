@@ -39,6 +39,9 @@ function deps(over: Partial<AppCommandDeps> = {}): AppCommandDeps {
     openSettingsAt: vi.fn(),
     setAiAssetsOpen: vi.fn(),
     setHealthOpen: vi.fn(),
+    setDepsOpen: vi.fn(),
+    depsEnabled: false,
+    depsRefresh: vi.fn(async () => {}),
     setOverlayOpen: vi.fn(),
     toggleTheme: vi.fn(),
     toggleListView: vi.fn(),
@@ -101,6 +104,32 @@ describe('useAppCommands — identity', () => {
     result.current.find((a) => a.id === 'app.identities')?.run();
     result.current.find((a) => a.id === 'app.settings')?.run();
     expect(openSettingsAt.mock.calls).toEqual([['git-config'], ['identities'], [null]]);
+  });
+});
+
+describe('useAppCommands — P125 dependency entries (§5.4)', () => {
+  const ids = (d: AppCommandDeps) => renderHook(() => useAppCommands(d)).result.current.map((a) => a.id);
+
+  it('Dependencies needs a repo; Check dependencies now also needs the tracker on', () => {
+    expect(ids(deps({ activeRepo: null, depsEnabled: true }))).not.toContain('app.dependencies');
+    expect(ids(deps({ activeRepo: null, depsEnabled: true }))).not.toContain('app.checkDependencies');
+    expect(ids(deps({ depsEnabled: false }))).toContain('app.dependencies');
+    expect(ids(deps({ depsEnabled: false }))).not.toContain('app.checkDependencies');
+    expect(ids(deps({ depsEnabled: true }))).toContain('app.checkDependencies');
+  });
+
+  it('opens the dialog / refreshes without opening it', () => {
+    const setDepsOpen = vi.fn();
+    const depsRefresh = vi.fn(async () => {});
+    const { result } = renderHook(() => useAppCommands(deps({ depsEnabled: true, setDepsOpen, depsRefresh })));
+    const byId = (id: string) => result.current.find((a) => a.id === id);
+    expect(byId('app.dependencies')?.title).toBe('Dependencies');
+    expect(byId('app.checkDependencies')?.title).toBe('Check dependencies now');
+    byId('app.checkDependencies')?.run();
+    expect(depsRefresh).toHaveBeenCalledTimes(1);
+    expect(setDepsOpen).not.toHaveBeenCalled();
+    byId('app.dependencies')?.run();
+    expect(setDepsOpen).toHaveBeenCalledWith(true);
   });
 });
 

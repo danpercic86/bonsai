@@ -1,0 +1,329 @@
+/* Bonsai — dependency tracker (P125-ui). Toolbar entry + count chip (§3), the
+   Dependencies dialog (§4), its states (§6) and the Settings consent card.
+   Existing tokens only — no hex literal, no new hue. Density-invariant: app
+   chrome has one geometry (ui-reference §3). */
+
+/* ---------- §3 toolbar entry + vulnerability count chip ---------- */
+
+.deps-toggle.has-chip {
+  width: auto;
+  padding: 0 6px 0 4px;
+  gap: 4px;
+  display: inline-flex;
+}
+
+.deps-count-chip {
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font: 600 11px/14px var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.deps-count-glyph {
+  color: var(--danger);
+}
+
+/* §11 P123 re-check cue: a static dashed outline over the chip border, no motion. */
+.deps-toggle[aria-busy='true'] .deps-count-chip {
+  outline: 1px dashed currentColor;
+  outline-offset: -1px;
+}
+
+.deps-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---------- the link button (none existed; the shipped link recipe) ---------- */
+
+.deps-link {
+  border: none;
+  background: transparent;
+  color: var(--accent-strong);
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  min-height: 24px;
+}
+
+.deps-link:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+.deps-link:focus-visible,
+.deps-row-toggle:focus-visible,
+.deps-group-toggle:focus-visible,
+.deps-row-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---------- §1.1 card: pinned header/notice/summary, only the list scrolls ---------- */
+
+.dialog-card.deps-card {
+  width: 880px;
+  max-width: calc(100vw - 48px);
+  height: min(720px, calc(100vh - 64px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.deps-header {
+  flex: none;
+  min-height: 32px;
+  align-items: center;
+}
+
+.deps-caption {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deps-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.deps-footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.deps-footer-next {
+  color: var(--text-2);
+}
+
+/* ---------- §6 notices (the .settings-row-note--warn declarations) ---------- */
+
+.deps-notices {
+  flex: none;
+}
+
+.deps-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 6px 8px 6px 12px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  box-shadow: inset 3px 0 0 var(--warning);
+  color: var(--text-1);
+  font-size: 12px;
+}
+
+.deps-notice:last-child {
+  margin-bottom: 0;
+}
+
+.deps-notice-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.deps-notice-action {
+  flex: none;
+}
+
+/* ---------- §4.2 summary / filter bar ---------- */
+
+.deps-summary {
+  flex: none;
+}
+
+.deps-summary-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+}
+
+.deps-filter-toggle {
+  min-height: 26px;
+  gap: 6px;
+}
+
+.deps-filter-glyph {
+  color: var(--danger);
+}
+
+.deps-summary-spacer {
+  flex: 1;
+}
+
+.deps-filter {
+  width: 200px;
+  flex: none;
+}
+
+.deps-summary-secondary,
+.deps-lead,
+.deps-calm {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.deps-summary-secondary {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deps-lead,
+.deps-calm {
+  flex: none;
+  max-width: 96ch;
+}
+
+.deps-calm {
+  color: var(--text-1);
+}
+
+.deps-no-match {
+  margin: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* ---------- §4.5 pills (§11 geometry) ---------- */
+
+.deps-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  color: var(--text-1);
+}
+
+.deps-pill--neutral {
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--text-2) 12%, transparent);
+}
+
+.deps-pill--major {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--bg-2));
+}
+
+.deps-sev--critical {
+  background: var(--danger);
+  color: var(--danger-text);
+}
+
+.deps-sev--high {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+.deps-sev--high .deps-pill-glyph {
+  color: var(--danger);
+}
+
+.deps-sev--medium,
+.deps-sev--low {
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+}
+
+.deps-sev--medium .deps-pill-glyph,
+.deps-sev--low .deps-pill-glyph {
+  color: var(--warning);
+}
+
+.deps-sev--unknown {
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--text-2) 12%, transparent);
+}
+
+/* ---------- §6 state bodies ---------- */
+
+.deps-off,
+.deps-state,
+.deps-loading {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.deps-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 16px 0;
+}
+
+.deps-state-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.deps-state-reason {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  max-width: 72ch;
+}
+
+.deps-consent {
+  max-width: 72ch;
+}
+
+.deps-consent > p {
+  margin-bottom: 0;
+}
+
+.deps-consent > p:first-child {
+  margin-top: 8px;
+}
+
+.deps-off-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.deps-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.deps-skeleton-bar {
+  height: 26px;
+  width: 60%;
+}
+
+/* Settings consent confirm: four facts + schedule read better wider than 360px. */
+.dialog-card.deps-consent-card {
+  width: 480px;
+}

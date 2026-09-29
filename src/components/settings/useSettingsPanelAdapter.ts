@@ -49,6 +49,7 @@ import type { AiRunPrefs } from '../../settings/aiRunPrefs';
 import type { ToolSelection } from '../../hooks/useUiSettings';
 import type { UpdateUiState } from '../../hooks/useUpdateController';
 import type { SettingsActions, SettingsValues } from './SettingsContext';
+import type { DepTrackerSettings } from '../../ipc/types/depTracker';
 
 export interface SettingsPanelProps {
   open: boolean;
@@ -157,6 +158,8 @@ export interface SettingsPanelProps {
   /** P91 §10: Dev-mode / observability settings (whole-struct, the autoFetch
    *  idiom). Patched via `onChange({ dev })`. */
   dev: DevSettings;
+  /** P125-ui §7: dependency tracker (whole-struct); patched via `onChange({ depTracker })`. */
+  depTracker: DepTrackerSettings;
   /** Run `claude mcp add` for the running server at the given scope (P16).
    *  `'user'` = global, `'local'` = the open repo (private). Resolves when the
    *  run settles so the panel can clear its in-flight state (App still owns the
@@ -237,6 +240,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
     terminalTool,
     editorTool,
     dev,
+    depTracker,
     repoPath,
     configInitialFocus,
     focusProfileId,
@@ -280,6 +284,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       terminalTool,
       editorTool,
       dev,
+      depTracker,
       ...aiRun,
     }),
     [
@@ -304,6 +309,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       terminalTool,
       editorTool,
       dev,
+      depTracker,
       aiRun,
     ],
   );
@@ -351,6 +357,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       terminalTool,
       editorTool,
       dev,
+      depTracker,
       repoPath,
       aiAvailability,
       aiActive: aiEnabled && aiConsented,
@@ -392,6 +399,7 @@ export function useSettingsPanelAdapter(props: SettingsPanelProps): {
       terminalTool,
       editorTool,
       dev,
+      depTracker,
       repoPath,
       aiAvailability,
       mcpStatus,

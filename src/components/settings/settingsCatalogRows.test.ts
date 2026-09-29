@@ -119,6 +119,9 @@ const COVERAGE: Readonly<Record<number, readonly SettingsRowId[]>> = {
   78: ['dev.delete-logs'],
   // P112 §7 — General → External tools: the one refresh control for the scan.
   79: ['general.rescan-tools'],
+  // P125-ui §7 — General → Dependency checks: the switch + its interval slider.
+  80: ['general.dep-tracker'],
+  81: ['general.dep-interval'],
 };
 
 /**
@@ -153,10 +156,10 @@ const RETIRED_ROWS: ReadonlySet<number> = new Set([]);
  *  as text rows: P112 AC19 forbids the legacy keys anywhere in `src/`. */
 const RETIRED_ROW_IDS = ['general.terminal-command', 'general.editor-command'] as const;
 
-describe('UI §1.3 coverage — all 79 rows, structurally', () => {
-  it('maps exactly rows 1..79, minus the retired ones', () => {
+describe('UI §1.3 coverage — all 81 rows, structurally', () => {
+  it('maps exactly rows 1..81, minus the retired ones', () => {
     const rows = [...Object.keys(COVERAGE).map(Number), ...RETIRED_ROWS].sort((a, b) => a - b);
-    expect(rows).toEqual(Array.from({ length: 79 }, (_, i) => i + 1));
+    expect(rows).toEqual(Array.from({ length: 81 }, (_, i) => i + 1));
     // A retired row may not ALSO be covered — that would hide a resurrection.
     for (const row of RETIRED_ROWS) expect(COVERAGE[row]).toBeUndefined();
   });

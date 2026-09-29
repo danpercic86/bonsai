@@ -10,11 +10,14 @@ interface AppShortcutsOptions {
   settings: SettingsController;
   aiAssetsOpen: boolean;
   healthOpen: boolean;
+  /** P125-ui §2: peeled after health. */
+  depsOpen: boolean;
   onboardingOpen: boolean;
   closeOnboarding: () => void;
   setOverlayOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setAiAssetsOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setHealthOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setDepsOpen: React.Dispatch<React.SetStateAction<boolean>>;
   activeRepo: string | null;
   handleOpenRepository: () => Promise<void>;
   closeTab: (repoId: string) => void;
@@ -33,11 +36,13 @@ export function useAppShortcuts(opts: AppShortcutsOptions): void {
     settings,
     aiAssetsOpen,
     healthOpen,
+    depsOpen,
     onboardingOpen,
     closeOnboarding,
     setOverlayOpen,
     setAiAssetsOpen,
     setHealthOpen,
+    setDepsOpen,
     activeRepo,
     handleOpenRepository,
     closeTab,
@@ -47,7 +52,7 @@ export function useAppShortcuts(opts: AppShortcutsOptions): void {
   } = opts;
 
   // Esc: close only the TOPMOST global overlay per keypress (LIFO peel:
-  // shortcut overlay → settings → AI assets → health → onboarding). TabStrip's
+  // shortcut overlay → settings → AI assets → health → deps → onboarding). TabStrip's
   // own Esc handles its menu; skip when it consumed the keypress. Workspace
   // Esc-layering is separate.
   useEffect(() => {
@@ -70,12 +75,16 @@ export function useAppShortcuts(opts: AppShortcutsOptions): void {
         setHealthOpen(false);
         return;
       }
+      if (depsOpen) {
+        setDepsOpen(false);
+        return;
+      }
       if (onboardingOpen) closeOnboarding();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menuOpen, overlayOpen, settings, aiAssetsOpen, healthOpen, onboardingOpen, closeOnboarding]);
+  }, [menuOpen, overlayOpen, settings, aiAssetsOpen, healthOpen, depsOpen, onboardingOpen, closeOnboarding]);
 
   // Global shortcuts (§5.1): Ctrl+O open, ? overlay, Ctrl+Tab / Ctrl+Shift+Tab
   // cycle tabs, Ctrl+W close active tab.

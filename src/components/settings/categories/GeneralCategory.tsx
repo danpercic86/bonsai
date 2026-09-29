@@ -34,6 +34,7 @@ import { SettingsGroup } from '../SettingsGroup';
 import { SettingsRow } from '../SettingsRow';
 import { SettingsSegmented } from '../SettingsSegmented';
 import { SettingsSwitchRow } from '../SettingsSwitchRow';
+import { SettingsDepTrackerGroup } from '../SettingsDepTrackerGroup';
 import { SettingsExternalToolsSection } from '../SettingsExternalToolsSection';
 import { useExternalToolScan } from '../useExternalToolScan';
 import { useOutcomeNotes } from '../useOutcomeNotes';
@@ -143,6 +144,9 @@ export function GeneralCategory() {
           />
         </SettingsRow>
       </SettingsGroup>
+
+      {/* P125-ui §7: after "Background activity". */}
+      <SettingsDepTrackerGroup notes={notes} begin={begin} report={report} />
 
       <SettingsGroup id="general-committing" title="Committing">
         <SettingsRow id={PRIMARY_COMMIT_ACTION}>

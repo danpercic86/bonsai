@@ -4,11 +4,14 @@
 // sits at its size ratchet and may not grow, and the identity control needs its
 // own open/anchor state — which, inline, would have been App state.
 //
-// Order (ui-reference §1): theme · list view · AI assets · health · settings ·
-// identity. The identity control is the far-right account slot; the three
-// repo-scoped controls render only when a repo is open.
+// Order (ui-reference §1, P125-ui §1): theme · list view · AI assets · health ·
+// dependencies · dev · settings · identity. The identity control is the
+// far-right account slot; the repo-scoped controls render only when a repo is
+// open.
 
 import type { ListView, Theme, IdentityProfile } from '../ipc';
+import type { DepTrackerView } from '../ipc/types/depTracker';
+import { DepsToolbarButton } from './DepsToolbarButton';
 import { IdentityMenu } from './IdentityMenu';
 import { DevModePill } from './DevModePill';
 import {
@@ -31,6 +34,9 @@ export interface HeaderToolbarProps {
   activeRepo: string | null;
   onOpenAiAssets(): void;
   onOpenHealth(): void;
+  /** P125: App's single `useDepTracker` view (null until it lands). */
+  depsView: DepTrackerView | null;
+  onOpenDeps(): void;
   onOpenSettings(): void;
   /** Deep link for the identity menu's items 2/3/5 (UI §4.3). `focusProfileId`
    *  lands Settings on a specific identity card (item 2's saved draft). */
@@ -57,6 +63,8 @@ export function HeaderToolbar({
   activeRepo,
   onOpenAiAssets,
   onOpenHealth,
+  depsView,
+  onOpenDeps,
   onOpenSettings,
   onOpenSettingsAt,
   devEnabled,
@@ -106,6 +114,7 @@ export function HeaderToolbar({
           <ChartIcon />
         </button>
       )}
+      {activeRepo !== null && <DepsToolbarButton view={depsView} onOpen={onOpenDeps} />}
       {devEnabled && <DevModePill onOpen={() => onOpenSettingsAt('dev')} />}
       <button
         type="button"

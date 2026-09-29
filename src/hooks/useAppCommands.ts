@@ -17,6 +17,7 @@
 
 import { useMemo } from 'react';
 
+import { PALETTE_CHECK, PALETTE_OPEN } from '../components/deps/depsCopy';
 import type { PaletteAction } from '../components/paletteActions';
 import type { SettingsCategoryId } from '../components/settings/types';
 import { shortcutLabel } from '../utils/platform';
@@ -34,6 +35,12 @@ export interface AppCommandDeps {
    *  closures built in the memo body rather than props. */
   setAiAssetsOpen(open: boolean): void;
   setHealthOpen(open: boolean): void;
+  /** P125-ui §5.4: the Dependencies dialog opener (a `useState` setter). */
+  setDepsOpen(open: boolean): void;
+  /** `view.enabled` — gates `Check dependencies now` (a plain boolean). */
+  depsEnabled: boolean;
+  /** `useDepTracker().refresh` — a stable `useCallback`; never rejects. */
+  depsRefresh(): Promise<void>;
   setOverlayOpen(open: boolean): void;
   toggleTheme(): void;
   toggleListView(): void;
@@ -51,6 +58,9 @@ export function useAppCommands(deps: AppCommandDeps): PaletteAction[] {
     openSettingsAt,
     setAiAssetsOpen,
     setHealthOpen,
+    setDepsOpen,
+    depsEnabled,
+    depsRefresh,
     setOverlayOpen,
     toggleTheme,
     toggleListView,
@@ -122,6 +132,30 @@ export function useAppCommands(deps: AppCommandDeps): PaletteAction[] {
         keywords: 'stats status',
         run: () => setHealthOpen(true),
       },
+      // P125-ui §5.4: both need an open repo (the dialog is repo-scoped); the
+      // check also needs the tracker on, and does NOT open the dialog.
+      ...(activeRepo === null
+        ? []
+        : [
+            {
+              id: 'app.dependencies',
+              title: PALETTE_OPEN,
+              group: 'action' as const,
+              keywords: 'packages outdated updates vulnerabilities security advisories npm cargo',
+              run: () => setDepsOpen(true),
+            },
+            ...(depsEnabled
+              ? [
+                  {
+                    id: 'app.checkDependencies',
+                    title: PALETTE_CHECK,
+                    group: 'action' as const,
+                    keywords: 'packages refresh rescan vulnerabilities updates',
+                    run: () => void depsRefresh(),
+                  },
+                ]
+              : []),
+          ]),
       {
         id: 'app.toggleTheme',
         title: 'Toggle theme (light / dark)',
@@ -166,6 +200,9 @@ export function useAppCommands(deps: AppCommandDeps): PaletteAction[] {
       openSettingsAt,
       setAiAssetsOpen,
       setHealthOpen,
+      setDepsOpen,
+      depsEnabled,
+      depsRefresh,
       setOverlayOpen,
       toggleTheme,
       toggleListView,

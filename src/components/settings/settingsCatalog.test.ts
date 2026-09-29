@@ -71,6 +71,7 @@ const MUTATED: UiSettings = {
   autoCheckUpdates: true,
   // P91: every dev reset leaf off its default, so each row's ↺ fires.
   dev: { enabled: true, level: 'info', captureIpc: false, captureReact: false, captureFrames: true, includeRawNames: true },
+  depTracker: { enabled: true, intervalHours: 6 }, // P125: both leaves off-default.
 };
 
 const withReset = SETTINGS_INDEX.filter((e) => e.reset !== undefined);
@@ -113,6 +114,7 @@ const RESET_LEAVES: Readonly<Record<string, string>> = {
   'dev.capture-react': 'dev.captureReact',
   'dev.capture-frames': 'dev.captureFrames',
   'dev.include-raw-names': 'dev.includeRawNames',
+  'general.dep-tracker': 'depTracker.enabled', 'general.dep-interval': 'depTracker.intervalHours',
 };
 
 /**

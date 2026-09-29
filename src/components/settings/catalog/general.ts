@@ -54,6 +54,30 @@ export const GENERAL_ENTRIES: readonly SettingsIndexEntry[] = [
     reset: resetField('healthRefresh', 'intervalMinutes', '30'),
   },
   {
+    // P125-ui §7: turning ON goes through the consent dialog (the switch flips
+    // only on confirm); turning off needs none — only cached results go.
+    id: 'general.dep-tracker',
+    category: 'general',
+    group: 'Dependency checks',
+    label: 'Check dependencies online',
+    help: 'Looks up updates and known vulnerabilities for the open repository. Turning this off deletes saved results.',
+    // `deps.dev` is not a valid keyword token (the catalog grammar is
+    // `[a-z0-9-]` words — settingsCatalog.test.ts), so `deps` + `depsdev`.
+    keywords: 'deps depsdev osv vulnerability advisory npm cargo pypi go nuget outdated security',
+    control: 'switch',
+    reset: resetField('depTracker', 'enabled', 'Off'),
+  },
+  {
+    id: 'general.dep-interval',
+    category: 'general',
+    group: 'Dependency checks',
+    label: 'Check dependencies every',
+    help: 'How often the automatic check runs while a repository is open.',
+    keywords: 'dependency hours interval schedule',
+    control: 'numberSlider',
+    reset: resetField('depTracker', 'intervalHours', '12'),
+  },
+  {
     id: 'general.primary-commit-action',
     category: 'general',
     group: 'Committing',
