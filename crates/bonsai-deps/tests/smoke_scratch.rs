@@ -45,9 +45,10 @@ fn smoke_root() -> PathBuf {
     )
 }
 
-/// A fresh git2 repo at `<root>/repo` with `files` staged.
-fn build(root: &Path, files: &[(&str, &str)]) -> PathBuf {
-    let wd = root.join("repo");
+/// A fresh git2 repo at `<root>/<sub>` with `files` staged (each smoke test
+/// owns its own `sub`, so the ignored tests never race on one directory).
+fn build(root: &Path, sub: &str, files: &[(&str, &str)]) -> PathBuf {
+    let wd = root.join(sub);
     if wd.exists() {
         fs::remove_dir_all(&wd).expect("remove the previous smoke repo");
     }
@@ -69,6 +70,7 @@ fn build(root: &Path, files: &[(&str, &str)]) -> PathBuf {
 fn smoke_scratch_repo_offline() {
     let wd = build(
         &smoke_root(),
+        "repo",
         &[
             ("package.json", PACKAGE_JSON),
             ("pnpm-lock.yaml", corpus::PNPM_LOCK),
@@ -164,4 +166,135 @@ fn smoke_scratch_repo_offline() {
     assert_eq!(rep.summary.not_tracked, 1);
     assert_eq!(rep.summary.parse_errors, 1);
     assert!(rep.summary.private >= 1 && rep.summary.vulnerable >= 5);
+}
+
+/// `[P125h]` folder text of the local NuGet feed (lowercase, so the
+/// lowercased cache bytes are matched too).
+const FEED_DIR: &str = "zzsentinelfeed";
+
+const LOCAL_CSPROJ: &str = r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><RestoreSources>..\..\zzsentinelfeed</RestoreSources></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ZzSentinel.Local" Version="1.0.0" />
+  </ItemGroup>
+</Project>
+"#;
+
+const NUGET_CONFIG: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <add key="folder" value="./zzsentinelfeed" />
+  </packageSources>
+</configuration>
+"#;
+
+/// `[P125h]` the P125 smoke plus the h2 inputs: a NuGet folder feed
+/// (`nuget.config` + `RestoreSources`) holding a sentinel package, and a
+/// Cargo `[registry] default = "corp"` (R1: no longer read). Recorded
+/// transport only. Run with `P125_SMOKE_DIR=D:\Data\Temp\P125-followups\smoke`.
+#[test]
+#[ignore = "builds a persistent scratch repo; run explicitly for the P125h smoke"]
+fn smoke_scratch_repo_offline_p125h() {
+    let wd = build(
+        &smoke_root(),
+        "repo-h",
+        &[
+            ("package.json", PACKAGE_JSON),
+            ("pnpm-lock.yaml", corpus::PNPM_LOCK),
+            (".npmrc", "@zzsentinel:registry=https://npm.corp.invalid/\n"),
+            ("Cargo.toml", corpus::CARGO_TOML),
+            ("Cargo.lock", corpus::CARGO_LOCK),
+            (".cargo/config.toml", "[registry]\ndefault = \"corp\"\n"),
+            ("go/go.mod", corpus::GO_MOD),
+            ("nuget.config", NUGET_CONFIG),
+            ("dotnet/App/App.csproj", corpus::CSPROJ),
+            ("dotnet/Local/Local.csproj", LOCAL_CSPROJ),
+        ],
+    );
+    let t = FakeTransport::new().with_fixtures(&fixtures_dir());
+    let checked = recorded_check_with(&wd, &FakeHostEnv::new(), &t);
+    let cached = match &checked.report {
+        Ok(c) => c,
+        Err(e) => panic!("run_check: {e:?}"),
+    };
+    let rep = &cached.report;
+
+    println!("smoke repo: {}", wd.display());
+    println!("requests: {}", checked.requests.len());
+    let hosts: std::collections::BTreeMap<String, usize> =
+        checked
+            .requests
+            .iter()
+            .fold(Default::default(), |mut m, r| {
+                let host = r.url.split('/').nth(2).unwrap_or("?").to_string();
+                *m.entry(host).or_default() += 1;
+                m
+            });
+    println!("requests by host: {hosts:?}");
+    for g in &rep.groups {
+        println!(
+            "group {} (eco {:?}) state {:?}",
+            g.manifest_path, g.ecosystem, g.state
+        );
+        for r in &g.rows {
+            println!(
+                "  {:?} {} {:?} -> {:?} unverified={:?}",
+                r.relation, r.name, r.current, r.availability, r.vulns_unverified
+            );
+        }
+    }
+    println!("summary: {:?}", rep.summary);
+
+    // NuGet sentinel: never sent, folder text nowhere (requests, cache, Debug).
+    for n in PRIVATE.iter().chain(&["ZzSentinel.Local", FEED_DIR]) {
+        assert!(!checked.sent(n), "{n} reached the outbound set");
+    }
+    common::assert_no_sentinel(&checked.requests, &["zzsentinel", FEED_DIR]);
+    common::assert_report_clean(cached, FEED_DIR);
+    assert!(
+        !format!("{rep:?}").to_lowercase().contains(FEED_DIR),
+        "folder text in the report Debug"
+    );
+
+    let group = |p: &str| {
+        rep.groups
+            .iter()
+            .find(|g| g.manifest_path == p)
+            .unwrap_or_else(|| panic!("no group {p}"))
+    };
+    // The folder feed is a private LocalFeed, NOT a fail-closed config.
+    let local = group("dotnet/Local/Local.csproj");
+    let sentinel = local
+        .rows
+        .iter()
+        .find(|r| r.name == "ZzSentinel.Local")
+        .expect("the sentinel row is listed");
+    assert_eq!(
+        sentinel.availability,
+        Availability::Private {
+            reason: PrivateReason::LocalFeed,
+            registry_host: None
+        }
+    );
+    assert!(rep.groups.iter().flat_map(|g| &g.rows).all(|r| !matches!(
+        r.availability,
+        Availability::Private {
+            reason: PrivateReason::ConfigUnreadable,
+            ..
+        }
+    )));
+
+    // R1: `[registry] default = "corp"` does not withhold crates.io names.
+    let cargo = group("Cargo.toml");
+    assert_eq!(cargo.state, GroupState::Ok);
+    for n in ["serde", "tokio", "smallvec", "itoa"] {
+        assert!(checked.sent(n), "crates.io name {n} was not sent");
+        let r = cargo.rows.iter().find(|r| r.name == n);
+        assert!(
+            r.is_none_or(|r| !matches!(r.availability, Availability::Private { .. })),
+            "{n}: {r:?}"
+        );
+    }
+    assert!(checked.sent("lodash"), "positive control: npm public names");
+    assert!(checked.sent("gorilla/websocket"), "positive control: Go");
 }

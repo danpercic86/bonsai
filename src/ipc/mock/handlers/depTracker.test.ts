@@ -166,6 +166,22 @@ describe('?deps= modes (AC13)', () => {
       }
     }
   });
+
+  it('no mode serves a transitive row with a non-normal scope (P125h §6: Rust cannot emit one)', async () => {
+    const repoId = await openRepo();
+    let transitive = 0;
+    for (const mode of DEP_MOCK_MODES) {
+      setMode(mode);
+      const { report } = await mockIpc.getDepTracker(repoId);
+      if (report === null) continue;
+      for (const r of report.groups.flatMap((g) => g.rows)) {
+        if (r.relation !== 'transitive') continue;
+        transitive += 1;
+        expect(r.scope, `${mode}/${r.name}`).toBe('normal');
+      }
+    }
+    expect(transitive).toBeGreaterThan(0);
+  });
 });
 
 describe('P125h modes (§7 / P125-ui §9)', () => {

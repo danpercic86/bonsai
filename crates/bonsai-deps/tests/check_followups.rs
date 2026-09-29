@@ -382,3 +382,46 @@ fn too_large_placeholder_is_refetched_next_run() {
     assert_eq!(a.vulns[0].severity, Severity::High);
     assert_eq!(a.vulns[0].summary.as_deref(), Some("real record"));
 }
+
+/// `[P125h §2 reuse guard]` the mixed case: a row carrying BOTH a dropped
+/// id and an oversize placeholder is tagged `MalformedAdvisory`, not
+/// `ResponseTooLarge` — its placeholder must still be re-fetched next run
+/// (the guard skips every advisory of any unverified prev row).
+#[test]
+fn malformed_row_placeholder_is_refetched_next_run() {
+    let hits = |n: &str| match n {
+        "d" => vulns(&["a b", "GHSA-big"]),
+        "e" => vulns(&["GHSA-ok"]),
+        _ => serde_json::json!({}),
+    };
+    let repo = cargo_repo(&["d", "e"], &[]);
+    let t1 = transport(hits, |r| {
+        if r.url.ends_with("/GHSA-big") {
+            too_large()
+        } else {
+            record()
+        }
+    });
+    let first = report(&repo, &t1, None);
+    let d1 = row(&first, "d");
+    assert_eq!(d1.vulns_unverified, Some(U::MalformedAdvisory));
+    assert_eq!(d1.vulns[0].severity, Severity::Unknown, "the placeholder");
+    // Run 2: same `modified`, the record now fits.
+    let t2 = transport(hits, |_| record());
+    let second = report(&repo, &t2, Some(&first));
+    assert_eq!(
+        vuln_gets(&t2),
+        ["GHSA-big"],
+        "the placeholder is re-fetched; the verified row's advisory is reused"
+    );
+    let d2 = row(&second, "d");
+    assert_eq!(
+        d2.vulns_unverified,
+        Some(U::MalformedAdvisory),
+        "still a dropped id"
+    );
+    assert_eq!(ids(d2), ["GHSA-big"]);
+    assert_eq!(d2.vulns[0].severity, Severity::High);
+    assert_eq!(d2.vulns[0].summary.as_deref(), Some("real record"));
+    assert!(row(&second, "e").vulns_checked);
+}

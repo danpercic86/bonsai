@@ -50,7 +50,34 @@ Observations for the orchestrator (not asserted as bugs):
   This follows the contract's `lockfile_for` rule (same directory, then ancestors).
 - The parse-error position of a JSON truncated at EOF reads `col 0`. serde_json's EOF column is
   passed through unchanged at `crates/bonsai-deps/src/adapter.rs:111`. The UI line would read
-  "line 2, col 0". This is cosmetic.
+  "line 2, col 0". This is cosmetic. **Fixed in `8b09665`:** the 2026-09-29 re-run at `3ad900b`
+  reports `line: Some(2), col: None` (pinned by `eco/npm_tests.rs::truncated_manifest_never_reports_column_zero`).
+
+### A.2 P125h follow-ups smoke (AI gate, offline)
+
+Test: `smoke_scratch.rs::smoke_scratch_repo_offline_p125h` (`#[ignore]`d, same command as above;
+it builds `<P125_SMOKE_DIR>\repo-h` so it never races the section-A repo at `<root>\repo`). It uses
+the section-A files minus `py/`, `android/` and `broken/`, plus:
+
+| File | Purpose |
+|---|---|
+| `nuget.config` | `packageSources` → `./zzsentinelfeed` (a folder feed) |
+| `dotnet/Local/Local.csproj` | `RestoreSources` `..\..\zzsentinelfeed` + sentinel `ZzSentinel.Local` 1.0.0 |
+| `.cargo/config.toml` | `[registry] default = "corp"` (R1: no longer read) |
+
+Result from 2026-09-29, HEAD `3ad900b` + tester changes, `P125_SMOKE_DIR=D:\Data\Temp\P125-followups\smoke`:
+**PASS**. There were 18 recorded requests (api.deps.dev 4, api.osv.dev 14) and 5 groups; Cargo, npm
+and Go are `ok`, both NuGet groups `noLockfile`. `ZzSentinel.Local` reads
+`Private { reason: LocalFeed, registry_host: None }` — not fail-closed, no `configUnreadable` row
+anywhere. `ZzSentinel.Local`, `zzsentinel` and `zzsentinelfeed` were **absent** from every recorded
+URL and body, and the folder text was absent from the saved cache bytes and the report `Debug`.
+serde, tokio, smallvec and itoa (crates.io) were **sent** despite `[registry] default = "corp"`;
+lodash and gorilla/websocket positive controls were sent. Summary: minor 3, patch 1, vulnerable 4
+(critical 1, high 2, low 1), private 3.
+
+Observation (expected per `P125-followups.md` §3, not a bug): the folder feed makes **every** NuGet
+package `LocalFeed`, so `dotnet/App/App.csproj`'s Newtonsoft.Json is also `folder feed` and is not
+sent — its GHSA-5crp-9r3c-p9vr drops out of the summary.
 
 ## B. Browser harness (AI gate) — `pnpm dev` + `VITE_MOCK_IPC=1`
 
@@ -65,11 +92,17 @@ Observations for the orchestrator (not asserted as bugs):
 - [ ] AC10: on `?deps=stale`, press **Check now**. The old report must stay visible, and the rAF
       frame-timing log must show no sustained frames > 33 ms.
 - [ ] Both themes. No toast or modal error appears in any mode.
+- [ ] P125h: `?deps=unverified` (one `not verified` row per reason, each with its own hover title;
+      the R2 transitive row; an `unknown` too-large row; a `folder feed` row) and `?deps=netprofile`
+      (exactly one report-wide network-share lead, no per-group leads).
 
 ## C. USER CHECKPOINT — native app (`pnpm tauri dev`)
 
 Use a throwaway copy of the scratch repo, `D:\Data\Temp\P125-smoke\repo`, or any scratch repo.
 Never use a real work repo for the disable/wipe steps.
+
+**Run this checkpoint at HEAD `3ad900b` or later** (P125h: `8b09665` fixes + h1–h4). Steps 1–12
+are the original P125 checks; steps 13–18 cover the P125h states a human can see natively.
 
 1. **AC1 (fresh profile).** Open the repo. The toolbar Dependencies entry shows no chip, and its tooltip is the "off" title
    (`TOOLBAR_TITLE_OFF`). Opening it
@@ -98,3 +131,40 @@ Never use a real work repo for the disable/wipe steps.
     active repo is the one checked.
 12. **Keyboard.** Ctrl+F focuses the filter. Esc closes layered popovers first. Shift+F10 opens the
     row menu. Focus returns to the toolbar button when the dialog closes.
+13. **P125h — no "off" flash after enabling (`8b09665`).** With the tracker off, open the
+    Dependencies dialog and press **Turn on** (and, separately, enable it from Settings → General →
+    Dependency checks, then open the dialog). The dialog goes straight to "Checking…" / the report;
+    the consent ("off") body must **never** reappear, not even for a frame, while the setting lands.
+14. **P125h — Settings deep link (`8b09665`).** In the Dependencies dialog footer, click
+    **Dependency check settings** (or **Open Settings** in the off/consent body). The dialog closes, Settings opens on General with the Dependency checks group
+    scrolled into view, and the **Dependency checks switch has keyboard focus with a visible focus
+    ring**. Press Space: it toggles that switch (consent dialog when turning on). Opening Settings any
+    other way does not scroll to or focus that switch.
+15. **P125h — no "col 0".** The `broken/package.json` parse-error line reads "line 2" with **no**
+    "col 0".
+16. **P125h — `not verified` pill + hover reason.** Do this **before step 17** (a folder feed turns
+    every NuGet row into `folder feed`), or remove the feed config again first. Add to the scratch
+    repo (live check, public names only): `py2/requirements.txt` with `requests>=2` (any requirement
+    without an exact `==` pin) and a csproj without a `packages.lock.json` holding
+    `<PackageReference Include="Serilog" Version="3.1.1" />` (or any NuGet package with no known
+    advisories — one with advisories shows them instead). After Check
+    now, both rows show the `not verified` pill. Hover the pill: requests reads "Not verified — the
+    exact installed version isn't known."; Serilog reads "Not verified — OSV.dev matches NuGet names
+    by exact capitalisation, …". A screen reader announces "not verified" once per row. The
+    `malformedAdvisory` / `responseTooLarge` reasons need a bad OSV response and **cannot be
+    reproduced natively** — they are covered by `?deps=unverified` (section B) and
+    `tests/check_followups.rs`.
+17. **P125h — folder feed.** In a scratch repo with a csproj, add `nuget.config` with
+    `<packageSources><add key="folder" value="./feed" /></packageSources>` (or
+    `<RestoreSources>./feed</RestoreSources>` in the csproj). After Check now, **every** NuGet row
+    (not only the one you meant) shows the `folder feed` pill with no registry button, and its hover
+    reads "The NuGet settings point only to package feeds in folders …". The NuGet group is **not**
+    the fail-closed "couldn't read registry settings" state. Optionally confirm with a proxy log that
+    no NuGet name reaches `api.deps.dev` / `api.osv.dev`.
+18. **P125h — network-share profile lead (hard to reproduce natively; optional).** It needs Bonsai
+    started with a user profile/config base dir (`APPDATA`, `USERPROFILE`, `XDG_CONFIG_HOME`, …) on
+    a **UNC path** (`\\server\share\…`) *and* at least one `configUnreadable` group. A mapped drive
+    letter (`H:\`) is **not** detected (LOW-E1, deferred), so it would show the per-group leads
+    instead. If you can, the report shows exactly one report-wide lead ("At least one of your user
+    settings folders is on a network share, …") and no per-group leads; otherwise rely on
+    `?deps=netprofile` (section B) and `src-tauri/src/deps/host_env_tests.rs`.
