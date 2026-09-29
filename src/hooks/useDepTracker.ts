@@ -11,8 +11,11 @@
 // every `deps-changed` other than `progress`. It does NOT fetch on `repo-changed`
 // (the backend decides staleness via `probe_stale`) and never polls on a timer
 // — the schedule lives in Rust. The one timed re-read is bounded: a DISABLED
-// answer while the local setting is on (the enable write not applied yet) is
-// dropped and re-read a few times, so the UI never flashes "off" after enabling.
+// answer while the local setting is on AND no view has landed yet (the window
+// right after enabling, before the enable write is applied) is dropped and
+// re-read a few times, so the UI never flashes "off" after enabling. The budget
+// is per enable / repo switch, never per fetch; once a view is showing, a
+// disabled answer is believed at once (never ~2 s of loading, never 9 IPC).
 // Enable/disable is a settings write through `useUiSettings`, never this hook.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -62,13 +65,22 @@ const RESETS_PROGRESS: ReadonlySet<DepsChangedPayload['kind']> = new Set([
   'cleared',
 ]);
 
-/** Re-reads of a disabled answer while the local setting is on (≈ 2 s total)
- *  before it is believed — see `fetchView`. Exported for tests. */
+/** Re-reads of a disabled answer while the local setting is on and the view is
+ *  still loading (≈ 2 s total, per enable / repo switch) before it is
+ *  believed — see `fetchView`. Exported for tests. */
 export const OFF_RETRY_MS = 250;
 export const OFF_RETRY_LIMIT = 8;
 
 export function useDepTracker(repoId: string | null, enabled: boolean): UseDepTracker {
-  const [view, setView] = useState<DepTrackerView | null>(null);
+  const [view, setViewState] = useState<DepTrackerView | null>(null);
+  // Mirrors `view` for async results: the off re-read runs only while null.
+  const viewRef = useRef<DepTrackerView | null>(null);
+  const setView = useCallback((v: DepTrackerView | null) => {
+    viewRef.current = v;
+    setViewState(v);
+  }, []);
+  // Off re-reads left in the current loading window (reset on enable / repo switch).
+  const offBudget = useRef(0);
   // Read by async results: an answer that lands after a disable is dropped.
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
@@ -88,7 +100,7 @@ export function useDepTracker(repoId: string | null, enabled: boolean): UseDepTr
     retryTimer.current = null;
   }, []);
 
-  const fetchView = useCallback((forRepo: string, attempt = 0) => {
+  const fetchView = useCallback((forRepo: string) => {
     clearRetry();
     seq.current += 1;
     const mine = seq.current;
@@ -99,15 +111,17 @@ export function useDepTracker(repoId: string | null, enabled: boolean): UseDepTr
         if (repoRef.current !== forRepo || v.repoId !== forRepo) return;
         // Enabling is an optimistic settings write: the first read can beat
         // `set_ui_settings` → `apply_config` and come back disabled. While
-        // the local setting is on, such an answer is dropped (the view stays
-        // loading / as it was — never a flash of "off") and re-read shortly;
-        // the `started` event usually lands first. After the bounded budget
-        // (e.g. the write failed) the backend's answer is shown as-is.
-        if (!v.enabled && attempt < OFF_RETRY_LIMIT) {
+        // the local setting is on and NO view has landed yet, such an answer
+        // is dropped (the view stays loading — never a flash of "off") and
+        // re-read shortly; the `started` event usually lands first. Once the
+        // window's budget is spent (e.g. the write failed), or whenever a view
+        // is already showing, the backend's answer is shown as-is.
+        if (!v.enabled && viewRef.current === null && offBudget.current > 0) {
+          offBudget.current -= 1;
           retryTimer.current = setTimeout(() => {
             retryTimer.current = null;
             if (mounted.current && enabledRef.current && repoRef.current === forRepo) {
-              fetchView(forRepo, attempt + 1);
+              fetchView(forRepo);
             }
           }, OFF_RETRY_MS);
           return;
@@ -121,7 +135,7 @@ export function useDepTracker(repoId: string | null, enabled: boolean): UseDepTr
         // simply stays as it was. Anything else is logged, never thrown.
         console.warn('deps: get view failed', e);
       });
-  }, [clearRetry]);
+  }, [clearRetry, setView]);
 
   useEffect(() => {
     mounted.current = true;
@@ -139,8 +153,10 @@ export function useDepTracker(repoId: string | null, enabled: boolean): UseDepTr
     clearRetry(); // …and any pending off re-read (zero IPC once disabled)
     setView(null);
     setProgress(null);
+    // A fresh loading window: this is the only place the off budget refills.
+    offBudget.current = enabled ? OFF_RETRY_LIMIT : 0;
     if (enabled && repoId !== null) fetchView(repoId);
-  }, [repoId, enabled, fetchView, clearRetry]);
+  }, [repoId, enabled, fetchView, clearRetry, setView]);
 
   // One subscription pair while enabled, reading the repo via ref.
   useEffect(() => {

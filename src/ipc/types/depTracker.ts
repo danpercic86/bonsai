@@ -17,13 +17,22 @@ export type DepPrivateReason =
   | 'scopedRegistry'
   | 'goPrivate'
   | 'sourceMapping'
-  | 'configUnreadable';
+  | 'configUnreadable'
+  /** P125h §3: a folder / file / UNC package source; `registryHost` is always null. */
+  | 'localFeed';
 
-/** `unknown` = deps.dev 404; OSV is still queried, so it MAY carry vulns [UI-e].
- *  `registryHost` is display-only (never a link, never sent) [UI-d]. */
+/** Why a public row is `unknown` (P125h §0). A v1 cached row reads `notFound`. */
+export type DepUnknownReason = 'notFound' | 'tooLarge';
+
+/** Why a `checked` / `unknown` row's `vulnsChecked` is false (P125h §0). */
+export type DepVulnsUnverifiedReason = 'noVersion' | 'nameCasing' | 'malformedAdvisory' | 'responseTooLarge';
+
+/** `unknown` = deps.dev 404 or an oversize answer; OSV is still queried, so it
+ *  MAY carry vulns [UI-e]. `registryHost` is display-only (never a link, never
+ *  sent) [UI-d]. */
 export type DepAvailability =
   | { kind: 'checked' }
-  | { kind: 'unknown' }
+  | { kind: 'unknown'; reason: DepUnknownReason }
   | { kind: 'local'; reason: DepLocalReason }
   | { kind: 'private'; reason: DepPrivateReason; registryHost: string | null };
 
@@ -58,6 +67,9 @@ export interface DepRow {
   vulns: DepAdvisory[];
   /** Non-null only for `checked` | `unknown` rows (§7.6). */
   registryUrl: string | null;
+  /** Why `vulnsChecked` is false on a `checked` | `unknown` row; always null on
+   *  `local` | `private` rows, and null on v1 cached rows (P125h §0). */
+  vulnsUnverified: DepVulnsUnverifiedReason | null;
 }
 
 export type DepParseErrorKind =
@@ -124,6 +136,9 @@ export interface DepReport {
   /** Empty ⇒ "No dependency manifests found". */
   groups: DepManifestGroup[];
   summary: DepSummary;
+  /** P125h §4b: a user/system config base folder is on a network share (UNC
+   *  text check; a mapped drive letter is not detected). False on v1 reports. */
+  networkProfile: boolean;
 }
 
 export type DepCheckFailureKind = 'offline' | 'rateLimited' | 'service' | 'timeout' | 'internal';

@@ -17,6 +17,7 @@ import type {
   DepSeverity,
   DepSummary,
   DepUpdateKind,
+  DepVulnsUnverifiedReason,
 } from '../types/depTracker';
 
 const SEVERITY_RANK: Record<DepSeverity, number> = {
@@ -174,33 +175,45 @@ export interface RowSpec {
   latest?: string | null;
   update?: DepUpdateKind | null;
   availability?: DepAvailability;
-  vulnsChecked?: boolean;
+  /** Why OSV could not verify the row (P125h §7). `noVersion` is applied
+   *  automatically to a public row without `current`. */
+  vulnsUnverified?: DepVulnsUnverifiedReason;
   vulns?: DepAdvisory[];
 }
 
 /**
  * One row, with the Rust invariants applied: transitive rows carry no
- * `declared`/`latest`/`update`; `registryUrl` exists only for checked | unknown
- * rows; local/private rows are never vuln-checked.
+ * `declared`/`latest`/`update` and always `normal` scope (only one lock format
+ * has a dev flag, so Rust never emits one — P125h §6); `registryUrl` exists
+ * only for checked | unknown rows; local/private rows are never vuln-checked
+ * and carry no unverified reason; a public row is verified iff it has no
+ * unverified reason (the P125h §0 invariant, by construction).
  */
 export function row(spec: RowSpec): DepRow {
   const availability = spec.availability ?? { kind: 'checked' };
   const relation = spec.relation ?? 'direct';
   const linkable = availability.kind === 'checked' || availability.kind === 'unknown';
   const transitive = relation === 'transitive';
+  const current = spec.current ?? null;
+  const vulnsUnverified: DepVulnsUnverifiedReason | null = !linkable
+    ? null
+    : current === null
+      ? 'noVersion'
+      : (spec.vulnsUnverified ?? null);
   return {
     name: spec.name,
     ecosystem: spec.ecosystem,
     relation,
-    scope: spec.scope ?? 'normal',
+    scope: transitive ? 'normal' : (spec.scope ?? 'normal'),
     declared: transitive ? null : (spec.declared ?? null),
-    current: spec.current ?? null,
+    current,
     latest: transitive ? null : (spec.latest ?? null),
     update: transitive ? null : (spec.update ?? null),
     availability,
-    vulnsChecked: linkable ? (spec.vulnsChecked ?? true) : false,
+    vulnsChecked: linkable && vulnsUnverified === null,
     vulns: sortVulns(spec.vulns ?? []),
     registryUrl: linkable ? registryUrlOf(spec.ecosystem, spec.name) : null,
+    vulnsUnverified,
   };
 }
 

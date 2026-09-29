@@ -100,8 +100,10 @@ export interface SettingsRuntimeValues {
   mcpAnnounce: string;
   updateCurrentVersion: string | null;
   updateState: UpdateUiState;
-  /** Passed through verbatim (`undefined` included) so the Git-config section's
-   *  scroll+focus effect sees exactly the value it sees today. */
+  /** The deep-link focus target, passed through verbatim (`undefined`
+   *  included): `'identity'` drives the Git-config section's Identity
+   *  scroll+focus effect, `'dep-tracker'` the General page's "Dependency
+   *  checks" group. Each consumer acts only on its own value. */
   configInitialFocus: SettingsFocusTarget | null | undefined;
   /** P69i: the Identities card to focus on open (null ⇒ none). */
   focusProfileId: string | null;

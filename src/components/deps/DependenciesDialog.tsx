@@ -14,7 +14,7 @@ import { ipc } from '../../ipc';
 import type { UiSettingsPatch } from '../../ipc';
 import type { DepRow, DepTrackerSettings } from '../../ipc/types/depTracker';
 import { ContextMenu } from '../ContextMenu';
-import type { SettingsCategoryId } from '../settings/types';
+import type { SettingsCategoryId, SettingsFocusTarget } from '../settings/types';
 import { DepsBodyList } from './DepsBodyList';
 import { DepsFooter } from './DepsFooter';
 import { DepsHeader } from './DepsHeader';
@@ -32,7 +32,7 @@ export interface DependenciesDialogProps {
   settings: DepTrackerSettings;
   onSettingsChange(patch: UiSettingsPatch): void;
   /** Deep link: General with `focus: 'dep-tracker'` lands ON "Dependency checks". */
-  onOpenSettingsAt(category: SettingsCategoryId, focus: 'dep-tracker'): void;
+  onOpenSettingsAt(category: SettingsCategoryId, focus: SettingsFocusTarget | null): void;
 }
 
 interface MenuTarget {

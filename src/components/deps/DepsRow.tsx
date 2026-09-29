@@ -5,16 +5,16 @@ import type { KeyboardEvent, MouseEvent } from 'react';
 
 import type { DepRow as DepRowData } from '../../ipc/types/depTracker';
 import { ExternalLinkIcon } from '../appIcons';
-import { SEVERITY_LABEL, morePill, openOnHost, rowToggleName } from './depsCopy';
+import { SEVERITY_LABEL, combinedVulnTitle, morePill, openOnHost, rowToggleName } from './depsCopy';
 import { DepsAdvisoryList } from './DepsAdvisoryList';
 import { AvailabilityCell, NotVerifiedPill, RowTag, SeverityPill, UpdateKindPill } from './DepsPills';
-import { ecosystemLabel, hostLabel, notVerifiedCause, rowTags } from './depsView';
+import { ecosystemLabel, hostLabel, incompleteListNote, notVerifiedCause, rowTags } from './depsView';
 
 export interface DepsRowProps {
   row: DepRowData;
   detailsId: string;
   expanded: boolean;
-  /** The inferred report-wide config lead is showing (§8.3). */
+  /** The report-wide network-profile lead is showing (§8.3). */
   reportWide: boolean;
   onToggle(): void;
   onOpenUrl(url: string, host: string): void;
@@ -23,22 +23,26 @@ export interface DepsRowProps {
 }
 
 /** Vulnerability cell (§4.4): first advisory + `+n`, empty when checked-clean,
- *  `not verified` when OSV could not be asked. */
+ *  `not verified` when OSV could not verify the row — alone, or after the
+ *  advisories in the P125h combined case (some advisories, list incomplete). */
 function VulnCell({ row }: { row: DepRowData }) {
+  const cause = row.vulnsChecked ? null : notVerifiedCause(row);
   if (row.vulns.length > 0) {
     const first = row.vulns[0];
     return (
-      <span className="deps-vuln">
+      <span className="deps-vuln" title={cause === null ? undefined : combinedVulnTitle(first.id, cause)}>
         <SeverityPill severity={first.severity} />
-        <span className="mono deps-vuln-id" title={first.id}>
+        <span className="mono deps-vuln-id" title={cause === null ? first.id : undefined}>
           {first.id}
         </span>
         {row.vulns.length > 1 && <RowTag>{morePill(row.vulns.length - 1)}</RowTag>}
+        {/* No own title: the cell's `{id} · {cause}` covers the whole cell. */}
+        {cause !== null && <NotVerifiedPill />}
       </span>
     );
   }
-  if (row.vulnsChecked) return null;
-  return <NotVerifiedPill title={notVerifiedCause(row)} />;
+  if (cause === null) return null;
+  return <NotVerifiedPill title={cause} />;
 }
 
 export function DepsRow({ row, detailsId, expanded, reportWide, onToggle, onOpenUrl, onMenu }: DepsRowProps) {
@@ -47,7 +51,8 @@ export function DepsRow({ row, detailsId, expanded, reportWide, onToggle, onOpen
   const version = row.current ?? row.declared ?? '';
   const tags = rowTags(row);
   // No `, vulnerabilities not verified` here: every such row renders the
-  // `not verified` pill, which SR users already hear in its own cell.
+  // `not verified` pill (the P125h combined case included), which SR users
+  // already hear in its own cell — a suffix would announce it twice.
   const srSuffix = `, ${[ecosystemLabel(row.ecosystem), ...tags].join(', ')}`;
   const host = hostLabel(row.ecosystem);
 
@@ -157,7 +162,7 @@ export function DepsRow({ row, detailsId, expanded, reportWide, onToggle, onOpen
       {expanded && row.vulns.length > 0 && (
         <tr id={detailsId} className="deps-details">
           <td colSpan={6}>
-            <DepsAdvisoryList advisories={row.vulns} onOpen={onOpenUrl} />
+            <DepsAdvisoryList advisories={row.vulns} note={incompleteListNote(row)} onOpen={onOpenUrl} />
           </td>
         </tr>
       )}

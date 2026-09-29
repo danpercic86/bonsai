@@ -249,6 +249,58 @@ describe('useDepTracker — zero IPC while off (cold-open ratchet)', () => {
     expect(deriveState(result.current.view).body).toBe('off');
   });
 
+  it('a live view is never held back: a disabled answer on focus is believed at once (1 IPC)', async () => {
+    vi.useFakeTimers();
+    let backendOn = true;
+    const get = vi
+      .spyOn(mockIpc, 'getDepTracker')
+      .mockImplementation(async (id) => viewOf(id, backendOn ? 'populated' : 'off'));
+    const bodies: string[] = [];
+    const { result } = renderHook(() => {
+      const r = useDepTracker('r1', true);
+      bodies.push(deriveState(r.view).body);
+      return r;
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(result.current.view?.report).not.toBeNull();
+    const before = get.mock.calls.length;
+    const loadingBefore = bodies.filter((b) => b === 'loading').length;
+    backendOn = false;
+    act(() => focusCb?.());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(OFF_RETRY_MS * (OFF_RETRY_LIMIT + 2));
+    });
+    expect(get).toHaveBeenCalledTimes(before + 1);
+    expect(deriveState(result.current.view).body).toBe('off');
+    // The live list was never swapped for a loading body in between.
+    expect(bodies.filter((b) => b === 'loading').length).toBe(loadingBefore);
+  });
+
+  it('the re-read budget is per loading window, not per focus', async () => {
+    vi.useFakeTimers();
+    const get = vi.spyOn(mockIpc, 'getDepTracker').mockImplementation(async (id) => viewOf(id, 'off'));
+    renderHook(() => useDepTracker('r1', true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(OFF_RETRY_MS * 3 + 10);
+    });
+    // Focus events mid-window re-read, but never refill the budget.
+    act(() => focusCb?.());
+    act(() => focusCb?.());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(OFF_RETRY_MS * (OFF_RETRY_LIMIT + 4));
+    });
+    expect(get.mock.calls.length).toBeLessThanOrEqual(OFF_RETRY_LIMIT + 1 + 2);
+    // Once believed, a further focus costs exactly one read.
+    const settled = get.mock.calls.length;
+    act(() => focusCb?.());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(OFF_RETRY_MS * (OFF_RETRY_LIMIT + 2));
+    });
+    expect(get).toHaveBeenCalledTimes(settled + 1);
+  });
+
   it('disabling during the re-reads cancels them (zero IPC while off)', async () => {
     vi.useFakeTimers();
     const get = vi.spyOn(mockIpc, 'getDepTracker').mockImplementation(async (id) => viewOf(id, 'off'));

@@ -1,6 +1,6 @@
 // P125 §8 / E5 — the mock dependency tracker.
 //
-// Mode: `?deps=off|loading|populated|uptodate|stale|offline|error|empty|mirror|large`,
+// Mode: `?deps=off|loading|populated|uptodate|stale|offline|error|empty|mirror|large|unverified|netprofile`,
 // read at CALL time (so the harness and tests can switch it without a reload).
 // With no `?deps`, the mode follows the mock settings' `depTracker.enabled`
 // (off ⇒ `off`, on ⇒ `populated`).

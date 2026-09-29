@@ -71,7 +71,8 @@ export function DepsBodyList({
   onOpenUrl,
   onRowMenu,
 }: DepsBodyListProps) {
-  const wideEcosystems = reportWideConfigLead(report.groups);
+  // §8.3 / R3: from the report's `networkProfile` flag only, never inferred.
+  const wideEcosystems = reportWideConfigLead(report.groups, report.networkProfile);
   const reportWide = wideEcosystems !== null;
   const groups = visibleGroups(report.groups, filter);
   const noMatch =

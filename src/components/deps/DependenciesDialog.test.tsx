@@ -24,6 +24,7 @@ import {
   UP_TO_DATE,
   UP_TO_DATE_SOME_UNCHECKED,
   COPY_FAILED,
+  configUnreadableLead,
   failureBody,
   linkFailure,
   liveFinished,
@@ -108,9 +109,11 @@ describe('§6 states (AC2)', () => {
     expect(notices[0].getAttribute('role')).toBe('status');
   });
 
-  it('mirror: the inferred report-wide lead names the ecosystems, in report order', () => {
+  it('mirror (networkProfile false): per-group config-unreadable leads, no report-wide lead (R3)', () => {
     renderDialog('mirror');
-    expect(screen.getByText(reportWideLead(['npm', 'NuGet']))).toBeTruthy();
+    expect(screen.queryByText(reportWideLead(['npm', 'NuGet']))).toBeNull();
+    expect(screen.getByText(configUnreadableLead('npm'))).toBeTruthy();
+    expect(screen.getByText(configUnreadableLead('NuGet'))).toBeTruthy();
   });
 });
 

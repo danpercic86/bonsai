@@ -13,6 +13,7 @@ import type {
   DepSummary,
   DepTrackerView,
   DepUpdateKind,
+  DepVulnsUnverifiedReason,
 } from '../../ipc/types/depTracker';
 import {
   ALL_PRIVATE_LEAD,
@@ -22,14 +23,19 @@ import {
   AVAIL_UNKNOWN,
   ECOSYSTEM_LABEL,
   HOST_LABEL,
+  INCOMPLETE_MALFORMED,
+  INCOMPLETE_TOO_LARGE,
   LOCAL_REASON,
+  NOT_VERIFIED_MALFORMED,
   NOT_VERIFIED_NO_VERSION,
   NOT_VERIFIED_NUGET,
   NOT_VERIFIED_OTHER,
+  NOT_VERIFIED_TOO_LARGE,
   PRIVATE_REASON_NO_HOST,
   PRIVATE_REASON_WITH_HOST,
   PRIVATE_TITLE_CONFIG,
   PRIVATE_TITLE_CUSTOM,
+  PRIVATE_TITLE_LOCAL_FEED,
   PRIVATE_TITLE_OTHER,
   SCOPE_TAG,
   STALE_NOTICE,
@@ -216,6 +222,7 @@ export function privateReasonText(
 export function privateReasonTitle(reason: DepPrivateReason): string {
   if (reason === 'customRegistry') return PRIVATE_TITLE_CUSTOM;
   if (reason === 'configUnreadable') return PRIVATE_TITLE_CONFIG;
+  if (reason === 'localFeed') return PRIVATE_TITLE_LOCAL_FEED;
   return PRIVATE_TITLE_OTHER;
 }
 
@@ -233,7 +240,11 @@ export function availabilityWords(row: DepRow, reportWide: boolean): Availabilit
     case 'checked':
       return null;
     case 'unknown':
-      return { pill: AVAIL_UNKNOWN, reason: { prefix: UNKNOWN_REASON, host: null }, title: UNKNOWN_TITLE };
+      return {
+        pill: AVAIL_UNKNOWN,
+        reason: { prefix: UNKNOWN_REASON[a.reason], host: null },
+        title: UNKNOWN_TITLE[a.reason],
+      };
     case 'local':
       return { pill: AVAIL_LOCAL, reason: { prefix: LOCAL_REASON[a.reason], host: null }, title: null };
     case 'private':
@@ -250,22 +261,41 @@ export function availabilityWords(row: DepRow, reportWide: boolean): Availabilit
   }
 }
 
-/** §8.3 not-verified `title` by cause, derived from the row (§11.5: no field). */
+const NOT_VERIFIED_TITLE: Readonly<Record<DepVulnsUnverifiedReason, string>> = {
+  noVersion: NOT_VERIFIED_NO_VERSION,
+  nameCasing: NOT_VERIFIED_NUGET,
+  malformedAdvisory: NOT_VERIFIED_MALFORMED,
+  responseTooLarge: NOT_VERIFIED_TOO_LARGE,
+};
+
+/** §8.3 not-verified `title`: a lookup on the wire field (P125h §4c); `null`
+ *  (a v1 cached row) reads the generic text. */
 export function notVerifiedCause(row: DepRow): string {
-  if (row.current === null) return NOT_VERIFIED_NO_VERSION;
-  if (row.ecosystem === 'nuget') return NOT_VERIFIED_NUGET;
-  return NOT_VERIFIED_OTHER;
+  return row.vulnsUnverified === null ? NOT_VERIFIED_OTHER : NOT_VERIFIED_TITLE[row.vulnsUnverified];
+}
+
+/** §4.4 / §8.3 incomplete-list note under a row's advisories, or null. Only
+ *  the two reasons that can coexist with advisories have one. */
+export function incompleteListNote(row: DepRow): string | null {
+  if (row.vulnsUnverified === 'malformedAdvisory') return INCOMPLETE_MALFORMED;
+  if (row.vulnsUnverified === 'responseTooLarge') return INCOMPLETE_TOO_LARGE;
+  return null;
 }
 
 // ----- §4.3 / §8.3 leads -------------------------------------------------------------
 
 /**
- * §8.3 report-wide lead — INFERRED (§11.5): the `configUnreadable` rows span
- * ≥ 2 ecosystems and NO row in those ecosystems is `checked`. Returns those
- * ecosystems in report order, or null when the lead does not apply. A
- * heuristic, which is why its copy names possible causes, not one.
+ * §8.3 report-wide network-profile lead (P125h, ruling R3): the ecosystems
+ * with `configUnreadable` rows, in report order, iff `networkProfile` is set
+ * AND at least one such row exists — else null. Flag only: no inference from
+ * how many ecosystems are affected (a v1 report reads `networkProfile: false`,
+ * so the per-group leads apply).
  */
-export function reportWideConfigLead(groups: readonly DepManifestGroup[]): DepEcosystem[] | null {
+export function reportWideConfigLead(
+  groups: readonly DepManifestGroup[],
+  networkProfile: boolean,
+): DepEcosystem[] | null {
+  if (!networkProfile) return null;
   const unreadable = new Set<DepEcosystem>();
   for (const g of groups) {
     for (const r of g.rows) {
@@ -274,13 +304,7 @@ export function reportWideConfigLead(groups: readonly DepManifestGroup[]): DepEc
       }
     }
   }
-  if (unreadable.size < 2) return null;
-  for (const g of groups) {
-    for (const r of g.rows) {
-      if (unreadable.has(r.ecosystem) && r.availability.kind === 'checked') return null;
-    }
-  }
-  return [...unreadable];
+  return unreadable.size === 0 ? null : [...unreadable];
 }
 
 /** §4.3 all-private/local group lead, or null. Needs ≥ 1 private row: an

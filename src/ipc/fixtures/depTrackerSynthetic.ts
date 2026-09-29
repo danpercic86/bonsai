@@ -39,8 +39,10 @@ function mirrorRows(names: readonly string[]): DepRow[] {
 }
 
 /** [UI-c] the P125-ui §9 `configUnreadable` variant: rows spanning npm AND
- *  NuGet whose registry settings could not be read, so (with no `checked` row
- *  in either ecosystem) the UI infers the report-wide lead (§8.3 / §11.5). */
+ *  NuGet whose registry settings could not be read. The report has
+ *  `networkProfile: false`, so under R3 each group shows its own
+ *  config-unreadable lead and there is NO report-wide lead (that lives in
+ *  `?deps=netprofile`, `depTrackerUnverified.ts`). */
 function unreadableRows(ecosystem: 'npm' | 'nuget', names: readonly string[]): DepRow[] {
   return names.map((name, i) =>
     row({

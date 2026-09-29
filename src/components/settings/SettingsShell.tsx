@@ -148,9 +148,11 @@ export function SettingsShell({
   const category = SETTINGS_CATEGORIES.find((c) => c.id === selected) ?? SETTINGS_CATEGORIES[0];
   const { Page, HeaderTrailing } = CATEGORY_PAGES[category.id];
   // A deep link that asks for a FOCUS target must re-run the target page's focus
-  // effect even when that page is already mounted (Settings open, already on Git
-  // config, second failed commit). Remounting the page is the honest way to say
-  // "this is a new request"; ordinary category switches keep a stable key.
+  // effect even when that page is already mounted: `'identity'` → Git config
+  // (Settings open, already on Git config, second failed commit), `'dep-tracker'`
+  // → General (the Dependencies dialog's settings link while General is shown).
+  // Remounting the page is the honest way to say "this is a new request";
+  // ordinary category switches keep a stable key.
   const focusPage: SettingsCategoryId | null =
     configInitialFocus === 'identity'
       ? 'git-config'

@@ -38,8 +38,9 @@ export function RowTag({ children, title }: { children: string; title?: string }
   );
 }
 
-/** §8.3: an unverified row never renders like a clean one. */
-export function NotVerifiedPill({ title }: { title: string }) {
+/** §8.3: an unverified row never renders like a clean one. `title` is omitted
+ *  where an enclosing element already carries it (the §4.4 combined cell). */
+export function NotVerifiedPill({ title }: { title?: string }) {
   return <RowTag title={title}>{NOT_VERIFIED}</RowTag>;
 }
 

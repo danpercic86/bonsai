@@ -199,6 +199,12 @@
   background: var(--selection);
 }
 
+/* Hueless pills on --selection: --text-2 ink falls to ~4.06:1 in dark (AA fails at 11px). */
+.deps-row.is-expanded .deps-pill--neutral,
+.deps-row.is-expanded .deps-sev--unknown {
+  color: var(--text-1);
+}
+
 .deps-cell {
   padding: 0 8px;
   white-space: nowrap;
@@ -354,4 +360,19 @@
 
 .deps-advisory-summary--none {
   color: var(--text-2);
+}
+
+/* P125h §4.4: the incomplete-list note after the last advisory — the hueless
+   `not verified` pill, gap 8, then prose that wraps. Static text, no action. */
+.deps-advisory-note {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.deps-advisory-note-text {
+  margin: 0;
+  min-width: 0;
 }

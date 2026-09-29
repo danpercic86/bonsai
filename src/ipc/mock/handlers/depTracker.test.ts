@@ -14,10 +14,12 @@ import {
   DEP_VIEW_LARGE,
   DEP_VIEW_LOADING,
   DEP_VIEW_MIRROR,
+  DEP_VIEW_NETWORK_PROFILE,
   DEP_VIEW_OFF,
   DEP_VIEW_OFFLINE,
   DEP_VIEW_POPULATED,
   DEP_VIEW_STALE,
+  DEP_VIEW_UNVERIFIED,
   DEP_VIEW_UPTODATE,
 } from '../../fixtures/depTracker';
 import { DEEP_MANIFEST_PATH, GO_PSEUDO_VERSION, LONG_NPM_NAME } from '../../fixtures/depTrackerPopulated';
@@ -145,6 +147,85 @@ describe('?deps= modes (AC13)', () => {
       for (const g of report.groups) assertRowOrder(g.rows);
     }
   });
+
+  it('every row keeps the P125h §0 verdict invariant, in every mode', async () => {
+    const repoId = await openRepo();
+    for (const mode of DEP_MOCK_MODES) {
+      setMode(mode);
+      const { report } = await mockIpc.getDepTracker(repoId);
+      if (report === null) continue;
+      expect(typeof report.networkProfile, mode).toBe('boolean');
+      for (const r of report.groups.flatMap((g) => g.rows)) {
+        const k = r.availability.kind;
+        if (k === 'checked' || k === 'unknown') {
+          expect(r.vulnsChecked, `${mode}/${r.name}`).toBe(r.vulnsUnverified === null);
+        } else {
+          expect([r.vulnsChecked, r.vulnsUnverified], `${mode}/${r.name}`).toEqual([false, null]);
+        }
+        if (k === 'unknown') expect(['notFound', 'tooLarge'], r.name).toContain(r.availability.reason);
+      }
+    }
+  });
+});
+
+describe('P125h modes (§7 / P125-ui §9)', () => {
+  const unverified = DEP_VIEW_UNVERIFIED.report as DepReport;
+  const uRows = unverified.groups.flatMap((g) => g.rows);
+
+  it('unverified: one public row per DepVulnsUnverifiedReason, plus the combined cases', () => {
+    const direct = uRows.filter((r) => r.relation === 'direct');
+    for (const reason of ['noVersion', 'nameCasing', 'malformedAdvisory', 'responseTooLarge'] as const) {
+      expect(uRows.some((r) => r.vulnsUnverified === reason), reason).toBe(true);
+    }
+    const noVersion = direct.find((r) => r.vulnsUnverified === 'noVersion');
+    expect([noVersion?.current, noVersion?.declared !== null]).toEqual([null, true]);
+    const casing = direct.find((r) => r.vulnsUnverified === 'nameCasing');
+    expect([casing?.ecosystem, casing?.current !== null]).toEqual(['nuget', true]);
+    // A malformed direct row with no advisory, and a partially malformed one with one.
+    const malformed = direct.filter((r) => r.vulnsUnverified === 'malformedAdvisory');
+    expect(malformed.map((r) => r.vulns.length).sort()).toEqual([0, 1]);
+    // responseTooLarge carries its placeholder advisory, exactly as Rust emits it.
+    const tooLarge = direct.find((r) => r.vulnsUnverified === 'responseTooLarge');
+    expect(tooLarge?.vulns[0]).toMatchObject({ severity: 'unknown', summary: null });
+    expect(tooLarge?.vulnsChecked).toBe(false);
+  });
+
+  it('unverified: the R2 transitive row, the unknown/tooLarge row and the localFeed row', () => {
+    const transitive = uRows.filter((r) => r.relation === 'transitive');
+    expect(transitive).toHaveLength(1);
+    expect(transitive[0]).toMatchObject({ vulns: [], vulnsChecked: false, vulnsUnverified: 'malformedAdvisory', latest: null });
+    // Not vulnerable: it counts toward neither `vulnerable` nor a severity.
+    expect(unverified.summary.vulnerable).toBe(uRows.filter((r) => r.vulns.length > 0).length);
+    const unk = uRows.find((r) => r.availability.kind === 'unknown');
+    expect(unk?.availability).toEqual({ kind: 'unknown', reason: 'tooLarge' });
+    expect(unk?.registryUrl).not.toBeNull();
+    const feed = uRows.find((r) => r.availability.kind === 'private');
+    expect(feed).toMatchObject({
+      ecosystem: 'nuget',
+      availability: { kind: 'private', reason: 'localFeed', registryHost: null },
+      registryUrl: null,
+    });
+    expect(unverified.networkProfile).toBe(false);
+  });
+
+  it('netprofile: the flag set; npm + PyPI + NuGet, every row private/configUnreadable, in that order', () => {
+    const net = DEP_VIEW_NETWORK_PROFILE.report as DepReport;
+    expect(net.networkProfile).toBe(true);
+    expect(net.groups.map((g) => g.ecosystem)).toEqual(['npm', 'pypi', 'nuget']);
+    for (const r of net.groups.flatMap((g) => g.rows)) {
+      expect(r.availability).toEqual({ kind: 'private', reason: 'configUnreadable', registryHost: null });
+      expect(r.registryUrl).toBeNull();
+    }
+    expect(net.summary.vulnerable).toBe(0);
+  });
+
+  it('both modes are served through the handler', async () => {
+    const repoId = await openRepo();
+    setMode('netprofile');
+    expect((await mockIpc.getDepTracker(repoId)).report?.networkProfile).toBe(true);
+    setMode('unverified');
+    expect((await mockIpc.getDepTracker(repoId)).report?.summary).toEqual(unverified.summary);
+  });
 });
 
 describe('DEP_VIEW_POPULATED content (AC13 + [UI-c] / [UI-e])', () => {
@@ -191,7 +272,21 @@ describe('DEP_VIEW_POPULATED content (AC13 + [UI-c] / [UI-e])', () => {
     const four = rows.find((r) => r.vulns.length === 4);
     expect(four?.vulns.some((v) => v.severity === 'unknown' && v.summary === null)).toBe(true);
     expect(four?.vulns.some((v) => v.aliases.length === 3)).toBe(true);
-    expect(rows.some((r) => r.scope === 'dev' && r.relation === 'transitive')).toBe(true);
+    // P125h §6: a direct `dev` row sits next to transitive rows; Rust emits
+    // transitive rows with `normal` scope, so the two tags never combine.
+    expect(rows.some((r) => r.scope === 'dev' && r.relation === 'direct')).toBe(true);
+    expect(rows.some((r) => r.relation === 'transitive')).toBe(true);
+    for (const r of rows) if (r.relation === 'transitive') expect(r.scope, r.name).toBe('normal');
+  });
+
+  it('keeps the populated not-verified causes on the wire field (P125h §7)', () => {
+    const byName = (n: string) => rows.find((r) => r.name === n);
+    expect(byName('Newtonsoft.Json')?.vulnsUnverified).toBe('nameCasing');
+    expect(byName('Serilog')?.vulnsUnverified).toBe('nameCasing');
+    expect(byName('requests')?.vulnsUnverified).toBe('noVersion');
+    expect(byName('pyyaml')?.vulnsUnverified).toBe('noVersion');
+    expect(byName('left-pad-legacy')?.availability).toEqual({ kind: 'unknown', reason: 'notFound' });
+    expect(report.networkProfile).toBe(false);
   });
 
   it('keeps the Rust row invariants (links, vulnsChecked, transitive fields)', () => {

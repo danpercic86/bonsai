@@ -6,11 +6,17 @@ import { group, row } from '../../ipc/fixtures/depTrackerModel';
 import type { DepRow, DepTrackerView } from '../../ipc/types/depTracker';
 import {
   ALL_PRIVATE_LEAD,
+  INCOMPLETE_MALFORMED,
+  INCOMPLETE_TOO_LARGE,
+  NOT_VERIFIED_MALFORMED,
   NOT_VERIFIED_NO_VERSION,
   NOT_VERIFIED_NUGET,
   NOT_VERIFIED_OTHER,
+  NOT_VERIFIED_TOO_LARGE,
+  PRIVATE_TITLE_LOCAL_FEED,
   TOOLBAR_TITLE_CHECKING,
   TOOLBAR_TITLE_OFF,
+  UNKNOWN_TITLE,
   allPrivateHostLead,
   configUnreadableLead,
   joinAnd,
@@ -24,6 +30,7 @@ import {
   filterRows,
   firstSentence,
   groupPrivateLead,
+  incompleteListNote,
   notVerifiedCause,
   privateReasonText,
   reportWideConfigLead,
@@ -110,9 +117,11 @@ describe('row words (§4.4 / §8.4)', () => {
     expect(rowKey(row({ name: 'a', ecosystem: 'npm', current: '1' }))).toBe('direct\u0000a\u00001');
   });
   it('tags: transitive alone, else the non-normal scope', () => {
-    expect(rowTags(row({ name: 'a', ecosystem: 'npm', relation: 'transitive', scope: 'dev' }))).toEqual([
-      'transitive',
-    ]);
+    // `row()` forces transitive rows to `normal` (P125h §6), so build the
+    // off-contract shape by hand: rowTags must still never double-tag it.
+    const devTransitive: DepRow = { ...row({ name: 'a', ecosystem: 'npm', relation: 'transitive' }), scope: 'dev' };
+    expect(rowTags(devTransitive)).toEqual(['transitive']);
+    expect(row({ name: 'a', ecosystem: 'npm', relation: 'transitive', scope: 'dev' }).scope).toBe('normal');
     expect(rowTags(row({ name: 'a', ecosystem: 'npm', scope: 'peer' }))).toEqual(['peer']);
     expect(rowTags(row({ name: 'a', ecosystem: 'npm' }))).toEqual([]);
   });
@@ -125,11 +134,63 @@ describe('row words (§4.4 / §8.4)', () => {
     expect(privateReasonText('sourceMapping', null).prefix).toBe('private package source');
     expect(privateReasonText('goPrivate', null).prefix).toBe('listed in GOPRIVATE');
     expect(privateReasonText('configUnreadable', null).prefix).toBe("settings couldn't be read");
+    // P125h: `localFeed` has no with-host entry — a host never renders.
+    expect(privateReasonText('localFeed', null)).toEqual({ prefix: 'folder feed', host: null });
+    expect(privateReasonText('localFeed', 'h')).toEqual({ prefix: 'folder feed', host: null });
   });
-  it('not-verified cause is derived from current + ecosystem', () => {
+  it('localFeed words: pill, `folder feed`, its own title', () => {
+    const r = row({
+      name: 'a',
+      ecosystem: 'nuget',
+      current: '1.0.0',
+      availability: { kind: 'private', reason: 'localFeed', registryHost: null },
+    });
+    expect(availabilityWords(r, false)).toEqual({
+      pill: 'private — not checked',
+      reason: { prefix: 'folder feed', host: null },
+      title: PRIVATE_TITLE_LOCAL_FEED,
+    });
+  });
+  it('unknown words by reason: notFound / tooLarge', () => {
+    const unk = (reason: 'notFound' | 'tooLarge') =>
+      availabilityWords(row({ name: 'a', ecosystem: 'npm', current: '1', availability: { kind: 'unknown', reason } }), false);
+    expect(unk('notFound')).toEqual({
+      pill: 'unknown',
+      reason: { prefix: 'not found on deps.dev', host: null },
+      title: UNKNOWN_TITLE.notFound,
+    });
+    expect(unk('tooLarge')).toEqual({
+      pill: 'unknown',
+      reason: { prefix: 'too large to look up', host: null },
+      title: UNKNOWN_TITLE.tooLarge,
+    });
+  });
+  it('not-verified cause is a lookup on `vulnsUnverified` (null ⇒ the old-cache text)', () => {
+    const r = (vulnsUnverified: DepRow['vulnsUnverified']): DepRow => ({
+      ...row({ name: 'a', ecosystem: 'npm', current: '1.0.0' }),
+      vulnsChecked: false,
+      vulnsUnverified,
+    });
+    expect(notVerifiedCause(r('noVersion'))).toBe(NOT_VERIFIED_NO_VERSION);
+    expect(notVerifiedCause(r('nameCasing'))).toBe(NOT_VERIFIED_NUGET);
+    expect(notVerifiedCause(r('malformedAdvisory'))).toBe(NOT_VERIFIED_MALFORMED);
+    expect(notVerifiedCause(r('responseTooLarge'))).toBe(NOT_VERIFIED_TOO_LARGE);
+    expect(notVerifiedCause(r(null))).toBe(NOT_VERIFIED_OTHER);
+    // No longer derived from the ecosystem: a NuGet row with a malformed answer says so.
+    expect(notVerifiedCause({ ...r('malformedAdvisory'), ecosystem: 'nuget' })).toBe(NOT_VERIFIED_MALFORMED);
+    // `row()` applies `noVersion` itself when there is no resolved version.
     expect(notVerifiedCause(row({ name: 'a', ecosystem: 'pypi' }))).toBe(NOT_VERIFIED_NO_VERSION);
-    expect(notVerifiedCause(row({ name: 'a', ecosystem: 'nuget', current: '1.0.0' }))).toBe(NOT_VERIFIED_NUGET);
-    expect(notVerifiedCause(row({ name: 'a', ecosystem: 'npm', current: '1.0.0' }))).toBe(NOT_VERIFIED_OTHER);
+  });
+  it('incomplete-list note only for the two reasons that coexist with advisories', () => {
+    const r = (vulnsUnverified: DepRow['vulnsUnverified']): DepRow => ({
+      ...row({ name: 'a', ecosystem: 'npm', current: '1.0.0' }),
+      vulnsUnverified,
+    });
+    expect(incompleteListNote(r('malformedAdvisory'))).toBe(INCOMPLETE_MALFORMED);
+    expect(incompleteListNote(r('responseTooLarge'))).toBe(INCOMPLETE_TOO_LARGE);
+    expect(incompleteListNote(r('noVersion'))).toBeNull();
+    expect(incompleteListNote(r('nameCasing'))).toBeNull();
+    expect(incompleteListNote(r(null))).toBeNull();
   });
   it('under the report-wide lead a config-unreadable row is just `not checked`', () => {
     const r = row({
@@ -157,17 +218,28 @@ describe('leads (§4.3 / §8.3)', () => {
     expect(groupPrivateLead(group('a', null, 'npm', mixed, 0), false)).toBeNull();
   });
 
-  it('the report-wide lead is inferred: ≥ 2 unreadable ecosystems, none checked', () => {
-    expect(reportWideConfigLead(view('mirror').report?.groups ?? [])).toEqual(['npm', 'nuget']);
-    // populated has ONE config-unreadable ecosystem (cargo), which also has checked rows.
-    expect(reportWideConfigLead(view('populated').report?.groups ?? [])).toBeNull();
+  it('the report-wide lead comes from `networkProfile` only (R3: no inference)', () => {
+    const mirror = view('mirror').report;
+    if (mirror === null) throw new Error('fixture');
+    // Two unreadable ecosystems, nothing checked — but no flag ⇒ no lead.
+    expect(mirror.networkProfile).toBe(false);
+    expect(reportWideConfigLead(mirror.groups, mirror.networkProfile)).toBeNull();
+    // The same groups WITH the flag ⇒ the lead, in report order.
+    expect(reportWideConfigLead(mirror.groups, true)).toEqual(['npm', 'nuget']);
+    const net = view('netprofile').report;
+    if (net === null) throw new Error('fixture');
+    expect(reportWideConfigLead(net.groups, net.networkProfile)).toEqual(['npm', 'pypi', 'nuget']);
+    // The flag with zero configUnreadable rows ⇒ nothing to explain.
+    expect(reportWideConfigLead(view('uptodate').report?.groups ?? [], true)).toBeNull();
+    // One unreadable ecosystem that also has checked rows still gets it when flagged.
+    expect(reportWideConfigLead(view('populated').report?.groups ?? [], true)).toEqual(['cargo']);
   });
 
-  it('the report-wide copy joins 2 and 3 ecosystems, and names causes rather than one', () => {
+  it('the report-wide copy joins 2 and 3 ecosystems', () => {
     expect(joinAnd(['npm', 'NuGet'])).toBe('npm and NuGet');
     expect(joinAnd(['npm', 'Cargo', 'PyPI'])).toBe('npm, Cargo and PyPI');
-    expect(reportWideLead(['npm', 'Cargo', 'PyPI'])).toBe(
-      "Bonsai couldn't read or safely follow the registry settings for npm, Cargo and PyPI, so it treats those packages as private and doesn't send them. A malformed settings file, or a user settings folder on a network share, can cause this. Fix it, then check again.",
+    expect(reportWideLead(['npm', 'PyPI', 'NuGet'])).toBe(
+      "At least one of your user settings folders is on a network share, and Bonsai doesn't read registry settings from network locations. That is likely why it treats npm, PyPI and NuGet packages as private and doesn't send them. This is expected if your organisation keeps your profile on a network share.",
     );
   });
 

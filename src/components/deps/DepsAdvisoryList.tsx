@@ -2,13 +2,17 @@
 // `summary` is plain text (never markdown/HTML [LOW-3]); URLs come from Rust.
 import type { DepAdvisory } from '../../ipc/types/depTracker';
 import { ADVISORY_HOST, NO_SUMMARY, OPEN_ADVISORY, cvss, openAdvisory } from './depsCopy';
-import { SeverityPill } from './DepsPills';
+import { NotVerifiedPill, SeverityPill } from './DepsPills';
 
 export function DepsAdvisoryList({
   advisories,
+  note,
   onOpen,
 }: {
   advisories: readonly DepAdvisory[];
+  /** P125h §8.3 incomplete-list note (`depsView.incompleteListNote`), shown as
+   *  one final block after the last advisory; null ⇒ none. */
+  note: string | null;
   onOpen(url: string, host: string): void;
 }) {
   return (
@@ -44,6 +48,12 @@ export function DepsAdvisoryList({
           </button>
         </li>
       ))}
+      {note !== null && (
+        <li className="deps-advisory deps-advisory-note">
+          <NotVerifiedPill />
+          <p className="deps-advisory-note-text">{note}</p>
+        </li>
+      )}
     </ul>
   );
 }

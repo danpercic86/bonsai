@@ -1,6 +1,7 @@
 // P125 E5 — the dependency-tracker `DepTrackerView` fixtures, one per
 // `?deps=` harness mode. The group tables live in `depTrackerPopulated.ts` /
-// `depTrackerSynthetic.ts`; the builders and mirrors in `depTrackerModel.ts`.
+// `depTrackerSynthetic.ts` / `depTrackerUnverified.ts`; the builders and
+// mirrors in `depTrackerModel.ts`.
 //
 // Every summary comes from `summarizeFixture` (the Rust `summarize` rules), so
 // a fixture can never show a count its rows do not add up to.
@@ -14,6 +15,7 @@ import type {
 import { summarizeFixture } from './depTrackerModel';
 import { POPULATED_GROUPS, UPTODATE_GROUPS } from './depTrackerPopulated';
 import { LARGE_GROUPS, MIRROR_GROUPS } from './depTrackerSynthetic';
+import { NETWORK_PROFILE_GROUPS, UNVERIFIED_GROUPS } from './depTrackerUnverified';
 
 export const DEP_MOCK_MODES = [
   'off',
@@ -26,6 +28,8 @@ export const DEP_MOCK_MODES = [
   'empty',
   'mirror',
   'large',
+  'unverified',
+  'netprofile',
 ] as const;
 export type DepMockMode = (typeof DEP_MOCK_MODES)[number];
 
@@ -61,8 +65,13 @@ function failure(kind: DepCheckFailureKind, httpStatus: number | null, atMs: num
   return { kind, httpStatus, message: DEP_FAILURE_MESSAGES[kind], atMs };
 }
 
-function report(repoId: string, checkedAtMs: number, groups: readonly DepManifestGroup[]): DepReport {
-  return { repoId, checkedAtMs, groups: [...groups], summary: summarizeFixture(groups) };
+function report(
+  repoId: string,
+  checkedAtMs: number,
+  groups: readonly DepManifestGroup[],
+  networkProfile: boolean,
+): DepReport {
+  return { repoId, checkedAtMs, groups: [...groups], summary: summarizeFixture(groups), networkProfile };
 }
 
 /** An enabled view with a report and nothing running. */
@@ -70,11 +79,12 @@ function withReport(
   repoId: string,
   checkedAtMs: number,
   groups: readonly DepManifestGroup[],
+  networkProfile = false,
 ): DepTrackerView {
   return {
     repoId,
     enabled: true,
-    report: report(repoId, checkedAtMs, groups),
+    report: report(repoId, checkedAtMs, groups, networkProfile),
     manifestsChanged: false,
     running: null,
     lastError: null,
@@ -139,6 +149,10 @@ export function buildDepView(mode: DepMockMode, repoId: string, nowMs: number): 
       return withReport(repoId, recent, MIRROR_GROUPS);
     case 'large':
       return withReport(repoId, recent, LARGE_GROUPS);
+    case 'unverified':
+      return withReport(repoId, recent, UNVERIFIED_GROUPS);
+    case 'netprofile':
+      return withReport(repoId, recent, NETWORK_PROFILE_GROUPS, true);
   }
 }
 
@@ -155,3 +169,5 @@ export const DEP_VIEW_ERROR = buildDepView('error', FIXTURE_REPO_ID, LOAD_NOW);
 export const DEP_VIEW_EMPTY = buildDepView('empty', FIXTURE_REPO_ID, LOAD_NOW);
 export const DEP_VIEW_MIRROR = buildDepView('mirror', FIXTURE_REPO_ID, LOAD_NOW);
 export const DEP_VIEW_LARGE = buildDepView('large', FIXTURE_REPO_ID, LOAD_NOW);
+export const DEP_VIEW_UNVERIFIED = buildDepView('unverified', FIXTURE_REPO_ID, LOAD_NOW);
+export const DEP_VIEW_NETWORK_PROFILE = buildDepView('netprofile', FIXTURE_REPO_ID, LOAD_NOW);

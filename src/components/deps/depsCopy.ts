@@ -10,6 +10,7 @@ import type {
   DepPrivateReason,
   DepScope,
   DepSeverity,
+  DepUnknownReason,
   DepUpdateKind,
 } from '../../ipc/types/depTracker';
 
@@ -280,17 +281,31 @@ export function joinAnd(items: readonly string[]): string {
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
-/** §8.3 report-wide lead (amended 2026-09-29). INFERRED (§11.5: no report-level
- *  cause field), so it names the possible causes rather than asserting one.
- *  `ecosystems` are the §8.4 labels, in report order. */
+/** §8.3 report-wide network-profile lead (rewritten for P125h, ruling R3):
+ *  shown only from `report.networkProfile`, never inferred. `ecosystems` are
+ *  the §8.4 labels of the `configUnreadable` ecosystems, in report order. */
 export function reportWideLead(ecosystems: readonly string[]): string {
-  return `Bonsai couldn't read or safely follow the registry settings for ${joinAnd(ecosystems)}, so it treats those packages as private and doesn't send them. A malformed settings file, or a user settings folder on a network share, can cause this. Fix it, then check again.`;
+  return `At least one of your user settings folders is on a network share, and Bonsai doesn't read registry settings from network locations. That is likely why it treats ${joinAnd(ecosystems)} packages as private and doesn't send them. This is expected if your organisation keeps your profile on a network share.`;
 }
 
 export const NOT_VERIFIED_NO_VERSION = "Not verified — the exact installed version isn't known.";
 export const NOT_VERIFIED_NUGET =
   "Not verified — OSV.dev matches NuGet names by exact capitalisation, and without a lockfile Bonsai can't confirm it. Add a packages.lock.json to check this package.";
+export const NOT_VERIFIED_MALFORMED =
+  "Not verified — OSV.dev sent advisories for this package that Bonsai couldn't read, so it can't confirm the package is clean.";
+export const NOT_VERIFIED_TOO_LARGE =
+  "Not verified — an advisory for this package was too large for Bonsai to read, so it can't confirm the list is complete.";
+/** `vulnsUnverified: null` while `!vulnsChecked` (v1 cached rows only). */
 export const NOT_VERIFIED_OTHER = "Not verified — Bonsai couldn't confirm this package against OSV.dev.";
+/** §4.4 combined cell `title`: `{id} · {not-verified title}`. */
+export function combinedVulnTitle(id: string, cause: string): string {
+  return `${id} · ${cause}`;
+}
+/** §8.3 incomplete-list notes (details row; only rows that also have advisories). */
+export const INCOMPLETE_MALFORMED =
+  "Some advisories OSV.dev sent for this package couldn't be read, so this list may be incomplete.";
+export const INCOMPLETE_TOO_LARGE =
+  'Some advisories were too large for Bonsai to read, so they show only their ID. Open them on OSV.dev for the details.';
 
 export function linkFailure(host: string): string {
   return `Couldn't open ${host} in your browser.`;
@@ -336,12 +351,23 @@ export const PRIVATE_REASON_NO_HOST: Readonly<Record<DepPrivateReason, string>> 
   sourceMapping: 'private package source',
   goPrivate: 'listed in GOPRIVATE',
   configUnreadable: "settings couldn't be read",
+  localFeed: 'folder feed',
 };
 export const PRIVATE_TITLE_CUSTOM =
   "Resolved from a registry or feed that isn't the public one, so Bonsai doesn't send it.";
 export const PRIVATE_TITLE_CONFIG =
   "Bonsai couldn't read or safely follow this ecosystem's registry settings (for example a linked file outside your home folder), so it treats every package as private.";
+export const PRIVATE_TITLE_LOCAL_FEED =
+  "The NuGet settings point only to package feeds in folders (on this computer or a network share), so Bonsai doesn't send these packages.";
 export const PRIVATE_TITLE_OTHER = "Bonsai doesn't send packages from private sources.";
-export const UNKNOWN_REASON = 'not found on deps.dev';
-export const UNKNOWN_TITLE =
-  "deps.dev has no record of this package. It may be misspelled, unpublished, or from a registry Bonsai can't see.";
+/** §8.4 unknown reasons, by `availability.reason` (P125h). */
+export const UNKNOWN_REASON: Readonly<Record<DepUnknownReason, string>> = {
+  notFound: 'not found on deps.dev',
+  tooLarge: 'too large to look up',
+};
+export const UNKNOWN_TITLE: Readonly<Record<DepUnknownReason, string>> = {
+  notFound:
+    "deps.dev has no record of this package. It may be misspelled, unpublished, or from a registry Bonsai can't see.",
+  tooLarge:
+    "deps.dev's record for this package was larger than Bonsai accepts, so the latest version isn't known. Vulnerabilities are checked separately.",
+};

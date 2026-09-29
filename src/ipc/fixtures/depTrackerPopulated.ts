@@ -6,8 +6,9 @@
 // carries an advisory [UI-e], a `noLockfile` group, a `notTracked` group and a
 // `parseError` group — plus the [UI-c] long-content rows: a 70-char scoped npm
 // name, a Go pseudo-version, a 4-advisory row (one `unknown` severity with
-// `summary: null`, one with 3 aliases), a `dev` + `transitive` row and a deep
-// manifest path.
+// `summary: null`, one with 3 aliases), a direct `dev` row next to a transitive
+// row (Rust emits transitive rows with `normal` scope, so the tags never
+// combine — P125h §6) and a deep manifest path.
 import type { DepManifestGroup } from '../types/depTracker';
 import {
   advisory,
@@ -61,12 +62,11 @@ const rootPackageJson = group('package.json', 'pnpm-lock.yaml', 'npm', [
       ]),
     ],
   }),
-  // [UI-c] dev + transitive double tag.
+  // [UI-c] a transitive row beside the direct `dev` rows (never a double tag).
   row({
     name: 'esbuild',
     ecosystem: 'npm',
     relation: 'transitive',
-    scope: 'dev',
     current: '0.19.12',
     vulns: [
       advisory(
@@ -114,7 +114,7 @@ const rootPackageJson = group('package.json', 'pnpm-lock.yaml', 'npm', [
     ecosystem: 'npm',
     declared: '1.3.0',
     current: '1.3.0',
-    availability: { kind: 'unknown' },
+    availability: { kind: 'unknown', reason: 'notFound' },
     vulns: [advisory('MAL-2025-4102', 'critical', 'Malicious code in left-pad-legacy (npm)', null)],
   }),
 ], 412);
@@ -135,16 +135,16 @@ const cargo = group('src-tauri/Cargo.toml', 'src-tauri/Cargo.lock', 'cargo', [
   row({ name: 'serde', ecosystem: 'cargo', declared: '1', current: '1.0.219', latest: '1.0.219' }),
   row({ name: 'serde_json', ecosystem: 'cargo', declared: '1', current: '1.0.139', latest: '1.0.140', update: 'patch' }),
   row({ name: 'bonsai-core', ecosystem: 'cargo', declared: null, current: '0.1.0', availability: { kind: 'local', reason: 'path' } }),
-  // [UI-c] §8.4 private cell: configUnreadable (one ecosystem only, so the
-  // report-wide lead does NOT fire here — see `?deps=mirror`).
+  // [UI-c] §8.4 private cell: configUnreadable (`networkProfile: false`, so the
+  // report-wide lead does NOT fire here — see `?deps=netprofile`).
   row({ name: 'corp-telemetry', ecosystem: 'cargo', declared: '0.9', current: '0.9.3', availability: { kind: 'private', reason: 'configUnreadable', registryHost: null } }),
 ], 486);
 
-// [UI-c] NuGet: a resolved version with `vulnsChecked: false` (unconfirmed
-// casing, no packages.lock.json) and the remaining §8.4 private cells.
+// [UI-c] NuGet: a resolved version with `vulnsUnverified: 'nameCasing'`
+// (unconfirmed casing, no packages.lock.json) and the remaining §8.4 private cells.
 const nugetProject = group('src/Api/Api.csproj', null, 'nuget', [
-  row({ name: 'Newtonsoft.Json', ecosystem: 'nuget', declared: '13.0.1', current: '13.0.1', latest: '13.0.3', update: 'patch', vulnsChecked: false }),
-  row({ name: 'Serilog', ecosystem: 'nuget', declared: '4.2.0', current: '4.2.0', latest: '4.2.0', vulnsChecked: false }),
+  row({ name: 'Newtonsoft.Json', ecosystem: 'nuget', declared: '13.0.1', current: '13.0.1', latest: '13.0.3', update: 'patch', vulnsUnverified: 'nameCasing' }),
+  row({ name: 'Serilog', ecosystem: 'nuget', declared: '4.2.0', current: '4.2.0', latest: '4.2.0', vulnsUnverified: 'nameCasing' }),
   row({ name: 'Corp.Billing.Client', ecosystem: 'nuget', declared: '3.1.0', current: '3.1.0', availability: { kind: 'private', reason: 'customRegistry', registryHost: 'nuget.corp.example' } }),
   row({ name: 'Corp.Shared.Models', ecosystem: 'nuget', declared: '1.8.2', current: '1.8.2', availability: { kind: 'private', reason: 'customRegistry', registryHost: null } }),
   row({ name: 'Corp.Auth', ecosystem: 'nuget', declared: '2.0.0', current: '2.0.0', availability: { kind: 'private', reason: 'sourceMapping', registryHost: 'pkgs.dev.azure.com' } }),
@@ -178,9 +178,10 @@ const goModule = group('cmd/indexer/go.mod', 'cmd/indexer/go.sum', 'go', [
 ], 37);
 
 const requirements = group('tools/requirements.txt', null, 'pypi', [
-  // No lockfile ⇒ declared ranges only, never vuln-checked.
-  row({ name: 'requests', ecosystem: 'pypi', declared: '>=2.31', latest: '2.32.3', vulnsChecked: false }),
-  row({ name: 'pyyaml', ecosystem: 'pypi', declared: '~=6.0', latest: '6.0.2', vulnsChecked: false }),
+  // No lockfile ⇒ declared ranges only, never vuln-checked (`row()` applies
+  // `vulnsUnverified: 'noVersion'` because `current` is null).
+  row({ name: 'requests', ecosystem: 'pypi', declared: '>=2.31', latest: '2.32.3' }),
+  row({ name: 'pyyaml', ecosystem: 'pypi', declared: '~=6.0', latest: '6.0.2' }),
 ], 0, { kind: 'noLockfile' });
 
 const gradle = notTrackedGroup('android/build.gradle', 'Gradle');

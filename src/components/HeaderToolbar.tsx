@@ -23,7 +23,7 @@ import {
   ChartIcon,
   GearIcon,
 } from './appIcons';
-import type { SettingsCategoryId } from './settings/types';
+import type { SettingsCategoryId, SettingsFocusTarget } from './settings/types';
 
 export interface HeaderToolbarProps {
   theme: Theme;
@@ -42,7 +42,7 @@ export interface HeaderToolbarProps {
    *  lands Settings on a specific identity card (item 2's saved draft). */
   onOpenSettingsAt(
     category: SettingsCategoryId,
-    focus?: 'identity' | null,
+    focus?: SettingsFocusTarget | null,
     focusProfileId?: string | null,
   ): void;
   /** P91 §5: Dev mode is on ⇒ render the "logging is active" pill left of the
