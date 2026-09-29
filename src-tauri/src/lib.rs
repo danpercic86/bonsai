@@ -18,6 +18,10 @@ pub mod settings;
 #[cfg(test)]
 #[path = "settings_defaults_parity_tests.rs"]
 mod settings_defaults_parity_tests;
+/// P125 §2.2: the `dep_tracker` setting (same `#[path]` reason as above).
+#[cfg(test)]
+#[path = "settings_dep_tracker_tests.rs"]
+mod settings_dep_tracker_tests;
 pub mod state;
 pub mod watcher;
 

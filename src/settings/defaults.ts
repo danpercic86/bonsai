@@ -118,6 +118,9 @@ const DEFAULTS: UiSettings = {
     captureFrames: false,
     includeRawNames: false,
   },
+  /** P125 §2.2 / D1: the dependency tracker is OFF — it sends package names to
+   *  public services, so enabling it is the consent. 12-hour interval. */
+  depTracker: { enabled: false, intervalHours: 12 },
 };
 
 for (const nested of [
@@ -127,6 +130,7 @@ for (const nested of [
   DEFAULTS.graph,
   DEFAULTS.profiles,
   DEFAULTS.dev,
+  DEFAULTS.depTracker,
 ]) {
   Object.freeze(nested);
 }

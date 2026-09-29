@@ -51,3 +51,8 @@ export const AI_DOCK_HEIGHT_MAX = 600;
  * wall-clock deadline and no default spend cap). Keep the two numbers equal.
  */
 export const AI_MAX_CONCURRENT_RUNS = 3;
+
+// P125 §2.2: dependency-tracker check interval, in HOURS (Rust
+// `clamp_dep_tracker` keeps `interval_hours ∈ 1..=168`, i.e. up to one week).
+export const DEP_TRACKER_INTERVAL_MIN = 1;
+export const DEP_TRACKER_INTERVAL_MAX = 168;

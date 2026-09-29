@@ -54,5 +54,6 @@
     "captureReact": true,
     "captureFrames": false,
     "includeRawNames": false
-  }
+  },
+  "depTracker": { "enabled": false, "intervalHours": 12 }
 }

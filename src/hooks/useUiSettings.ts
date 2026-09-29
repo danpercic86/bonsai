@@ -41,6 +41,7 @@ import type {
   UiSettings,
   UiSettingsPatch,
 } from '../ipc';
+import type { DepTrackerSettings } from '../ipc/types/depTracker';
 import { DEFAULT_SEASON } from '../graph/palettes';
 import type { PushToast } from '../ToastContext';
 import { useSettingsWriteQueue } from './useSettingsWriteQueue';
@@ -99,6 +100,9 @@ export interface UiSettingsController {
   /** P91 §10: Dev-mode / observability settings (whole-struct, the autoFetch
    *  idiom). Threaded to the Settings Developer page and the header pill. */
   dev: DevSettings;
+  /** P125 §2.2: the dependency tracker's enable (= D1 consent) + interval. The
+   *  one place the renderer turns the tracker on/off (§8 "through useUiSettings"). */
+  depTracker: DepTrackerSettings;
   aiDockHeight: number;
   aiDockCollapsed: boolean;
   aiStreamLog: boolean;
@@ -237,6 +241,11 @@ export function useUiSettings(
     captureFrames: false,
     includeRawNames: false,
   });
+  // P125 §2.2: OFF / 12 h out of the box (mirrors DEFAULTS.depTracker).
+  const [depTracker, setDepTracker] = useState<DepTrackerSettings>({
+    enabled: false,
+    intervalHours: 12,
+  });
   // P11c §3.2 / P69b / P113 §17.3 — the debounced, coalescing, single-writer
   // settings persist, with its retry budget and its failure surface, now in
   // `useSettingsWriteQueue`. It moved out VERBATIM: this file was at 494 of the
@@ -300,6 +309,7 @@ export function useUiSettings(
       if (patch.terminalTool !== undefined) setTerminalTool(patch.terminalTool);
       if (patch.editorTool !== undefined) setEditorTool(patch.editorTool);
       if (patch.dev !== undefined) setDev(patch.dev);
+      if (patch.depTracker !== undefined) setDepTracker(patch.depTracker);
       if (patch.aiDockHeight !== undefined) setAiDockHeight(patch.aiDockHeight);
       if (patch.aiDockCollapsed !== undefined) setAiDockCollapsed(patch.aiDockCollapsed);
       if (patch.aiStreamLog !== undefined) setAiStreamLog(patch.aiStreamLog);
@@ -354,6 +364,7 @@ export function useUiSettings(
     setTerminalTool(s.terminalTool);
     setEditorTool(s.editorTool);
     setDev(s.dev);
+    setDepTracker(s.depTracker);
     setAiDockHeight(s.aiDockHeight);
     setAiDockCollapsed(s.aiDockCollapsed);
     setAiStreamLog(s.aiStreamLog);
@@ -390,6 +401,7 @@ export function useUiSettings(
     terminalTool,
     editorTool,
     dev,
+    depTracker,
     aiDockHeight,
     aiDockCollapsed,
     aiStreamLog,

@@ -34,6 +34,7 @@ import { externalHandlers } from './mock/handlers/external';
 import { toolsHandlers } from './mock/handlers/tools';
 import { forgeHandlers } from './mock/handlers/forge';
 import { obsHandlers } from './mock/handlers/obs';
+import { depTrackerHandlers } from './mock/handlers/depTracker';
 import { countIpcCalls } from '../obs/stability/perfCounters';
 
 // Assembled from per-domain handler groups. Public surface unchanged: index.ts
@@ -78,4 +79,5 @@ export const mockIpc: IpcApi = countIpcCalls({
   ...toolsHandlers,
   ...forgeHandlers,
   ...obsHandlers,
+  ...depTrackerHandlers,
 });

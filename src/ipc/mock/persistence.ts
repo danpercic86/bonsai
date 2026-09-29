@@ -2,6 +2,7 @@
 import { AUTO_FETCH_INTERVAL_MAX, AUTO_FETCH_INTERVAL_MIN, AVATAR_RADIUS_MAX, AVATAR_RADIUS_MIN, HEALTH_REFRESH_INTERVAL_MAX, HEALTH_REFRESH_INTERVAL_MIN, LANE_WIDTH_MAX, LANE_WIDTH_MIN, ROW_HEIGHT_MAX, ROW_HEIGHT_MIN } from '../../settings/ranges';
 import { DEFAULT_UI_SETTINGS as PRODUCTION_DEFAULT_UI_SETTINGS } from '../../settings/defaults';
 import { parseAiRunSettings } from './aiRunSettings';
+import { sanitizeDepTrackerSettings } from './depTrackerSettings';
 import type { AiAutonomy, AutoFetchSettings, DevSettings, GraphColorMode, GraphDateBasis, GraphPrefs, GraphRefFilter, GraphSeason, GraphStyle, HealthRefreshSettings, IdentityProfile, ListView, LogLevel, PaneWidths, PanelDensity, PrimaryCommitAction, ProfileColor, RecentRepo, SessionState, Theme, UiSettings } from '../types';
 
 /** P91 §3: the closed log-level set (mirrors Rust `LogLevel`). */
@@ -439,6 +440,7 @@ export function readUiSettings(): UiSettings {
     // so a pre-P91 blob — or a garbled `dev` object — reads back as Dev mode OFF
     // with strict redaction rather than throwing or minting a partial struct.
     const dev = sanitizeDevSettings(parsed.dev);
+    const depTracker = sanitizeDepTrackerSettings(parsed.depTracker); // P125
     return {
       theme,
       paneWidths,
@@ -466,6 +468,7 @@ export function readUiSettings(): UiSettings {
       terminalTool,
       editorTool,
       dev,
+      depTracker,
       ...aiRun,
     };
   } catch {

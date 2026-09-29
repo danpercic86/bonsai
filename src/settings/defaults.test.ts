@@ -50,6 +50,8 @@ describe('DEFAULT_UI_SETTINGS ⟷ the shared Rust⟷TS oracle', () => {
     expect(DEFAULT_UI_SETTINGS.paneWidths).toEqual({ sidebar: 240, rightPanel: 380 });
     expect(DEFAULT_UI_SETTINGS.autoFetch).toEqual({ enabled: false, intervalMinutes: 5 });
     expect(DEFAULT_UI_SETTINGS.healthRefresh).toEqual({ enabled: false, intervalMinutes: 30 });
+    // P125 D1: the tracker sends package names out, so OFF is a privacy default.
+    expect(DEFAULT_UI_SETTINGS.depTracker).toEqual({ enabled: false, intervalHours: 12 });
   });
 
   it('carries NO identity profiles — the two seeded ones are mock-only (§3.3)', () => {

@@ -85,6 +85,8 @@ export const HYDRATED: UiSettings = {
     captureFrames: true,
     includeRawNames: true,
   },
+  // P125: both sub-fields differ from `DepTracker::default()`.
+  depTracker: { enabled: true, intervalHours: 36 },
 };
 
 /** A graph patch that differs from the hook's defaults in a few knobs. */

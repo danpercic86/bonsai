@@ -259,6 +259,8 @@ fn the_patch_type_has_no_field_that_can_carry_a_program_path() {
         ai_dock_height: _,
         ai_dock_collapsed: _,
         dev: _,
+        // P125: `{ enabled: bool, interval_hours: u32 }` — no string, no path.
+        dep_tracker: _,
     } = UiSettingsPatch::default();
     // The only two renderer-writable strings on this type are LOOKUP KEYS, and
     // both are coerced on write
@@ -330,6 +332,8 @@ fn no_settings_echo_can_carry_a_program_path() {
         ai_dock_height: _,
         ai_dock_collapsed: _,
         dev: _,
+        // P125: `{ enabled: bool, interval_hours: u32 }` — no string, no path.
+        dep_tracker: _,
     } = &ui;
     // These two are the only `String` fields at THIS level — every other field
     // above is an enum, a number, a bool, or a nested struct (`profiles`,

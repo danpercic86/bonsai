@@ -134,10 +134,11 @@ pub(crate) use bonsai_core::git::worktree_copy::{
 // stream path), so it is intentionally NOT re-exported here.
 pub(crate) use crate::scheduler::{self, JobKind, JobOutcome, SchedulerState};
 pub(crate) use crate::settings::{
-    self, clamp_ai_settings, clamp_auto_fetch, clamp_graph_prefs, clamp_health_refresh,
-    clamp_pane_widths, AiAutonomy, AiConflictTools, AutoFetch, DevSettings, GraphColorMode,
-    GraphPrefs, GraphRefFilter, GraphSeason, GraphStyle, HealthRefresh, IdentityProfile, ListView,
-    PaneWidths, PanelDensity, PrimaryCommitAction, RecentRepo, ThemeChoice,
+    self, clamp_ai_settings, clamp_auto_fetch, clamp_dep_tracker, clamp_graph_prefs,
+    clamp_health_refresh, clamp_pane_widths, AiAutonomy, AiConflictTools, AutoFetch, DepTracker,
+    DevSettings, GraphColorMode, GraphPrefs, GraphRefFilter, GraphSeason, GraphStyle,
+    HealthRefresh, IdentityProfile, ListView, PaneWidths, PanelDensity, PrimaryCommitAction,
+    RecentRepo, ThemeChoice,
 };
 pub(crate) use crate::state::{AppState, RepoEntry};
 pub(crate) use crate::watcher::spawn_watcher;

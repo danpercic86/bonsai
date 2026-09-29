@@ -1,6 +1,8 @@
 // Split out of the former monolithic mock.ts (pure refactor; no behavior change).
 import type { IpcApi } from '../../types';
 import { clampAiRunSettings } from '../aiRunSettings';
+import { clampDepTracker } from '../depTrackerSettings';
+import { applyMockDepTrackerConfig } from './depTracker';
 import { jobStatusListeners, mockMcp, repoChangedListeners, tagAutoSyncListeners } from '../events';
 import { clampAutoFetch, clampGraphPrefs, clampHealthRefresh, clampPaneWidths, readRecents, readSession, readUiSettings, writeRecents, writeSession, writeUiSettings } from '../persistence';
 import { delay, query as urlParam, requireRepo } from '../repoState';
@@ -169,6 +171,9 @@ export const sessionHandlers = {
       // sink is (re)started from the merged value, exactly as Rust restarts the
       // real sink after the save.
       dev: patch.dev ?? current.dev,
+      // P125 §2.2: whole-struct patch, clamped on write (`clamp_dep_tracker`).
+      depTracker:
+        patch.depTracker !== undefined ? clampDepTracker(patch.depTracker) : current.depTracker,
       // P68 §8.3: each of the ten AI-run knobs patches independently of
       // graph/listView/panelDensity, then the whole slice is clamped on write
       // (mirrors apply_patch → clamp_ai_settings).
@@ -189,6 +194,8 @@ export const sessionHandlers = {
     writeUiSettings(next);
     // P30 §7: config round-trip re-arms the synthetic job tick timers.
     applyMockJobTimers(next);
+    // P125 §6.4: `set_ui_settings` calls `deps::apply_config` after persisting.
+    applyMockDepTrackerConfig(current.depTracker, next.depTracker);
     return next;
   },
 

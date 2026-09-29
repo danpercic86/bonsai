@@ -79,6 +79,8 @@ pub struct UiSettings {
     /// P91 §10: Dev-mode / observability settings (whole-struct, like
     /// `auto_fetch`).
     pub dev: DevSettings,
+    /// P125 §2.2: dependency tracker enable (= D1 consent) + interval hours.
+    pub dep_tracker: DepTracker,
 }
 
 /// Partial patch for `set_ui_settings` — only `Some(..)` fields are applied
@@ -159,6 +161,9 @@ pub struct UiSettingsPatch {
     /// when any sub-field changes (the `auto_fetch` / `health_refresh`
     /// precedent). NOT clamped: no field has a numeric range.
     pub dev: Option<DevSettings>,
+    /// P125 §2.2: whole-struct patch (the `auto_fetch` precedent), clamped by
+    /// `clamp_dep_tracker`. `deps::apply_config` hook-up lands in P125e.
+    pub dep_tracker: Option<DepTracker>,
 }
 
 /// Distinguishes an ABSENT patch key (don't touch) from an explicit `null`
@@ -300,6 +305,9 @@ pub(crate) fn apply_patch(s: &mut settings::Settings, patch: UiSettingsPatch) {
     if let Some(dev) = patch.dev {
         s.dev = dev;
     }
+    if let Some(dep_tracker) = patch.dep_tracker {
+        s.dep_tracker = clamp_dep_tracker(dep_tracker);
+    }
     clamp_ai_settings(s);
 }
 
@@ -351,6 +359,7 @@ pub(crate) fn ui_settings_of(s: &settings::Settings) -> UiSettings {
         ai_dock_height: s.ai_dock_height,
         ai_dock_collapsed: s.ai_dock_collapsed,
         dev: s.dev,
+        dep_tracker: s.dep_tracker,
     }
 }
 

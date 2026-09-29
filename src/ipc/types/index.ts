@@ -9,6 +9,7 @@ export * from './commit';
 export * from './common';
 export * from './config';
 export * from './conflict';
+export * from './depTracker';
 export * from './diff';
 export * from './forge';
 export * from './graph';

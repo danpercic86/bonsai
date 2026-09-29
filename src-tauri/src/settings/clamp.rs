@@ -6,7 +6,7 @@
 //! hand-edited file) and the setter commands (defend a future UI bug).
 //! Re-exported from the `settings` module so external call sites are unchanged.
 
-use super::{AutoFetch, GraphPrefs, HealthRefresh, PaneWidths, Settings};
+use super::{AutoFetch, DepTracker, GraphPrefs, HealthRefresh, PaneWidths, Settings};
 
 pub const SIDEBAR_MIN: u32 = 180;
 pub const SIDEBAR_MAX: u32 = 480;
@@ -35,6 +35,21 @@ pub fn clamp_health_refresh(h: HealthRefresh) -> HealthRefresh {
         interval_minutes: h
             .interval_minutes
             .clamp(HEALTH_REFRESH_INTERVAL_MIN, HEALTH_REFRESH_INTERVAL_MAX),
+    }
+}
+
+pub const DEP_TRACKER_INTERVAL_MIN: u32 = 1;
+pub const DEP_TRACKER_INTERVAL_MAX: u32 = 168;
+
+/// P125 §2.2: keeps `interval_hours ∈ 1..=168` (up to one week). Called by both
+/// `load_from` and `set_ui_settings`' `apply_patch`, like [`clamp_auto_fetch`].
+/// Mirrored by `src/settings/ranges.ts` `DEP_TRACKER_INTERVAL_*`.
+pub fn clamp_dep_tracker(d: DepTracker) -> DepTracker {
+    DepTracker {
+        enabled: d.enabled,
+        interval_hours: d
+            .interval_hours
+            .clamp(DEP_TRACKER_INTERVAL_MIN, DEP_TRACKER_INTERVAL_MAX),
     }
 }
 

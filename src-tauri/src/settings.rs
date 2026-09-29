@@ -123,8 +123,7 @@ pub struct Settings {
     /// Auto-fetch preference (P11). Additive `#[serde(default)]`; a legacy file
     /// without this key loads with `AutoFetch::default()`.
     pub auto_fetch: AutoFetch,
-    /// Health-refresh background job (P30). Additive `#[serde(default)]`; a
-    /// legacy file without this key loads with `HealthRefresh::default()`.
+    /// Health-refresh job (P30). Additive `#[serde(default)]`; legacy ⇒ default.
     pub health_refresh: HealthRefresh,
     /// Graph geometry knobs (P11). Additive `#[serde(default)]`; a legacy file
     /// without this key loads with `GraphPrefs::default()`.
@@ -257,6 +256,8 @@ pub struct Settings {
     /// `DevSettings::default()` (Dev mode OFF, strict redaction). NOT clamped
     /// (no numeric range). Whole-struct patch, like `auto_fetch`.
     pub dev: DevSettings,
+    /// P125 §2.2: dependency tracker (OFF, 12 h). Additive; legacy ⇒ default.
+    pub dep_tracker: DepTracker,
 }
 
 impl Default for Settings {
@@ -305,18 +306,17 @@ impl Default for Settings {
             terminal_command: String::new(),
             editor_command: String::new(),
             ai_idle_timeout_secs: AI_IDLE_TIMEOUT_DEFAULT,
-            // 0 = unbounded (locked user decision).
-            ai_hard_cap_secs: 0,
+            ai_hard_cap_secs: 0, // 0 = unbounded (locked user decision).
             ai_max_turns: bonsai_core::ai::DEFAULT_MAX_TURNS,
             ai_stream_log: true,
             ai_include_partial_messages: false,
             ai_conflict_tools: AiConflictTools::default(),
             ai_bulk_max_bytes: AI_BULK_MAX_BYTES_DEFAULT,
-            // 0.0 = no `--max-budget-usd` flag at all (locked user decision).
-            ai_max_budget_usd: 0.0,
+            ai_max_budget_usd: 0.0, // 0.0 = no `--max-budget-usd` flag (locked decision).
             ai_dock_height: AI_DOCK_HEIGHT_DEFAULT,
             ai_dock_collapsed: false,
             dev: DevSettings::default(),
+            dep_tracker: DepTracker::default(),
         }
     }
 }
@@ -329,11 +329,11 @@ pub fn load_from(file: &Path) -> Settings {
         Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
         Err(_) => Settings::default(),
     };
-    // Defends against a hand-edited or future-version file with out-of-range
-    // values (contract §2.1).
+    // Defend against a hand-edited / future-version file's out-of-range values (§2.1).
     s.pane_widths = clamp_pane_widths(s.pane_widths);
     s.auto_fetch = clamp_auto_fetch(s.auto_fetch);
     s.health_refresh = clamp_health_refresh(s.health_refresh);
+    s.dep_tracker = clamp_dep_tracker(s.dep_tracker);
     s.graph = clamp_graph_prefs(s.graph);
     clamp_ai_settings(&mut s);
     // P80: lazy P79→P80 migration — pure/in-memory so every read sees the P80

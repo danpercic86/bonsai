@@ -135,5 +135,8 @@
   "forgeRemoveAccount": ["accountId"],
   "forgeSetHostDefault": ["host", "accountId"],
   "forgeSetRepoAccount": ["repoId", "accountId"],
-  "forgeInvalidateViewer": ["host"]
+  "forgeInvalidateViewer": ["host"],
+
+  "getDepTracker": ["repoId"],
+  "depsCheckNow": ["repoId"]
 }

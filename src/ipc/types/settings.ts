@@ -1,5 +1,6 @@
 import type { AiAutonomy, AiConflictTools } from './ai';
 import type { IdentityProfile } from './config';
+import type { DepTrackerSettings } from './depTracker';
 import type { GraphPrefs } from './graph';
 import type { GraphSeason } from '../../graph/palettes';
 import type { GraphStyle } from '../../graph/colors';
@@ -140,6 +141,9 @@ export interface UiSettings {
   aiDockCollapsed: boolean;
   /** P91 §10: Dev-mode / observability settings (whole-struct, like autoFetch). */
   dev: DevSettings;
+  /** P125 §2.2: the dependency tracker (whole-struct, like autoFetch). OFF by
+   *  default; enabling it IS the D1 consent. */
+  depTracker: DepTrackerSettings;
 }
 
 export interface UiSettingsPatch {
@@ -201,6 +205,9 @@ export interface UiSettingsPatch {
   aiDockCollapsed?: boolean;
   /** P91 §10: whole-struct patch (the autoFetch precedent). */
   dev?: DevSettings;
+  /** P125 §2.2: whole-struct patch; Rust clamps `intervalHours` to 1..=168 and
+   *  runs `deps::apply_config` after persisting. */
+  depTracker?: DepTrackerSettings;
 }
 
 /** P91 §3: log verbosity — also the Dev-mode capture threshold. Mirrors Rust

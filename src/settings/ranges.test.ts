@@ -16,6 +16,13 @@ describe('settings ranges', () => {
     expect(R.LANE_WIDTH_MAX).toBe(28);
   });
 
+  /** P125 §2.2 — mirrors `clamp_dep_tracker`'s `interval_hours ∈ 1..=168`. The
+   *  Rust consts live in `src-tauri/src/settings/clamp.rs`; keep the two equal. */
+  it('pins the P125 dependency-tracker interval range (hours)', () => {
+    expect(R.DEP_TRACKER_INTERVAL_MIN).toBe(1);
+    expect(R.DEP_TRACKER_INTERVAL_MAX).toBe(168);
+  });
+
   /** P68d FIX 2 — the P68c review's must-fix. The 12 streaming-AI constants landed
    *  in P68c with NO drift guard in either direction: this file is the repo's
    *  established mirror test and was not extended, and Rust's side is pinned by

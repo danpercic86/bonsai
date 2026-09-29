@@ -188,6 +188,27 @@ impl Default for HealthRefresh {
     }
 }
 
+/// P125 §2.2 — dependency-tracker preference (the `AutoFetch` pattern). OFF by
+/// default: enabling it IS the D1 consent (it sends public package names to
+/// deps.dev / OSV.dev). Interval in HOURS, clamped to 1..=168 by
+/// [`super::clamp_dep_tracker`]. Additive `#[serde(default)]`: a pre-P125
+/// `settings.json` loads `DepTracker::default()`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DepTracker {
+    pub enabled: bool,
+    pub interval_hours: u32,
+}
+
+impl Default for DepTracker {
+    fn default() -> Self {
+        DepTracker {
+            enabled: false,
+            interval_hours: 12,
+        }
+    }
+}
+
 /// Which timestamp the graph's date column + relative/absolute date use (P51).
 /// Pure UI preference; no Git effect. `Author` is the M2 baseline behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
