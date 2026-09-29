@@ -9,7 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mockIpc } from '../ipc/mock';
 import { buildDepView } from '../ipc/fixtures/depTracker';
-import { useDepTracker } from './useDepTracker';
+import { deriveState } from '../components/deps/depsView';
+import { disabledDepView, useDepTracker } from './useDepTracker';
 import type { DepsChangedPayload, DepTrackerView } from '../ipc/types/depTracker';
 
 type DepsCb = (p: DepsChangedPayload) => void;
@@ -49,7 +50,7 @@ afterEach(() => {
 describe('useDepTracker', () => {
   it('fetches on mount and exposes the view', async () => {
     const get = vi.spyOn(mockIpc, 'getDepTracker').mockImplementation(async (id) => viewOf(id));
-    const { result } = renderHook(() => useDepTracker('r1'));
+    const { result } = renderHook(() => useDepTracker('r1', true));
     await waitFor(() => expect(result.current.view?.repoId).toBe('r1'));
     expect(get).toHaveBeenCalledTimes(1);
     expect(get).toHaveBeenCalledWith('r1');
@@ -58,7 +59,7 @@ describe('useDepTracker', () => {
 
   it('with no repo: no fetch, null view', async () => {
     const get = vi.spyOn(mockIpc, 'getDepTracker').mockImplementation(async (id) => viewOf(id));
-    const { result } = renderHook(() => useDepTracker(null));
+    const { result } = renderHook(() => useDepTracker(null, true));
     await waitFor(() => expect(depsCb).not.toBeNull());
     expect(get).not.toHaveBeenCalled();
     expect(result.current.view).toBeNull();
@@ -66,7 +67,7 @@ describe('useDepTracker', () => {
 
   it('refetches on repo change and never shows the previous repo in between', async () => {
     vi.spyOn(mockIpc, 'getDepTracker').mockImplementation(async (id) => viewOf(id));
-    const { result, rerender } = renderHook(({ id }) => useDepTracker(id), { initialProps: { id: 'r1' } });
+    const { result, rerender } = renderHook(({ id }) => useDepTracker(id, true), { initialProps: { id: 'r1' } });
     await waitFor(() => expect(result.current.view?.repoId).toBe('r1'));
     rerender({ id: 'r2' });
     expect(result.current.view).toBeNull();
@@ -80,7 +81,7 @@ describe('useDepTracker', () => {
         releaseR1 = res;
       }) : Promise.resolve(viewOf(id)),
     );
-    const { result, rerender } = renderHook(({ id }) => useDepTracker(id), { initialProps: { id: 'r1' } });
+    const { result, rerender } = renderHook(({ id }) => useDepTracker(id, true), { initialProps: { id: 'r1' } });
     rerender({ id: 'r2' });
     await waitFor(() => expect(result.current.view?.repoId).toBe('r2'));
     await act(async () => releaseR1(viewOf('r1')));
@@ -89,7 +90,7 @@ describe('useDepTracker', () => {
 
   it('refetches on window focus', async () => {
     const get = vi.spyOn(mockIpc, 'getDepTracker').mockImplementation(async (id) => viewOf(id));
-    renderHook(() => useDepTracker('r1'));
+    renderHook(() => useDepTracker('r1', true));
     await waitFor(() => expect(focusCb).not.toBeNull());
     await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
     act(() => focusCb?.());
@@ -98,7 +99,7 @@ describe('useDepTracker', () => {
 
   it('progress updates numbers without a fetch; other kinds refetch; other repos are ignored', async () => {
     const get = vi.spyOn(mockIpc, 'getDepTracker').mockImplementation(async (id) => viewOf(id));
-    const { result } = renderHook(() => useDepTracker('r1'));
+    const { result } = renderHook(() => useDepTracker('r1', true));
     await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(depsCb).not.toBeNull());
 
@@ -128,7 +129,7 @@ describe('useDepTracker', () => {
   it('never polls on a timer', async () => {
     vi.useFakeTimers();
     const get = vi.spyOn(mockIpc, 'getDepTracker').mockImplementation(async (id) => viewOf(id));
-    renderHook(() => useDepTracker('r1'));
+    renderHook(() => useDepTracker('r1', true));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10);
     });
@@ -143,7 +144,7 @@ describe('useDepTracker', () => {
     const get = vi.spyOn(mockIpc, 'getDepTracker').mockImplementation(async (id) => viewOf(id));
     const check = vi.spyOn(mockIpc, 'depsCheckNow').mockResolvedValueOnce(3);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { result } = renderHook(() => useDepTracker('r1'));
+    const { result } = renderHook(() => useDepTracker('r1', true));
     await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
 
     await act(async () => result.current.refresh());
@@ -159,12 +160,67 @@ describe('useDepTracker', () => {
 
   it('releases both listeners on unmount', async () => {
     vi.spyOn(mockIpc, 'getDepTracker').mockImplementation(async (id) => viewOf(id));
-    const { unmount } = renderHook(() => useDepTracker('r1'));
+    const { unmount } = renderHook(() => useDepTracker('r1', true));
     await waitFor(() => expect(depsCb).not.toBeNull());
     await waitFor(() => expect(focusCb).not.toBeNull());
     await act(async () => {});
     unmount();
     expect(offDeps).toHaveBeenCalledTimes(1);
     expect(offFocus).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useDepTracker — zero IPC while off (cold-open ratchet)', () => {
+  it('off ⇒ no fetch, no subscription, a synthetic disabled view', async () => {
+    const get = vi.spyOn(mockIpc, 'getDepTracker').mockImplementation(async (id) => viewOf(id));
+    const { result } = renderHook(() => useDepTracker('r1', false));
+    await act(async () => {});
+    expect(get).not.toHaveBeenCalled();
+    expect(mockIpc.onDepsChanged).not.toHaveBeenCalled();
+    expect(mockIpc.onWindowFocus).not.toHaveBeenCalled();
+    expect(result.current.view).toEqual(disabledDepView('r1'));
+    expect(deriveState(result.current.view).body).toBe('off');
+    await act(async () => result.current.refresh());
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('off → on ⇒ fetch + subscribe', async () => {
+    const get = vi.spyOn(mockIpc, 'getDepTracker').mockImplementation(async (id) => viewOf(id));
+    const { result, rerender } = renderHook(({ on }) => useDepTracker('r1', on), { initialProps: { on: false } });
+    await act(async () => {});
+    rerender({ on: true });
+    await waitFor(() => expect(result.current.view?.enabled).toBe(true));
+    expect(get).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(depsCb).not.toBeNull());
+    await waitFor(() => expect(focusCb).not.toBeNull());
+  });
+
+  it('on → off ⇒ unsubscribe and show the disabled view at once (no event needed)', async () => {
+    vi.spyOn(mockIpc, 'getDepTracker').mockImplementation(async (id) => viewOf(id));
+    const { result, rerender } = renderHook(({ on }) => useDepTracker('r1', on), { initialProps: { on: true } });
+    await waitFor(() => expect(result.current.view?.report).not.toBeNull());
+    await waitFor(() => expect(focusCb).not.toBeNull());
+    rerender({ on: false });
+    expect(result.current.view).toEqual(disabledDepView('r1'));
+    expect(offDeps).toHaveBeenCalledTimes(1);
+    expect(offFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it('a pinned ?deps=<mode> implies the setting, so the harness mode renders', async () => {
+    const pin = (mode: string | null) =>
+      window.history.replaceState({}, '', mode === null ? '/' : `/?deps=${mode}`);
+    try {
+      pin('stale');
+      expect((await mockIpc.getUiSettings()).depTracker.enabled).toBe(true);
+      pin('off');
+      expect((await mockIpc.getUiSettings()).depTracker.enabled).toBe(false);
+      pin(null);
+      expect((await mockIpc.getUiSettings()).depTracker.enabled).toBe(false);
+    } finally {
+      pin(null);
+    }
+    vi.spyOn(mockIpc, 'getDepTracker').mockImplementation(async (id) => viewOf(id, 'stale'));
+    const { result } = renderHook(() => useDepTracker('r1', true));
+    await waitFor(() => expect(result.current.view?.manifestsChanged).toBe(true));
   });
 });

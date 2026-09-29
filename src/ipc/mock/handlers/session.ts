@@ -2,7 +2,7 @@
 import type { IpcApi } from '../../types';
 import { clampAiRunSettings } from '../aiRunSettings';
 import { clampDepTracker } from '../depTrackerSettings';
-import { applyMockDepTrackerConfig } from './depTracker';
+import { applyMockDepTrackerConfig, pinDepTrackerSetting } from './depTracker';
 import { jobStatusListeners, mockMcp, repoChangedListeners, tagAutoSyncListeners } from '../events';
 import { clampAutoFetch, clampGraphPrefs, clampHealthRefresh, clampPaneWidths, readRecents, readSession, readUiSettings, writeRecents, writeSession, writeUiSettings } from '../persistence';
 import { delay, query as urlParam, requireRepo } from '../repoState';
@@ -85,7 +85,7 @@ export const sessionHandlers = {
     // P112 §12: the `?tools=stale` / `?tools=custom` seams need a PERSISTED
     // selection. `applyToolSeam` layers it under the stored blob and yields to
     // any value the harness has since written, so a pick sticks.
-    return applyToolSeam(readUiSettings());
+    return pinDepTrackerSetting(applyToolSeam(readUiSettings())); // P125: `?deps=` pin
   },
 
   async setUiSettings(patch: UiSettingsPatch): Promise<UiSettings> {

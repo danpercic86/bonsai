@@ -181,7 +181,7 @@ export default function App() {
     queueSettingsWrite({ listView: next });
   }, [listView, queueSettingsWrite]);
 
-  const deps = useDepTracker(activeRepo); // P125-ui §2: the ONE fetch source (toolbar + dialog).
+  const deps = useDepTracker(activeRepo, depTracker.enabled); // P125-ui §2: ONE source; 0 IPC while off.
   useEffect(() => { if (activeRepo === null) setDepsOpen(false); }, [activeRepo]); // no stale modal flag
 
   // §8.3 / §8.4: the Claude Code CLI probe + the one-time AI consent dialog

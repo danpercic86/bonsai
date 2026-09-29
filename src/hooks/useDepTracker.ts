@@ -2,12 +2,17 @@
 // the active repo — P125-ui §2 plumbing) and shared by the toolbar button and
 // the dialog, so there is a single subscription.
 //
-// Fetches the view on mount, on repo change, on window focus and on every
-// `deps-changed` other than `progress`. It does NOT fetch on `repo-changed`
+// ZERO IPC while the tracker is off (`enabled`, from App's `useUiSettings`
+// state — no extra settings read): no fetch, no `deps-changed`, no focus
+// listener, and a synthetic disabled view (what the backend serves when off).
+// This keeps the cold-open IPC count flat for the default (off) install.
+//
+// While on: fetches the view on mount, on repo change, on window focus and on
+// every `deps-changed` other than `progress`. It does NOT fetch on `repo-changed`
 // (the backend decides staleness via `probe_stale`) and never polls on a timer
 // — the schedule lives in Rust. Enable/disable is a settings write through
 // `useUiSettings`, never through this hook.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ipc } from '../ipc';
 import type { Unsubscribe } from '../ipc';
@@ -32,6 +37,19 @@ export interface UseDepTracker {
   refresh: () => Promise<void>;
 }
 
+/** The view the backend serves while disabled: nothing read, cached or scheduled. */
+export function disabledDepView(repoId: string): DepTrackerView {
+  return {
+    repoId,
+    enabled: false,
+    report: null,
+    manifestsChanged: false,
+    running: null,
+    lastError: null,
+    nextCheckMs: null,
+  };
+}
+
 /** Kinds that begin or end a check, so the live numbers reset. `stale` is not
  *  one: a stale probe can land while a check is running. */
 const RESETS_PROGRESS: ReadonlySet<DepsChangedPayload['kind']> = new Set([
@@ -42,8 +60,11 @@ const RESETS_PROGRESS: ReadonlySet<DepsChangedPayload['kind']> = new Set([
   'cleared',
 ]);
 
-export function useDepTracker(repoId: string | null): UseDepTracker {
+export function useDepTracker(repoId: string | null, enabled: boolean): UseDepTracker {
   const [view, setView] = useState<DepTrackerView | null>(null);
+  // Read by async results: an answer that lands after a disable is dropped.
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
   const [progress, setProgress] = useState<DepProgress | null>(null);
   // The repo this hook currently serves; every async result is checked against
   // it so a slow answer for a previous tab is dropped (§6.3).
@@ -59,7 +80,7 @@ export function useDepTracker(repoId: string | null): UseDepTracker {
     ipc
       .getDepTracker(forRepo)
       .then((v) => {
-        if (!mounted.current || mine !== seq.current) return;
+        if (!mounted.current || mine !== seq.current || !enabledRef.current) return;
         if (repoRef.current !== forRepo || v.repoId !== forRepo) return;
         // Progress is event-driven only: a fetch that was in flight when the
         // check started would otherwise wipe the live numbers.
@@ -79,15 +100,19 @@ export function useDepTracker(repoId: string | null): UseDepTracker {
     };
   }, []);
 
-  // Mount + repo change: never show one repo's report under another.
+  // Mount + repo change + enable: never show one repo's report under another,
+  // and never a stale report after a disable (the view flips to off at once,
+  // without waiting for `cleared`).
   useEffect(() => {
+    seq.current += 1; // drop any in-flight answer
     setView(null);
     setProgress(null);
-    if (repoId !== null) fetchView(repoId);
-  }, [repoId, fetchView]);
+    if (enabled && repoId !== null) fetchView(repoId);
+  }, [repoId, enabled, fetchView]);
 
-  // One subscription pair for the hook's lifetime, reading the repo via ref.
+  // One subscription pair while enabled, reading the repo via ref.
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     const unsubs: Unsubscribe[] = [];
     const keep = (off: Unsubscribe) => {
@@ -119,11 +144,11 @@ export function useDepTracker(repoId: string | null): UseDepTracker {
       cancelled = true;
       for (const off of unsubs) off();
     };
-  }, [fetchView]);
+  }, [enabled, fetchView]);
 
   const refresh = useCallback(async () => {
     const forRepo = repoRef.current;
-    if (forRepo === null) return;
+    if (forRepo === null || !enabledRef.current) return;
     try {
       await ipc.depsCheckNow(forRepo);
     } catch (e: unknown) {
@@ -134,5 +159,6 @@ export function useDepTracker(repoId: string | null): UseDepTracker {
     if (repoRef.current === forRepo) fetchView(forRepo);
   }, [fetchView]);
 
-  return { view, progress, refresh };
+  const offView = useMemo(() => (repoId === null ? null : disabledDepView(repoId)), [repoId]);
+  return enabled ? { view, progress, refresh } : { view: offView, progress: null, refresh };
 }

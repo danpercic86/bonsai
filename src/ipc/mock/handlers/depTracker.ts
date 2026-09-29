@@ -9,7 +9,7 @@
 // report; disabling the tracker in Settings emits `cleared` (the Rust
 // `apply_config` true→false path), enabling it starts a check for the active repo
 // (the false→true path).
-import type { AppError, IpcApi, Unsubscribe } from '../../types';
+import type { AppError, IpcApi, UiSettings, Unsubscribe } from '../../types';
 import type {
   DepRunningCheck,
   DepsChangedKind,
@@ -56,6 +56,18 @@ export function depMockMode(): DepMockMode {
   const q = urlParam('deps');
   if (isDepMockMode(q)) return q;
   return readUiSettings().depTracker.enabled ? 'populated' : 'off';
+}
+
+/**
+ * `?deps=<mode>` PINS the harness, so it also pins the setting App reads at
+ * launch: the hook does zero IPC while `depTracker.enabled` is false (the
+ * cold-open ratchet), and a pinned `populated` / `stale` / … mode must still
+ * render. A pinned `off` reads as disabled. No pin ⇒ the stored value.
+ */
+export function pinDepTrackerSetting(s: UiSettings): UiSettings {
+  const q = urlParam('deps');
+  if (!isDepMockMode(q)) return s;
+  return { ...s, depTracker: { ...s.depTracker, enabled: q !== 'off' } };
 }
 
 function emit(
