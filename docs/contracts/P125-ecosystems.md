@@ -50,6 +50,11 @@ lockfile's manifests.
 
 ## E3. Registry-config inventory — every path and env var read (main §0.2) `[HIGH-1 item 4]` `[Q7]`
 
+> **P125h amendments (2026-09-29):** Cargo — `[registry] default` and `CARGO_REGISTRY_DEFAULT`
+> are **no longer read** (user ruling R1; publish-only per the Cargo reference); the "read anyway ⇒
+> fail closed" rule for them in the Cargo row is superseded. NuGet — hostless feeds (folder, UNC,
+> `file:`, relative) make packages private `localFeed` instead of failing closed (P125h §3).
+
 All entries are **ASSUMED** from each tool's published configuration docs; none were fetched in the
 contract session. P125b/c1/c2 must verify each row against the tool docs and flip it to VERIFIED here.
 
@@ -107,6 +112,10 @@ Read rules for the above-workdir walk (`HostEnv::read_above_workdir`) and for us
 
 ## E5. Mock fixtures (main §8; `src/ipc/mock/handlers/depTracker.ts` + `src/ipc/fixtures/depTracker.ts`)
 
+> **P125h amendments:** transitive rows carry `scope: 'normal'` only (the transitive+dev row is
+> dropped — Rust can't emit it); `RowSpec.vulnsChecked` is replaced by `vulnsUnverified`; new modes
+> `?deps=unverified` and `?deps=netprofile` (`P125-followups.md` §6–§7).
+
 Modes are `?deps=off|loading|populated|uptodate|stale|offline|error|empty|mirror|large` `[UI-c]`.
 With no `?deps`, the mode follows mock settings `depTracker.enabled`. There is one fixture export per
 mode:
@@ -141,6 +150,10 @@ plausible `transitiveChecked`. Mock `depsCheckNow` emits started → 3×progress
 disable emits `cleared`.
 
 ## E6. TypeScript mirror (`src/ipc/types/depTracker.ts`) (main §2.3) — exact mirror of main §2.1/§2.2
+
+> **P125h additive delta:** `DepPrivateReason` gains `'localFeed'`; `unknown` availability gains
+> `reason: 'notFound' | 'tooLarge'`; `DepRow.vulnsUnverified: DepVulnsUnverifiedReason | null`;
+> `DepReport.networkProfile: boolean` — see `P125-followups.md` §0 (authoritative) and the code.
 
 ```ts
 export type DepEcosystem = 'npm' | 'cargo' | 'pypi' | 'go' | 'nuget';

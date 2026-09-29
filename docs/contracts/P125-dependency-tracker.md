@@ -142,6 +142,11 @@ Rust built (§7.6).
 
 ### 2.1 Rust (`bonsai-deps/src/model.rs`)
 
+> **P125h additive delta** — `PrivateReason::LocalFeed`, `Availability::Unknown { reason:
+> UnknownReason }`, `DepRow.vulns_unverified: Option<VulnsUnverifiedReason>`,
+> `DepReport.network_profile: bool` (all `#[serde(default)]`, `CACHE_SCHEMA` stays 1). The
+> authoritative shapes are `P125-followups.md` §0 and the code; the listing below predates them.
+
 All types derive `Debug, Clone, PartialEq, Serialize, Deserialize` with
 `#[serde(rename_all = "camelCase")]`. Every `String` field that comes from the repo or a response is
 passed through `clean_display` (§7.5) `[LOW-3]`.
@@ -277,7 +282,8 @@ patch). Enabling the tracker *is* the D1 consent.
 The exact camelCase mirror of §2.1/§2.2 (plus `DepTrackerSettings`) is in `P125-ecosystems.md`
 **E6**. Keep the two in lockstep.
 
-**Derived UI states** (computed in the hook, not in Rust):
+**Derived UI states** (computed by `deriveState` in `src/components/deps/depsView.ts`, not in Rust
+— P125h §6):
 
 | State | Condition |
 |---|---|
@@ -543,7 +549,8 @@ Severity: `database_specific.severity` (CRITICAL / HIGH / MODERATE→Medium / LO
 | 5xx | `Service(Status)` |
 | 3xx | `Service(Redirect)` |
 | malformed JSON | `Service(BadJson)` |
-| oversize body | `Service(TooLarge)` |
+| oversize OSV querybatch body, or > 32 degraded responses (breaker) | `Service(TooLarge)` |
+| oversize deps.dev / per-advisory body `[P125h §2]` | that package degrades (`Unknown{TooLarge}` / `responseTooLarge`), check continues |
 | per-request timeout or deadline | `Timeout` |
 | transport `Gated` (src-tauri gate: disabled / stale epoch) `[P125d review]` | `Cancelled` |
 | transport `Other` (neither connect nor timeout) `[P125d review]` | `Offline` |
@@ -764,7 +771,9 @@ Enforcement:
 - **Responses:**
   - typed serde, unknown fields ignored;
   - body caps as in §7.2;
-  - `versions[]` > 20 000 ⇒ `Service`;
+  - `versions[]` > 20 000 ⇒ that package is `Unknown{TooLarge}` (P125h §2; was `Service`);
+  - an OSV id failing `mint_id` is dropped; its package is `vulnsUnverified: malformedAdvisory`
+    (P125h §1) — it never reads as clean;
   - a deps.dev `versionKey.name` mismatch ⇒ Unknown;
   - deps.dev `links` / `registries` / `url` fields are not deserialized;
   - response data builds no URL except through a minted `AdvisoryId` / `PageToken`.
