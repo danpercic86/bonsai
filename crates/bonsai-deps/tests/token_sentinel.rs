@@ -237,3 +237,45 @@ fn cargo_and_go_tokens_never_reach_outbound_errors_or_hosts() {
     // [NEW-2] no token-bearing variable value was ever materialised.
     assert!(env.values_read().is_empty(), "{:?}", env.values_read());
 }
+
+/// `[P125h §5, R1]` `registry.default` / `CARGO_REGISTRY_DEFAULT` are
+/// publish-only and no longer read: a crates.io dep IS checked, while a dep
+/// with `registry = "corp"` (and its non-crates.io lock source) is still
+/// never sent. Neither the default's value nor the token is materialised.
+#[test]
+fn cargo_registry_default_no_longer_withholds_crates_io_deps() {
+    let r = FixtureRepo::new();
+    r.track(
+        "Cargo.toml",
+        "[package]\nname = \"app\"\nversion = \"0.1.0\"\n\n[dependencies]\nserde = \"1\"\n\
+         zz-sentinel-corp = { version = \"1\", registry = \"corp\" }\n",
+    )
+    .track(
+        "Cargo.lock",
+        "version = 4\n\n[[package]]\nname = \"serde\"\nversion = \"1.0.200\"\n\
+         source = \"registry+https://github.com/rust-lang/crates.io-index\"\n\n\
+         [[package]]\nname = \"zz-sentinel-corp\"\nversion = \"1.0.0\"\n\
+         source = \"sparse+https://cargo.corp.invalid/index/\"\n",
+    )
+    .track(".cargo/config.toml", "[registry]\ndefault = \"corp\"\n");
+    let env = FakeHostEnv::new()
+        .user_file(
+            UserConfig::CargoHomeConfigToml,
+            "[registry]\ndefault = \"corp\"\ntoken = \"zz-sentinel-token\"\n",
+        )
+        .var("CARGO_REGISTRY_DEFAULT", "corp")
+        .var("CARGO_REGISTRY_TOKEN", TOKEN);
+    let check = local_check(&r.wd, &env);
+    assert!(check.errors.is_empty(), "{:?}", check.errors);
+    assert!(check.public().iter().any(|p| p.name() == "serde"));
+    assert!(check.sent("serde"), "the crates.io dep is checked");
+    let corp = check.visibility("zz-sentinel-corp");
+    assert!(!corp.is_empty(), "no row for the named-registry dep");
+    assert!(
+        corp.iter().all(|v| matches!(v, Visibility::Private(..))),
+        "{corp:?}"
+    );
+    assert_no_sentinel(&check.outbound, &[TOKEN, "zz-sentinel", "corp.invalid"]);
+    assert_report_clean(&check.report, TOKEN);
+    assert!(env.values_read().is_empty(), "{:?}", env.values_read());
+}

@@ -28,7 +28,7 @@ use bonsai_deps::fsread::{
 };
 use bonsai_deps::registry_ctx::{HostEnv, UserConfig, UserRead};
 
-use super::host_paths::{locate, Inputs, Located, Os};
+use super::host_paths::{locate, network_profile, Inputs, Located, Os};
 
 /// More NuGet machine-wide `*.config` files than this ⇒ fail closed.
 pub(crate) const MAX_MACHINE_CONFIGS: usize = 64;
@@ -255,5 +255,18 @@ impl HostEnv for RealHostEnv {
             MAX_CONFIG_BYTES,
             self.follow_roots(),
         ))
+    }
+
+    fn profile_on_network(&self) -> bool {
+        // `[P125h §4b]` text only: the `node` PATH probe (a stat) is NOT
+        // run here — its dir is never a network path anyway (`find_node_dir`
+        // skips those), and the npm global default is then `/usr/local`.
+        let var = |k: &str| env_value(k).filter(|v| !v.is_empty());
+        let no_node = || None;
+        network_profile(&Inputs {
+            os: Os::current(),
+            var: &var,
+            node_dir: &no_node,
+        })
     }
 }

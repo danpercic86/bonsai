@@ -200,6 +200,11 @@ impl DepRow {
     /// The P125h §0 row invariant: a `Checked` / `Unknown` row is verified
     /// iff it has no unverified reason; a `Local` / `Private` row is never
     /// verified and carries no reason (its availability explains it).
+    ///
+    /// A FRESH-ASSEMBLY invariant only: a v1 cache row (written before
+    /// `vulns_unverified` existed, so it deserializes to `None`) with
+    /// `vulns_checked: false` legitimately fails it. Do NOT use it to
+    /// validate `cache::load` output.
     pub fn verdict_consistent(&self) -> bool {
         match self.availability {
             Availability::Checked | Availability::Unknown { .. } => {

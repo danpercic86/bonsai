@@ -140,6 +140,9 @@ impl HostEnv for NoEnv {
     fn read_above_workdir(&self, _: &Path, _: &str) -> UserRead {
         UserRead::Absent
     }
+    fn profile_on_network(&self) -> bool {
+        false
+    }
 }
 
 #[test]

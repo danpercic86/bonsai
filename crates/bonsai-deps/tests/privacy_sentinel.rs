@@ -12,7 +12,7 @@ use bonsai_deps::privacy::Visibility;
 use bonsai_deps::registry_ctx::FakeHostEnv;
 
 use common::fixture::{try_symlink_file, FixtureRepo, PNPM_V9_IGN, YARN_V1_ROOT};
-use common::{assert_no_sentinel, local_check};
+use common::{assert_no_sentinel, assert_report_clean, local_check};
 
 /// Full sentinels and their bare markers.
 const NEEDLES: &[&str] = &[
@@ -262,4 +262,84 @@ fn a_scope_in_the_workspace_root_npmrc_above_a_submodule_stays_private() {
     );
     assert_eq!(public(&check), ["is-odd"]);
     assert_no_sentinel(&check.outbound, &["@zzsub/pkg", "zzsub"]);
+}
+
+/// `[P125h §3]` the folder text of a local NuGet feed (lowercase, so the
+/// lowercased cache bytes are matched too).
+const FEED_DIR: &str = "zzsentinelfolder";
+
+fn local_feed_repo(restore: Option<&str>) -> FixtureRepo {
+    let props = restore.map_or(String::new(), |v| {
+        format!("<PropertyGroup><RestoreSources>{v}</RestoreSources></PropertyGroup>")
+    });
+    let r = FixtureRepo::new();
+    r.track(
+        "package.json",
+        r#"{"name": "app", "dependencies": {"left-pad": "^1.3.0"}}"#,
+    )
+    .track(
+        "dotnet/App/App.csproj",
+        &format!(
+            "<Project Sdk=\"Microsoft.NET.Sdk\">{props}<ItemGroup>\
+             <PackageReference Include=\"ZzSentinel.Local\" Version=\"1.0.0\" />\
+             </ItemGroup></Project>"
+        ),
+    );
+    r
+}
+
+#[test]
+fn a_package_behind_a_local_nuget_feed_is_never_sent() {
+    // Control: without RestoreSources the sentinel WOULD be sent.
+    let r = local_feed_repo(None);
+    assert!(local_check(&r.wd, &FakeHostEnv::new()).sent("ZzSentinel.Local"));
+    for feed in [
+        r"\\srv\zzsentinelfolder\feed",
+        "./zzsentinelfolder",
+        r"C:\zzsentinelfolder",
+        "file:///srv/zzsentinelfolder",
+    ] {
+        let r = local_feed_repo(Some(feed));
+        let check = local_check(&r.wd, &FakeHostEnv::new());
+        assert!(check.errors.is_empty(), "{:?}", check.errors);
+        // NOT fail-closed: the row names the local feed, with no host.
+        assert_eq!(
+            only(&check, "ZzSentinel.Local"),
+            Visibility::Private(PrivateReason::LocalFeed, None),
+            "{feed}"
+        );
+        assert!(check.sent("left-pad"), "the check ran: {feed}");
+        assert_no_sentinel(
+            &check.outbound,
+            &["ZzSentinel.Local", "zzsentinel", FEED_DIR],
+        );
+        // The folder text is in no DTO, cache byte or Debug output.
+        assert_report_clean(&check.report, FEED_DIR);
+        for (_, v) in &check.rows {
+            assert!(!format!("{v:?}").to_lowercase().contains(FEED_DIR), "{v:?}");
+        }
+    }
+}
+
+#[test]
+fn a_feed_that_only_ends_in_the_public_host_is_never_sent() {
+    // `[P125h2 LOW-H1]` the text before `@` may expand to any host.
+    for feed in [
+        "https://%FEED%@api.nuget.org/v3/index.json",
+        "https://user:pass@api.nuget.org/v3/index.json",
+    ] {
+        let r = local_feed_repo(Some(feed));
+        let check = local_check(&r.wd, &FakeHostEnv::new());
+        assert!(check.errors.is_empty(), "{:?}", check.errors);
+        assert_eq!(
+            only(&check, "ZzSentinel.Local"),
+            Visibility::Private(PrivateReason::CustomRegistry, None),
+            "{feed}"
+        );
+        assert!(check.sent("left-pad"), "the check ran: {feed}");
+        assert_no_sentinel(&check.outbound, &["ZzSentinel.Local", "zzsentinel"]);
+    }
+    // Control: the plain public feed still sends the package.
+    let r = local_feed_repo(Some("https://api.nuget.org/v3/index.json"));
+    assert!(local_check(&r.wd, &FakeHostEnv::new()).sent("ZzSentinel.Local"));
 }

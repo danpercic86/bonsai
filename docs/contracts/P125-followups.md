@@ -53,6 +53,9 @@ export type DepAvailability =
 ```
 Rust always serializes the new fields, so TS declares them required. Old cache rows arrive as
 `vulnsUnverified: null` / `networkProfile: false` / `reason: 'notFound'`; the UI fallbacks are in §4.
+Known, accepted consequence of keeping `CACHE_SCHEMA = 1` (h1 review NIT, 2026-09-29): a report
+cached *before* P125h that hit the §1 bug (`vulnsChecked: true`, `vulns: []` for an all-malformed
+package) still loads and displays as clean until the next network check replaces it.
 
 ---
 

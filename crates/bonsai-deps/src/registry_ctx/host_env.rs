@@ -138,4 +138,15 @@ pub trait HostEnv: Sync {
     /// `file_name` may be a relative `/`-separated path
     /// (`.cargo/config.toml`).
     fn read_above_workdir(&self, dir: &Path, file_name: &str) -> UserRead;
+    /// `[P125h §4b]` True iff a user-scoped config base this env resolves
+    /// (HOME / USERPROFILE, APPDATA, LOCALAPPDATA, XDG_CONFIG_HOME,
+    /// CARGO_HOME, or a user-scoped config file under them — the pip / uv /
+    /// Go / NuGet user dirs) is a network path per
+    /// [`crate::fsread::is_network_path`] on its TEXT. System / install dirs
+    /// and per-tool override variables are ignored. No I/O, no
+    /// canonicalize. A mapped network drive letter (`H:\`) is NOT detected
+    /// (LOW-E1, deferred): the flag may be a false negative, never a false
+    /// positive. Feeds `DepReport::network_profile`. No default body: every
+    /// `HostEnv` must answer it.
+    fn profile_on_network(&self) -> bool;
 }

@@ -123,7 +123,8 @@ index = "sparse+https://other.corp.invalid/index/"
 token = "zz-sentinel-token"
 "#;
 
-/// A clean config: public-only routing, plus unrelated tables.
+/// A clean config: public-only routing, plus unrelated tables (incl. the
+/// `[registry]` table, which is not read at all since P125h R1).
 pub(crate) const CLEAN_CONFIG: &str = r#"
 [build]
 jobs = 4

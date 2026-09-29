@@ -3,11 +3,17 @@
 //! walk), `$CARGO_HOME/config{,.toml}` and the `CARGO_*` env vars.
 //!
 //! Only `source.*.replace-with`, `source.*.registry` and
-//! `registries.*.index` are materialised (plus `registry.default`, and the
-//! PRESENCE of `include` / `patch` / `paths`). The typed DTO below has no
-//! field for `[registry] token`, `registries.*.token` or any credential
+//! `registries.*.index` are materialised (plus the PRESENCE of `include` /
+//! `patch` / `paths`). The typed DTO below has no field for the `[registry]`
+//! table at all (`token`, `default`), `registries.*.token` or any credential
 //! provider, so those values never reach a type of ours; the raw text is
 //! dropped by the caller right after. Every step is `Result<_, Closed>`.
+//!
+//! `[P125h §5, R1]` `registry.default` / `CARGO_REGISTRY_DEFAULT` are NOT
+//! read: Cargo documents them for publish-type commands only; dependency
+//! resolution defaults to crates.io, a per-dependency `registry = "…"` key
+//! selects another registry (private, unchanged), and every locked
+//! package's real origin is its `Cargo.lock` `source` (checked by E2).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -31,9 +37,6 @@ struct ConfigDto {
     source: BTreeMap<String, SourceDto>,
     #[serde(default)]
     registries: BTreeMap<String, RegistryDto>,
-    /// Only `default`; `token` / `credential-provider` have no field.
-    #[serde(default)]
-    registry: Option<RegistryTableDto>,
     /// Presence only: each hides routing we do not follow ⇒ `Closed`.
     #[serde(default)]
     include: Option<IgnoredAny>,
@@ -62,12 +65,6 @@ struct SourceDto {
 struct RegistryDto {
     #[serde(default)]
     index: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct RegistryTableDto {
-    #[serde(default)]
-    default: Option<String>,
 }
 
 /// One definition of a source / registry at some level.
@@ -228,17 +225,6 @@ impl CargoSignals {
     }
 }
 
-/// `registry.default` / `CARGO_REGISTRY_DEFAULT`. Cargo documents it as the
-/// registry for publish-type commands only, but anything other than
-/// crates.io is treated as a routing signal we cannot judge ⇒ `Closed`.
-fn check_default(name: &str) -> Result<(), Closed> {
-    if registry_key(name) == CRATES_IO {
-        Ok(())
-    } else {
-        Err(Closed)
-    }
-}
-
 /// One `.cargo/config{,.toml}` / `$CARGO_HOME/config{,.toml}` file.
 pub(crate) fn cargo_config(sig: &mut CargoSignals, text: &str) -> Result<(), Closed> {
     let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
@@ -247,9 +233,6 @@ pub(crate) fn cargo_config(sig: &mut CargoSignals, text: &str) -> Result<(), Clo
     let dto: ConfigDto = toml::from_str(text).map_err(|_| Closed)?;
     if dto.include.is_some() || dto.patch.is_some() || dto.paths.is_some() {
         return Err(Closed);
-    }
-    if let Some(name) = dto.registry.and_then(|r| r.default) {
-        check_default(&name)?;
     }
     for (name, src) in &dto.source {
         if let Some(target) = &src.replace_with {
@@ -271,7 +254,6 @@ pub(crate) fn cargo_config(sig: &mut CargoSignals, text: &str) -> Result<(), Clo
 }
 
 const ENV_REPLACE: &str = "CARGO_SOURCE_CRATES_IO_REPLACE_WITH";
-const ENV_DEFAULT: &str = "CARGO_REGISTRY_DEFAULT";
 const ENV_REGISTRIES: &str = "CARGO_REGISTRIES_";
 const ENV_INDEX: &str = "_INDEX";
 
@@ -285,11 +267,10 @@ fn registries_index_name(key: &str) -> Option<&str> {
 
 /// `[NEW-2]` the env key filter: sees only the NAME, so
 /// `CARGO_REGISTRY_TOKEN`, `CARGO_REGISTRIES_*_TOKEN` /
-/// `_CREDENTIAL_PROVIDER` values are never collected.
+/// `_CREDENTIAL_PROVIDER` values are never collected — nor, `[P125h R1]`,
+/// `CARGO_REGISTRY_DEFAULT` (publish-only; not a resolution signal).
 pub(crate) fn keep_cargo_env(key: &str) -> bool {
-    key.eq_ignore_ascii_case(ENV_REPLACE)
-        || key.eq_ignore_ascii_case(ENV_DEFAULT)
-        || registries_index_name(key).is_some()
+    key.eq_ignore_ascii_case(ENV_REPLACE) || registries_index_name(key).is_some()
 }
 
 /// Applies one kept env var.
@@ -299,9 +280,6 @@ pub(crate) fn cargo_env_pair(sig: &mut CargoSignals, key: &str, value: &str) -> 
         // supported"); kept because it can only ADD a private signal.
         sig.replace(CRATES_IO, value);
         return Ok(());
-    }
-    if key.eq_ignore_ascii_case(ENV_DEFAULT) {
-        return check_default(value);
     }
     match registries_index_name(key) {
         Some(name) => sig.registry_index(name, value),

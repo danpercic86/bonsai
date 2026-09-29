@@ -49,7 +49,6 @@ const BAD_CONFIGS: &[&str] = &[
     "include = [\"corp.toml\"]\n",
     "[patch.crates-io]\nfoo = { path = \"../foo\" }\n",
     "paths = [\"/src/foo\"]\n",
-    "[registry]\ndefault = \"corp\"\n",
 ];
 
 fn write(r: &Repo, rel: &str, body: &str) {
@@ -277,13 +276,45 @@ fn cargo_env_signals_route_and_fail_closed() {
     for (k, v) in [
         ("CARGO_REGISTRIES_CORP_INDEX", "ssh://git@corp/index"),
         ("cargo_registries_x_index", "not a url"),
-        ("CARGO_REGISTRY_DEFAULT", "corp"),
     ] {
         assert!(cargo_closed(&r, &FakeHostEnv::new().var(k, v)), "{k}");
     }
-    assert!(!cargo_closed(
+}
+
+/// `[P125h §5, R1]` `registry.default` / `CARGO_REGISTRY_DEFAULT` are
+/// publish-only: not read, not closed, and a crate with no `registry` key
+/// stays public. A per-dependency named registry stays private.
+#[test]
+fn registry_default_is_not_read_and_does_not_close_cargo() {
+    let r = repo();
+    write(&r, ".cargo/config.toml", "[registry]\ndefault = \"corp\"\n");
+    let env = || {
+        FakeHostEnv::new()
+            .var("CARGO_REGISTRY_DEFAULT", "corp")
+            .user_file(
+                UserConfig::CargoHomeConfigToml,
+                "[registry]\ndefault = \"corp\"\ntoken = \"zz-sentinel-token\"\n",
+            )
+    };
+    let env_a = env();
+    let ctx = load(&r, &env_a);
+    assert!(!ctx.fail_closed(Ecosystem::Cargo));
+    assert!(!ctx.eco(Ecosystem::Cargo).replace_all);
+    assert_eq!(
+        ctx.private_reason(Ecosystem::Cargo, "serde", &DEFAULT),
+        None
+    );
+    let named = DepSource::Registry(RegistryRef::Named("corp".into()));
+    assert_eq!(
+        ctx.private_reason(Ecosystem::Cargo, "internal", &named),
+        Some((PrivateReason::CustomRegistry, None))
+    );
+    // The env value is not even looked at.
+    assert!(env_a.values_read().is_empty(), "{:?}", env_a.values_read());
+    // A bad named-registry index still closes, as before.
+    assert!(cargo_closed(
         &r,
-        &FakeHostEnv::new().var("CARGO_REGISTRY_DEFAULT", "crates_io")
+        &env().var("CARGO_REGISTRIES_CORP_INDEX", "ssh://git@corp/index")
     ));
 }
 

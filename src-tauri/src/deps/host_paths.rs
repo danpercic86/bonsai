@@ -15,6 +15,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use bonsai_deps::fsread::is_network_path;
 use bonsai_deps::registry_ctx::UserConfig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -288,4 +289,134 @@ pub(crate) fn locate(which: UserConfig, i: &Inputs) -> Located {
             dir.map_or(Located::Unresolvable, Located::ConfigDir)
         }
     }
+}
+
+/// Every `UserConfig`, in declaration order (see `scope_of`).
+const ALL_CONFIGS: [UserConfig; 18] = [
+    UserConfig::NpmUserRc,
+    UserConfig::NpmGlobalRc,
+    UserConfig::NpmBuiltinRc,
+    UserConfig::PnpmRc,
+    UserConfig::PnpmAuthIni,
+    UserConfig::PnpmGlobalYaml,
+    UserConfig::YarnRc,
+    UserConfig::YarnRcYml,
+    UserConfig::CargoHomeConfigToml,
+    UserConfig::CargoHomeConfig,
+    UserConfig::PipConfigFile,
+    UserConfig::PipUser,
+    UserConfig::PipSystem,
+    UserConfig::UvUser,
+    UserConfig::UvSystem,
+    UserConfig::GoEnv,
+    UserConfig::NugetUser,
+    UserConfig::NugetMachineWide,
+];
+
+/// A `scope_of` index, checked at compile time against `ALL_CONFIGS`: an arm
+/// given the next index `N` without appending its variant to the array
+/// fails `N < ALL_CONFIGS.len()` and does not compile.
+macro_rules! slot {
+    ($i:literal) => {
+        const {
+            assert!(
+                $i < ALL_CONFIGS.len(),
+                "UserConfig missing from ALL_CONFIGS"
+            );
+            $i
+        }
+    };
+}
+
+/// `(index in ALL_CONFIGS, user-scoped)`. Exhaustive (no `_` arm): a new
+/// `UserConfig` variant fails to compile here until it is classified —
+/// then give it the next index AND append it to `ALL_CONFIGS` (`slot!`
+/// rejects an index past the array; the const assertion below pins the
+/// array to this order).
+///
+/// User-scoped = a user settings file under the profile / home bases. NOT
+/// user-scoped: system / install locations (npm global prefix, npm
+/// builtin, pip / uv system, NuGet machine-wide) and the pure override
+/// `PIP_CONFIG_FILE`.
+const fn scope_of(c: UserConfig) -> (usize, bool) {
+    match c {
+        UserConfig::NpmUserRc => (slot!(0), true),
+        UserConfig::NpmGlobalRc => (slot!(1), false),
+        UserConfig::NpmBuiltinRc => (slot!(2), false),
+        UserConfig::PnpmRc => (slot!(3), true),
+        UserConfig::PnpmAuthIni => (slot!(4), true),
+        UserConfig::PnpmGlobalYaml => (slot!(5), true),
+        UserConfig::YarnRc => (slot!(6), true),
+        UserConfig::YarnRcYml => (slot!(7), true),
+        UserConfig::CargoHomeConfigToml => (slot!(8), true),
+        UserConfig::CargoHomeConfig => (slot!(9), true),
+        UserConfig::PipConfigFile => (slot!(10), false),
+        UserConfig::PipUser => (slot!(11), true),
+        UserConfig::PipSystem => (slot!(12), false),
+        UserConfig::UvUser => (slot!(13), true),
+        UserConfig::UvSystem => (slot!(14), false),
+        UserConfig::GoEnv => (slot!(15), true),
+        UserConfig::NugetUser => (slot!(16), true),
+        UserConfig::NugetMachineWide => (slot!(17), false),
+    }
+}
+
+const _: () = {
+    let mut i = 0;
+    while i < ALL_CONFIGS.len() {
+        assert!(scope_of(ALL_CONFIGS[i]).0 == i, "ALL_CONFIGS out of sync");
+        i += 1;
+    }
+};
+
+/// Per-tool / per-project overrides: they still fail their own ecosystem
+/// closed when unreadable, but never set the report-wide flag.
+const OVERRIDES: [&str; 5] = [
+    "PIP_CONFIG_FILE",
+    "GOENV",
+    "NPM_CONFIG_USERCONFIG",
+    "NPM_CONFIG_PREFIX",
+    "VIRTUAL_ENV",
+];
+
+/// `[P125h §4b]` "one of your user settings folders is on a network
+/// share": a profile / home base (USERPROFILE / HOME, APPDATA, LOCALAPPDATA,
+/// XDG_CONFIG_HOME, CARGO_HOME) or a user-scoped config file located under
+/// them is a network path by TEXT (`is_network_path`: `\\server\share`,
+/// `//server/share`, `\\?\UNC\…`, device namespaces). System dirs and the
+/// `OVERRIDES` are ignored. PURE: no I/O, no canonicalize. A mapped drive
+/// letter (`H:\` on a share) is not detected (LOW-E1, deferred): a false
+/// negative, never a false positive.
+pub(crate) fn network_profile(i: &Inputs) -> bool {
+    let net = |p: &Path| is_network_path(&p.to_string_lossy());
+    let var = |k: &str| {
+        if OVERRIDES.iter().any(|o| o.eq_ignore_ascii_case(k)) {
+            None
+        } else {
+            (i.var)(k)
+        }
+    };
+    let user = Inputs {
+        os: i.os,
+        var: &var,
+        node_dir: i.node_dir,
+    };
+    let bases = [
+        user.home(),
+        user.base("APPDATA"),
+        user.base("LOCALAPPDATA"),
+        user.base("XDG_CONFIG_HOME"),
+        user.cargo_home(),
+    ];
+    if bases.iter().flatten().any(|b| net(b)) {
+        return true;
+    }
+    ALL_CONFIGS
+        .iter()
+        .filter(|c| scope_of(**c).1)
+        .any(|c| match locate(*c, &user) {
+            Located::Absent | Located::Unresolvable => false,
+            Located::Files(ps) => ps.iter().any(|p| net(p)),
+            Located::ConfigDir(d) => net(&d),
+        })
 }

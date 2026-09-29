@@ -44,6 +44,9 @@ impl HostEnv for TestEnv {
     fn read_above_workdir(&self, _dir: &Path, _file_name: &str) -> UserRead {
         UserRead::Absent
     }
+    fn profile_on_network(&self) -> bool {
+        false
+    }
 }
 
 /// Counts every send that reached it (i.e. passed the gate) and answers

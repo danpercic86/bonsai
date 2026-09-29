@@ -250,9 +250,20 @@ fn restore_sources_in_project_files_and_build_props() {
         reason(&load(&r, &FakeHostEnv::new()), "Serilog"),
         custom("add.corp.invalid")
     );
+    // [P125h §3] a folder feed is a local feed, no longer a closed config.
+    let r = repo();
+    write(
+        &r,
+        "src/App/App.csproj",
+        "<Project><PropertyGroup><RestoreSources>C:\\feed</RestoreSources></PropertyGroup></Project>",
+    );
+    assert_eq!(
+        reason(&load(&r, &FakeHostEnv::new()), "Serilog"),
+        Some((PrivateReason::LocalFeed, None))
+    );
     for bad in [
         "<Project><PropertyGroup><RestoreSources>$(CorpFeed)</RestoreSources></PropertyGroup></Project>",
-        "<Project><PropertyGroup><RestoreSources>C:\\feed</RestoreSources></PropertyGroup></Project>",
+        "<Project><PropertyGroup><RestoreSources>ftp://feed.corp.invalid/</RestoreSources></PropertyGroup></Project>",
         "<Project><PropertyGroup><RestoreConfigFile>corp.config</RestoreConfigFile></PropertyGroup></Project>",
         "<Project><PropertyGroup>",
     ] {
@@ -310,13 +321,19 @@ fn local_feed(value: &str, mapping: &str) -> String {
 
 #[test]
 fn a_hostless_feed_is_a_private_source_not_a_closed_config() {
-    // [P125c2 review] no mapping ⇒ every package private, no display host.
-    for v in ["../feed", r"\\server\share", "%CORP_FEED%", r"C:\packages"] {
+    // [P125c2 review] no mapping ⇒ every package private, no display host;
+    // [P125h §3] a folder / UNC share is a local feed, `%VAR%` is not.
+    for (v, want) in [
+        ("../feed", PrivateReason::LocalFeed),
+        (r"\\server\share", PrivateReason::LocalFeed),
+        ("%CORP_FEED%", PrivateReason::CustomRegistry),
+        (r"C:\packages", PrivateReason::LocalFeed),
+    ] {
         let r = repo();
         write(&r, "NuGet.Config", &local_feed(v, ""));
         assert_eq!(
             reason(&load(&r, &FakeHostEnv::new()), "Serilog"),
-            Some((PrivateReason::CustomRegistry, None)),
+            Some((want, None)),
             "{v}"
         );
     }
@@ -342,7 +359,7 @@ fn fallback_package_folders_make_every_package_private_even_when_mapped() {
     );
     assert_eq!(
         reason(&load(&r, &FakeHostEnv::new()), "Serilog"),
-        Some((PrivateReason::CustomRegistry, None))
+        Some((PrivateReason::LocalFeed, None))
     );
     // A nearer `<clear/>` of the fallback section drops it.
     write(

@@ -26,7 +26,7 @@ use crate::eco::nuget::{is_nuget_manifest, is_project_file, BUILD_PROPS};
 use crate::fsread::{path_is_clean, safe_read, ReadOutcome, MAX_CONFIG_BYTES, MAX_FILE_BYTES};
 
 use super::host_env::{HostEnv, UserConfig, UserRead};
-use super::nuget_cfg::{nuget_config, restore_sources, NugetFile};
+use super::nuget_cfg::{nuget_config, restore_sources, FeedRef, NugetFile};
 use super::nuget_chain::{resolve, Chain, Level};
 use super::{Closed, EcoRegistry};
 
@@ -65,12 +65,12 @@ fn repo_level(workdir_canon: &Path, dir: &str) -> Result<Level, Closed> {
 }
 
 /// `[Q7]` the config levels above the workdir, plus `[P125c2 review]` the
-/// RestoreSources hosts of every `Directory.Build.props` there (a config
+/// RestoreSources feeds of every `Directory.Build.props` there (a config
 /// read only — never a manifest above the workdir; same read rules).
 fn above_levels(
     workdir_canon: &Path,
     env: &dyn HostEnv,
-) -> Result<(Vec<Level>, Vec<String>), Closed> {
+) -> Result<(Vec<Level>, Vec<FeedRef>), Closed> {
     let mut out = Vec::new();
     let mut restore = Vec::new();
     for dir in workdir_canon.ancestors().skip(1) {
@@ -119,7 +119,7 @@ pub(super) fn load(
     }
     let all_dirs: BTreeSet<&str> = starts.iter().flat_map(|s| dir_and_ancestors(s)).collect();
     let mut levels: BTreeMap<&str, Level> = BTreeMap::new();
-    let mut restore: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+    let mut restore: BTreeMap<&str, Vec<FeedRef>> = BTreeMap::new();
     for d in &all_dirs {
         levels.insert(d, repo_level(workdir_canon, d)?);
         if let Some(t) = read_repo(workdir_canon, &join(d, BUILD_PROPS), MAX_FILE_BYTES)? {
@@ -142,7 +142,7 @@ pub(super) fn load(
         let repo = dirs.iter().filter_map(|d| levels.get(d));
         chains.push(Chain {
             levels: repo.chain(&above).chain(&user).collect(),
-            restore_hosts: dirs
+            restore_feeds: dirs
                 .iter()
                 .filter_map(|d| restore.get(d))
                 .flatten()

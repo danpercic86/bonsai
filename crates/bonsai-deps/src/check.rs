@@ -165,8 +165,8 @@ pub fn run_check(
         checked_at_ms: ctx.now_ms,
         summary: summarize(&groups),
         groups,
-        // P125h §4b: wired to `HostEnv::profile_on_network` in h3.
-        network_profile: false,
+        // P125h §4b: the exact flag (R3), text-only, no I/O.
+        network_profile: ctx.env.profile_on_network(),
     };
     // 12. stamps
     Ok(CachedReport {

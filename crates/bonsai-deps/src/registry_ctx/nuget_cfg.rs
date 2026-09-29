@@ -18,18 +18,103 @@
 //! the result unpredictably. So: a section or `clear` element whose name
 //! differs only in case, or a repeated section, is AMBIGUOUS ⇒ `Closed`.
 
-use crate::model::ParseErrorKind;
+use crate::catalog::is_public_host;
+use crate::model::{Ecosystem, ParseErrorKind};
 use crate::xml_events::{walk, Elem, XmlError, XmlSink};
 
 use super::{extract_host, Closed};
 
+/// `[P125h §3]` what one package-source value points at, judged on its TEXT
+/// alone (the value is never opened: a UNC share causes no SMB traffic).
+/// `[MEDIUM-1]` holds no path text — only a URL host is kept.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum FeedRef {
+    /// An http(s) feed: its lowercase host.
+    Host(String),
+    /// A folder / file / UNC package source.
+    LocalPath,
+    /// A `%VAR%` NuGet does expand; we do not (it may be a URL). Also any
+    /// `%` (percent-encoding) and userinfo in front of a PUBLIC host
+    /// (`[P125h2 LOW-H1]`): private, with no host shown.
+    Unresolved,
+}
+
+/// `scheme:` per RFC 3986 (`ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"`).
+fn has_scheme(v: &str) -> bool {
+    let Some((scheme, _)) = v.split_once(':') else {
+        return false;
+    };
+    let mut chars = scheme.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+}
+
+/// `C:\…` / `C:/…`.
+fn is_drive_path(v: &str) -> bool {
+    let b = v.as_bytes();
+    b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && matches!(b[2], b'\\' | b'/')
+}
+
+/// `[P125h2 LOW-H1]` an http(s) value whose authority carries userinfo
+/// (`user@host`): the text before the `@` may be an expansion or an
+/// obfuscation, so a PUBLIC host after it is never trusted (a private one
+/// stays private, and is shown bare — the userinfo is never kept).
+fn has_userinfo(v: &str) -> bool {
+    let lower = v.to_ascii_lowercase();
+    let Some(rest) = lower
+        .strip_prefix("https://")
+        .or_else(|| lower.strip_prefix("http://"))
+    else {
+        return false;
+    };
+    let end = rest.find(['/', '?', '#', '\\']).unwrap_or(rest.len());
+    rest[..end].contains('@')
+}
+
+/// `[P125h §3]` classify one package-source value (trimmed by the caller).
+/// `None` ⇒ the caller fails closed. The arm order is load-bearing:
+/// `[P125h2 LOW-H1]` every expansion / userinfo check runs BEFORE the host is
+/// trusted, so `https://%FEED%@api.nuget.org/` or `https://$(F)@api.nuget.org/`
+/// can never pass as the public host it merely ends in.
+pub(crate) fn feed_ref(v: &str) -> Option<FeedRef> {
+    // An MSBuild expansion could expand to a URL we cannot see ⇒ closed.
+    if v.contains("$(") || v.contains("@(") || v.contains("%(") {
+        return None;
+    }
+    // A `%VAR%` NuGet expands (percent-encoding is indistinguishable from
+    // it on text alone, so it is treated the same: private, no host).
+    if v.contains('%') {
+        return Some(FeedRef::Unresolved);
+    }
+    let host = extract_host(v);
+    if has_userinfo(v) {
+        return Some(match host {
+            Some(h) if !is_public_host(Ecosystem::Nuget, &h) => FeedRef::Host(h),
+            _ => FeedRef::Unresolved,
+        });
+    }
+    if let Some(h) = host {
+        return Some(FeedRef::Host(h));
+    }
+    let lower = v.to_ascii_lowercase();
+    let local_prefix = lower.starts_with("file:")
+        || ["\\", "//", "/", "./", "../", ".\\", "..\\"]
+            .iter()
+            .any(|p| v.starts_with(p));
+    if local_prefix || is_drive_path(v) || !has_scheme(v) {
+        return Some(FeedRef::LocalPath);
+    }
+    // ftp:, any other scheme, `C:relative`, `https://` with no host.
+    None
+}
+
 /// What one `NuGet.Config` file says. Keys as written; hosts only.
 #[derive(Default)]
 pub(crate) struct NugetFile {
-    /// `packageSources/add` (key, host). `[P125c2 review]` host `None` = a
-    /// feed with no URL host (a local folder, a UNC share, `%VAR%`): kept
-    /// as a NON-PUBLIC source, so mapping can still scope it.
-    pub(crate) sources: Vec<(String, Option<String>)>,
+    /// `packageSources/add` (key, feed). `[P125c2 review]` a feed with no
+    /// URL host is kept as a NON-PUBLIC source, so mapping can still scope
+    /// it; `[P125h §3]` a value `feed_ref` rejects ⇒ `Closed`.
+    pub(crate) sources: Vec<(String, FeedRef)>,
     pub(crate) sources_clear: bool,
     /// `disabledPackageSources/add` (key, value is `true`).
     pub(crate) disabled: Vec<(String, bool)>,
@@ -111,11 +196,15 @@ impl ConfigSink {
                 if section == SOURCES {
                     // [P125c2 review] a feed with no URL host (a folder, a
                     // UNC share, `%VAR%`) is a hostless PRIVATE source; an
-                    // empty value is malformed ⇒ closed.
-                    if value.trim().is_empty() {
+                    // empty value (checked BEFORE `feed_ref`, which would
+                    // read it as a bare relative dir) or one `feed_ref`
+                    // rejects is malformed ⇒ closed.
+                    let value = value.trim();
+                    if value.is_empty() {
                         return Err(closed());
                     }
-                    self.out.sources.push((key, extract_host(&value)));
+                    let feed = feed_ref(value).ok_or_else(closed)?;
+                    self.out.sources.push((key, feed));
                 } else {
                     let on = value.trim().eq_ignore_ascii_case("true");
                     self.out.disabled.push((key, on));
@@ -193,7 +282,7 @@ fn is_redirect_prop(name: &str) -> bool {
 
 #[derive(Default)]
 struct RestoreSink {
-    hosts: Vec<String>,
+    feeds: Vec<FeedRef>,
 }
 
 impl XmlSink for RestoreSink {
@@ -216,18 +305,18 @@ impl XmlSink for RestoreSink {
             {
                 continue;
             }
-            // Any other property / item / metadata expansion, a folder or a
-            // share has no URL host ⇒ fail closed.
-            let host = extract_host(v).ok_or_else(closed)?;
-            self.hosts.push(host);
+            // `[P125h §3]` a folder / file / UNC feed is a local feed; any
+            // other property / item / metadata expansion or an unknown
+            // scheme ⇒ fail closed.
+            self.feeds.push(feed_ref(v).ok_or_else(closed)?);
         }
         Ok(())
     }
 }
 
-/// The RestoreSources hosts of one project file / `Directory.Build.props`.
-pub(crate) fn restore_sources(text: &str) -> Result<Vec<String>, Closed> {
+/// The RestoreSources feeds of one project file / `Directory.Build.props`.
+pub(crate) fn restore_sources(text: &str) -> Result<Vec<FeedRef>, Closed> {
     let mut sink = RestoreSink::default();
     walk(text, &mut sink).map_err(|_| Closed)?;
-    Ok(sink.hosts)
+    Ok(sink.feeds)
 }

@@ -2,12 +2,14 @@
 //! multi-file read, the NuGet machine-wide set, and the canonical follow
 //! roots (`[P125c1 review]`: canonicalized like the workdir ancestors).
 
+use std::ffi::OsString;
 use std::fs;
 
 use bonsai_deps::fsread::read_above_workdir_config;
 use bonsai_deps::registry_ctx::{HostEnv, UserRead};
 
 use super::host_env::*;
+use super::host_paths::{network_profile, Inputs, Os};
 use super::test_support::scratch;
 
 fn text(r: UserRead) -> String {
@@ -109,4 +111,109 @@ fn follow_roots_are_canonical_like_workdir_ancestors() {
         read_above_workdir_config(parent, ".npmrc", 1024, &roots),
         bonsai_deps::fsread::ReadOutcome::Content(_)
     ));
+}
+
+/// `[P125h §4b]` the pure detector behind `RealHostEnv::profile_on_network`
+/// (OS and variables injected, so every row runs on any host).
+fn on_network(os: Os, vars: &[(&str, &str)]) -> bool {
+    let var = |k: &str| {
+        vars.iter()
+            .find(|(n, _)| *n == k)
+            .map(|(_, v)| OsString::from(v))
+    };
+    let no_node = || None;
+    network_profile(&Inputs {
+        os,
+        var: &var,
+        node_dir: &no_node,
+    })
+}
+
+const WIN_LOCAL: &[(&str, &str)] = &[
+    ("USERPROFILE", r"C:\Users\u"),
+    ("APPDATA", r"C:\Users\u\AppData\Roaming"),
+    ("LOCALAPPDATA", r"C:\Users\u\AppData\Local"),
+    ("PROGRAMDATA", r"C:\ProgramData"),
+    ("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+];
+
+/// `WIN_LOCAL` with `key` set to (or replaced by) `value`.
+fn win_with(key: &'static str, value: &'static str) -> Vec<(&'static str, &'static str)> {
+    let mut v: Vec<(&str, &str)> = WIN_LOCAL
+        .iter()
+        .filter(|(k, _)| *k != key)
+        .copied()
+        .collect();
+    v.push((key, value));
+    v
+}
+
+#[test]
+fn a_unc_profile_dir_is_a_network_profile() {
+    assert!(on_network(
+        Os::Windows,
+        &win_with("APPDATA", r"\\srv\p\AppData\Roaming")
+    ));
+    assert!(on_network(
+        Os::Windows,
+        &win_with("USERPROFILE", r"\\srv\home\u")
+    ));
+    assert!(on_network(
+        Os::Windows,
+        &win_with("LOCALAPPDATA", r"\\?\UNC\srv\p\AppData\Local")
+    ));
+    assert!(on_network(
+        Os::Windows,
+        &win_with("CARGO_HOME", "//srv/cargo")
+    ));
+    assert!(on_network(
+        Os::Linux,
+        &[("HOME", "/home/u"), ("XDG_CONFIG_HOME", "//srv/cfg")]
+    ));
+}
+
+#[test]
+fn a_local_profile_is_not_a_network_profile() {
+    assert!(!on_network(Os::Windows, WIN_LOCAL));
+    // A verbatim LOCAL drive is not a network path.
+    assert!(!on_network(
+        Os::Windows,
+        &win_with("USERPROFILE", r"\\?\C:\Users\u")
+    ));
+    assert!(!on_network(Os::Linux, &[("HOME", "/home/u")]));
+    assert!(!on_network(Os::Mac, &[("HOME", "/Users/u")]));
+    // Nothing resolvable ⇒ no claim (the configs are Unresolvable instead).
+    assert!(!on_network(Os::Windows, &[]));
+    // LOW-E1 (deferred): a mapped network drive letter is NOT detected — a
+    // false negative by design, never a false positive.
+    assert!(!on_network(
+        Os::Windows,
+        &win_with("APPDATA", r"H:\AppData\Roaming")
+    ));
+}
+
+#[test]
+fn overrides_and_system_dirs_on_a_share_do_not_set_the_flag() {
+    // Only USER settings folders count; these still fail their own
+    // ecosystem closed (`configUnreadable` rows), just not report-wide.
+    for (k, v) in [
+        ("PIP_CONFIG_FILE", r"\\srv\cfg\pip.ini"),
+        ("VIRTUAL_ENV", r"\\srv\venv"),
+        ("GOENV", r"\\srv\go\env"),
+        ("NPM_CONFIG_USERCONFIG", r"\\srv\npm\.npmrc"),
+        ("NPM_CONFIG_PREFIX", r"\\srv\npm"),
+        ("PROGRAMDATA", r"\\srv\ProgramData"),
+        ("ProgramFiles(x86)", r"\\srv\Program Files (x86)"),
+    ] {
+        assert!(!on_network(Os::Windows, &win_with(k, v)), "{k}");
+    }
+    assert!(!on_network(
+        Os::Linux,
+        &[("HOME", "/home/u"), ("VIRTUAL_ENV", "//srv/venv")]
+    ));
+    // …while a UNC user base alongside them still does.
+    let mut v = win_with("PIP_CONFIG_FILE", r"\\srv\cfg\pip.ini");
+    v.retain(|(k, _)| *k != "APPDATA");
+    v.push(("APPDATA", r"\\srv\p\AppData\Roaming"));
+    assert!(on_network(Os::Windows, &v));
 }

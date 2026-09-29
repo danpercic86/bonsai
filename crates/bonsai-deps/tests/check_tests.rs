@@ -76,6 +76,21 @@ fn recount(groups: &[ManifestGroup]) -> DepSummary {
 }
 
 #[test]
+fn the_network_profile_flag_reaches_the_report() {
+    // [P125h §4b / R3] the exact `HostEnv::profile_on_network` flag.
+    let r = FixtureRepo::new();
+    r.track("Cargo.toml", corpus::CARGO_TOML)
+        .track("Cargo.lock", corpus::CARGO_LOCK);
+    for on in [false, true] {
+        let env = FakeHostEnv::new().network_profile(on);
+        match recorded_check_with(&r.wd, &env, &offline()).report {
+            Ok(c) => assert_eq!(c.report.network_profile, on),
+            Err(e) => panic!("run_check: {e:?}"),
+        }
+    }
+}
+
+#[test]
 fn npm_pnpm_plus_cargo_two_groups() {
     let r = FixtureRepo::new();
     r.track("web/package.json", corpus::PACKAGE_JSON)

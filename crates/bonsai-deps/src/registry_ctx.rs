@@ -68,6 +68,9 @@ pub(crate) struct EcoRegistry {
     /// (Cargo `[source.crates-io] replace-with`, a non-nuget.org NuGet
     /// source, a uv/poetry default index).
     pub(crate) replace_all: bool,
+    /// `[P125h §3]` the reason `replace_all` reports: `CustomRegistry`
+    /// unless every source behind it is a local NuGet feed (`LocalFeed`).
+    pub(crate) all_reason: PrivateReason,
     /// Named registries (Cargo `[registries.<name>]`) → display host.
     pub(crate) custom_hosts: BTreeMap<String, Option<String>>,
     /// npm/yarn/pnpm scope (`@corp`, lowercase) → display host.
@@ -84,6 +87,7 @@ impl EcoRegistry {
             default_public: true,
             default_host: None,
             replace_all: false,
+            all_reason: PrivateReason::CustomRegistry,
             custom_hosts: BTreeMap::new(),
             scoped: BTreeMap::new(),
             go_private_globs: Vec::new(),
@@ -231,7 +235,7 @@ impl RegistryContext {
             }
         }
         if e.replace_all {
-            return Some((PrivateReason::CustomRegistry, e.default_host.clone()));
+            return Some((e.all_reason, e.default_host.clone()));
         }
         if eco == Ecosystem::Npm {
             if let Some(host) = npm_scope(name).and_then(|s| e.scoped.get(&s)) {
@@ -301,3 +305,7 @@ mod pypi_load_tests;
 #[cfg(test)]
 #[path = "registry_ctx/nuget_load_tests.rs"]
 mod nuget_load_tests;
+
+#[cfg(test)]
+#[path = "registry_ctx/nuget_feed_tests.rs"]
+mod nuget_feed_tests;

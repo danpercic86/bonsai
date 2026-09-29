@@ -49,6 +49,8 @@ pub struct FakeHostEnv {
     follow_roots: Vec<PathBuf>,
     /// Names of the variables whose VALUE was handed out.
     values_read: Mutex<Vec<String>>,
+    /// `[P125h §4b]` what `profile_on_network` answers (default false).
+    network_profile: bool,
 }
 
 impl FakeHostEnv {
@@ -116,6 +118,12 @@ impl FakeHostEnv {
     /// above-workdir entries of exactly this ancestor are followed.
     pub fn follow_root(mut self, dir: &Path) -> Self {
         self.follow_roots.push(dir.to_path_buf());
+        self
+    }
+
+    /// `[P125h §4b]` stand in for a profile folder on a network share.
+    pub fn network_profile(mut self, on: bool) -> Self {
+        self.network_profile = on;
         self
     }
 
@@ -202,5 +210,9 @@ impl HostEnv for FakeHostEnv {
             MAX_CONFIG_BYTES,
             &self.follow_roots,
         ))
+    }
+
+    fn profile_on_network(&self) -> bool {
+        self.network_profile
     }
 }

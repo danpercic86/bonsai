@@ -784,3 +784,57 @@ exec tests.
 
 **OK to commit.** Counts: 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW (E1–E3), 3 INFO. No P125e-gated item from
 earlier rounds is open. Re-check the frontend link wiring in P125f/g.
+
+## P125h (h1–h3) re-check, 2026-09-29
+
+**Scope:**
+- h1, committed: `git show 3d59656 -- crates/bonsai-deps`.
+- h2 and h3, uncommitted: `git diff -- crates/bonsai-deps src-tauri/src/deps`, plus the untracked
+  `crates/bonsai-deps/src/registry_ctx/nuget_feed_tests.rs`.
+
+What I read:
+- the h1 source hunks: `check.rs`, `check/{vulns,verdict,rows,error}.rs`, `remote/{osv,osv_vuln,depsdev}.rs` and `model/summary.rs`;
+- every non-test h2/h3 hunk: `registry_ctx.rs`, `registry_ctx/{cargo_cfg,host_env,load_nuget,nuget_cfg,nuget_chain,fake_env}.rs`, `check.rs`, `model.rs`, and `src-tauri/src/deps/{host_env,host_paths,test_support}.rs`;
+- `extract_host` (`registry_ctx.rs:270`), `eco/cargo_lock.rs:10-61` (`lock_source`), the dependency `registry` / `registry-index` arms in `eco/cargo.rs:171-179`, `host_paths.rs:60-120` and `host_env.rs:90-110`.
+
+I did not read the h1 or h2 test bodies beyond a grep of their names and assertions.
+
+### Verification
+
+| Item | Result |
+|---|---|
+| **D7: LocalFeed can reach public?** | **No.** `FeedRef::LocalPath` is a unit variant with no path text. `nuget_chain::public` matches only `FeedRef::Host(h)` with `is_public_host`. `extract_host` is unchanged: `http`/`https` only, host only. `file://api.nuget.org/…` has no http(s) scheme, so it becomes `LocalPath`, which is private. h2 only moves values between two *private* reasons (`CustomRegistry` / `LocalFeed`). Where a value used to fail closed, it is now either all-private (`replace_all`) or still `Closed`. In mapped chains, a `LocalPath` feed makes `private_of` return `Some`, so `public_only` is false. The mixed-chain fallback is `CustomRegistry`. Sentinel `privacy_sentinel::a_package_behind_a_local_nuget_feed_is_never_sent` covers this, with a control that shows the package *would* be sent without RestoreSources. |
+| **D7: feed path text in cache, log or Debug?** | **No.** `FeedRef` holds only a URL host. `default_host` is `None` for local feeds. The saved h2/h3 diff adds no `{:?}`, `println!`, `eprintln!`, `log::` or `tracing::` outside test assertions. |
+| **LocalFeed: reads outside the fsread rules?** | **No.** `feed_ref` works on the text only; the value is never opened, so a UNC share causes no SMB traffic. `load_nuget.rs` changes only types (`Vec<String>` to `Vec<FeedRef>`). File discovery and `safe_read` / `read_above_workdir` are unchanged. |
+| **R1 (`registry.default` relaxed)** | **Clean.** The Cargo reference says `registry.default` is "the registry ... to use by default for registry commands like `cargo publish`" (fetched 2026-09-29). Dependency resolution does not consult it. More importantly, Bonsai never uses it as a source signal, and the paths that do change the origin are all still read: (a) `lock_source` makes only the two exact crates.io ids `Default`; any other `registry+` / `sparse+` source gets its own host (private unless it is a catalog host), a missing source is `Workspace`, `git+` is `Git`, and anything else is `Url`/Local; (b) a per-dependency `registry = "..."` becomes `RegistryRef::Named` and `registry-index` becomes its host or `Url`; (c) `[source.*] replace-with` / `CARGO_SOURCE_CRATES_IO_REPLACE_WITH` and `[registries.*] index` / `CARGO_REGISTRIES_*_INDEX` are still materialised. The `[registry]` table no longer has a DTO field, so `token` still never deserialises. `keep_cargo_env` now also drops `CARGO_REGISTRY_DEFAULT` by name. Covered by `token_sentinel::cargo_registry_default_no_longer_withholds_crates_io_deps` (`values_read` empty). |
+| **h1: fail-open** | **None found.** (1) A dropped (unmintable) id increments `PackageHits.dropped`, summed across pages, and gives `MalformedAdvisory`. (2) An oversize record gives the placeholder and `ResponseTooLarge` for every row carrying it, because `details` is keyed by id. (3) A direct row with no lookup gets `NoVersion`. (4) `vulns_checked = unverified.is_none()`. (5) A transitive row is emitted when it has advisories *or* is unverified, and is counted in `transitive_checked` only when verified. (6) The querybatch `results.len() != pending.len()` check means `BadJson` aborts, so there is no `zip` truncation. (7) The reuse guard drops every advisory of a prev row that has `vulns_unverified` set; an oversize placeholder always sits on such a row, and pre-h1 caches cannot hold one because that path aborted. (8) The frontend still gates on `vulnsChecked` (`DepsRow.tsx:40`, `depsView.ts:118`). |
+| **h1: breaker / DoS** | **Acceptable.** There is one `AtomicU32` for deps.dev and advisory-detail fetches, and response 33 aborts with `Service(TooLarge)`. `dropped` is bounded by the querybatch body cap. See INFO-H3. |
+| **`profile_on_network`: I/O** | **None.** `host_paths.rs` has no `fs` / `metadata` / `canonicalize` / `read_dir`, and `network_profile` is pure: `is_network_path` on text. `RealHostEnv` passes `node_dir = \|\| None`, so the PATH `lstat` probe is not run. It returns a `bool` only. |
+| **`profile_on_network`: env** | **Path vars only.** It calls `env_value` for USERPROFILE, HOME, APPDATA, LOCALAPPDATA, XDG_CONFIG_HOME, CARGO_HOME, plus the user-scoped `locate` rows. `OVERRIDES` masks PIP_CONFIG_FILE, GOENV, NPM_CONFIG_USERCONFIG, NPM_CONFIG_PREFIX and VIRTUAL_ENV, and system rows are skipped by `scope_of`. None of these is token-bearing, and no value is retained. `scope_of` is exhaustive and the const assertion pins `ALL_CONFIGS`. Mapped drive letters are not detected, per ruling LOW-E1 (false negative only). |
+| **No new deps / unsafe / process** | **Holds.** `git status --porcelain -- crates/bonsai-deps/dep-tree.txt crates/bonsai-deps/Cargo.toml src-tauri/Cargo.toml Cargo.lock` is empty. An added-line grep for `unsafe`, `Command`, `std::process`, `reqwest`, `fs::read` and `File::open` on the saved diff gives 0 hits. `lib.rs:20` still has `#![forbid(unsafe_code)]`. The untracked `nuget_feed_tests.rs` uses `std::fs` only on a tempdir in test code. The `no_process` scan passes. The mandatory-trigger paths (`tools_*.rs`, `tools/*.rs`, `commands/{external,tools}.rs`) are untouched. |
+| **`verdict_consistent`** | **Fresh-assembly only.** It is called only by `debug_assert!` in `rows.rs:405` and in tests, never on `cache::load` / view output, so a v1 cache row cannot trip it on upgrade. |
+
+**Tests (this session):**
+- `cargo nextest run -p bonsai-deps`: `Summary [   9.829s] 369 tests run: 369 passed, 3 skipped` (includes `privacy_sentinel`, `token_sentinel` and `no_process`).
+- `cargo nextest run -p bonsai -E 'test(/deps::/)'`: `Summary [   0.719s] 30 tests run: 30 passed, 773 skipped` (includes `host_env_tests::{a_unc_profile_dir_is_a_network_profile, a_local_profile_is_not_a_network_profile, overrides_and_system_dirs_on_a_share_do_not_set_the_flag}`).
+
+### Findings
+
+- **LOW-H1 — an expansion token in the userinfo of an http(s) feed URL is classified by its literal host.** This is an existing ordering that h2 kept.
+  - Where: `nuget_cfg.rs` `feed_ref`, which calls `extract_host` *before* the `$(` / `%` arms. The same ordering existed before h2, in `RestoreSink` and `ConfigSink`.
+  - Scenario: take `https://%FEED%@api.nuget.org/v3/index.json` (NuGet expands `%VAR%`) or `https://$(Feed)@api.nuget.org/...` (MSBuild RestoreSources). The URL parses with host `api.nuget.org`, so the value is public. If the variable expands to something like `corp.invalid/x?`, the effective feed is `corp.invalid`, and the chain's package ids go to deps.dev and OSV.
+  - An expansion in the host or port instead fails URL parsing (`%` is a forbidden host code point) and falls through to `Unresolved` / closed. In the path, it cannot change the host.
+  - Realism: very low. The config author is the owner of the private names, and nobody writes this form deliberately.
+  - Fix: at the primitive, before `extract_host` in `feed_ref`, return `None` for any `$(` / `@(` / `%(`, and `Unresolved` for any `%` when the URL has non-empty userinfo. Better still, treat any feed URL with userinfo as non-public.
+  - Confidence: high on the WHATWG/`url` parse behaviour, from reasoning; I did not execute it. Not blocking.
+- **INFO-H2 — `vulnsUnverified` and `networkProfile` have no frontend consumer yet.** There is no reference in `src/` and the TS `DepRow` type lacks the fields. This is not fail-open, because `vulnsChecked:false` still renders "not verified". The reason text and the network-profile banner are invisible until the UI increment lands.
+- **INFO-H3 — breaker availability.**
+  - A repo can list more than 32 packages whose genuine deps.dev bodies or advisory records exceed the caps, and so abort its own check. That gives the repo author nothing.
+  - A hostile proxy could already abort the check before h1.
+  - Accept.
+- **INFO-H4 — a 404 `unknown_advisory` placeholder is reusable from a verified prev row.** Its `modified` equals the querybatch value. It still renders as an advisory with Unknown severity, so it is not clean and not fail-open. It clears when OSV bumps `modified`. This predates h1.
+- **INFO-H5 — `CARGO_SOURCE_CRATES_IO_REPLACE_WITH` is still honoured**, although the Cargo reference says env is "not supported" for `replace-with`. Honouring it only makes more packages private (the conservative direction). Keep it.
+
+### Verdict (P125h h1–h3)
+
+**h1 is sound, and h2 + h3 are OK to commit.** Counts: 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW (H1, pre-existing ordering), 4 INFO. R1 is safe: `registry.default` changes no resolution source Bonsai relies on.
