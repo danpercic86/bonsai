@@ -692,3 +692,95 @@ exposes results:** MEDIUM-D1 (NuGet casing ⇒ silent "no vulnerabilities"). LOW
 - **MEDIUM-D1: resolved.** `eco/nuget.rs:101-103` sends the `packages.lock.json` casing only when every TFM agrees (`nuget_lock::canonical`). Otherwise `check/rows.rs:268` sets `vulns_checked=false` on zero hits. Exact-case fixtures in `fake_transport.rs` close the vacuous NTFS pass. I did not re-read `tests/check_copies.rs`.
 - **LOW-D2: resolved.** `remote/osv.rs:141-142` now uses `filter_map` plus `mint_id(...)?`, so a malformed id is dropped rather than failing the check.
 - **No new privacy issue.** The lock casing is looked up by the lowercased declared id, so it can only be a case variant of that same name. It still passes `classify`, including `valid_public_name`. Every private/local match is case-insensitive: `LocalNames::match_key` case-folds, and `nuget_best_mapping` and `packageSourceMapping` lowercase. So a recasing cannot turn a Private or Local row into Public.
+
+---
+
+## Re-check 2026-09-29 (P125e)
+
+**Scope:** `git diff c2d877c -- src-tauri crates/bonsai-deps Cargo.lock` plus the untracked files under
+`src-tauri/src/deps/` and `src-tauri/src/commands/deps.rs`. I read in full:
+- `deps/{host_env,gate,exec,store,hooks,view}.rs` and `commands/deps.rs`;
+- the `resolve_config_dir` / `read_above_workdir_config` / `open_nofollow` parts of `crates/bonsai-deps/src/fsread/`;
+- `deps/mod.rs` module gating;
+- `settings/prefs.rs` `DepTracker::default`;
+- the `view_sentinel_tests.rs` assertions (grep).
+
+I checked with commands:
+- `cargo tree -p bonsai -e features -i bonsai-deps`: `default` only;
+- `grep test-support`: only bonsai-deps' own dev-dependency; resolver 2;
+- no process/`open_url`/shell token in `src-tauri/src/deps` or `commands/deps.rs`;
+- the `no_process` scan roots include both;
+- the mandatory trigger paths (`tools_*`, `tools/*`, `commands/{external,tools}.rs`) appear in neither the diff
+  nor the untracked set.
+
+I did not read `host_paths.rs` beyond the `path_var`/`node_dir` sites, `failure.rs`, `plan.rs` or the
+exec tests.
+
+### Verification
+
+| Item | Result |
+|---|---|
+| **AC1**, no request before enable | **Holds.** Every route is gated: `DepTracker::default().enabled == false`, and unresolved settings ⇒ default OFF (`lib.rs`). `start_run` refuses when disabled, under the `repos` lock. `tick` returns when `!cfg.enabled`. `deps_get_view` returns `disabled()` before touching the repo or cache. `GatedTransport::send` refuses unless `enabled && epoch == run_epoch`. `ReqwestTransport::new()` at startup does no I/O. |
+| **AC12**, disable | **Holds.** `apply_config` clears `enabled`, bumps `epoch`, cancels every token, clears the map and `store::wipe`s, all under the `repos` lock. `finish` persists under the same lock after an epoch/token check, so no save can land after the wipe. The gate closes every later `send`; at most the `DEPSDEV_PARALLEL` requests already past it complete (LOW-1 wording matches). `progress` is suppressed by `live()`. `Cleared` is emitted for every known and open repo. Startup with `enabled == false` spawns `store::wipe`. |
+| Env handling | **Holds.** `env_value`, `var_present_ci` and `vars_with_prefix_ci` retain only the requested entry. The prefix variant runs the caller's key filter before keeping a value, and `var_present_ci` never reads a value. One comment is inaccurate; see LOW-E2. |
+| `test-support` reachable? | **No.** src-tauri depends on bonsai-deps with default features only. The feature comes in only through bonsai-deps' own dev-dependency, which resolver 2 does not unify into the app build. `deps/test_support.rs` is `#[cfg(test)]`. |
+| Process spawn | **None.** It is git2 in-process (`store::key_for` → `path_ignorecase`, and `view` → `probe_stale`). There are no process tokens in `deps/**` or `commands/deps.rs`. `open_nofollow` uses std `OpenOptionsExt::custom_flags`, not `libc`. |
+| Token sentinel | **Holds.** `view_sentinel_tests.rs` asserts 0 sends, no token in the serialized view, `Debug`, event payloads or cache bytes, and no `@` in `registry_host`. `emit_logged` logs event names only. `store::wipe`'s `eprintln!` carries no path. |
+| Links | **Unchanged.** Nothing under `deps/` calls `open_url`. `registry_url`/advisory `url` stay Rust-built (§7.6). The frontend wiring is P125f/g; re-check that it passes only `row.registryUrl`/`advisory.url` to `openUrl`. |
+| Q9-1 / Q9-2 / Q9-3 / Q9-4 / Q9-5 | **Resolved in code.** Symlinks are followed only for fixed user files and for above-workdir dirs equal to canonical `$HOME`/`$CARGO_HOME`; all else is no-follow ⇒ fail-closed. `UserRead::from_outcome` is shared. DOS device names are rejected on Windows. Opens use O_NOFOLLOW / `FILE_FLAG_OPEN_REPARSE_POINT` plus a `same_file` check. |
+
+### Rulings on the implementer's MUST-surface items
+
+1. **The PATH probe for `node` is acceptable, with an optional LOW narrowing (LOW-E1).**
+   - UNC entries are filtered by text. Each entry goes through `resolve_config_dir`, which checks every link
+     target before touching it. `node` itself is `lstat`ed, not followed. The probe runs once per process on
+     the blocking pool, under the deadline.
+   - A **mapped drive letter** (`Z:\bin`) passes the text check. Touching it may make Windows reconnect a dead
+     persistent mapping (a stall of seconds on the first check) and authenticate to **that** server.
+   - That server and the PATH entry are both the user's own configuration, and every shell or Explorer
+     session touches it too. An attacker cannot choose the host, so there is **no attacker-steerable NTLM leak**.
+   - Optional narrowing: on Windows, skip PATH entries whose drive root `GetDriveTypeW` reports as
+     `DRIVE_REMOTE`, or probe only drives that host `%ProgramFiles%`/`%LOCALAPPDATA%`/`%USERPROFILE%`.
+2. **A UNC-redirected `%APPDATA%` or profile ⇒ everything fail-closed. Accept it, but make it legible.**
+   - This is correct and contract-mandated (never touch a network path).
+   - The UI (P125g) must render the `ConfigUnreadable` reason with copy that names the cause, e.g. "settings
+     folder is on a network location". Otherwise a roaming-profile user just sees "all private" with no
+     explanation. INFO for ui-designer.
+3. **Vetting `$HOME`/`$CARGO_HOME` with `resolve_config_dir` before `canonicalize` is safe.**
+   - `resolve_config_dir` rejects UNC and device-namespace text, and every link target, before anything is touched.
+   - `canonicalize` then re-walks links that were already vetted. A swap in between needs local write access,
+     which is outside the threat model.
+   - The only network `canonicalize` can reach is a mapped drive letter holding `$HOME`, i.e. the user's own
+     share, which git and the shell touch anyway. It then returns `\\?\UNC\…`, which the above-workdir
+     `net()` check rejects, so it fails safe.
+   - A mount-point reparse on `$HOME` (`\\?\Volume{…}`) is rejected as a network/device path, so it gets no
+     follow root, which also fails safe.
+
+### Findings
+
+- **LOW-E1 — the node PATH probe can touch mapped network drives (Windows).** See ruling 1. Optional narrowing only.
+- **LOW-E2 — an inaccurate claim in `host_env.rs`.**
+  - The module doc says "nothing is copied or snapshotted". In fact `std::env::vars_os()` snapshots the whole
+    environment, values included, into an internal `Vec` when it is called.
+  - These copies are transient, never exposed and never `Debug`-printed, so there is no exposure. The
+    `[NEW-2]` goal (no non-matching value enters *our* data structures) is met.
+  - Fix the comment so a later reviewer does not rely on a false guarantee.
+- **LOW-E3 — belt-and-braces for timed-out runs.**
+  - After a `CHECK_DEADLINE` timeout, `GatedTransport::is_open` checks only `enabled && epoch`, not the run's
+    `CancelToken`. So a zombie worker could start one more request before its next cancel check.
+    `bonsai_deps::check::pool` checks cancel before each item, which bounds this to requests already in flight.
+  - Fix: give `GatedTransport` the run's token and add `&& !token.is_cancelled()` to `is_open`. That makes the
+    gate the single choke point for timeout as well as disable.
+- **INFO:**
+  - The hand-coded `O_NOFOLLOW` values are correct for macOS/BSD and Linux x86/arm/aarch64/ppc. Any other Unix
+    target gets 0 (no NOFOLLOW), but the `same_file` comparison still rejects a swapped target.
+  - The startup wipe is spawned asynchronously. A same-second enable-then-finish could have its fresh cache
+    wiped, which fails safe.
+  - A renderer compromise can flip `depTracker.enabled` through `set_ui_settings`. That is consent held in a
+    webview-writable setting; the impact is public names going to deps.dev/OSV. Accept, and note it in the
+    threat model.
+
+### Verdict (P125e)
+
+**OK to commit.** Counts: 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW (E1–E3), 3 INFO. No P125e-gated item from
+earlier rounds is open. Re-check the frontend link wiring in P125f/g.

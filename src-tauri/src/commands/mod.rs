@@ -22,6 +22,8 @@ mod health;
 mod history;
 mod hooks;
 mod mcp;
+// P125 §8: the dependency tracker (`deps_get_view` / `deps_check_now`).
+mod deps;
 mod merge;
 mod profiles;
 mod rebase;
@@ -103,6 +105,9 @@ mod tests_ui_settings_patch;
 mod tests_ui_settings_patch_flags;
 
 #[cfg(test)]
+mod tests_ui_settings_dep_tracker;
+
+#[cfg(test)]
 mod tests_ui_settings_external_tools;
 
 #[cfg(test)]
@@ -169,6 +174,7 @@ pub use cherrypick::*;
 pub use compose::*;
 pub use config::*;
 pub use debug::*;
+pub use deps::*;
 pub use diff::*;
 pub use discard::*;
 pub use external::*;

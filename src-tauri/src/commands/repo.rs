@@ -100,6 +100,7 @@ pub async fn open_repo(
                 },
                 &crate::obs::TraceMeta::root("watcher"),
             );
+            crate::deps::hooks::on_watcher_burst(&emit_app, &repo_id); // P125 §6.6 stale probe
         })
     })
     .await?;
@@ -213,15 +214,20 @@ pub async fn remove_recent_repo(
 /// does NOT change any already-connected AI session's selection.
 #[tauri::command]
 pub async fn set_active_repo(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     repo_id: Option<String>,
 ) -> Result<(), AppError> {
     // Poison recovery (audit §3.8): the guarded Option<String> is structurally
     // valid at every point, so a past panic under the lock must not brick this.
-    *state
-        .active_repo
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = repo_id;
+    let old = std::mem::replace(
+        &mut *state
+            .active_repo
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+        repo_id.clone(),
+    );
+    crate::deps::hooks::on_active_set(&app, old.as_deref(), repo_id.as_deref()); // P125 §6.3
     Ok(())
 }
 
@@ -355,9 +361,11 @@ where
 /// §4.3).
 #[tauri::command]
 pub async fn close_repo(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     repo_id: String,
 ) -> Result<(), AppError> {
+    crate::deps::hooks::on_closed(&app, &repo_id); // P125 §6.3: cancel + forget
     close_repo_inner(state.inner(), &repo_id).await
 }
 

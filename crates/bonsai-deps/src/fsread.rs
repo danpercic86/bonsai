@@ -193,6 +193,7 @@ mod follow;
 mod open_nofollow;
 pub use follow::{
     is_dos_device_name, is_network_path, read_above_workdir_config, read_config_follow,
+    resolve_config_dir,
 };
 use open_nofollow::{open_nofollow, same_file};
 

@@ -18,6 +18,9 @@ tauri-build = { version = "2", features = [] }
 bonsai-core = { path = "../crates/bonsai-core" }
 bonsai-mcp = { path = "../crates/bonsai-mcp" }
 bonsai-forge = { path = "../crates/bonsai-forge" }
+# P125e dependency tracker. NO `test-support` feature: it exposes the fail-open
+# `FakeHostEnv` / `FakeTransport` test doubles (contract §10 P125e row).
+bonsai-deps = { path = "../crates/bonsai-deps" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"

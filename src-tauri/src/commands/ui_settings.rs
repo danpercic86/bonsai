@@ -162,7 +162,7 @@ pub struct UiSettingsPatch {
     /// precedent). NOT clamped: no field has a numeric range.
     pub dev: Option<DevSettings>,
     /// P125 §2.2: whole-struct patch (the `auto_fetch` precedent), clamped by
-    /// `clamp_dep_tracker`. `deps::apply_config` hook-up lands in P125e.
+    /// `clamp_dep_tracker`. `set_ui_settings` then calls `deps::apply_config`.
     pub dep_tracker: Option<DepTracker>,
 }
 
@@ -421,6 +421,9 @@ pub async fn set_ui_settings(
     {
         eprintln!("bonsai: cannot apply dev-mode logging settings (non-fatal): {e}");
     }
+    // P125 §8: enable starts a check for the active tab; disable cancels,
+    // wipes the cache and emits `Cleared` per open tab (§6.4).
+    crate::deps::hooks::apply_settings(&app, ui.dep_tracker).await;
     Ok(ui)
 }
 

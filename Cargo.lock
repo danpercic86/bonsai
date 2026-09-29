@@ -392,6 +392,7 @@ version = "1.6.0"
 dependencies = [
  "axum",
  "bonsai-core",
+ "bonsai-deps",
  "bonsai-forge",
  "bonsai-mcp",
  "git2",

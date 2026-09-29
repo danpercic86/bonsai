@@ -272,3 +272,49 @@ fn the_user_read_mapping_fails_closed_on_every_non_content_outcome() {
         assert!(matches!(UserRead::from_outcome(o), UserRead::Unreadable));
     }
 }
+
+#[test]
+fn config_dirs_resolve_locally_and_refuse_network_or_non_dir_targets() {
+    let (_d, r) = root();
+    fs::create_dir_all(r.join("Config")).unwrap();
+    fs::write(r.join("file"), "x").unwrap();
+    assert_eq!(
+        resolve_config_dir(&r.join("Config")).unwrap(),
+        r.join("Config")
+    );
+    assert!(matches!(
+        resolve_config_dir(&r.join("missing")),
+        Err(ReadOutcome::Absent)
+    ));
+    assert!(matches!(
+        resolve_config_dir(&r.join("file")),
+        Err(ReadOutcome::NotAFile)
+    ));
+    assert!(matches!(
+        resolve_config_dir(Path::new("relative/Config")),
+        Err(ReadOutcome::Unreadable)
+    ));
+    let unc = if cfg!(windows) {
+        r"\\zz-no-such-host\share"
+    } else {
+        "//zz-no-such-host/share"
+    };
+    assert!(matches!(
+        resolve_config_dir(Path::new(unc)),
+        Err(ReadOutcome::NotAFile)
+    ));
+    // A linked config dir is followed to its local target; a link whose
+    // target is a network share is refused from the link text.
+    if try_symlink_dir(&r.join("Config"), &r.join("linked")) {
+        assert_eq!(
+            resolve_config_dir(&r.join("linked")).unwrap(),
+            r.join("Config")
+        );
+    }
+    if link_file(Path::new(unc), &r.join("to-unc")) {
+        assert!(matches!(
+            resolve_config_dir(&r.join("to-unc")),
+            Err(ReadOutcome::NotAFile)
+        ));
+    }
+}

@@ -311,6 +311,9 @@ pub async fn run_scheduler(app: tauri::AppHandle, tick: std::time::Duration) {
                 .collect()
         };
         let sched = app.state::<SchedulerState>();
-        let _detached = tick_once(&repos, &sched, unix_now_ms(), &emit);
+        let now = unix_now_ms();
+        let _detached = tick_once(&repos, &sched, now, &emit);
+        // P125 §6.1: the dependency tracker plans on the same loop (no JobKind).
+        crate::deps::hooks::scheduler_tick(&app, now);
     }
 }

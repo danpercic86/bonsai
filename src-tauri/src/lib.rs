@@ -4,6 +4,7 @@ pub mod activity_hub;
 #[path = "bundle_config_tests.rs"]
 mod bundle_config_tests;
 pub mod commands;
+pub mod deps;
 pub mod graph_cache;
 pub mod mcp;
 pub mod obs;
@@ -78,9 +79,13 @@ pub fn run() {
             // non-fatal — the scheduler just starts with defaults (disabled).
             let handle = app.handle().clone();
             let sched = app.state::<scheduler::SchedulerState>();
+            // P125 §6.4: the tracker starts from the persisted setting (default
+            // OFF when settings cannot be resolved — nothing is ever sent then).
+            let mut dep_tracker = settings::DepTracker::default();
             match settings::settings_file(&handle) {
                 Ok(file) => {
                     let s = settings::load_from(&file);
+                    dep_tracker = s.dep_tracker;
                     scheduler::apply_config(
                         &sched,
                         scheduler::JobsConfig {
@@ -207,6 +212,7 @@ pub fn run() {
                     }
                 });
             }
+            deps::hooks::install(&handle, dep_tracker);
             tauri::async_runtime::spawn(scheduler::run_scheduler(
                 handle,
                 std::time::Duration::from_secs(scheduler::TICK_SECONDS),
@@ -411,7 +417,9 @@ pub fn run() {
                 commands::log_export_session,
                 commands::logs_delete_all,
                 commands::metrics_snapshot,
-                commands::metrics_reset
+                commands::metrics_reset,
+                commands::deps_get_view,
+                commands::deps_check_now
             ],
         ))
         .build(tauri::generate_context!())

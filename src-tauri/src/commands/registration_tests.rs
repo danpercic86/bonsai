@@ -240,3 +240,23 @@ fn test_module_filter_covers_all_naming_shapes() {
     assert!(!is_test_module_stem("contest"));
     assert!(!is_test_module_stem("attests"));
 }
+
+/// P125 §8: both dependency-tracker commands are defined AND registered (the
+/// bijection above would also pass with neither present).
+#[test]
+fn dependency_tracker_commands_are_registered() {
+    let root = manifest_dir();
+    let defined = all_defined_commands(&root.join("src").join("commands"));
+    let lib_rs = std::fs::read_to_string(root.join("src").join("lib.rs")).expect("read lib.rs");
+    let registered = registered_commands(&lib_rs);
+    for name in ["deps_get_view", "deps_check_now"] {
+        assert!(
+            defined.contains(name),
+            "`{name}` is not a #[tauri::command]"
+        );
+        assert!(
+            registered.contains(name),
+            "`{name}` is not in generate_handler!"
+        );
+    }
+}

@@ -241,6 +241,32 @@ pub fn read_above_workdir_config(
     read_resolved(dir, rel, cap, follow)
 }
 
+/// `[P125e]` the FOLLOWING resolution of a fixed user / system config
+/// DIRECTORY, for the two places the real `HostEnv` needs a directory rather
+/// than a file: listing the NuGet machine-wide `Config/*.config` set, and
+/// vetting `$HOME` / `$CARGO_HOME` before they are canonicalized as follow
+/// roots. Same resolver as [`read_config_follow`]: every link target is
+/// checked BEFORE it is touched (a network / UNC / device-namespace target
+/// is rejected unopened), so the caller's later `read_dir` / `canonicalize`
+/// only ever walks a local path. `Ok` only for an existing directory; a
+/// missing one is `Err(Absent)`; a relative path, a dangling link or a
+/// non-directory target is not `Ok`.
+pub fn resolve_config_dir(dir: &Path) -> Result<PathBuf, ReadOutcome> {
+    if net(dir) {
+        return Err(ReadOutcome::NotAFile);
+    }
+    if !dir.is_absolute() {
+        return Err(ReadOutcome::Unreadable);
+    }
+    let out = resolve(dir, true)?;
+    match fs::symlink_metadata(&out) {
+        Ok(md) if md.is_dir() => Ok(out),
+        Ok(_) => Err(ReadOutcome::NotAFile),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(ReadOutcome::Absent),
+        Err(_) => Err(ReadOutcome::Unreadable),
+    }
+}
+
 #[cfg(test)]
 #[path = "follow_tests.rs"]
 mod tests;
