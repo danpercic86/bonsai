@@ -249,28 +249,9 @@ graph-layout algorithm.
 
 ## Subagents (`.claude/agents/`)
 
-**Per-milestone loop** (every milestone runs through these):
+Per-milestone loop: `architect` → `senior-dev` → `reviewer` → `tester`. On-demand: `ui-designer`,
+`docs-curator`, `security-auditor`, `perf-reviewer`, `refactorer` — see each agent's description.
 
-- **`architect`** — designs module boundaries, Rust/TS interface contracts, the IPC surface, and the
-  commit-graph algorithm. Writes contract files to `docs/contracts/` only; never edits application
-  code.
-- **`senior-dev`** — the implementer. Writes all Rust/TS/React to the architect's contracts.
-- **`reviewer`** — read-only diff review (correctness, boundary, performance, safety). Reports
-  MUST-FIX / SHOULD-FIX / NIT + a verdict; never edits code.
-- **`tester`** — writes/runs `cargo test` + fixtures and a frontend smoke checklist. Touches only test
-  code and fixtures; never edits application code to make a test pass.
-
-**On-demand specialists** (not part of the per-milestone loop — invoke when the trigger applies):
-
-- **`ui-designer`** — owns the visual language: layout, placement, tokens, states, motion,
-  microcopy, and accessibility. Writes UI contracts to `docs/contracts/<milestone>-ui.md` and
-  maintains `docs/contracts/ui-reference.md`; never edits application code. Invoke for any work
-  that changes what the user sees (workflow step 2b), or standalone for a design review.
-- **`docs-curator`** — compacts and curates the written record: keeps `TODO.md` under ~300 lines,
-  archives resolved history losslessly into `docs/history/`, maintains `docs/contracts/INDEX.md`,
-  and keeps `CHANGELOG.md`/`README.md` honest. Invoke after a batch of milestones goes green, when
-  USER CHECKPOINTs are confirmed, or when `TODO.md` has bloated. It never upgrades status on its
-  own and never archives a milestone with a pending USER CHECKPOINT.
 - **`security-auditor`** — audits untrusted-input and privileged-capability surfaces: AI features
   that feed repo content to a model, the MCP server's write tools, external-process launching,
   credential/token storage, signing + the updater trust chain, hook execution, Tauri
@@ -297,13 +278,6 @@ graph-layout algorithm.
   the rule above — that one was adopted *because* a 222-line diff slipped past review on a
   `docs(mcp):` subject, so the trigger exists for the diff nobody flags, and a clean history is not
   evidence the next diff is clean.
-- **`perf-reviewer`** — read-only review of a dev-mode session log + `usage.json`: ranked
-  perf/render-stability findings with `refs` evidence, a `file:line` hypothesis and a proposed
-  deterministic failing check. Invoked via `/perf-review`; never fixes, never files board items
-  (spec 008 / P120).
-- **`refactorer`** — strictly behavior-preserving restructuring, chiefly splitting oversized files
-  back under the ~500-line limit. Proves equivalence by identical before/after test counts. Never
-  fixes bugs or changes behavior in the same pass — it reports what it finds instead.
 
 To begin or resume, follow `.claude/orchestrator-kickoff.md`.
 

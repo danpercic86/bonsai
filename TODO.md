@@ -484,6 +484,219 @@ batch's paths at teardown"; `watcher/mod.rs:13-14` "no timers idle" is stale (60
   Rev 2 predates both → route to `architect` first.
 - Full design text and evidence: archive Part 88.1 (the P113d paragraphs).
 
+## P125 — dependency update tracker — `in-progress`
+
+**Current step:** P125a–g + P125h follow-ups committed through `14402d1`; AI gate green 2026-09-29
+at `14402d1` — **awaiting USER CHECKPOINT** (`docs/contracts/P125-smoke-checklist.md` §C steps
+1–18). Not declared passed. `P125-followups.md` §8 doc amendments applied to
+`P125-dependency-tracker.md` (§2.1, §2.3, §5.3, §7.5) and `P125-ecosystems.md` (E3, E5, E6).
+
+History: P125 — `architect` contract written 2026-09-28
+(`docs/contracts/P125-dependency-tracker.md`, 768 lines, sub-increments P125a–g); **awaiting user
+rulings on contract §11 Q1–Q6** → **RULED 2026-09-28: all six recommendations accepted**
+(recorded in contract §11). `ui-designer` done → `docs/contracts/P125-ui.md` (610 lines;
+placement = header-toolbar "Dependencies" icon → 880px dialog; ui-reference §1/§11 updated).
+`security-auditor` pre-audit done → `docs/audit-2026-09-28-P125-deps-contract.md`: **amend first**
+(0 CRIT / 2 HIGH / 4 MED / 4 LOW). Now: `architect` amending the contract (audit findings + UI
+§11 flags) → **rev 2 done** (971 lines + `P125-ecosystems.md`); new Q7/Q8 **RULED 2026-09-28:
+defaults accepted** (Q7 Cargo/NuGet config walk to fs root; Q8 neutral OSV copy). **Rev 3 done**
+(888 lines; `P125-ecosystems.md` 186 lines holds E3–E6). `security-auditor` re-check: **OK to
+implement** after NEW-1..NEW-3 + notes, applied by orchestrator; design docs committed `c66e2ad`.
+**P125a** implemented by `senior-dev` (new `crates/bonsai-deps`, uncommitted); orchestrator re-ran:
+nextest 65/65, doctests 13/13, clippy `--all-targets -D warnings` clean, fmt clean. `dep-tree.txt`
+now path-stripped via `sed` (contract §7.4 updated). `reviewer`: **approve**, no MUST-FIX →
+committed **`a4cd1d4`**. Reviewer SHOULD-FIX 1–3 (scan hardening, `package =` rename guard,
+loader fail-open paths) folded into P125b. **P125b** implemented (uncommitted); orchestrator re-ran:
+nextest 149 passed / 1 skipped, doctests 13/13, clippy + fmt clean, `cargo deny` ok, dep-tree
+identical. (`a4cd1d4` had omitted `bonsai-deps` from `deny.toml` → `cargo deny` red until P125b.)
+`reviewer` on P125b: **REQUEST CHANGES** — 2 MUST-FIX (BOM/CR-only lines drop `@scope:registry`
+→ fail-open; `YNode` derives Debug), orchestrator-verified in code. Now: `senior-dev` round 2
+(MUST-FIX + 5 cheap SHOULD-FIX). Deferred items written into contract §10 (P125c1 npm/pnpm
+above-workdir walk + pnpm global `config.yaml`; P125d builtin npmrc, `pnpm_config__auth`
+presence-only, catch_unwind/MAX_PARSE_BYTES; P125e precondition). Symlink tests: unix CI only.
+Round 2 re-run: nextest 155 passed / 1 skipped, doctests 13/13, clippy/fmt/deny clean →
+`reviewer` **approve** → committed **`615593b`**. Now: **P125c1** (Cargo + Go + deferred npm/pnpm
+above-workdir walk + pnpm global `config.yaml` + TOML depth pre-scan) with `senior-dev`.
+P125c1 implemented; re-run: nextest 201 passed / 1 skipped, doctests 13/13, clippy/fmt/deny
+clean, dep-tree identical (+`toml` 1.1.4). `reviewer`: **request changes** — MUST-FIX Go
+corporate `GOPROXY` fail-open (orchestrator-verified). **Q9 RULED 2026-09-28 (user):** follow
+symlinked config files above the workdir (regular-file-after-open, capped, key-filtered, no UNC);
+recorded in contract §11. Now: `senior-dev` round 2 (GOPROXY/GOSUMDB/GOINSECURE, pnpm
+`auth.ini`, Q9, sparse-switch exemption, prod `read_nofollow_under`, junction fixture), then
+`reviewer` + `security-auditor` on round 2. Round 2 re-run: nextest 213 passed / 1 skipped,
+doctests 13/13, clippy/fmt/deny clean. `reviewer`: new MUST-FIX (Cargo source replacement
+first-seen → fail-open; verified `cargo_cfg.rs:102,112,118`). `security-auditor` Q9 re-pass:
+OK-as-wip, 1 MED (Unix automounter via followed symlink) + 4 LOW. **Q9 NARROWED — RULED
+2026-09-28 (user):** follow only fixed user/system configs + `$HOME`/`$CARGO_HOME` ancestors.
+Round 3 re-run: nextest 221 passed / 1 skipped, doctests 13/13, clippy/fmt/deny clean (13
+symlink tests skip on this Windows host → Linux run is a P125e precondition) → `reviewer`
+**approve** → committed **`eeb85c5`**. **P125c2** (PyPI + NuGet) implemented (uncommitted);
+re-run: nextest 282 passed / 1 skipped (16 symlink tests skip on Windows), doctests 13/13,
+clippy/fmt/deny clean, dep-tree identical (+`quick-xml` 0.41). User `%APPDATA%\NuGet\NuGet.Config`
+confirmed untouched by the implementer's `dotnet nuget` checks. `reviewer`: **request changes**
+— 2 MUST-FIX (includer's `-i` not applied to included files; PDM/Rye indexes unread),
+orchestrator-verified. Now: `senior-dev` round 2 (+ mixed-`<clear/>` level closed, bare archive
+lines Local, no default `read_user_files`, local/UNC/`%VAR%` feeds + `fallbackPackageFolders` as
+hostless private sources, in-repo venv `pip.conf`, `Directory.Build.props` in the Q7 walk).
+Round 2 re-run: nextest 293 passed / 1 skipped (17 skip on Windows), doctests 13/13,
+clippy/fmt/deny/workspace clean → `reviewer` **approve** → committed **`5d1dc96`**. All 5 v1
+ecosystems done. Now: **P125d** (remote deps.dev/OSV, cvss, check pipeline, cache, full
+sentinels) with `senior-dev`, then `reviewer` + **`security-auditor`**. P125d implemented
+(uncommitted); re-run: nextest 337 passed / 2 skipped, doctests 13/13, clippy/fmt/deny clean,
+dep-tree identical (reqwest 0.13 blocking + rustls ring; no compression crates). Live probes:
+yanked = `isDeprecated` (Q1 holds), OSV batch 1000 VERIFIED, Go `v` prefix irrelevant. Now:
+`reviewer` + `security-auditor` in parallel. `reviewer`: **request changes** — MUST-FIX
+transitive copies dropped by name-only filter (verified `check/rows.rs:80-97`).
+`security-auditor`: **OK to commit**, MEDIUM-D1 NuGet case-sensitive OSV ⇒ silent "no vulns"
+(fix before P125g), LOW-D2 malformed advisory id aborts check. Reviewer/auditor split on
+`npm_config__auth` → orchestrator sided with auditor (no routing change ⇒ not checked).
+Now: `senior-dev` round 2 (MUST-FIX + D1 + D2 + cache FIFO, TLS test, pagination test, docs).
+Follow-ups: ui-designer consent copy — disclose org-private packages hosted on npmjs.org are
+sent; per-package TooLarge instead of whole-check abort; live pagination probe; package whose
+only advisories had malformed ids reads clean (→ `vulns_checked=false`).
+Round 2 re-run: nextest 342 passed / 2 skipped, doctests 13/13, clippy/fmt/deny clean →
+`reviewer` **approve**, `security-auditor` **OK** (D1/D2 resolved) → committed **`7619cba`**.
+(Implementer's `dotnet restore` probe contacted api.nuget.org for one public package — outside
+the stated host list; reported to user.) **P125e Linux precondition MET 2026-09-28:** podman
+`rust:1.97-bookworm` (user-approved download), uid 1000, `cargo test -p bonsai-deps --locked` at
+`7619cba` → 357 passed / 0 failed / 2 ignored (incl. 13 doctests), 0 `skipping:` lines, 17
+symlink tests `ok` (log: `D:\Data\Temp\P125e-linux\run2.log`).
+**PAUSED 2026-09-28 (user left) — resume here:** P125f `senior-dev` was STOPPED mid-work (last
+step: wiring into `src/ipc/mock.ts` + `mock/handlers/session.ts`). Its partial, UNREVIEWED,
+UNVERIFIED changes are uncommitted in the working tree (src/ipc/{types,tauri,mock,fixtures}/*
+depTracker*, src/hooks/useDepTracker*, src/settings/*, src/obs/rawArgPolicy*). On resume: re-spawn
+`senior-dev` for P125f with the same brief, telling it to inspect and finish (not restart) the
+partial work; then tsc + targeted vitest, `reviewer`, commit `wip(P125f)`; then P125e.
+**Resumed 2026-09-29:** same `senior-dev` resumed to finish P125f in place. P125f TS done;
+orchestrator re-run: tsc clean, vitest 5 files / 57 tests pass, lint:size OK — but Rust
+`rust_default_ui_settings_match_the_shared_oracle` FAILS (TS oracle has `depTracker`, Rust
+doesn't). Pulled P125e's **setting** item (Rust `dep_tracker` field + `clamp_dep_tracker`
+1..=168) forward into P125f so no commit is red. Added (`settings/{prefs,clamp}.rs`,
+`settings.rs` at exactly 500 lines, `commands/ui_settings.rs`, new `settings_dep_tracker_tests.rs`);
+re-run: `cargo nextest -p bonsai settings` 151/151 incl. parity, clippy `--tests` + fmt clean, tsc
+clean. No mandatory security-trigger path touched. `reviewer`: **approve**, no MUST-FIX;
+orchestrator fixed 2 fixture `declared` values (path string → null) + a stale comment; re-run
+tsc clean, vitest 57/57. P125e obligations added to contract §10.
+P125 follow-ups (architect): E5 asks for a transitive+dev row Rust can't emit (carry scope onto
+transitive rows, or drop it from E5); §2.3 says derived states are "computed in the hook" →
+name `depsView.ts` (P125g); `settings.rs` at 500 lines — split before the next field.
+Committed **`c2d877c`** `wip(P125f)`. Now: **P125e** (src-tauri: state, planner, exec, scheduler,
+GatedTransport, deadline, commands + event, real HostEnv, disable/startup wipe) with `senior-dev`,
+then `reviewer` + **`security-auditor`**.
+P125e implemented (uncommitted); re-run: nextest `deps::` 22/22, `settings` 153/153,
+`registration` 4/4, `bonsai-deps` 343 passed / 2 skipped; clippy/fmt --all/deny/tsc clean; no
+trigger path; bonsai-deps dep without `test-support`. `reviewer`: **approve** (no MUST-FIX;
+SHOULD-FIX: refresh joins a cancelled run; cancelled-then-deadline reported as timeout).
+`security-auditor`: **OK to commit**, 0 MED+, 3 LOW. Now: `senior-dev` round 2 (both
+SHOULD-FIX + LOW-E2/E3 + 2 NITs). Known cost: cache save holds `repos` lock (contract-mandated).
+Follow-ups: LOW-E1 skip Windows `DRIVE_REMOTE` PATH roots; P125g copy for UNC-redirected
+profile ⇒ all "private — not checked" (ui-designer); re-check frontend link wiring at P125g.
+Round 2 re-run: nextest `deps::` 25/25, `settings` 153/153, `registration` 4/4, `bonsai-deps`
+343 / 2 skipped; clippy (both crates) + fmt --all + deny clean; dep-tree identical → committed
+**`7e87fba`** `wip(P125e)` (excluded another session's uncommitted `src/components/*` +
+`src/styles/*` edits). Now: `ui-designer` amends `P125-ui.md` (3 copy items + stated gaps),
+then **P125g** UI with `senior-dev`, then `reviewer` + `ui-designer` review + browser harness.
+`ui-designer` amended `P125-ui.md` (687 lines): consent ¶5b (org-private npmjs packages are
+sent), §8.4 private-reason table, report-wide network-share-profile lead, `not verified` pill for
+`vulnsChecked:false`, `deriveState` in `depsView.ts`. Model gaps (§11.5, follow-ups): no
+local-feed reason variant; no report-level network-profile flag (UI infers it — keep copy
+hedged); no field for why `vulnsChecked` is false. Now: **P125g** with `senior-dev`.
+P125g implemented (uncommitted; `3cc491c` from another session landed meanwhile). Re-run: tsc
+clean, lint:size OK, vitest 84 files / 965 tests. **Browser harness (orchestrator, this session):**
+all 10 `?deps=` modes render, 0 console errors; populated dialog 880px, toolbar
+"Dependencies, 6 vulnerable"; large = 200 rows + "Show all 1,240 packages"; screenshot taken.
+Finding: report-wide "your user settings folder" lead is inferred from ≥2 `configUnreadable`
+ecosystems — could blame the wrong folder → sent to ui-designer. Now: `reviewer` + `ui-designer`.
+`reviewer`: **approve** (external-tools move behaviour-neutral: yes; settingsCatalog.test 67
+asserts before/after). `ui-designer`: **changes required** — MUST-FIX report-wide lead copy
+(amended P125-ui.md §8.3). Now: `senior-dev` round 2 (lead copy + `.deps-link` + clipboard note +
+null-ecosystem lead + SR double + `depsOpen` reset + dialog state reset on repo change).
+Follow-ups: footer should scroll to the Dependency checks group; USER CHECKPOINT items: card
+geometry/focus ring in native window, NVDA/VoiceOver table reading.
+Round 2 re-run: tsc clean, lint:size OK (App.tsx 559), vitest 99 files / 1,106 tests; harness
+`?deps=mirror` lead verified verbatim vs amended §8.3, 0 console errors (ui-designer's MUST-FIX
+verified by orchestrator, not re-reviewed by ui-designer) → committed **`b7ee24b`** `wip(P125g)`.
+All P125a–g committed. Now: milestone step 6 — `tester` (smoke checklist + gaps), then step 7
+full `pnpm gate` + USER CHECKPOINT.
+`tester`: AC→test map complete except **AC10 (responsiveness) — no automated proof** (reviewer
+inspection + harness only); added AC7 restart + AC8 interval Rust tests, rendered-row UI tests,
+`#[ignore]` offline smoke, `docs/contracts/P125-smoke-checklist.md`. Smoke: 7 groups, private
+names absent from all 31 requests. Committed **`4fea478`**. Cosmetic finding: truncated JSON
+manifest reports "col 0" (`adapter.rs:111`). Now: full `pnpm gate` running (log
+`D:\Data\Temp\P125-gate\gate.log`).
+**`pnpm gate` at `4fea478`: RED** (781s; 10/11 steps ✓: nextest, doctest, fmt, clippy, eslint,
+size, vitest, tsc+build, e2e 9 passed, perf counts) — ✗ perf ratchet: `cold-open: ipcCalls
+baseline 40 -> new 45 (+5) [msedge]`. Cause (harness `ipcByCmd`): `useDepTracker` does
+getDepTracker ×1 + onDepsChanged ×2 + onWindowFocus ×2 even with the tracker OFF. Fix (not a
+baseline raise): hook does zero IPC while `depTracker.enabled` is false → committed **`22b96a0`**
+(harness cold-open back to 40; vitest 90/90). Follow-up: right after enabling, the first fetch
+can still read "off" until the backend `started` event refetches (transient).
+**AI GATE GREEN 2026-09-29 at `22b96a0`:** `pnpm gate` — ✓ all 11 steps passed, 651.2s (nextest
+3192 passed / 14 skipped (1 leaky); doctests 13; fmt; clippy; eslint; size; vitest 327 files /
+3456 tests; tsc + build; e2e 185 passed; perf counts 9 passed; perf ratchet 48 counts OK). Log
+`D:\Data\Temp\P125-gate\gate2.log`. **Now: awaiting USER CHECKPOINT** — native steps in
+`docs/contracts/P125-smoke-checklist.md` §C. Not declared passed.
+P125 follow-ups (not blocking): ui-designer copy for a "local feed" private reason; hostless
+NuGet `RestoreSources` → hostless-private model (today Closed); document symlinked `.venv` ⇒
+PyPI fail-closed; Windows junction fixture; relax `CARGO_REGISTRY_DEFAULT`; unlisted-target
+`O_NOFOLLOW` = 0 → `compile_error!`/fail-closed.
+Follow-ups (not blocking): Windows junction fixture (needs windows-sys/unsafe or a process);
+relax `CARGO_REGISTRY_DEFAULT` fail-closed (publish-only per cargo docs).
+**P125h follow-ups (2026-09-29):** `refactorer` split `settings.rs` 500→326 (+`settings/io.rs`,
+`settings/recent.rs`; settings 153/153 before/after, re-run by orchestrator) → committed
+**`ad86b01`**. `architect` wrote `docs/contracts/P125-followups.md` (malformed-only advisories ⇒
+`vulnsUnverified`, per-package TooLarge, NuGet `localFeed`, network-profile flag, R1–R3);
+orchestrator applied 3 architect-flagged corrections. **RULED by user:** R1 relax
+`CARGO_REGISTRY_DEFAULT`; R2 show all-malformed transitive as `not verified`; R3 network-profile
+flag only; LOW-E1 UNC-only, mapped drives deferred. Small fixes (O_NOFOLLOW `compile_error!` on
+unlisted unix targets, no "col 0", no "off" flash after enabling, footer deep-links to Dependency
+checks) implemented by `senior-dev` → `reviewer` **approve** (0 MUST-FIX; orchestrator re-ran
+vitest 38 files / 442, tsc clean) → committed **`8b09665`**. Fold into h4: off-retry only while view
+is null/loading (else ~2 s "loading" + up to 9 IPC per focus when backend genuinely off);
+`HeaderToolbar.tsx:45` focus prop → `SettingsFocusTarget | null`; stale comments
+`SettingsContext.ts:103`, `SettingsShell.tsx` ~150; ui-designer ack for switch focus.
+**h1** `reviewer` approve (0 MUST/SHOULD) → orchestrator re-ran bonsai-deps 359 passed / 3 skipped
+→ committed **`3d59656`**. **h2+h3** (+ `profile_on_network` narrowed to user-scoped bases by
+orchestrator decision) → `reviewer` approve + `security-auditor` OK to commit (0 MED+; LOW-H1
+`%VAR%@`/`$(…)@api.nuget.org` judged public — fixed; label bug Mapped-private vs LocalFeed — fixed)
+→ orchestrator re-ran bonsai-deps 371 passed / 3 skipped, `deps::` 30/30, clippy/fmt clean →
+committed **`06ef9a9`** (incl. ui-designer's `P125-ui.md` amendments 694→842). Now: **h4** (TS
+mirror, fixtures, UI, `?deps=unverified|netprofile`) with `senior-dev`, then `reviewer` +
+`ui-designer` + harness, tester, full gate.
+**h4** `reviewer` approve (0 MUST/SHOULD; 978 vitest) + `ui-designer` approve after MUST-FIX
+(expanded-row hueless pills `--text-2` 4.06:1 dark → `--text-1`, applied by orchestrator, verified
+computed colour in harness); SR ruling: pill only, no suffix (P125-ui.md amended). Harness
+(orchestrator): `?deps=unverified` 8 rows + titles as §9, `?deps=netprofile` lead verbatim, 0
+console errors. Re-ran vitest 81 files / 978, tsc clean → committed **`3ad900b`**. `tester`: every
+P125h item mapped to a test, 3 gaps filled, offline smoke `repo-h` (18 requests; NuGet folder-feed
+sentinel absent; crates.io sent with `registry.default`), checklist §C steps 13–18 → committed
+**`14402d1`**. O_NOFOLLOW `compile_error!` UNVERIFIED on non-Windows targets (no cross `cc`).
+**AI GATE GREEN 2026-09-29 at `14402d1`:** `pnpm gate` — ✓ all 11 steps passed, 782.4s (nextest
+3224 passed (1 leaky) / 15 skipped; doctests 13; fmt; clippy; eslint; size; vitest 328 files /
+3481; tsc + build; e2e 185 passed; perf counts 9 passed; perf ratchet OK). Log
+`D:\Data\Temp\P125-followups\gate\gate.log`. **Now: awaiting USER CHECKPOINT** at `14402d1`
+(`docs/contracts/P125-smoke-checklist.md` §C steps 1–18). Not declared passed. Follow-ups: calm line "All checked packages are up to date…" shows when zero
+packages were checked (netprofile/mirror) — hide when no public rows; not-verified *cause* is
+hover-only on non-expandable rows (keyboard/SR can't reach it); combined cell id ~60px. Follow-ups: extend `localFeed` to Cargo
+`directory`/`local-registry` and pip `--find-links` (architect); `scope_of` doesn't catch a reused
+index below N; mapped drive letters (LOW-E1). Old: **h1** (Rust §0/§1/§2/§4c) with
+`senior-dev`. Then h2 (NuGet localFeed + R1), h3 (network profile), ui-designer copy, h4 (TS/UI),
+`security-auditor` over h1–h3, tester, full gate. USER CHECKPOINT will run at the final P125h
+commit, not `22b96a0`.
+- Spec (what/why, 13 acceptance criteria, decisions D1–D9): `docs/specs/009-dependency-tracker/spec.md`.
+- Goal: for the open repo, show direct deps with available updates (patch/minor/major) and
+  direct + transitive deps with known vulnerabilities, for npm/pnpm/yarn, Cargo, PyPI, Go, NuGet;
+  unsupported ecosystems listed as "not tracked".
+- Hard lines: static manifest/lockfile parsing only, never run repo tooling (AC11); opt-in, one
+  global switch, off by default (D1); private/path/git/workspace dep names never sent (D7);
+  opt-out deletes cache (D6); 12 h default interval, configurable (D4); manifest change = mark
+  stale only (D5).
+- Research leaning (not binding on `architect`): deps.dev + OSV.dev (keyless) with
+  native-registry fallback. Later phases: Maven/Gradle, Composer, Pub, Renovate-if-installed,
+  ignore/snooze.
+- Milestone-sized: new outbound network capability (CSP/capabilities) → `security-auditor`
+  review of the contract before implementation, not after.
+
 ## P116 — `OBS_SCHEMA_VERSION` TS/Rust drift + parity test — `done` → **archive Part 83**
 
 **ARCHIVED 2026-09-23.** `done`, `reviewer` approved (no MUST-FIX), committed **`e49cf20`**, and its

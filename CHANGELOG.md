@@ -12,7 +12,10 @@ All notable changes to Bonsai are documented here. The format is based on
 > `src-tauri/tauri.conf.json` and the release is verified and clear to publish, but **no `v1.6.0`
 > tag exists** — `git tag --list` ends at `v1.5.0` (2026-08-26). The `[1.6.0]` compare link at the
 > bottom of this file therefore 404s until the tag is pushed. The date above is the date the
-> release was prepared. Status and the two remaining recommendations are tracked in `TODO.md` under
+> release was prepared; set it to the tag date when the tag is cut. On 2026-09-24 this section was
+> extended with the fixes committed on 2026-09-22/23 (forge rate limit, stale settings paths,
+> diagnostics accuracy, graph cache, sidebar renders), so it now describes the branch head rather
+> than the 2026-09-18 tree. Status and the remaining release steps are tracked in `TODO.md` under
 > `🚀 RELEASE v1.6.0`. **Delete this note when the tag lands.**
 
 Five new ways to read the commit graph — a first-parent view, branch solo/hide, folded linear runs,
@@ -238,6 +241,26 @@ contrast and security round closes screen-reader, legibility and credential-hand
   hard-clipped, which makes a truncated name look like a complete one, and the full text was only
   available by hovering. Long refs now stay on one line and ellipsize: the remote prefix gives way
   first, and the branch name itself is shortened only as a last resort.
+- **A forge rate limit no longer feeds itself.** With several repos open against Azure DevOps, a
+  real session spent almost five minutes on CI-status requests and hit the rate limit eight times.
+  Three things compounded: a limit hit mid-batch threw away every commit status already fetched, the
+  forge's `Retry-After` hint was never read, and the next refresh immediately asked for the same set
+  again. A batch that is cut short now keeps what it resolved, the retry hint is read from all four
+  forges, and Bonsai pauses further requests to that host until the hint expires; forcing a refresh
+  does not skip the pause. CI badges can stay blank while a pause is running. Separately, the tag
+  sync check no longer contacts the remote again within two seconds of its last check.
+- **Moving your repositories on disk no longer leaves dead settings behind.** Recent repositories
+  whose folder is gone are now dropped at startup instead of pushing live ones off the capped list.
+  A per-repository forge account pin left on the old path, which had silently stopped applying, is
+  moved to the repository's new location, but only when it has the same forge host, so a pin can
+  never end up on a host its token was not issued for. Hook-disclosure acknowledgements are never
+  carried over: a moved repository asks once more. A path is only treated as gone when its drive or
+  share is reachable, so an unplugged drive or an unmounted share never loses anything.
+- **The diagnostics log is more accurate.** Each record now names the repository it belongs to, so
+  with several repositories open the "redundant refresh" and "cache collapse" findings no longer
+  mistake two repositories each refreshing once for one repository refreshing twice. The repository
+  appears as `repo#N`, never as a path, unless raw capture is on. Whether a forge request was
+  authenticated is now logged as a yes/no value instead of being hidden as if it were a token.
 
 ### Security
 
@@ -329,6 +352,15 @@ contrast and security round closes screen-reader, legibility and credential-hand
   ref change went from 1,012 renders to 8, and a branch row from 1,000 renders across 500 instances
   to 2 across 1. A background refresh also no longer greys out the refresh button: progress belongs
   to something you did, not to filesystem-event timing.
+- **The commit graph cache now survives a full refresh.** Every full refresh round, which runs on
+  window focus and repository activation, was quietly throwing away the graph cache it was about
+  to read, so a real five-repository session hit the cache on 6 of 81 graph requests and re-walked
+  unchanged histories almost every time. The cache now carries over whenever the repository is
+  already open. Any change to branch tips, HEAD or hidden refs still forces a fresh walk.
+- **Running a git action no longer re-renders the whole sidebar.** Starting and finishing any
+  mutation re-rendered every branch row and both branch sections twice, only to update a flag that
+  has no visible effect on a row. A change to local branches also no longer re-renders the Remotes
+  section when the remote-tracking branches themselves have not changed.
 
 ## [1.5.0] — 2026-08-26
 
